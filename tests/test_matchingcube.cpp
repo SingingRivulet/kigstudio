@@ -3,14 +3,14 @@
 #include "kigstudio/voxel/voxel2mesh.h"
 int main() {
     sinriv::kigstudio::octree::Octree voxelData(256);
-    voxelData.insert(sinriv::kigstudio::octree::Vec3i(0, 0, 0));
-    voxelData.insert(sinriv::kigstudio::octree::Vec3i(1, 0, 0));
-    voxelData.insert(sinriv::kigstudio::octree::Vec3i(1, 1, 0));
-    voxelData.insert(sinriv::kigstudio::octree::Vec3i(0, 1, 0));
-    voxelData.insert(sinriv::kigstudio::octree::Vec3i(0, 0, 1));
-    voxelData.insert(sinriv::kigstudio::octree::Vec3i(1, 0, 1));
-    voxelData.insert(sinriv::kigstudio::octree::Vec3i(1, 1, 1));
-    voxelData.insert(sinriv::kigstudio::octree::Vec3i(0, 1, 1));
+    for (int i = 0; i < 2 ;++i) {
+        for (int j = 0; j < 2; ++j) {
+            for (int k = 0; k < 2; ++k) {
+                voxelData.insert(sinriv::kigstudio::octree::Vec3i(i+1, j+1, k+1));
+            }
+        }
+    }
+
 
     // 测试参数
     double isolevel = 0.5;

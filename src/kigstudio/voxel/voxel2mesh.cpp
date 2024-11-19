@@ -1,5 +1,6 @@
 #include "kigstudio/voxel/voxel2mesh.h"
 #include "kigstudio/voxel/lut.h"
+#include <set>
 
 namespace sinriv::kigstudio::voxel {
 
@@ -7,11 +8,9 @@ namespace sinriv::kigstudio::voxel {
 
         //static int numVectorMeshes;
         //numVectorMeshes++;
+        using vec3i = sinriv::kigstudio::octree::Vec3i;
+        std::set<vec3i> back_face;
 
-        std::vector<Triangle> meshTriangles;
-
-        //meshTriangles.clear();
-        //meshTriangles.shrink_to_fit();
         numTriangles = 0;
 
         int i;
@@ -25,28 +24,86 @@ namespace sinriv::kigstudio::voxel {
 
             //std::cout << "ITE [" << x << ", " << y << ", " << z << "]" << std::endl;
 
-            //cube[0] = voxelData[x + 0][y + 0][z + 0];
-            //cube[1] = voxelData[x + 1][y + 0][z + 0];
-            //cube[2] = voxelData[x + 1][y + 0][z + 1];
-            //cube[3] = voxelData[x + 0][y + 0][z + 1];
-            //cube[4] = voxelData[x + 0][y + 1][z + 0];
-            //cube[5] = voxelData[x + 1][y + 1][z + 0];
-            //cube[6] = voxelData[x + 1][y + 1][z + 1];
-            //cube[7] = voxelData[x + 0][y + 1][z + 1];
-
             // cubeindex = 0;
 
-            // if (voxelData.find(sinriv::kigstudio::octree::Vec3i(x, y, z)))  cubeindex |= 1;
+            // if (voxelData.find(vec3i(x, y, z)))  cubeindex |= 1;
             cubeindex = 1; //被检索的初始点一定是存在的
 
-            if (voxelData.find(sinriv::kigstudio::octree::Vec3i(x + 1, y, z)))  cubeindex |= 2;
-            if (voxelData.find(sinriv::kigstudio::octree::Vec3i(x + 1, y, z + 1)))  cubeindex |= 4;
-            if (voxelData.find(sinriv::kigstudio::octree::Vec3i(x, y, z + 1)))  cubeindex |= 8;
-            if (voxelData.find(sinriv::kigstudio::octree::Vec3i(x, y + 1, z)))  cubeindex |= 16;
-            if (voxelData.find(sinriv::kigstudio::octree::Vec3i(x + 1, y + 1, z)))  cubeindex |= 32;
-            if (voxelData.find(sinriv::kigstudio::octree::Vec3i(x + 1, y + 1, z + 1)))  cubeindex |= 64;
-            if (voxelData.find(sinriv::kigstudio::octree::Vec3i(x, y + 1, z + 1)))  cubeindex |= 128;
+            // 处理正方向
+            if (voxelData.find(vec3i(x + 1, y, z)))  cubeindex |= 2;
+            if (voxelData.find(vec3i(x + 1, y, z + 1)))  cubeindex |= 4;
+            if (voxelData.find(vec3i(x, y, z + 1)))  cubeindex |= 8;
+            if (voxelData.find(vec3i(x, y + 1, z)))  cubeindex |= 16;
+            if (voxelData.find(vec3i(x + 1, y + 1, z)))  cubeindex |= 32;
+            if (voxelData.find(vec3i(x + 1, y + 1, z + 1)))  cubeindex |= 64;
+            if (voxelData.find(vec3i(x, y + 1, z + 1)))  cubeindex |= 128;
 
+            //处理负方向
+            if (!voxelData.find(vec3i(x - 1 + 1, y - 1, z - 1))) back_face.insert(vec3i(x - 1 + 1, y - 1, z - 1));
+            if (!voxelData.find(vec3i(x - 1 + 1, y - 1, z - 1 + 1)))back_face.insert(vec3i(x - 1 + 1, y - 1, z - 1 + 1));
+            if (!voxelData.find(vec3i(x - 1 + 1, y - 1, z - 1 + 1))) back_face.insert(vec3i(x - 1 + 1, y - 1, z - 1 + 1));
+            if (!voxelData.find(vec3i(x - 1, y - 1, z - 1 + 1))) back_face.insert(vec3i(x - 1, y - 1, z - 1 + 1));
+            if (!voxelData.find(vec3i(x - 1, y - 1 + 1, z - 1))) back_face.insert(vec3i(x - 1, y - 1 + 1, z - 1));
+            if (!voxelData.find(vec3i(x - 1 + 1, y - 1 + 1, z - 1))) back_face.insert(vec3i(x - 1 + 1, y - 1 + 1, z - 1));
+            if (!voxelData.find(vec3i(x - 1 + 1, y - 1 + 1, z - 1 + 1))) back_face.insert(vec3i(x - 1 + 1, y - 1 + 1, z - 1 + 1));
+            if (!voxelData.find(vec3i(x - 1, y - 1 + 1, z - 1 + 1))) back_face.insert(vec3i(x - 1, y - 1 + 1, z - 1 + 1));
+            if (!voxelData.find(vec3i(x - 1, y - 1, z - 1))) back_face.insert(vec3i(x - 1, y - 1, z - 1));
+
+
+            if (edgeTable[cubeindex] == 0)	// cube is entirely inside or outside of the geometry
+                continue;
+
+            // For each edge with an intersection, create the coords for the vertex
+            if (edgeTable[cubeindex] & 1)
+                vertlist[0] = vec3f(x + .5, y, z);
+            if (edgeTable[cubeindex] & 2)
+                vertlist[1] = vec3f(x + 1, y, z + .5);
+            if (edgeTable[cubeindex] & 4)
+                vertlist[2] = vec3f(x + .5, y, z + 1);
+            if (edgeTable[cubeindex] & 8)
+                vertlist[3] = vec3f(x, y, z + .5);
+            if (edgeTable[cubeindex] & 16)
+                vertlist[4] = vec3f(x + .5, y + 1, z);
+            if (edgeTable[cubeindex] & 32)
+                vertlist[5] = vec3f(x + 1, y + 1, z + .5);
+            if (edgeTable[cubeindex] & 64)
+                vertlist[6] = vec3f(x + .5, y + 1, z + 1);
+            if (edgeTable[cubeindex] & 128)
+                vertlist[7] = vec3f(x, y + 1, z + .5);
+            if (edgeTable[cubeindex] & 256)
+                vertlist[8] = vec3f(x, y + .5, z);
+            if (edgeTable[cubeindex] & 512)
+                vertlist[9] = vec3f(x + 1, y + .5, z);
+            if (edgeTable[cubeindex] & 1024)
+                vertlist[10] = vec3f(x + 1, y + .5, z + 1);
+            if (edgeTable[cubeindex] & 2048)
+                vertlist[11] = vec3f(x, y + .5, z + 1);
+
+            // Create the triangle
+            for (i = 0; triTable[cubeindex][i] != -1; i += 3) {
+
+                vec3f v1 = vertlist[triTable[cubeindex][i]];
+                vec3f v2 = vertlist[triTable[cubeindex][i + 1]];
+                vec3f v3 = vertlist[triTable[cubeindex][i + 2]];
+
+                co_yield (std::make_tuple(v1, v2, v3));
+
+                numTriangles++;
+            }
+        }
+        for (const auto& point : back_face) {
+            int x = point.x;
+            int y = point.y;
+            int z = point.z;
+
+            cubeindex = 0;
+            if (voxelData.find(vec3i(x + 1, y, z)))  cubeindex |= 2;
+            if (voxelData.find(vec3i(x + 1, y, z + 1)))  cubeindex |= 4;
+            if (voxelData.find(vec3i(x, y, z + 1)))  cubeindex |= 8;
+            if (voxelData.find(vec3i(x, y + 1, z)))  cubeindex |= 16;
+            if (voxelData.find(vec3i(x + 1, y + 1, z)))  cubeindex |= 32;
+            if (voxelData.find(vec3i(x + 1, y + 1, z + 1)))  cubeindex |= 64;
+            if (voxelData.find(vec3i(x, y + 1, z + 1)))  cubeindex |= 128;
 
             if (edgeTable[cubeindex] == 0)	// cube is entirely inside or outside of the geometry
                 continue;

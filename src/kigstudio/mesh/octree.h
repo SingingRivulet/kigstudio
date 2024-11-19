@@ -16,6 +16,14 @@ namespace sinriv::kigstudio::octree {
         inline bool operator==(const Vec3i& other) const {
             return x == other.x && y == other.y && z == other.z;
         }
+
+        inline bool operator!=(const Vec3i& other) const {
+            return !(*this == other);
+        }
+
+        inline bool operator<(const Vec3i& other) const {
+            return x < other.x || (x == other.x && y < other.y) || (x == other.x && y == other.y && z < other.z);
+        }
     };
 
     // 定义八叉树节点类
