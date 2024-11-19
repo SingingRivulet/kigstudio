@@ -1,7 +1,9 @@
-#include "kigstudio/mesh/octree.h"
+// #include "kigstudio/mesh/octree.h"
 
-using namespace sinriv::kigstudio;
+
+#include <iostream>
+#include <fstream>
+#include <algorithm>
+
 int main() {
-    
-    return 0;
 }

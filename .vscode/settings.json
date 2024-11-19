@@ -63,6 +63,18 @@
         "xloctime": "cpp",
         "xmemory": "cpp",
         "xtr1common": "cpp",
-        "*.tcc": "cpp"
+        "*.tcc": "cpp",
+        "xhash": "cpp",
+        "cwctype": "cpp",
+        "unordered_map": "cpp",
+        "functional": "cpp",
+        "numbers": "cpp",
+        "string": "cpp",
+        "text_encoding": "cpp",
+        "variant": "cpp",
+        "forward_list": "cpp",
+        "fstream": "cpp",
+        "list": "cpp",
+        "coroutine": "cpp"
     }
 }

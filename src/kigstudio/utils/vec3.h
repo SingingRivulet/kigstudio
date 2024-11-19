@@ -11,6 +11,11 @@ namespace sinriv::kigstudio {
             y = 0.0f;
             z = 0.0f;
         }
+        inline vec3(const vec3<T>& p) {
+            x = p.x;
+            y = p.y;
+            z = p.z;
+        }
         inline vec3(T xt, T yt, T zt) {
             x = xt;
             y = yt;
@@ -20,6 +25,10 @@ namespace sinriv::kigstudio {
             x = xt;
             y = yt;
             z = zt;
+        }
+        friend std::ostream& operator<<(std::ostream& os, const vec3& v) {
+            os << "(" << v.x << ", " << v.y << ", " << v.z << ")";
+            return os;
         }
         inline bool operator==(const vec3<T>& i)const {
             if (x != i.x)return false;
