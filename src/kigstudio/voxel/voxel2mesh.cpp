@@ -55,29 +55,29 @@ namespace sinriv::kigstudio::voxel {
 
             // For each edge with an intersection, create the coords for the vertex
             if (edgeTable[cubeindex] & 1)
-                vertlist[0] = vec3f(x + .5, y, z);
+                vertlist[0] = vec3f((float)(x + .5),    (float)(y),         (float)(z));
             if (edgeTable[cubeindex] & 2)
-                vertlist[1] = vec3f(x + 1, y, z + .5);
+                vertlist[1] = vec3f((float)(x + 1),     (float)(y),         (float)(z + .5));
             if (edgeTable[cubeindex] & 4)
-                vertlist[2] = vec3f(x + .5, y, z + 1);
+                vertlist[2] = vec3f((float)(x + .5),    (float)(y),         (float)(z + 1));
             if (edgeTable[cubeindex] & 8)
-                vertlist[3] = vec3f(x, y, z + .5);
+                vertlist[3] = vec3f((float)(x),         (float)(y),         (float)(z + .5));
             if (edgeTable[cubeindex] & 16)
-                vertlist[4] = vec3f(x + .5, y + 1, z);
+                vertlist[4] = vec3f((float)(x + .5),    (float)(y + 1),     (float)(z));
             if (edgeTable[cubeindex] & 32)
-                vertlist[5] = vec3f(x + 1, y + 1, z + .5);
+                vertlist[5] = vec3f((float)(x + 1),     (float)(y + 1),     (float)(z + .5));
             if (edgeTable[cubeindex] & 64)
-                vertlist[6] = vec3f(x + .5, y + 1, z + 1);
+                vertlist[6] = vec3f((float)(x + .5),    (float)(y + 1),     (float)(z + 1));
             if (edgeTable[cubeindex] & 128)
-                vertlist[7] = vec3f(x, y + 1, z + .5);
+                vertlist[7] = vec3f((float)(x),         (float)(y + 1),     (float)(z + .5));
             if (edgeTable[cubeindex] & 256)
-                vertlist[8] = vec3f(x, y + .5, z);
+                vertlist[8] = vec3f((float)(x),         (float)(y + .5),    (float)(z));
             if (edgeTable[cubeindex] & 512)
-                vertlist[9] = vec3f(x + 1, y + .5, z);
+                vertlist[9] = vec3f((float)(x + 1),     (float)(y + .5),    (float)(z));
             if (edgeTable[cubeindex] & 1024)
-                vertlist[10] = vec3f(x + 1, y + .5, z + 1);
+                vertlist[10] = vec3f((float)(x + 1),    (float)(y + .5),    (float)(z + 1));
             if (edgeTable[cubeindex] & 2048)
-                vertlist[11] = vec3f(x, y + .5, z + 1);
+                vertlist[11] = vec3f((float)(x),        (float)(y + .5),    (float)(z + 1));
 
             // Create the triangle
             for (i = 0; triTable[cubeindex][i] != -1; i += 3) {
@@ -110,29 +110,29 @@ namespace sinriv::kigstudio::voxel {
 
             // For each edge with an intersection, create the coords for the vertex
             if (edgeTable[cubeindex] & 1)
-                vertlist[0] = vec3f(x + .5, y, z);
+                vertlist[0] = vec3f((float)(x + .5),    (float)(y),         (float)(z));
             if (edgeTable[cubeindex] & 2)
-                vertlist[1] = vec3f(x + 1, y, z + .5);
+                vertlist[1] = vec3f((float)(x + 1),     (float)(y),         (float)(z + .5));
             if (edgeTable[cubeindex] & 4)
-                vertlist[2] = vec3f(x + .5, y, z + 1);
+                vertlist[2] = vec3f((float)(x + .5),    (float)(y),         (float)(z + 1));
             if (edgeTable[cubeindex] & 8)
-                vertlist[3] = vec3f(x, y, z + .5);
+                vertlist[3] = vec3f((float)(x),         (float)(y),         (float)(z + .5));
             if (edgeTable[cubeindex] & 16)
-                vertlist[4] = vec3f(x + .5, y + 1, z);
+                vertlist[4] = vec3f((float)(x + .5),    (float)(y + 1),     (float)(z));
             if (edgeTable[cubeindex] & 32)
-                vertlist[5] = vec3f(x + 1, y + 1, z + .5);
+                vertlist[5] = vec3f((float)(x + 1),     (float)(y + 1),     (float)(z + .5));
             if (edgeTable[cubeindex] & 64)
-                vertlist[6] = vec3f(x + .5, y + 1, z + 1);
+                vertlist[6] = vec3f((float)(x + .5),    (float)(y + 1),     (float)(z + 1));
             if (edgeTable[cubeindex] & 128)
-                vertlist[7] = vec3f(x, y + 1, z + .5);
+                vertlist[7] = vec3f((float)(x),         (float)(y + 1),     (float)(z + .5));
             if (edgeTable[cubeindex] & 256)
-                vertlist[8] = vec3f(x, y + .5, z);
+                vertlist[8] = vec3f((float)(x),         (float)(y + .5),    (float)(z));
             if (edgeTable[cubeindex] & 512)
-                vertlist[9] = vec3f(x + 1, y + .5, z);
+                vertlist[9] = vec3f((float)(x + 1),     (float)(y + .5),    (float)(z));
             if (edgeTable[cubeindex] & 1024)
-                vertlist[10] = vec3f(x + 1, y + .5, z + 1);
+                vertlist[10] = vec3f((float)(x + 1),    (float)(y + .5),    (float)(z + 1));
             if (edgeTable[cubeindex] & 2048)
-                vertlist[11] = vec3f(x, y + .5, z + 1);
+                vertlist[11] = vec3f((float)(x),        (float)(y + .5),    (float)(z + 1));
 
             // Create the triangle
             for (i = 0; triTable[cubeindex][i] != -1; i += 3) {
