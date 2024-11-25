@@ -15,4 +15,6 @@ namespace sinriv::kigstudio::voxel {
 
     void saveMeshToASCIISTL(const std::vector<Triangle>& meshTriangles, const std::string& filename);
     void saveMeshToBinarySTL(const std::vector<Triangle>& meshTriangles, const std::string& filename);
+    Generator<std::tuple<Triangle, vec3f>> readSTL_ASCII(std::string filename);
+    Generator<std::tuple<Triangle, vec3f>> readSTL_Binary(std::string filename);
 }

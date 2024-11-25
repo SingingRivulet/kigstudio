@@ -16,7 +16,7 @@ namespace sinriv::kigstudio::voxel {
     }
 
     Generator<vec3f> draw_triangle(
-        const Triangle& triangle_i,
+        Triangle triangle_i,
         float voxelsizex,      // Voxel size on X-axis
         float voxelsizey,      // Voxel size on Y-axis
         float voxelsizez,      // Voxel size on Z-axis

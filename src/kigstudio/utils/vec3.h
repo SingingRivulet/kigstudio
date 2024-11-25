@@ -1,7 +1,7 @@
 #pragma once
 #include <math.h>
 namespace sinriv::kigstudio {
-    template<typename T> class vec3 {
+    template<typename T> struct vec3 {
     public:
         T x;
         T y;

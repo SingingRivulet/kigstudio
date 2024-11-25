@@ -1,6 +1,10 @@
 #include "kigstudio/voxel/voxel2mesh.h"
 #include "kigstudio/voxel/lut.h"
 #include <set>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 namespace sinriv::kigstudio::voxel {
 
@@ -55,29 +59,29 @@ namespace sinriv::kigstudio::voxel {
 
             // For each edge with an intersection, create the coords for the vertex
             if (edgeTable[cubeindex] & 1)
-                vertlist[0] = vec3f((float)(x + .5),    (float)(y),         (float)(z));
+                vertlist[0] = vec3f((float)(x + .5), (float)(y), (float)(z));
             if (edgeTable[cubeindex] & 2)
-                vertlist[1] = vec3f((float)(x + 1),     (float)(y),         (float)(z + .5));
+                vertlist[1] = vec3f((float)(x + 1), (float)(y), (float)(z + .5));
             if (edgeTable[cubeindex] & 4)
-                vertlist[2] = vec3f((float)(x + .5),    (float)(y),         (float)(z + 1));
+                vertlist[2] = vec3f((float)(x + .5), (float)(y), (float)(z + 1));
             if (edgeTable[cubeindex] & 8)
-                vertlist[3] = vec3f((float)(x),         (float)(y),         (float)(z + .5));
+                vertlist[3] = vec3f((float)(x), (float)(y), (float)(z + .5));
             if (edgeTable[cubeindex] & 16)
-                vertlist[4] = vec3f((float)(x + .5),    (float)(y + 1),     (float)(z));
+                vertlist[4] = vec3f((float)(x + .5), (float)(y + 1), (float)(z));
             if (edgeTable[cubeindex] & 32)
-                vertlist[5] = vec3f((float)(x + 1),     (float)(y + 1),     (float)(z + .5));
+                vertlist[5] = vec3f((float)(x + 1), (float)(y + 1), (float)(z + .5));
             if (edgeTable[cubeindex] & 64)
-                vertlist[6] = vec3f((float)(x + .5),    (float)(y + 1),     (float)(z + 1));
+                vertlist[6] = vec3f((float)(x + .5), (float)(y + 1), (float)(z + 1));
             if (edgeTable[cubeindex] & 128)
-                vertlist[7] = vec3f((float)(x),         (float)(y + 1),     (float)(z + .5));
+                vertlist[7] = vec3f((float)(x), (float)(y + 1), (float)(z + .5));
             if (edgeTable[cubeindex] & 256)
-                vertlist[8] = vec3f((float)(x),         (float)(y + .5),    (float)(z));
+                vertlist[8] = vec3f((float)(x), (float)(y + .5), (float)(z));
             if (edgeTable[cubeindex] & 512)
-                vertlist[9] = vec3f((float)(x + 1),     (float)(y + .5),    (float)(z));
+                vertlist[9] = vec3f((float)(x + 1), (float)(y + .5), (float)(z));
             if (edgeTable[cubeindex] & 1024)
-                vertlist[10] = vec3f((float)(x + 1),    (float)(y + .5),    (float)(z + 1));
+                vertlist[10] = vec3f((float)(x + 1), (float)(y + .5), (float)(z + 1));
             if (edgeTable[cubeindex] & 2048)
-                vertlist[11] = vec3f((float)(x),        (float)(y + .5),    (float)(z + 1));
+                vertlist[11] = vec3f((float)(x), (float)(y + .5), (float)(z + 1));
 
             // Create the triangle
             for (i = 0; triTable[cubeindex][i] != -1; i += 3) {
@@ -110,29 +114,29 @@ namespace sinriv::kigstudio::voxel {
 
             // For each edge with an intersection, create the coords for the vertex
             if (edgeTable[cubeindex] & 1)
-                vertlist[0] = vec3f((float)(x + .5),    (float)(y),         (float)(z));
+                vertlist[0] = vec3f((float)(x + .5), (float)(y), (float)(z));
             if (edgeTable[cubeindex] & 2)
-                vertlist[1] = vec3f((float)(x + 1),     (float)(y),         (float)(z + .5));
+                vertlist[1] = vec3f((float)(x + 1), (float)(y), (float)(z + .5));
             if (edgeTable[cubeindex] & 4)
-                vertlist[2] = vec3f((float)(x + .5),    (float)(y),         (float)(z + 1));
+                vertlist[2] = vec3f((float)(x + .5), (float)(y), (float)(z + 1));
             if (edgeTable[cubeindex] & 8)
-                vertlist[3] = vec3f((float)(x),         (float)(y),         (float)(z + .5));
+                vertlist[3] = vec3f((float)(x), (float)(y), (float)(z + .5));
             if (edgeTable[cubeindex] & 16)
-                vertlist[4] = vec3f((float)(x + .5),    (float)(y + 1),     (float)(z));
+                vertlist[4] = vec3f((float)(x + .5), (float)(y + 1), (float)(z));
             if (edgeTable[cubeindex] & 32)
-                vertlist[5] = vec3f((float)(x + 1),     (float)(y + 1),     (float)(z + .5));
+                vertlist[5] = vec3f((float)(x + 1), (float)(y + 1), (float)(z + .5));
             if (edgeTable[cubeindex] & 64)
-                vertlist[6] = vec3f((float)(x + .5),    (float)(y + 1),     (float)(z + 1));
+                vertlist[6] = vec3f((float)(x + .5), (float)(y + 1), (float)(z + 1));
             if (edgeTable[cubeindex] & 128)
-                vertlist[7] = vec3f((float)(x),         (float)(y + 1),     (float)(z + .5));
+                vertlist[7] = vec3f((float)(x), (float)(y + 1), (float)(z + .5));
             if (edgeTable[cubeindex] & 256)
-                vertlist[8] = vec3f((float)(x),         (float)(y + .5),    (float)(z));
+                vertlist[8] = vec3f((float)(x), (float)(y + .5), (float)(z));
             if (edgeTable[cubeindex] & 512)
-                vertlist[9] = vec3f((float)(x + 1),     (float)(y + .5),    (float)(z));
+                vertlist[9] = vec3f((float)(x + 1), (float)(y + .5), (float)(z));
             if (edgeTable[cubeindex] & 1024)
-                vertlist[10] = vec3f((float)(x + 1),    (float)(y + .5),    (float)(z + 1));
+                vertlist[10] = vec3f((float)(x + 1), (float)(y + .5), (float)(z + 1));
             if (edgeTable[cubeindex] & 2048)
-                vertlist[11] = vec3f((float)(x),        (float)(y + .5),    (float)(z + 1));
+                vertlist[11] = vec3f((float)(x), (float)(y + .5), (float)(z + 1));
 
             // Create the triangle
             for (i = 0; triTable[cubeindex][i] != -1; i += 3) {
@@ -215,4 +219,68 @@ namespace sinriv::kigstudio::voxel {
         outFile.close();
     }
 
+    Generator<std::tuple<Triangle, vec3f>> readSTL_ASCII(std::string filename) {
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            std::cout << "Failed to open file:" << filename << std::endl;
+            throw std::runtime_error("Failed to open file.");
+        }
+
+        std::string line;
+        vec3f normal;
+
+        std::vector<vec3f> vertices{};
+
+        while (std::getline(file, line)) {
+            std::istringstream iss(line);
+            std::string token;
+            iss >> token;
+            if (token == "facet") {
+                iss >> token; // skip "normal"
+                iss >> normal.x >> normal.y >> normal.z;
+            }
+            else if (token == "vertex") {
+                vec3f vertex;
+                iss >> vertex.x >> vertex.y >> vertex.z;
+                vertices.push_back(vertex);
+                if (vertices.size() == 3) {
+                    co_yield std::tuple<Triangle, vec3f>({ vertices[0], vertices[1], vertices[2] }, normal);
+                    vertices.clear();
+                }
+            }
+        }
+    }
+    Generator<std::tuple<Triangle, vec3f>> readSTL_Binary(std::string filename) {
+        std::ifstream file(filename, std::ios::binary);
+        if (!file.is_open()) {
+            std::cout << "Failed to open file:" << filename << std::endl;
+            throw std::runtime_error("Failed to open file.");
+        }
+
+        // 跳过文件头
+        char header[80];
+        file.read(header, 80);
+
+        // 读取三角形数量
+        uint32_t triangleCount;
+        file.read(reinterpret_cast<char*>(&triangleCount), sizeof(triangleCount));
+
+        // 读取每个三角形
+        for (uint32_t i = 0; i < triangleCount; ++i) {
+            vec3f normal;
+            Triangle triangle;
+            file.read(reinterpret_cast<char*>(&normal), sizeof(vec3f));
+            file.read(reinterpret_cast<char*>(&std::get<0>(triangle)), sizeof(vec3f));
+            file.read(reinterpret_cast<char*>(&std::get<1>(triangle)), sizeof(vec3f));
+            file.read(reinterpret_cast<char*>(&std::get<2>(triangle)), sizeof(vec3f));
+
+            // 跳过2字节的属性字节计数
+            file.ignore(2);
+
+            co_yield std::tuple<Triangle, vec3f>(
+                { std::get<0>(triangle), std::get<1>(triangle), std::get<2>(triangle) },
+                normal);
+        }
+
+    }
 }
