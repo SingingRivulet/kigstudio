@@ -1,4 +1,4 @@
-#include "kigstudio/mesh/octree.h"
+#include "kigstudio/voxel/octree.h"
 
 using namespace sinriv::kigstudio::octree;
 // int main() {

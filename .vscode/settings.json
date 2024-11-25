@@ -75,6 +75,15 @@
         "forward_list": "cpp",
         "fstream": "cpp",
         "list": "cpp",
-        "coroutine": "cpp"
+        "coroutine": "cpp",
+        "xtree": "cpp",
+        "chrono": "cpp",
+        "cstdarg": "cpp",
+        "iomanip": "cpp",
+        "map": "cpp",
+        "queue": "cpp",
+        "random": "cpp",
+        "set": "cpp",
+        "sstream": "cpp"
     }
 }

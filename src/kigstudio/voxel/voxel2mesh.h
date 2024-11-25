@@ -3,7 +3,7 @@
 #include <vector>
 #include <tuple>
 #include <fstream>
-#include "kigstudio/mesh/octree.h"
+#include "kigstudio/voxel/octree.h"
 #include "kigstudio/utils/vec3.h"
 #include "kigstudio/utils/generator.h"
 namespace sinriv::kigstudio::voxel {

@@ -37,7 +37,7 @@ int main() {
         std::cout << "Triangle:" << std::get<0>(mesh[i]) << ", " << std::get<1>(mesh[i]) << ", " << std::get<2>(mesh[i]) << "" << std::endl;
     }
 
-    sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, "test.stl");
+    sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, "test_matchingcube.stl");
 
     std::cout << "Test Passed!" << std::endl;
 

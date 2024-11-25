@@ -1,2 +1,2 @@
 #pragma once
-#include "kigstudio/mesh/octree.h"
+#include "kigstudio/voxel/octree.h"
