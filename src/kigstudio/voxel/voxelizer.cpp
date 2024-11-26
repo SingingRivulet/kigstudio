@@ -6,11 +6,29 @@ namespace sinriv::kigstudio::voxel {
     void draw_triangle(
         sinriv::kigstudio::octree::Octree& voxelData,
         const Triangle& triangle,
+        const vec3f& normal,
         float voxelsizex,      // Voxel size on X-axis
         float voxelsizey,      // Voxel size on Y-axis
         float voxelsizez,      // Voxel size on Z-axis
-        float precision) {
+        float precision,
+        float solidization) {
         for (auto point : draw_triangle(triangle, voxelsizex, voxelsizey, voxelsizez, precision)) {
+            voxelData.insert({ (int)point.x, (int)point.y, (int)point.z });
+            if (solidization > 0) {
+                //solidization
+                for (auto p : draw_line(point, point + normal * solidization)) {
+                    voxelData.insert({ (int)p.x, (int)p.y, (int)p.z });
+                }
+            }
+        }
+    }
+
+    void draw_line(
+        sinriv::kigstudio::octree::Octree& voxelData,
+        const vec3f& start,
+        const vec3f& end
+    ) {
+        for (auto point : draw_line(start, end)) {
             voxelData.insert({ (int)point.x, (int)point.y, (int)point.z });
         }
     }
@@ -70,5 +88,47 @@ namespace sinriv::kigstudio::voxel {
                 }
             }
         }
+    }
+
+    Generator<vec3i> draw_line(
+        vec3f start,
+        vec3f end
+    ) {
+        int dx = (int)std::floor(std::abs(start.x - end.x));
+        int dy = (int)std::floor(std::abs(start.y - end.y));
+        int dz = (int)std::floor(std::abs(start.z - end.z));
+
+        int xStep = (start.x > end.x) ? 1 : -1;
+        int yStep = (start.y > end.y) ? 1 : -1;
+        int zStep = (start.z > end.z) ? 1 : -1;
+
+        int maxDelta = std::max(std::max(dx, dy), dz);
+        int errorX = 2 * dx - maxDelta;
+        int errorY = 2 * dy - maxDelta;
+        int errorZ = 2 * dz - maxDelta;
+
+        int x = (int)start.x, y = (int)start.y, z = (int)start.z;
+
+        for (int i = 0; i <= maxDelta; ++i) {
+            co_yield vec3i(x, y, z);
+
+            if (errorX > 0) {
+                x += xStep;
+                errorX -= 2 * maxDelta;
+            }
+            if (errorY > 0) {
+                y += yStep;
+                errorY -= 2 * maxDelta;
+            }
+            if (errorZ > 0) {
+                z += zStep;
+                errorZ -= 2 * maxDelta;
+            }
+
+            errorX += 2 * dx;
+            errorY += 2 * dy;
+            errorZ += 2 * dz;
+        }
+
     }
 }

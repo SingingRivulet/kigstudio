@@ -24,6 +24,51 @@ namespace sinriv::kigstudio::octree {
         inline bool operator<(const Vec3i& other) const {
             return x < other.x || (x == other.x && y < other.y) || (x == other.x && y == other.y && z < other.z);
         }
+        inline bool operator<=(const Vec3i& other) const {
+            return *this < other || *this == other;
+        }
+        inline bool operator>(const Vec3i& other) const {
+            return !(*this <= other);
+        }
+        inline bool operator>=(const Vec3i& other) const {
+            return !(*this < other);
+        }
+        inline Vec3i operator+(const Vec3i& other) const {
+            return Vec3i(x + other.x, y + other.y, z + other.z);
+        }
+        inline Vec3i operator-(const Vec3i& other) const {
+            return Vec3i(x - other.x, y - other.y, z - other.z);
+        }
+        inline Vec3i operator*(int scalar) const {
+            return Vec3i(x * scalar, y * scalar, z * scalar);
+        }
+        inline Vec3i operator/(int scalar) const {
+            return Vec3i(x / scalar, y / scalar, z / scalar);
+        }
+        inline Vec3i& operator+=(const Vec3i& other) {
+            x += other.x;
+            y += other.y;
+            z += other.z;
+            return *this;
+        }
+        inline Vec3i& operator-=(const Vec3i& other) {
+            x -= other.x;
+            y -= other.y;
+            z -= other.z;
+            return *this;
+        }
+        inline Vec3i& operator*=(int scalar) {
+            x *= scalar;
+            y *= scalar;
+            z *= scalar;
+            return *this;
+        }
+        inline Vec3i& operator/=(int scalar) {
+            x /= scalar;
+            y /= scalar;
+            z /= scalar;
+            return *this;
+        }
     };
 
     // 定义八叉树节点类

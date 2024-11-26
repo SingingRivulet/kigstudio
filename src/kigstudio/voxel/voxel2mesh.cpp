@@ -7,8 +7,31 @@
 #include <string>
 
 namespace sinriv::kigstudio::voxel {
+    static vec3f computeNormalFromVoxels(const sinriv::kigstudio::octree::Octree& voxelData, int x, int y, int z) {
+        // 初始化法向量
+        vec3f normal(0.0f, 0.0f, 0.0f);
 
-    Generator<Triangle> generateMesh(sinriv::kigstudio::octree::Octree& voxelData, double isolevel, int& numTriangles) {
+        // X方向的贡献
+        if (!voxelData.find({ x - 1, y, z })) normal.x -= 1.0f;  // 左侧无体素，负贡献
+        if (voxelData.find({ x + 1, y, z })) normal.x += 1.0f;   // 右侧有体素，正贡献
+
+        // Y方向的贡献
+        if (!voxelData.find({ x, y - 1, z })) normal.y -= 1.0f;  // 下侧无体素，负贡献
+        if (voxelData.find({ x, y + 1, z })) normal.y += 1.0f;   // 上侧有体素，正贡献
+
+        // Z方向的贡献
+        if (!voxelData.find({ x, y, z - 1 })) normal.z -= 1.0f;  // 前侧无体素，负贡献
+        if (voxelData.find({ x, y, z + 1 })) normal.z += 1.0f;   // 后侧有体素，正贡献
+
+        // 归一化法向量
+        if (normal.length() > 0.0f) {
+            normal = normal.normalize();
+        }
+
+        return normal;
+    }
+
+    Generator<std::tuple<Triangle, vec3f>> generateMesh(sinriv::kigstudio::octree::Octree& voxelData, double isolevel, int& numTriangles, bool computeNormals) {
 
         //static int numVectorMeshes;
         //numVectorMeshes++;
@@ -90,7 +113,20 @@ namespace sinriv::kigstudio::voxel {
                 vec3f v2 = vertlist[triTable[cubeindex][i + 1]];
                 vec3f v3 = vertlist[triTable[cubeindex][i + 2]];
 
-                co_yield (std::make_tuple(v1, v2, v3));
+                vec3f normal = { 0, 0, 0 };
+
+                if (computeNormals) {
+                    normal = (v2 - v1).cross(v3 - v1);
+                    normal = normal.normalize();
+                    auto normal_vx = computeNormalFromVoxels(voxelData, x, y, z);
+                    //计算和normal的夹角
+                    float angle = normal.dot(normal_vx);
+                    if (angle < 0) {
+                        normal = -normal;
+                    }
+                }
+
+                co_yield std::tuple<Triangle, vec3f>((std::make_tuple(v1, v2, v3)), normal);
 
                 numTriangles++;
             }
@@ -145,14 +181,27 @@ namespace sinriv::kigstudio::voxel {
                 vec3f v2 = vertlist[triTable[cubeindex][i + 1]];
                 vec3f v3 = vertlist[triTable[cubeindex][i + 2]];
 
-                co_yield (std::make_tuple(v1, v2, v3));
+                vec3f normal = { 0, 0, 0 };
+
+                if (computeNormals) {
+                    normal = (v2 - v1).cross(v3 - v1);
+                    normal = normal.normalize();
+                    auto normal_vx = computeNormalFromVoxels(voxelData, x, y, z);
+                    //计算和normal的夹角
+                    float angle = normal.dot(normal_vx);
+                    if (angle < 0) {
+                        normal = -normal;
+                    }
+                }
+
+                co_yield std::tuple<Triangle, vec3f>((std::make_tuple(v1, v2, v3)), normal);
 
                 numTriangles++;
             }
         }
     }
 
-    void saveMeshToASCIISTL(const std::vector<Triangle>& meshTriangles, const std::string& filename) {
+    void saveMeshToASCIISTL(const std::vector<std::tuple<Triangle, vec3f>>& meshTriangles, const std::string& filename) {
         std::ofstream outFile(filename);
 
         if (!outFile) {
@@ -161,15 +210,12 @@ namespace sinriv::kigstudio::voxel {
 
         outFile << "solid generated_mesh\n";
 
-        for (const auto& triangle : meshTriangles) {
+        for (const auto& [triangle, normal] : meshTriangles) {
             const vec3f& v1 = std::get<0>(triangle);
             const vec3f& v2 = std::get<1>(triangle);
             const vec3f& v3 = std::get<2>(triangle);
 
-            // 简单设置法向量为零，可以根据需要计算真实法向量
-            float nx = 0, ny = 0, nz = 0;
-
-            outFile << "  facet normal " << nx << " " << ny << " " << nz << "\n";
+            outFile << "  facet normal " << normal.x << " " << normal.y << " " << normal.z << "\n";
             outFile << "    outer loop\n";
             outFile << "      vertex " << v1.x << " " << v1.y << " " << v1.z << "\n";
             outFile << "      vertex " << v2.x << " " << v2.y << " " << v2.z << "\n";
@@ -182,7 +228,7 @@ namespace sinriv::kigstudio::voxel {
         outFile.close();
     }
 
-    void saveMeshToBinarySTL(const std::vector<Triangle>& meshTriangles, const std::string& filename) {
+    void saveMeshToBinarySTL(const std::vector<std::tuple<Triangle, vec3f>>& meshTriangles, const std::string& filename) {
         std::ofstream outFile(filename, std::ios::binary);
 
         if (!outFile) {
@@ -198,13 +244,13 @@ namespace sinriv::kigstudio::voxel {
         outFile.write(reinterpret_cast<const char*>(&numTriangles), sizeof(uint32_t));
 
         // 写入每个三角形的数据
-        for (const auto& triangle : meshTriangles) {
+        for (const auto& [triangle, normal_vec] : meshTriangles) {
             const vec3f& v1 = std::get<0>(triangle);
             const vec3f& v2 = std::get<1>(triangle);
             const vec3f& v3 = std::get<2>(triangle);
 
-            // 简单设置法向量为零，可以根据需要计算真实法向量
-            float normal[3] = { 0, 0, 0 };
+            float normal[3] = { normal_vec.x, normal_vec.y, normal_vec.z };
+
             outFile.write(reinterpret_cast<const char*>(normal), 3 * sizeof(float));
 
             // 写入三角形顶点

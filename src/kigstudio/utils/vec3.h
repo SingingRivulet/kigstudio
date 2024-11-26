@@ -97,15 +97,21 @@ namespace sinriv::kigstudio {
         inline vec3<T> operator/(const T& p)const {
             return vec3<T>(x / p, y / p, z / p);
         }
-        inline vec3<T> operator*(const vec3<T>& i)const {
+        inline vec3<T> operator-()const {
+            return vec3<T>(-x, -y, -z);
+        }
+        inline vec3<T> cross(const vec3<T>& i)const {
             return vec3<T>(
-                y * i.z - z * i.y,
-                z * i.x - x * i.z,
-                z * i.y - y * i.x
+                x * i.y - y * i.x,
+                y * i.z - z * i.x,
+                z * i.x - x * i.z
             );
         }
-        inline T norm()const {
+        inline T length()const {
             return sqrt((x * x) + (y * y) + (z * z));
+        }
+        inline vec3<T> normalize()const {
+            return (*this) * invnorm();
         }
         inline T invnorm()const {
             return 1 / sqrt((x * x) + (y * y) + (z * z));
@@ -117,14 +123,14 @@ namespace sinriv::kigstudio {
         inline T dist(const vec3<T>& p)const {
             return sqrt(dist(p));
         }
-        inline T pro(const vec3<T>* p)const {
+        inline T dot(const vec3<T>* p)const {
             return (
                 (x * p->x) +
                 (y * p->y) +
                 (z * p->z)
                 );
         }
-        inline T pro(const vec3<T>& p)const {
+        inline T dot(const vec3<T>& p)const {
             return (
                 (x * p.x) +
                 (y * p.y) +

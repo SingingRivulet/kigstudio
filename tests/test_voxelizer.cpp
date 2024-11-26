@@ -10,13 +10,14 @@ int main() {
     sinriv::kigstudio::voxel::draw_triangle(
         voxelData,
         sinriv::kigstudio::voxel::Triangle({ 10,0,0 }, { 0,10,0 }, { 0,0,10 }),
+        sinriv::kigstudio::voxel::vec3f(0,0,0),
         1, 1, 1, 0.05);
 
-    std::vector<sinriv::kigstudio::voxel::Triangle> mesh;
+    std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle, sinriv::kigstudio::voxel::vec3f>> mesh;
 
     double isolevel = 0.5;
     int numTriangles = 0;
-    for (auto triangles : sinriv::kigstudio::voxel::generateMesh(voxelData, isolevel, numTriangles)) {
+    for (auto triangles : sinriv::kigstudio::voxel::generateMesh(voxelData, isolevel, numTriangles, true)) {
         mesh.push_back(triangles);
     }
     sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, "test_voxelizer.stl");
