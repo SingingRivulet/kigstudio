@@ -329,4 +329,41 @@ namespace sinriv::kigstudio::voxel {
         }
 
     }
+    bool isBinarySTL(const std::string& filePath) {
+        std::ifstream file(filePath, std::ios::binary);
+        if (!file.is_open()) {
+            std::cerr << "Failed to open file: " << filePath << std::endl;
+            return false; // 或者你可以抛出一个异常
+        }
+     
+        // 读取文件的前80个字节作为头部
+        std::vector<char> header(80);
+        file.read(header.data(), 80);
+     
+        // 检查头部是否包含ASCII STL文件的标志 "solid"
+        // 注意：这里我们假设"solid"后面紧跟着的字符不是ASCII可打印字符（如空格、制表符等），
+        // 这在大多数情况下是合理的，但并不是一个严格的检查。
+        const char* solidPrefix = "solid";
+        if (std::memcmp(header.data(), solidPrefix, 5) == 0 &&
+            (header[5] == ' ' || header[5] == '\t' || header[5] == '\n' || header[5] == '\r' || header[5] == '\0')) {
+            // 进一步检查以确保它看起来像一个有效的ASCII STL文件头
+            // 这只是一个简单的检查，实际上可能需要更复杂的逻辑来完全验证
+            bool isValidAsciiHeader = true;
+            for (int i = 6; i < 80; ++i) {
+                char c = header[i];
+                if (!(c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\0' || isprint(static_cast<unsigned char>(c)))) {
+                    isValidAsciiHeader = false;
+                    break;
+                }
+            }
+            if (isValidAsciiHeader) {
+                return false; // 是ASCII STL文件
+            }
+        }
+     
+        // 如果不是ASCII STL文件，我们假设它是二进制STL文件
+        // 注意：这个假设可能不总是正确的，因为理论上可以存在既不是ASCII也不是标准二进制格式的STL文件
+        // 但对于大多数实际应用来说，这个假设是足够的
+        return true; // 假设是二进制STL文件
+    }
 }

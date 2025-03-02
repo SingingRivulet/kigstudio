@@ -17,4 +17,18 @@ namespace sinriv::kigstudio::voxel {
     void saveMeshToBinarySTL(const std::vector<std::tuple<Triangle,vec3f>>& meshTriangles, const std::string& filename);
     Generator<std::tuple<Triangle, vec3f>> readSTL_ASCII(std::string filename);
     Generator<std::tuple<Triangle, vec3f>> readSTL_Binary(std::string filename);
+    bool isBinarySTL(const std::string& filePath);
+    inline Generator<std::tuple<Triangle, vec3f>> readSTL(std::string filename) {
+        if (isBinarySTL(filename)) {
+            return readSTL_Binary(filename);
+        } else {
+            return readSTL_ASCII(filename);
+        }
+    }
+
+    inline vec3f calcTriangleNormal(const Triangle& triangle) {
+        vec3f a, b, c;
+        std::tie(a, b, c) = triangle;
+        return (b - a).cross(c - a).normalize();
+    }
 }

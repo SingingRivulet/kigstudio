@@ -34,3 +34,5 @@
 build
 tmp
 .vscode
+
+dep/ogre

@@ -17,7 +17,11 @@ namespace sinriv::kigstudio::voxel {
             if (solidization > 0) {
                 //solidization
                 for (auto p : draw_line(point, point + normal * solidization)) {
-                    voxelData.insert({ (int)p.x, (int)p.y, (int)p.z });
+                    try{
+                        voxelData.insert({ (int)p.x, (int)p.y, (int)p.z });
+                    } catch (std::exception& e) {
+                        // std::cout << e.what() << std::endl;
+                    }
                 }
             }
         }

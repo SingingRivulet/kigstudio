@@ -115,6 +115,12 @@ namespace sinriv::kigstudio::octree {
         inline void insert(const Vec3i& point) {
             Vec3i minCorner(0, 0, 0);
             Vec3i maxCorner(size, size, size);
+            // 避免超出范围
+            if (point.x < 0 || point.x >= size || point.y < 0 || point.y >= size || point.z < 0 || point.z >= size) {
+                // std::cout << "inserting point out of range: (" << point.x << "," << point.y << "," << point.z
+                //           << ") max:" << size << std::endl;
+                throw std::out_of_range("Point out of range");
+            }
             insert(root, point, minCorner, maxCorner);
         }
 
