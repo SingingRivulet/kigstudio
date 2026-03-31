@@ -1,7 +1,12 @@
 #pragma once
+#include <concepts>
 #include <math.h>
+
 namespace sinriv::kigstudio {
-    template<typename T> struct vec3 {
+    template <typename T>
+    concept Numeric = std::integral<T> || std::floating_point<T>;
+
+    template<Numeric T> struct vec3 {
     public:
         T x;
         T y;

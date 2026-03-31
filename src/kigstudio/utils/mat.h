@@ -5,7 +5,7 @@
 
 namespace sinriv::kigstudio::mat {
 
-template <typename T>
+template <Numeric T>
 class matrix {
    public:
     // 构造函数，初始化矩阵
@@ -88,30 +88,33 @@ class matrix {
 
     void setPerspective(const T fov,
                         const T aspect,
-                        const T near,
-                        const T far) {
+                        const T zNear,
+                        const T zFar) {
         setZero();
+
         const T tan_half_fov = tan(fov / 2);
+
         data[0] = 1 / (aspect * tan_half_fov);
         data[5] = 1 / tan_half_fov;
-        data[10] = -(far + near) / (far - near);
+        data[10] = -(zFar + zNear) / (zFar - zNear);
         data[11] = -1;
-        data[14] = -2 * far * near / (far - near);
+        data[14] = -2 * zFar * zNear / (zFar - zNear);
     }
 
     void setOrthographic(const T left,
                          const T right,
                          const T bottom,
                          const T top,
-                         const T near,
-                         const T far) {
+                         const T zNear,
+                         const T zFar) {
         setZero();
+
         data[0] = 2 / (right - left);
         data[5] = 2 / (top - bottom);
-        data[10] = -2 / (far - near);
+        data[10] = -2 / (zFar - zNear);
         data[12] = -(right + left) / (right - left);
         data[13] = -(top + bottom) / (top - bottom);
-        data[14] = -(far + near) / (far - near);
+        data[14] = -(zFar + zNear) / (zFar - zNear);
     }
 
     void setLookAt(const T eyeX,
@@ -164,19 +167,25 @@ class matrix {
     }
 
     void invert() {
-        const T a00 = data[0], a01 = data[1], a02 = data[2], a03 = data[3],
-                a10 = data[4], a11 = data[5], a12 = data[6], a13 = data[7],
-                a20 = data[8], a21 = data[9], a22 = data[10], a23 = data[11],
-                a30 = data[12], a31 = data[13], a32 = data[14], a33 = data[15],
+        const T a00 = data[0], a01 = data[1], a02 = data[2], a03 = data[3];
+        const T a10 = data[4], a11 = data[5], a12 = data[6], a13 = data[7];
+        const T a20 = data[8], a21 = data[9], a22 = data[10], a23 = data[11];
+        const T a30 = data[12], a31 = data[13], a32 = data[14], a33 = data[15];
 
-                b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10,
-                b02 = a00 * a13 - a03 * a10, b03 = a01 * a12 - a02 * a11,
-                b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12,
-                b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30,
-                b08 = a20 * a33 - a23 * a30, b09 = a21 * a32 - a22 * a31,
-                b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32,
+        const T b00 = a00 * a11 - a01 * a10;
+        const T b01 = a00 * a12 - a02 * a10;
+        const T b02 = a00 * a13 - a03 * a10;
+        const T b03 = a01 * a12 - a02 * a11;
+        const T b04 = a01 * a13 - a03 * a11;
+        const T b05 = a02 * a13 - a03 * a12;
+        const T b06 = a20 * a31 - a21 * a30;
+        const T b07 = a20 * a32 - a22 * a30;
+        const T b08 = a20 * a33 - a23 * a30;
+        const T b09 = a21 * a32 - a22 * a31;
+        const T b10 = a21 * a33 - a23 * a31;
+        const T b11 = a22 * a33 - a23 * a32;
 
-                det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 -
+        const T det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 -
                       b04 * b07 + b05 * b06;
 
         if (det == 0) {
@@ -233,8 +242,8 @@ class vec4 {
         data[3] = w;
     }
 
-    vec3<T> toVec3() const { 
-        return vec3<T>(data[0]/data[3], data[1]/data[3], data[2]/data[3]); 
+    vec3<T> toVec3() const {
+        return vec3<T>(data[0] / data[3], data[1] / data[3], data[2] / data[3]);
     }
 
     T& operator[](int index) { return data[index]; }

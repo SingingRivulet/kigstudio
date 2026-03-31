@@ -35,4 +35,6 @@ build
 tmp
 .vscode
 
+dep/tmp
 dep/ogre
+dep/SDL2-2.30.11

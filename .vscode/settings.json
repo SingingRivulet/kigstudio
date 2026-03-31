@@ -1,4 +1,7 @@
 {
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "terminal.integrated.encoding": "utf8",
+    "files.encoding": "utf8",
     "files.associations": {
         "string_view": "cpp",
         "xlocale": "cpp",

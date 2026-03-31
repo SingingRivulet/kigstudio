@@ -1,0 +1,3 @@
+[submodule "dep/libtinyfiledialog"]
+	path = dep/libtinyfiledialog
+	url = https://github.com/native-toolkit/libtinyfiledialogs.git

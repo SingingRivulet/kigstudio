@@ -1,119 +1,134 @@
-#include <OGRE/Ogre.h>
-#include <OGRE/OgreInput.h>
-#include <OGRE/OgreCameraMan.h>
-#include <OGRE/OgreRTShaderSystem.h>
-#include <OGRE/OgreOverlaySystem.h>
+#include <Ogre.h>
+#include <OgreWindowEventUtilities.h>
 
-class MyApp
-    : public OgreBites::ApplicationContext
-    , public OgreBites::InputListener
+#include "kigstudio/voxel/voxelizer_svo.h"
+
+using namespace Ogre;
+
+/* =========================================================
+   把 generateMesh() 输出变成 Ogre Mesh
+   ========================================================= */
+void buildVoxelMeshToOgre(SceneManager* sceneMgr,
+                          sinriv::kigstudio::octree::Octree& voxelData)
 {
-public:
-    MyApp() : OgreBites::ApplicationContext("Ogre Minimal Demo") {}
+    double isolevel = 0.5;
+    int numTriangles = 0;
 
-    void setup() override
+    ManualObject* manual = sceneMgr->createManualObject("voxelMesh");
+
+    manual->begin("BaseWhite", RenderOperation::OT_TRIANGLE_LIST);
+
+    for (auto [tri, normal] :
+        sinriv::kigstudio::voxel::generateMesh(voxelData, isolevel, numTriangles, true))
     {
-        // 先让基类做基础初始化（窗口、资源定位等）
-        OgreBites::ApplicationContext::setup();
+        auto [v0, v1, v2] = tri;
 
-        // 输入监听
-        addInputListener(this);
+        manual->position((float)v0.x, (float)v0.y, (float)v0.z);
+        manual->normal((float)normal.x, (float)normal.y, (float)normal.z);
 
-        // 获取 Root 与场景管理器
-        Ogre::Root* root = getRoot();
-        Ogre::SceneManager* scnMgr = root->createSceneManager();
+        manual->position((float)v1.x, (float)v1.y, (float)v1.z);
+        manual->normal((float)normal.x, (float)normal.y, (float)normal.z);
 
-        // Overlay（可用于调试/显示文字）
-        auto* overlaySystem = new Ogre::OverlaySystem();
-        scnMgr->addRenderQueueListener(overlaySystem);
-
-        // RTShader System：自动为固定管线材质生成着色器
-        auto* shaderGen = Ogre::RTShader::ShaderGenerator::getSingletonPtr();
-        if (!shaderGen)
-        {
-            shaderGen = OGRE_NEW Ogre::RTShader::ShaderGenerator();
-            Ogre::RTShader::ShaderGenerator::initialize();
-        }
-        shaderGen->addSceneManager(scnMgr);
-
-        // 创建相机与摄像机控制
-        Ogre::Camera* cam = scnMgr->createCamera("MainCam");
-        cam->setNearClipDistance(0.5f);
-        cam->setAutoAspectRatio(true);
-
-        Ogre::SceneNode* camNode = scnMgr->getRootSceneNode()->createChildSceneNode();
-        camNode->attachObject(cam);
-
-        // 创建窗口视口
-        getRenderWindow()->addViewport(cam);
-
-        // CameraMan 提供 WASD/鼠标 控制
-        mCameraMan = std::make_unique<OgreBites::CameraMan>(camNode);
-        mCameraMan->setStyle(OgreBites::CS_ORBIT);
-        addInputListener(mCameraMan.get());
-
-        // 环境光与主光源
-        scnMgr->setAmbientLight(Ogre::ColourValue(0.5f, 0.5f, 0.5f));
-        Ogre::Light* light = scnMgr->createLight("MainLight");
-        Ogre::SceneNode* lightNode = scnMgr->getRootSceneNode()->createChildSceneNode();
-        lightNode->setPosition(50, 100, 50);
-        lightNode->attachObject(light);
-
-        // 资源：OgreBites::ApplicationContext 会自动定位默认媒体目录（包含 ogrehead.mesh）
-        // 加载资源组
-        Ogre::ResourceGroupManager::getSingleton().initialiseAllResourceGroups();
-
-        // 创建 ogre 头模型实体
-        Ogre::Entity* ent = scnMgr->createEntity("OgreHead", "ogrehead.mesh");
-        mModelNode = scnMgr->getRootSceneNode()->createChildSceneNode();
-        mModelNode->setPosition(0, 0, -20);
-        mModelNode->attachObject(ent);
-
-        // 让相机看向模型
-        camNode->setPosition(0, 5, 40);
-        camNode->lookAt(mModelNode->getPosition(), Ogre::Node::TS_WORLD);
-
-        // 简单的天空颜色
-        scnMgr->setSkyBox(false, "");
-        scnMgr->setSkyDome(false, "");
+        manual->position((float)v2.x, (float)v2.y, (float)v2.z);
+        manual->normal((float)normal.x, (float)normal.y, (float)normal.z);
     }
 
-    bool keyPressed(const OgreBites::KeyboardEvent& evt) override
-    {
-        if (evt.keysym.sym == OgreBites::SDLK_ESCAPE)
-        {
-            getRoot()->queueEndRendering();
-        }
-        return true;
-    }
+    manual->end();
 
-    bool frameRenderingQueued(const Ogre::FrameEvent& evt) override
-    {
-        // 让模型慢慢旋转
-        if (mModelNode)
-            mModelNode->yaw(Ogre::Degree(15.0f * evt.timeSinceLastFrame));
-        return true;
-    }
+    MeshPtr mesh = manual->convertToMesh("voxelMeshConverted");
 
-private:
-    std::unique_ptr<OgreBites::CameraMan> mCameraMan;
-    Ogre::SceneNode* mModelNode{nullptr};
-};
+    Entity* entity = sceneMgr->createEntity(mesh);
 
-int main(int argc, char** argv)
+    SceneNode* node = sceneMgr->getRootSceneNode()->createChildSceneNode();
+    node->attachObject(entity);
+
+    std::cout << "Voxel mesh triangles: " << numTriangles << std::endl;
+}
+
+/* =========================================================
+   主程序
+   ========================================================= */
+int main()
 {
-    try
+    std::cout << "Hello, Ogre!" << std::endl;
+    Root* root = new Root("plugins.cfg", "ogre.cfg", "ogre.log");
+
+    // OGRE 14 必须带参数
+    if (!root->restoreConfig())
     {
-        MyApp app;
-        app.initApp();
-        app.getRoot()->addFrameListener(&app);
-        app.getRoot()->startRendering();
-        app.closeApp();
+        if (!root->showConfigDialog(nullptr))
+            return 0;
     }
-    catch (const std::exception& e)
+
+    RenderWindow* window = root->initialise(true, "Voxel Viewer");
+    std::cout << "Window created." << std::endl;
+
+    SceneManager* sceneMgr = root->createSceneManager();
+
+    /* =========================
+       创建相机（OGRE14 正确写法）
+       ========================= */
+    Camera* cam = sceneMgr->createCamera("MainCamera");
+
+    SceneNode* camNode = sceneMgr->getRootSceneNode()->createChildSceneNode();
+    camNode->attachObject(cam);
+
+    camNode->setPosition(40, 40, 40);
+    camNode->lookAt(Vector3(0, 0, 0), Node::TS_WORLD);
+
+    cam->setNearClipDistance(0.1f);
+
+    Viewport* vp = window->addViewport(cam);
+    vp->setBackgroundColour(ColourValue(0.2f, 0.2f, 0.25f));
+
+    cam->setAspectRatio(
+        Real(vp->getActualWidth()) / Real(vp->getActualHeight()));
+
+    /* =========================
+       创建光照（OGRE14 正确写法）
+       ========================= */
+    Light* light = sceneMgr->createLight("MainLight");
+
+    SceneNode* lightNode = sceneMgr->getRootSceneNode()->createChildSceneNode();
+    lightNode->attachObject(light);
+
+    light->setType(Light::LT_DIRECTIONAL);
+    lightNode->setDirection(-1, -1, -1);
+
+    sceneMgr->setAmbientLight(ColourValue(0.3f, 0.3f, 0.3f));
+
+    /* =========================
+       构造体素数据
+       ========================= */
+    sinriv::kigstudio::octree::Octree voxelData(128);
+
+    sinriv::kigstudio::voxel::draw_triangle(
+        voxelData,
+        sinriv::kigstudio::voxel::Triangle({10,0,0}, {0,10,0}, {0,0,10}),
+        sinriv::kigstudio::voxel::vec3f(0,0,0),
+        1, 1, 1, 0.05);
+
+    /* =========================
+       直接显示体素重建 Mesh
+       ========================= */
+    buildVoxelMeshToOgre(sceneMgr, voxelData);
+    std::cout << "Voxel mesh built." << std::endl;
+
+    /* =========================
+       渲染循环
+       ========================= */
+    while (true)
     {
-        fprintf(stderr, "Exception: %s\n", e.what());
-        return EXIT_FAILURE;
+        WindowEventUtilities::messagePump();
+
+        if (!window->isVisible())
+            break;
+
+        if (!root->renderOneFrame())
+            break;
     }
-    return EXIT_SUCCESS;
+    std::cout << "Goodbye, Ogre!" << std::endl;
+
+    delete root;
+    return 0;
 }
