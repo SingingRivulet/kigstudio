@@ -1,3 +1,6 @@
 [submodule "dep/libtinyfiledialog"]
 	path = dep/libtinyfiledialog
 	url = https://github.com/native-toolkit/libtinyfiledialogs.git
+[submodule "dep/bgfx.cmake"]
+	path = dep/bgfx.cmake
+	url = https://github.com/bkaradzic/bgfx.cmake.git
