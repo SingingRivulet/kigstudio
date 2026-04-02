@@ -82,6 +82,8 @@ int main(int argc, char** argv) {
     SDL_VERSION(&wmi.version);
     if (!SDL_GetWindowWMInfo(window, &wmi)) {
         std::cerr << "SDL_GetWindowWMInfo failed" << std::endl;
+        SDL_DestroyWindow(window);
+        SDL_Quit();
         return -1;
     }
 
@@ -90,12 +92,6 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    if (!SDL_GetWindowWMInfo(window, &wmi)) {
-        std::cerr << "SDL_GetWindowWMInfo failed" << std::endl;
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return -1;
-    }
 
     std::cout << "Initializing bgfx platform" << std::endl;
 
@@ -116,7 +112,7 @@ int main(int argc, char** argv) {
     // }
 
     bgfx::Init init{};
-    init.type = bgfx::RendererType::Direct3D11;  // OpenGL/Direct3D11任选
+    init.type = bgfx::RendererType::OpenGL;  // OpenGL/Direct3D11任选
     init.resolution.width = 1280;
     init.resolution.height = 720;
     init.resolution.reset = BGFX_RESET_VSYNC;

@@ -1,0 +1,2 @@
+D:\project\kigstudio\build\dep\bgfx.cmake\cmake\bgfx\Debug\shaderc.exe -f  .\shader\base\vs_mesh_base.glsl -o .\shader\base\vs_mesh_base.bin  --type vertex --platform windows  -i D:\project\kigstudio\dep\bgfx.cmake\bgfx\src --profile 150
+D:\project\kigstudio\build\dep\bgfx.cmake\cmake\bgfx\Debug\shaderc.exe -f  .\shader\base\fs_mesh_base.glsl -o .\shader\base\fs_mesh_base.bin  --type fragment --platform windows  -i D:\project\kigstudio\dep\bgfx.cmake\bgfx\src --profile 150
