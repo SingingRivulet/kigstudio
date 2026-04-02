@@ -9,7 +9,10 @@
 #include <tuple>
 #include <vector>
 
+#include <iconfontheaders/icons_font_awesome.h>
+#include <iconfontheaders/icons_kenney.h>
 #include <imgui/imgui.h>
+#include <stb/stb_truetype.h>
 
 #include "kigstudio/ui/logger.h"
 #include "kigstudio/voxel/voxel2mesh.h"
@@ -145,6 +148,8 @@ int main() {
     bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x303030ff, 1.0f,
                        0);
 
+    imguiCreate();
+
     int width, height;
     SDL_GetWindowSize(window, &width, &height);
     bgfx::setViewRect(0, 0, 0, width, height);
@@ -164,21 +169,34 @@ int main() {
 
     while (running) {
         SDL_Event e;
+        ImGuiIO& io = ImGui::GetIO();
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT)
                 running = false;
 
             if (e.type == SDL_MOUSEBUTTONDOWN &&
-                e.button.button == SDL_BUTTON_LEFT)
+                e.button.button == SDL_BUTTON_LEFT) {
                 mouseDown = true;
+                io.MouseDown[0] = true;
+            }
+
             if (e.type == SDL_MOUSEBUTTONUP &&
-                e.button.button == SDL_BUTTON_LEFT)
+                e.button.button == SDL_BUTTON_LEFT) {
                 mouseDown = false;
-            if (e.type == SDL_MOUSEWHEEL)
+                io.MouseDown[0] = false;
+            }
+
+            if (e.type == SDL_MOUSEWHEEL) {
                 distance -= e.wheel.y * 10;
-            if (e.type == SDL_MOUSEMOTION && mouseDown) {
-                yaw += e.motion.xrel * 0.3f;
-                pitch += e.motion.yrel * 0.3f;
+                io.MouseWheel = (float)e.wheel.y;
+            }
+
+            if (e.type == SDL_MOUSEMOTION) {
+                if (mouseDown) {
+                    yaw += e.motion.xrel * 0.3f;
+                    pitch += e.motion.yrel * 0.3f;
+                }
+                io.MousePos = ImVec2((float)e.motion.x, (float)e.motion.y);
             }
 
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_o) {
@@ -187,6 +205,11 @@ int main() {
                 if (file) {
                     loadSTL(file, layout, mesh);
                 }
+            }
+
+            if (e.type == SDL_TEXTINPUT) {
+                io.AddInputCharactersUTF8(e.text.text);
+                break;
             }
         }
 
@@ -223,6 +246,21 @@ int main() {
                            BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA);
             bgfx::submit(0, program);
         }
+
+        ImGui::NewFrame();
+        ImGui::Begin("STL Loader");
+
+        if (ImGui::Button("Open STL (O)")) {
+            const char* file =
+                tinyfd_openFileDialog("Open STL", "", 0, NULL, "STL file", 0);
+            if (file)
+                loadSTL(file, layout, mesh);
+        }
+
+        ImGui::End();
+        ImGui::Render();
+
+        imguiEndFrame();
 
         bgfx::frame();
     }

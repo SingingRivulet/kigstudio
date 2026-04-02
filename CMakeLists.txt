@@ -22,7 +22,22 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/3rdparty/
     ${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/include
     )  
-  
+
+# imgui
+add_library(imgui
+    ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/3rdparty/dear-imgui/imgui.cpp
+    ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/3rdparty/dear-imgui/imgui_draw.cpp
+    ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/3rdparty/dear-imgui/imgui_widgets.cpp
+    ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/3rdparty/dear-imgui/imgui_tables.cpp
+    ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/examples/common/imgui/imgui.cpp
+)
+
+target_include_directories(imgui PUBLIC
+    ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/3rdparty/dear-imgui
+)
+
+target_link_libraries(imgui PUBLIC bgfx bx bimg)
+
 # 查找src目录中的所有.c文件  
 file(GLOB_RECURSE SRC_FILES 
     "${PROJECT_SOURCE_DIR}/src/**/*.cpp"
@@ -57,5 +72,31 @@ foreach(TEST_FILE ${TEST_FILES})
         shell32
         ole32
         winmm
+        imgui
     )
 endforeach()
+
+add_executable(
+    kigstudio_ui 
+    ${CMAKE_SOURCE_DIR}/ui/main.cpp
+    )
+    
+target_link_libraries(kigstudio_ui
+    kigstudio
+    bgfx
+    bx
+    bimg
+
+    "${SDL2_LIB_DIR}/SDL2.lib"
+    # "${SDL2_LIB_DIR}/SDL2main.lib"
+
+    d3d11
+    dxgi
+    dxguid
+    user32
+    gdi32
+    shell32
+    ole32
+    winmm
+    imgui
+)
