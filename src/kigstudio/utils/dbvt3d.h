@@ -134,13 +134,13 @@ class dbvt3d {
         }
 
         template <typename Func_t>
-        inline void rayTest(const ray<number_t>& ray, Func_t callback) {
+        inline void rayTest(const ray<number_t>& ray, Func_t callback) const {
             // 使用栈存储待处理的节点
-            std::stack<AABB*> nodeStack;
+            std::stack<const AABB*> nodeStack;
             nodeStack.push(this);  // 从当前节点开始
 
             while (!nodeStack.empty()) {
-                AABB* current = nodeStack.top();
+                const AABB* current = nodeStack.top();
                 nodeStack.pop();
 
                 // 处理左节点
@@ -164,7 +164,7 @@ class dbvt3d {
         }
 
         template <typename Func_t>
-        inline void collisionTest(const AABB* in, Func_t callback) {
+        inline void collisionTest(const AABB* in, Func_t callback) const {
             std::stack<const AABB*> nodeStack;
             nodeStack.push(this);  // 从当前节点开始
 
@@ -193,7 +193,7 @@ class dbvt3d {
         }
 
         template <typename Func_t>
-        inline void fetchByPoint(const vec3_n& point, Func_t callback) {
+        inline void fetchByPoint(const vec3_n& point, Func_t callback) const {
             std::stack<const AABB*> nodeStack;
             nodeStack.push(this);  // 从当前节点开始
 
@@ -358,16 +358,16 @@ class dbvt3d {
     }
 
     template <typename Func_t>
-    inline void rayTest(const ray<number_t>& ray, Func_t callback) {
+    inline void rayTest(const ray<number_t>& ray, Func_t callback) const {
         root->rayTest(ray, callback);
     }
 
     template <typename Func_t>
-    inline void collisionTest(const AABB* in, Func_t callback) {
+    inline void collisionTest(const AABB* in, Func_t callback) const {
         root->collisionTest(in, callback);
     }
     template <typename Func_t>
-    inline void fetchByPoint(const vec3_n& point, Func_t callback) {
+    inline void fetchByPoint(const vec3_n& point, Func_t callback) const {
         root->fetchByPoint(point, callback);
     }
     inline void makeID() {

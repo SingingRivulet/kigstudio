@@ -58,13 +58,14 @@ struct triangle_bvh {
 
     dbvt3d<number_t, trangle_box> bvh;
 
-    std::vector<std::unique_ptr<trangle_box>> trangles;
+    std::vector<std::unique_ptr<trangle_box>> trangles{};
+    vec3<number_t> global_boundBox_min{}, global_boundBox_max{};
 
     inline auto insert(const triangle& triangle) {
         auto ptr = std::make_unique<trangle_box>();
         ptr->vertex = triangle;
 
-        // 计算包围盒
+        // 计算三角形的包围盒
         typename sinriv::kigstudio::dbvt3d<number_t>::vec3_n boundBox_min,
             boundBox_max;
 
@@ -80,6 +81,25 @@ struct triangle_bvh {
         updateBounds(std::get<0>(triangle), boundBox_min, boundBox_max);
         updateBounds(std::get<1>(triangle), boundBox_min, boundBox_max);
         updateBounds(std::get<2>(triangle), boundBox_min, boundBox_max);
+
+        // 计算全局包围盒
+        if (trangles.empty()) {
+            global_boundBox_min = boundBox_min;
+            global_boundBox_max = boundBox_max;
+        } else {
+            global_boundBox_min.x =
+                std::min(global_boundBox_min.x, boundBox_min.x);
+            global_boundBox_min.y =
+                std::min(global_boundBox_min.y, boundBox_min.y);
+            global_boundBox_min.z =
+                std::min(global_boundBox_min.z, boundBox_min.z);
+            global_boundBox_max.x =
+                std::max(global_boundBox_max.x, boundBox_max.x);
+            global_boundBox_max.y =
+                std::max(global_boundBox_max.y, boundBox_max.y);
+            global_boundBox_max.z =
+                std::max(global_boundBox_max.z, boundBox_max.z);
+        }
 
         ptr->boundBox = bvh.add(
             typename sinriv::kigstudio::dbvt3d<number_t>::vec3_n(boundBox_min),
@@ -100,6 +120,31 @@ struct triangle_bvh {
                 callback(n, coll_pos);
             }
         });
+    }
+
+    template <typename Func_t>
+    inline void getSolid(const ray<number_t>& r, Func_t callback) {
+        // 计算射线上位于物体内部的区间
+        std::vector<std::tuple<vec3<number_t>, number_t>> coll_pos_list;
+        rayTest(r, [&](auto node, auto coll_pos) {
+            coll_pos_list.push_back(coll_pos);
+        });
+        if (coll_pos_list.empty()) {
+            return;
+        }
+        for (auto& coll_pos : coll_pos_list) {
+            std::get<1>(coll_pos) = (std::get<0>(coll_pos) - r.origin).length();
+        }
+        // 按离起点的距离排序
+        std::sort(coll_pos_list.begin(), coll_pos_list.end(),
+                  [](const auto& a, const auto& b) {
+                      return std::get<1>(a) < std::get<1>(b);
+                  });
+        // 相邻两个配对
+        for (size_t i = 0; i < coll_pos_list.size() - 1; i += 2) {
+            callback(std::get<0>(coll_pos_list[i]),
+                     std::get<0>(coll_pos_list[i + 1]));
+        }
     }
 };
 
