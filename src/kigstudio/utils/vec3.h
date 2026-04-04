@@ -1,5 +1,6 @@
 #pragma once
 #include <concepts>
+#include <iostream>
 #include <math.h>
 
 namespace sinriv::kigstudio {
@@ -31,7 +32,7 @@ namespace sinriv::kigstudio {
             y = yt;
             z = zt;
         }
-        friend std::ostream& operator<<(std::ostream& os, const vec3& v) {
+        inline friend std::ostream& operator<<(std::ostream& os, const vec3& v) {
             os << "(" << v.x << ", " << v.y << ", " << v.z << ")";
             return os;
         }
@@ -418,5 +419,24 @@ namespace sinriv::kigstudio {
             }
             return true;
         }
+    };
+
+    template<Numeric T>
+    struct ray {
+        vec3<T> begin, end;
+
+        ray() : begin(vec3<T>(0, 0, 0)), end(vec3<T>(0, 0, 0)) {}
+        ray(const vec3<T>& b, const vec3<T>& e) : begin(b), end(e) {}
+
+        vec3<T> direction() const {
+            return (end - begin).normalize();
+        }
+        vec3<T> getMiddle() const {
+            return (end + begin) * 0.5f;
+        }
+        float getLength() const {
+            return (end - begin).length();
+        }
+
     };
 }

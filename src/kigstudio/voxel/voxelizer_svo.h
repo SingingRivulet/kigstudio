@@ -1,8 +1,9 @@
 #pragma once
-#include "kigstudio/voxel/voxelizer.h"
+#include "kigstudio/voxel/mesh_voxelizer.h"
 #include "kigstudio/voxel/octree.h"
 #include "kigstudio/voxel/voxel2mesh.h"
 #include "kigstudio/utils/mat.h"
+#include "kigstudio/utils/dbvt3d.h"
 
 namespace sinriv::kigstudio::voxel {
 

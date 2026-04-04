@@ -4,12 +4,12 @@
 #include <tuple>
 #include <fstream>
 #include "kigstudio/voxel/octree.h"
-#include "kigstudio/utils/vec3.h"
+#include "kigstudio/voxel/triangle_bvh.h"
 #include "kigstudio/utils/generator.h"
 namespace sinriv::kigstudio::voxel {
 
     using vec3f = sinriv::kigstudio::vec3<float>;
-    using Triangle = std::tuple<vec3f, vec3f, vec3f>;
+    using Triangle = triangle_bvh<float>::triangle;
 
     Generator<std::tuple<Triangle,vec3f>> generateMesh(sinriv::kigstudio::octree::Octree& voxelData, double isolevel, int& numTriangles, bool computeNormals = false);
 

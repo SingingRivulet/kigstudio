@@ -15,6 +15,7 @@
 #include <stb/stb_truetype.h>
 
 #include "kigstudio/ui/logger.h"
+#include "kigstudio/voxel/voxelizer_svo.h"
 #include "kigstudio/voxel/voxel2mesh.h"
 #include "tinyfiledialogs.h"
 
@@ -36,14 +37,12 @@ struct PosNormalVertex {
     }
 };
 
-// --------- STL Loader ---------
-void loadSTL(const std::string& filename,
-             bgfx::VertexLayout& layout,
-             Mesh& mesh) {
+template <class T>
+void loadMesh(T&& stl, bgfx::VertexLayout& layout, Mesh& mesh) {
     std::vector<PosNormalVertex> vertices;
     std::vector<uint32_t> indices;
 
-    for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(filename)) {
+    for (auto [tri, n] : stl) {
         uint32_t base = vertices.size();
         vertices.push_back({std::get<0>(tri).x, std::get<0>(tri).y,
                             std::get<0>(tri).z, n.x, n.y, n.z});
@@ -75,6 +74,23 @@ void loadSTL(const std::string& filename,
 
     mesh.indexCount = indices.size();
     std::cout << "STL loaded: " << mesh.indexCount << " indices\n";
+}
+
+// --------- STL Loader ---------
+void loadSTL(const std::string& filename,
+             bgfx::VertexLayout& layout,
+             Mesh& mesh,
+             Mesh& voxels) {
+    loadMesh(sinriv::kigstudio::voxel::readSTL(filename), layout, mesh);
+    sinriv::kigstudio::octree::Octree voxelData(128);
+    sinriv::kigstudio::voxel::draw_triangle(
+        voxelData,
+        sinriv::kigstudio::voxel::Triangle({10,0,0}, {0,10,0}, {0,0,10}),
+        sinriv::kigstudio::voxel::vec3f(0,0,0),
+        1, 1, 1, 0.05);
+    double isolevel = 0.5;
+    int numTriangles = 0;
+    loadMesh(sinriv::kigstudio::voxel::generateMesh(voxelData, isolevel, numTriangles, true), layout, voxels);
 }
 
 // --------- Shader Loader ---------
@@ -161,9 +177,11 @@ int main() {
 
     bgfx::VertexLayout layout = {};
     PosNormalVertex::init(layout);
-    Mesh mesh;
+    Mesh mesh, voxels;
 
     bool running = true;
+    bool showMesh = true;
+    bool showVoxels = false;
     int oldW = width;
     int oldH = height;
 
@@ -203,7 +221,7 @@ int main() {
                 const char* file = tinyfd_openFileDialog("Open STL", "", 0,
                                                          NULL, "STL file", 0);
                 if (file) {
-                    loadSTL(file, layout, mesh);
+                    loadSTL(file, layout, mesh, voxels);
                 }
             }
 
@@ -235,12 +253,24 @@ int main() {
                     bgfx::getCaps()->homogeneousDepth);
         bgfx::setViewTransform(0, view, proj);
 
-        if (bgfx::isValid(mesh.vbh)) {
+        if (showMesh && bgfx::isValid(mesh.vbh)) {
             float mtx[16];
             bx::mtxRotateXY(mtx, bx::toRad(pitch), bx::toRad(yaw));
             bgfx::setTransform(mtx);
             bgfx::setVertexBuffer(0, mesh.vbh);
             bgfx::setIndexBuffer(mesh.ibh);
+            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                           BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                           BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA);
+            bgfx::submit(0, program);
+        }
+
+        if (showVoxels && bgfx::isValid(voxels.vbh)) {
+            float mtx[16];
+            bx::mtxRotateXY(mtx, bx::toRad(pitch), bx::toRad(yaw));
+            bgfx::setTransform(mtx);
+            bgfx::setVertexBuffer(0, voxels.vbh);
+            bgfx::setIndexBuffer(voxels.ibh);
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
                            BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA);
@@ -253,9 +283,13 @@ int main() {
         if (ImGui::Button("Open STL (O)")) {
             const char* file =
                 tinyfd_openFileDialog("Open STL", "", 0, NULL, "STL file", 0);
-            if (file)
-                loadSTL(file, layout, mesh);
+            if (file) {
+                loadSTL(file, layout, mesh, voxels);
+            }
         }
+
+        ImGui::Checkbox("show mesh", &showMesh);
+        ImGui::Checkbox("show voxels", &showVoxels);
 
         ImGui::End();
         ImGui::Render();
