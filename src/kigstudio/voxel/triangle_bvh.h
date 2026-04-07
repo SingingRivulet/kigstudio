@@ -7,6 +7,11 @@ namespace sinriv::kigstudio::voxel {
 template <sinriv::kigstudio::Numeric number_t>
 struct triangle_bvh {
     using triangle = std::tuple<vec3<number_t>, vec3<number_t>, vec3<number_t>>;
+    typedef enum {
+        voxel_face_X = 0,  // yz面
+        voxel_face_Y = 1,  // xz面
+        voxel_face_Z = 2   // xy面
+    } voxel_face_e;
     struct trangle_box {
         triangle vertex;
         sinriv::kigstudio::dbvt3d<number_t, trangle_box>::AABB* boundBox;
@@ -56,18 +61,98 @@ struct triangle_bvh {
             }
             return false;
         }
+
+        inline bool rayTest_AxisAligned(const ray<number_t>& r,
+                                        voxel_face_e face,
+                                        vec3<number_t>& coll_pos) const {
+            const auto& v0 = std::get<0>(vertex);
+            const auto& v1 = std::get<1>(vertex);
+            const auto& v2 = std::get<2>(vertex);
+
+            const vec3<number_t>& ro = r.begin;
+            vec3<number_t> rd = r.direction();
+
+            // 允许非单位，但必须轴对齐
+            // 找主轴
+            int axis = face;  // 直接用你的枚举
+
+            // === 1. 构造2D投影 ===
+            auto proj =
+                [&](const vec3<number_t>& v) -> std::pair<number_t, number_t> {
+                switch (axis) {
+                    case voxel_face_X:
+                        return {v.y, v.z};  // 投影到YZ
+                    case voxel_face_Y:
+                        return {v.x, v.z};  // 投影到XZ
+                    case voxel_face_Z:
+                        return {v.x, v.y};  // 投影到XY
+                }
+                return {0, 0};
+            };
+
+            auto [p0x, p0y] = proj(v0);
+            auto [p1x, p1y] = proj(v1);
+            auto [p2x, p2y] = proj(v2);
+
+            auto [rx, ry] = proj(ro);
+
+            // === 2. 2D 点在三角形内测试（无除法）===
+            auto cross2 = [](number_t ax, number_t ay, number_t bx,
+                             number_t by) { return ax * by - ay * bx; };
+
+            number_t c1 = cross2(p1x - p0x, p1y - p0y, rx - p0x, ry - p0y);
+            number_t c2 = cross2(p2x - p1x, p2y - p1y, rx - p1x, ry - p1y);
+            number_t c3 = cross2(p0x - p2x, p0y - p2y, rx - p2x, ry - p2y);
+
+            // 同号判断（允许贴边）
+            if (!((c1 >= 0 && c2 >= 0 && c3 >= 0) ||
+                  (c1 <= 0 && c2 <= 0 && c3 <= 0)))
+                return false;
+
+            // === 3. 解 t（用平面方程）===
+            vec3<number_t> edge1 = v1 - v0;
+            vec3<number_t> edge2 = v2 - v0;
+            vec3<number_t> n = edge1.cross(edge2);
+
+            number_t denom;
+            number_t num;
+
+            switch (axis) {
+                case voxel_face_X:
+                    denom = n.x;
+                    num = -(n.dot(ro - v0));
+                    break;
+                case voxel_face_Y:
+                    denom = n.y;
+                    num = -(n.dot(ro - v0));
+                    break;
+                case voxel_face_Z:
+                    denom = n.z;
+                    num = -(n.dot(ro - v0));
+                    break;
+                default:
+                    return false;
+            }
+
+            // 射线平行于三角形
+            if (std::abs(denom) < 1e-8)
+                return false;
+
+            number_t t = num / denom;
+
+            // === 4. 前向检测 ===
+            if (t < 0)
+                return false;
+
+            coll_pos = ro + rd * t;
+            return true;
+        }
     };
 
     dbvt3d<number_t, trangle_box> bvh;
 
     std::vector<std::unique_ptr<trangle_box>> trangles{};
     vec3<number_t> global_boundBox_min{}, global_boundBox_max{};
-
-    typedef enum {
-        voxel_face_X = 0,  // yz面
-        voxel_face_Y = 1,  // xz面
-        voxel_face_Z = 2   // xy面
-    } voxel_face_e;
 
     inline auto insert(const triangle& triangle) {
         auto ptr = std::make_unique<trangle_box>();
@@ -161,7 +246,7 @@ struct triangle_bvh {
         bvh.collisionTest(&box, [&](auto node) {
             auto n = node->data;
             vec3<number_t> coll_pos;
-            if (n->rayTest(r, coll_pos)) {
+            if (n->rayTest_AxisAligned(r, face, coll_pos)) {
                 callback(n, coll_pos);
             }
         });
