@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.10)
   
 # 设置项目名称  
 project(kigstudio)  
+find_package(OpenMP REQUIRED)
 
 set(SDL_DIR "${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/cmake")
 
@@ -46,6 +47,7 @@ file(GLOB_RECURSE SRC_FILES
 
 # 创建静态库libkigstudio.a  
 add_library(kigstudio STATIC ${SRC_FILES})  
+target_link_libraries(kigstudio PUBLIC OpenMP::OpenMP_CXX)
 
 # 编译可执行文件
 file(GLOB_RECURSE TEST_FILES "${PROJECT_SOURCE_DIR}/tests/*.cpp")  

@@ -18,7 +18,7 @@ class dbvt3d {
 
         dbvt3d* box;
 
-        vec3_n from, to;
+        vec3_n begin, end;
 
         int id;
 
@@ -37,61 +37,61 @@ class dbvt3d {
 
         inline number_t getMergeSizeSq(const AABB* other) const {
             vec3_n tf, tt;
-            tf.x = std::min(from.x, other->from.x);
-            tf.y = std::min(from.y, other->from.y);
-            tf.z = std::min(from.z, other->from.z);
+            tf.x = std::min(begin.x, other->begin.x);
+            tf.y = std::min(begin.y, other->begin.y);
+            tf.z = std::min(begin.z, other->begin.z);
 
-            tt.x = std::max(to.x, other->to.x);
-            tt.y = std::max(to.y, other->to.y);
-            tt.z = std::max(to.z, other->to.z);
+            tt.x = std::max(end.x, other->end.x);
+            tt.y = std::max(end.y, other->end.y);
+            tt.z = std::max(end.z, other->end.z);
 
             auto l = tt - tf;
             return (l.x * l.x + l.y * l.y + l.z * l.z);
         }
 
         inline void merge(const AABB* other, AABB* out) const {
-            out->from.x = std::min(from.x, other->from.x);
-            out->from.y = std::min(from.y, other->from.y);
-            out->from.z = std::min(from.z, other->from.z);
+            out->begin.x = std::min(begin.x, other->begin.x);
+            out->begin.y = std::min(begin.y, other->begin.y);
+            out->begin.z = std::min(begin.z, other->begin.z);
 
-            out->to.x = std::max(to.x, other->to.x);
-            out->to.y = std::max(to.y, other->to.y);
-            out->to.z = std::max(to.z, other->to.z);
+            out->end.x = std::max(end.x, other->end.x);
+            out->end.y = std::max(end.y, other->end.y);
+            out->end.z = std::max(end.z, other->end.z);
         }
 
         inline bool isEmpty() const {
-            return from.x > to.x || from.y > to.y || from.z > to.z;
+            return begin.x > end.x || begin.y > end.y || begin.z > end.z;
         }
 
         inline bool inBox(const vec3_n& point) const {
-            return ((point.x >= from.x && point.x <= to.x) &&
-                    (point.y >= from.y && point.y <= to.y) &&
-                    (point.z >= from.z && point.z <= to.z));
+            return ((point.x >= begin.x && point.x <= end.x) &&
+                    (point.y >= begin.y && point.y <= end.y) &&
+                    (point.z >= begin.z && point.z <= end.z));
         }
 
         inline bool intersects(const AABB* in) const {
-            return ((from.x >= in->from.x && from.x <= in->to.x) ||
-                    (in->from.x >= from.x && in->from.x <= to.x)) &&
-                   ((from.y >= in->from.y && from.y <= in->to.y) ||
-                    (in->from.y >= from.y && in->from.y <= to.y)) &&
-                   ((from.z >= in->from.z && from.z <= in->to.z) ||
-                    (in->from.z >= from.z && in->from.z <= to.z));
+            return ((begin.x >= in->begin.x && begin.x <= in->end.x) ||
+                    (in->begin.x >= begin.x && in->begin.x <= end.x)) &&
+                   ((begin.y >= in->begin.y && begin.y <= in->end.y) ||
+                    (in->begin.y >= begin.y && in->begin.y <= end.y)) &&
+                   ((begin.z >= in->begin.z && begin.z <= in->end.z) ||
+                    (in->begin.z >= begin.z && in->begin.z <= end.z));
         }
 
         inline bool inBox(const AABB* in) const {
-            return (((from.x >= in->from.x) && (to.x <= in->to.x)) &&
-                    ((from.y >= in->from.y) && (to.y <= in->to.y)) &&
-                    ((from.z >= in->from.z) && (to.z <= in->to.z)));
+            return (((begin.x >= in->begin.x) && (end.x <= in->end.x)) &&
+                    ((begin.y >= in->begin.y) && (end.y <= in->end.y)) &&
+                    ((begin.z >= in->begin.z) && (end.z <= in->end.z)));
         }
 
         inline number_t getSizeSq() const {
-            auto l = to - from;
+            auto l = end - begin;
             return (l.x * l.x + l.y * l.y + l.z * l.z);
         }
 
-        inline vec3_n getCenter() const { return (from + to) / 2; }
+        inline vec3_n getCenter() const { return (begin + end) / 2; }
 
-        inline vec3_n getExtent() const { return to - from; }
+        inline vec3_n getExtent() const { return end - begin; }
 
         inline bool intersects(const vec3_n& linemiddle,
                                const vec3_n& linevect,
@@ -129,8 +129,8 @@ class dbvt3d {
             right = NULL;
             parent = NULL;
             data = NULL;
-            from = vec3_n(0, 0, 0);
-            to = vec3_n(0, 0, 0);
+            begin = vec3_n(0, 0, 0);
+            end = vec3_n(0, 0, 0);
         }
 
         template <typename Func_t>
@@ -348,10 +348,10 @@ class dbvt3d {
 
     inline void add(AABB* in) { root->add(in); }
     inline void remove(AABB* in) { in->remove(); }
-    inline AABB* add(const vec3_n& from, const vec3_n& to, data_t* data) {
+    inline AABB* add(const vec3_n& begin, const vec3_n& end, data_t* data) {
         auto p = createAABB();
-        p->from = from;
-        p->to = to;
+        p->begin = begin;
+        p->end = end;
         p->data = data;
         root->add(p);
         return p;

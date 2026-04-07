@@ -106,11 +106,11 @@ namespace sinriv::kigstudio {
         inline vec3<T> operator-()const {
             return vec3<T>(-x, -y, -z);
         }
-        inline vec3<T> cross(const vec3<T>& i)const {
-            return vec3<T>(
-                x * i.y - y * i.x,
-                y * i.z - z * i.x,
-                z * i.x - x * i.z
+        inline vec3<T> cross(const vec3<T>& o)const {
+            return vec3(
+                y * o.z - z * o.y,  // x 分量
+                z * o.x - x * o.z,  // y 分量 (注意这里是减号)
+                x * o.y - y * o.x   // z 分量
             );
         }
         inline T length()const {
@@ -438,5 +438,9 @@ namespace sinriv::kigstudio {
             return (end - begin).length();
         }
 
+        inline friend std::ostream& operator<<(std::ostream& os, const ray& v) {
+            os << v.begin << " -> " << v.end;
+            return os;
+        }
     };
 }
