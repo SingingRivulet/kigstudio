@@ -31,36 +31,24 @@ struct triangle_bvh {
             vec3<number_t> h = dir.cross(edge2);
             number_t a = edge1.dot(h);
 
-            // 打印这些关键值
-            // std::cout << "  [DEBUG] edge1: " << edge1 << std::endl;
-            // std::cout << "  [DEBUG] edge2: " << edge2 << std::endl;
-            // std::cout << "  [DEBUG] h: " << h << std::endl;
-            // std::cout << "  [DEBUG] a (determinant): " << a << std::endl;
-
             if (std::abs(a) < 1e-8)
                 return false;
 
             number_t f = 1.0 / a;
             vec3<number_t> s = r.begin - v0;
 
-            // std::cout << "  [DEBUG] s (origin - v0): " << s << std::endl;
-            // std::cout << "  [DEBUG] s.dot(h): " << s.dot(h) << std::endl;
-
             number_t u = f * s.dot(h);
-            // std::cout << "  [DEBUG] u: " << u << std::endl;
 
             if (u < 0.0 || u > 1.0)
                 return false;
 
             vec3<number_t> q = s.cross(edge1);
             number_t v = f * dir.dot(q);
-            // std::cout << "  [DEBUG] v: " << v << std::endl;
 
             if (v < 0.0 || u + v > 1.0)
                 return false;
 
             number_t t = f * edge2.dot(q);
-            // std::cout << "  [DEBUG] t: " << t << std::endl;
 
             if (t > 1e-4) {
                 coll_pos = r.begin + dir * t;
@@ -74,6 +62,12 @@ struct triangle_bvh {
 
     std::vector<std::unique_ptr<trangle_box>> trangles{};
     vec3<number_t> global_boundBox_min{}, global_boundBox_max{};
+
+    typedef enum {
+        voxel_face_X = 0,  // yz面
+        voxel_face_Y = 1,  // xz面
+        voxel_face_Z = 2   // xy面
+    } voxel_face_e;
 
     inline auto insert(const triangle& triangle) {
         auto ptr = std::make_unique<trangle_box>();
@@ -153,13 +147,31 @@ struct triangle_bvh {
     }
 
     template <typename Func_t>
-    inline void getSolid(const ray<number_t>& r, Func_t callback) {
-        // 计算射线上位于物体内部的区间
-        std::vector<std::tuple<vec3<number_t>, number_t>> coll_pos_list;
-        rayTest(r, [&](auto node, auto coll_pos) {
-            coll_pos_list.push_back(
-                std::tuple<vec3<number_t>, number_t>(coll_pos, 0.));
+    inline void rayTest_AxisAligned(const ray<number_t>& r,
+                                    vec3<number_t> half_voxel_size,
+                                    voxel_face_e face,
+                                    Func_t callback) {
+        typename dbvt3d<number_t, trangle_box>::AABB box;
+        box.begin.x = std::min(r.begin.x, r.end.x) - half_voxel_size.x;
+        box.begin.y = std::min(r.begin.y, r.end.y) - half_voxel_size.y;
+        box.begin.z = std::min(r.begin.z, r.end.z) - half_voxel_size.z;
+        box.end.x = std::max(r.begin.x, r.end.x) + half_voxel_size.x;
+        box.end.y = std::max(r.begin.y, r.end.y) + half_voxel_size.y;
+        box.end.z = std::max(r.begin.z, r.end.z) + half_voxel_size.z;
+        bvh.collisionTest(&box, [&](auto node) {
+            auto n = node->data;
+            vec3<number_t> coll_pos;
+            if (n->rayTest(r, coll_pos)) {
+                callback(n, coll_pos);
+            }
         });
+    }
+
+    template <typename Func_t>
+    inline void solveSolid(
+        const ray<number_t>& r,
+        std::vector<std::tuple<vec3<number_t>, number_t>>& coll_pos_list,
+        Func_t callback) {
         if (coll_pos_list.empty()) {
             return;
         } else {
@@ -168,7 +180,7 @@ struct triangle_bvh {
             //           << std::endl;
         }
         for (auto& coll_pos : coll_pos_list) {
-            std::get<1>(coll_pos) = (std::get<0>(coll_pos) - r.begin).length();
+            std::get<1>(coll_pos) = (std::get<0>(coll_pos) - r.begin).L1();
         }
         // 按离起点的距离排序
         std::sort(coll_pos_list.begin(), coll_pos_list.end(),
@@ -182,67 +194,121 @@ struct triangle_bvh {
         }
     }
 
-    typedef enum {
-        voxel_face_X = 0,  // yz面
-        voxel_face_Y = 1,  // xz面
-        voxel_face_Z = 2   // xy面
-    } voxel_face_e;
+    template <typename Func_t>
+    inline void getSolid(const ray<number_t>& r, Func_t callback) {
+        // 计算射线上位于物体内部的区间
+        std::vector<std::tuple<vec3<number_t>, number_t>> coll_pos_list;
+        rayTest(r, [&](auto node, auto coll_pos) {
+            coll_pos_list.push_back(std::tuple<vec3<number_t>, number_t>(
+                coll_pos, static_cast<number_t>(0)));
+        });
+        solveSolid(r, coll_pos_list, callback);
+    }
+
+    template <typename Func_t>
+    inline void getSolid_AxisAligned(const ray<number_t>& r,
+                                     vec3<number_t> half_voxel_size,
+                                     voxel_face_e face,
+                                     Func_t callback) {
+        // 计算射线上位于物体内部的区间
+        std::vector<std::tuple<vec3<number_t>, number_t>> coll_pos_list;
+        rayTest_AxisAligned(
+            r, half_voxel_size, face, [&](auto node, auto coll_pos) {
+                coll_pos_list.push_back(std::tuple<vec3<number_t>, number_t>(
+                    coll_pos, static_cast<number_t>(0)));
+            });
+        solveSolid(r, coll_pos_list, callback);
+    }
+
     // 从坐标轴平面按指定间距发射一系列射线进行处理
     template <typename Func_t>
-    inline void getSolidByFace(float voxelsizex,   // Voxel size on X-axis
-                               float voxelsizey,   // Voxel size on Y-axis
-                               float voxelsizez,   // Voxel size on Z-axis
-                               voxel_face_e face,  // Face to emit rays
+    inline void getSolidByFace(number_t voxelsizex,  // Voxel size on X-axis
+                               number_t voxelsizey,  // Voxel size on Y-axis
+                               number_t voxelsizez,  // Voxel size on Z-axis
+                               voxel_face_e face,    // Face to emit rays
                                Func_t callback) {
         if (trangles.empty()) {
             return;
         }
-        auto min = global_boundBox_min;
-        auto max = global_boundBox_max;
-        int num_block_x = ceil((max.x - min.x) / voxelsizex);
-        int num_block_y = ceil((max.y - min.y) / voxelsizey);
-        int num_block_z = ceil((max.z - min.z) / voxelsizez);
+        auto colltest_min = global_boundBox_min;
+        auto colltest_max = global_boundBox_max;
+        colltest_min.x = floor(colltest_min.x / voxelsizex) * voxelsizex;
+        colltest_min.y = floor(colltest_min.y / voxelsizey) * voxelsizey;
+        colltest_min.z = floor(colltest_min.z / voxelsizez) * voxelsizez;
+        colltest_max.x = ceil(colltest_max.x / voxelsizex) * voxelsizex;
+        colltest_max.y = ceil(colltest_max.y / voxelsizey) * voxelsizey;
+        colltest_max.z = ceil(colltest_max.z / voxelsizez) * voxelsizez;
+
+        int num_block_x = ceil((colltest_max.x - colltest_min.x) / voxelsizex);
+        int num_block_y = ceil((colltest_max.y - colltest_min.y) / voxelsizey);
+        int num_block_z = ceil((colltest_max.z - colltest_min.z) / voxelsizez);
+
+        vec3 half_voxel_size(voxelsizex / 2, voxelsizey / 2, voxelsizez / 2);
+
         if (face == voxel_face_X) {
-            // std::cout << "getSolidByFace by voxel_face_X" << std::endl;
-            #pragma omp for collapse(2)
+// std::cout << "getSolidByFace by voxel_face_X" << std::endl;
+#pragma omp for collapse(2)
             for (int i = 0; i < num_block_y; ++i) {
                 for (int j = 0; j < num_block_z; ++j) {
-                    auto ray_ori = vec3<number_t>(min.x, min.y + i * voxelsizey,
-                                                  min.z + j * voxelsizez);
-                    auto ray_end = vec3<number_t>(max.x, min.y + i * voxelsizey,
-                                                  min.z + j * voxelsizez);
+                    auto ray_ori = vec3<number_t>(
+                        colltest_min.x, colltest_min.y + i * voxelsizey,
+                        colltest_min.z + j * voxelsizez);
+                    auto ray_end = vec3<number_t>(
+                        colltest_max.x, colltest_min.y + i * voxelsizey,
+                        colltest_min.z + j * voxelsizez);
                     ray<number_t> ray(ray_ori, ray_end);
-                    getSolid(ray, [&](auto start, auto end) {
-                        callback(start, end);
-                    });
+                    // getSolid(ray, [&](auto start, auto end) {
+                    getSolid_AxisAligned(
+                        ray, half_voxel_size, face, [&](auto start, auto end) {
+                            auto start_i = vec3<number_t>(
+                                round(start.x / voxelsizex), start.y, start.z);
+                            auto end_i = vec3<number_t>(
+                                round(end.x / voxelsizex), end.y, end.z);
+                            callback(start_i, end_i);
+                        });
                 }
             }
         } else if (face == voxel_face_Y) {
-            // std::cout << "getSolidByFace by voxel_face_Y" << std::endl;
-            #pragma omp for collapse(2)
+// std::cout << "getSolidByFace by voxel_face_Y" << std::endl;
+#pragma omp for collapse(2)
             for (int i = 0; i < num_block_x; ++i) {
                 for (int j = 0; j < num_block_z; ++j) {
-                    auto ray_ori = vec3<number_t>(min.x + i * voxelsizex, min.y,
-                                                  min.z + j * voxelsizez);
-                    auto ray_end = vec3<number_t>(min.x + i * voxelsizex, max.y,
-                                                  min.z + j * voxelsizez);
+                    auto ray_ori = vec3<number_t>(
+                        colltest_min.x + i * voxelsizex, colltest_min.y,
+                        colltest_min.z + j * voxelsizez);
+                    auto ray_end = vec3<number_t>(
+                        colltest_min.x + i * voxelsizex, colltest_max.y,
+                        colltest_min.z + j * voxelsizez);
                     ray<number_t> ray(ray_ori, ray_end);
-                    getSolid(ray, [&](auto start, auto end) {
-                        callback(start, end);
-                    });
+                    // getSolid(ray, [&](auto start, auto end) {
+                    getSolid_AxisAligned(
+                        ray, half_voxel_size, face, [&](auto start, auto end) {
+                            auto start_i = vec3<number_t>(
+                                start.x, round(start.y / voxelsizey), start.z);
+                            auto end_i = vec3<number_t>(
+                                end.x, round(end.y / voxelsizey), end.z);
+                            callback(start_i, end_i);
+                        });
                 }
             }
         } else if (face == voxel_face_Z) {
-            // std::cout << "getSolidByFace by voxel_face_Z" << std::endl;
-            #pragma omp for collapse(2)
+// std::cout << "getSolidByFace by voxel_face_Z" << std::endl;
+#pragma omp for collapse(2)
             for (int i = 0; i < num_block_x; ++i) {
-                auto ray_ori =
-                    vec3<number_t>(min.x + i * voxelsizex, min.y, min.z);
-                auto ray_end =
-                    vec3<number_t>(min.x + i * voxelsizex, min.y, max.z);
+                auto ray_ori = vec3<number_t>(colltest_min.x + i * voxelsizex,
+                                              colltest_min.y, colltest_min.z);
+                auto ray_end = vec3<number_t>(colltest_min.x + i * voxelsizex,
+                                              colltest_min.y, colltest_max.z);
                 ray<number_t> ray(ray_ori, ray_end);
-                getSolid(ray,
-                         [&](auto start, auto end) { callback(start, end); });
+                // getSolid(ray, [&](auto start, auto end) {
+                getSolid_AxisAligned(
+                    ray, half_voxel_size, face, [&](auto start, auto end) {
+                        auto start_i = vec3<number_t>(
+                            start.x, start.y, round(start.z / voxelsizez));
+                        auto end_i = vec3<number_t>(end.x, end.y,
+                                                    round(end.z / voxelsizez));
+                        callback(start_i, end_i);
+                    });
             }
         }
     }

@@ -13,7 +13,7 @@ void test_bvh() {
                        sinriv::kigstudio::voxel::triangle_bvh<
                            float>::voxel_face_e::voxel_face_X,
                        [&](auto start, auto end) {
-                        //    std::cout << start << "->" << end << std::endl;
+                           std::cout << start << "->" << end << std::endl;
                        });
 }
 void test_triangle_coll() {
@@ -31,7 +31,7 @@ void test_triangle_coll() {
 
     // 构造两个射线对象：一个用长向量，一个用归一化向量
     ray<number_t> ray_original(r_start, r_end);
-    ray<number_t> ray_normalized(r_start, r_end+r_dir_long.normalize());
+    ray<number_t> ray_normalized(r_start, r_end + r_dir_long.normalize());
 
     std::cout << "ray begin:" << r_start << std::endl;
     std::cout << "ray length:: " << r_dir_long.length() << std::endl;
@@ -39,15 +39,34 @@ void test_triangle_coll() {
 
     // 2. 准备三角形数据 (从日志中提取的几个典型三角形)
     std::vector<triangle> test_tris = {
-        triangle(std::make_tuple(vec3<number_t>(17.44, -115.29, 54.96),
-                                 vec3<number_t>(20.27, -114.92, 56.73),
-                                 vec3<number_t>(17.40, -115.25, 56.75))),
-        triangle(std::make_tuple(vec3<number_t>(17.44, -115.29, 54.96),
-                                 vec3<number_t>(20.32, -114.96, 54.94),
-                                 vec3<number_t>(20.27, -114.92, 56.73))),
-        triangle(std::make_tuple(vec3<number_t>(-17.44, -115.29, 54.96),
-                                 vec3<number_t>(-17.40, -115.25, 56.75),
-                                 vec3<number_t>(-20.27, -114.92, 56.73)))};
+        triangle(std::make_tuple(vec3<number_t>(static_cast<number_t>(17.44),
+                                                static_cast<number_t>(-115.29),
+                                                static_cast<number_t>(54.96)),
+                                 vec3<number_t>(static_cast<number_t>(20.27),
+                                                static_cast<number_t>(-114.92),
+                                                static_cast<number_t>(56.73)),
+                                 vec3<number_t>(static_cast<number_t>(17.40),
+                                                static_cast<number_t>(-115.25),
+                                                static_cast<number_t>(56.75)))),
+        triangle(std::make_tuple(vec3<number_t>(static_cast<number_t>(17.44),
+                                                static_cast<number_t>(-115.29),
+                                                static_cast<number_t>(54.96)),
+                                 vec3<number_t>(static_cast<number_t>(20.32),
+                                                static_cast<number_t>(-114.96),
+                                                static_cast<number_t>(54.94)),
+                                 vec3<number_t>(static_cast<number_t>(20.27),
+                                                static_cast<number_t>(-114.92),
+                                                static_cast<number_t>(56.73)))),
+        triangle(
+            std::make_tuple(vec3<number_t>(static_cast<number_t>(-17.44),
+                                           static_cast<number_t>(-115.29),
+                                           static_cast<number_t>(54.96)),
+                            vec3<number_t>(static_cast<number_t>(-17.40),
+                                           static_cast<number_t>(-115.25),
+                                           static_cast<number_t>(56.75)),
+                            vec3<number_t>(static_cast<number_t>(-20.27),
+                                           static_cast<number_t>(-114.92),
+                                           static_cast<number_t>(56.73))))};
 
     sinriv::kigstudio::voxel::triangle_bvh<number_t>::trangle_box box;
     vec3<number_t> hit_pos;

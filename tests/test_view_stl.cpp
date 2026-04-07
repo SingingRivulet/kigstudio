@@ -43,7 +43,7 @@ void loadMesh(T&& stl, bgfx::VertexLayout& layout, Mesh& mesh) {
     std::vector<uint32_t> indices;
 
     for (auto [tri, n] : stl) {
-        uint32_t base = vertices.size();
+        uint32_t base = static_cast<uint32_t>(vertices.size());
         vertices.push_back({std::get<0>(tri).x, std::get<0>(tri).y,
                             std::get<0>(tri).z, n.x, n.y, n.z});
         vertices.push_back({std::get<1>(tri).x, std::get<1>(tri).y,

@@ -116,6 +116,9 @@ namespace sinriv::kigstudio {
         inline T length()const {
             return sqrt((x * x) + (y * y) + (z * z));
         }
+        inline T L1()const {
+            return abs(x) + abs(y) + abs(z);
+        }
         inline vec3<T> normalize()const {
             return (*this) * invnorm();
         }
