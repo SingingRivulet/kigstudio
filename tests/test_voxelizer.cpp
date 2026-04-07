@@ -39,7 +39,7 @@ int main() {
     sinriv::kigstudio::octree::Octree voxelData2(512);
     sinriv::kigstudio::mat::matrix<float> mat;
     mat.setIdentity();
-    sinriv::kigstudio::voxel::create_solid_mesh(voxelData2, "test_voxelizer_tmp.stl", mat, 1, 1, 1, 0.05, 100);
+    sinriv::kigstudio::voxel::create_surface_mesh(voxelData2, "test_voxelizer_tmp.stl", mat, 1, 1, 1, 0.05, 100);
     mesh.clear();
     for (auto triangles : sinriv::kigstudio::voxel::generateMesh(voxelData2, isolevel, numTriangles, true)) {
         mesh.push_back(triangles);

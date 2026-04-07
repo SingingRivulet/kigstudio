@@ -4,6 +4,7 @@
 #include <array>
 #include <stack>
 #include <memory>
+#include "kigstudio/utils/vec3.h"
 
 namespace sinriv::kigstudio::octree {
     // 定义三维向量结构体
@@ -109,6 +110,8 @@ namespace sinriv::kigstudio::octree {
         bool find(const std::unique_ptr<OctreeNode>& node, const Vec3i& point, const Vec3i& minCorner, const Vec3i& maxCorner) const;
 
     public:
+        vec3<float> global_position = {0.f, 0.f, 0.f}; // 八叉树空间的全局位置
+        vec3<float> voxel_size = {1.f, 1.f, 1.f}; // 八叉树空间中每个小立方体的边长
         inline Octree(int size) : size(size) {}
 
         // 插入点

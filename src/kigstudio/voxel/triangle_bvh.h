@@ -2,6 +2,8 @@
 #include <iomanip>
 #include "kigstudio/utils/dbvt3d.h"
 #include "kigstudio/utils/vec3.h"
+
+#include <bit>
 namespace sinriv::kigstudio::voxel {
 
 template <sinriv::kigstudio::Numeric number_t>
@@ -87,7 +89,7 @@ struct triangle_bvh {
                     case voxel_face_Z:
                         return {v.x, v.y};  // 投影到XY
                 }
-                return {0, 0};
+                return {static_cast<number_t>(0), static_cast<number_t>(0)};
             };
 
             auto [p0x, p0y] = proj(v0);
@@ -151,8 +153,22 @@ struct triangle_bvh {
 
     dbvt3d<number_t, trangle_box> bvh;
 
-    std::vector<std::unique_ptr<trangle_box>> trangles{};
+    std::vector<std::unique_ptr<trangle_box>> triangles{};
     vec3<number_t> global_boundBox_min{}, global_boundBox_max{};
+
+    inline int getOctreeVoxelEdgeSize(
+        number_t voxelsizex,  // Voxel size on X-axis
+        number_t voxelsizey,  // Voxel size on Y-axis
+        number_t voxelsizez  // Voxel size on Z-axis
+    ) const {
+        auto size = global_boundBox_max - global_boundBox_min;
+        int size_x = ceil(size.x / voxelsizex);
+        int size_y = ceil(size.y / voxelsizey);
+        int size_z = ceil(size.z / voxelsizez);
+        int size_max = std::max(std::max(size_x, size_y), size_z);
+        // 计算 2 的幂次
+        return std::bit_ceil(static_cast<uint32_t>(size_max));
+    }
 
     inline auto insert(const triangle& triangle) {
         auto ptr = std::make_unique<trangle_box>();
@@ -183,7 +199,7 @@ struct triangle_bvh {
         updateBounds(std::get<2>(triangle), boundBox_min, boundBox_max);
 
         // 计算全局包围盒
-        if (trangles.empty()) {
+        if (triangles.empty()) {
             global_boundBox_min = boundBox_min;
             global_boundBox_max = boundBox_max;
         } else {
@@ -209,7 +225,7 @@ struct triangle_bvh {
             ptr.get());
 
         auto res = ptr.get();
-        trangles.push_back(std::move(ptr));
+        triangles.push_back(std::move(ptr));
         return res;
     }
 
@@ -312,7 +328,7 @@ struct triangle_bvh {
                                number_t voxelsizez,  // Voxel size on Z-axis
                                voxel_face_e face,    // Face to emit rays
                                Func_t callback) {
-        if (trangles.empty()) {
+        if (triangles.empty()) {
             return;
         }
         auto colltest_min = global_boundBox_min;
@@ -324,9 +340,12 @@ struct triangle_bvh {
         colltest_max.y = ceil(colltest_max.y / voxelsizey) * voxelsizey;
         colltest_max.z = ceil(colltest_max.z / voxelsizez) * voxelsizez;
 
-        int num_block_x = ceil((colltest_max.x - colltest_min.x) / voxelsizex);
-        int num_block_y = ceil((colltest_max.y - colltest_min.y) / voxelsizey);
-        int num_block_z = ceil((colltest_max.z - colltest_min.z) / voxelsizez);
+        int num_block_x = static_cast<int>(
+            ceil((colltest_max.x - colltest_min.x) / voxelsizex));
+        int num_block_y = static_cast<int>(
+            ceil((colltest_max.y - colltest_min.y) / voxelsizey));
+        int num_block_z = static_cast<int>(
+            ceil((colltest_max.z - colltest_min.z) / voxelsizez));
 
         vec3 half_voxel_size(voxelsizex / 2, voxelsizey / 2, voxelsizez / 2);
 

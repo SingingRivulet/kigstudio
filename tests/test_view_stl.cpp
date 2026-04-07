@@ -82,12 +82,12 @@ void loadSTL(const std::string& filename,
              Mesh& mesh,
              Mesh& voxels) {
     loadMesh(sinriv::kigstudio::voxel::readSTL(filename), layout, mesh);
-    sinriv::kigstudio::octree::Octree voxelData(128);
-    sinriv::kigstudio::voxel::draw_triangle(
-        voxelData,
-        sinriv::kigstudio::voxel::Triangle({10,0,0}, {0,10,0}, {0,0,10}),
-        sinriv::kigstudio::voxel::vec3f(0,0,0),
-        1, 1, 1, 0.05);
+    sinriv::kigstudio::voxel::triangle_bvh<float> bvh;
+    for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(filename)) {
+        bvh.insert(tri);
+    }
+    sinriv::kigstudio::octree::Octree voxelData(bvh.getOctreeVoxelEdgeSize(1,1,1));
+    sinriv::kigstudio::voxel::create_solid_mesh(voxelData,bvh, 1, 1, 1);
     double isolevel = 0.5;
     int numTriangles = 0;
     loadMesh(sinriv::kigstudio::voxel::generateMesh(voxelData, isolevel, numTriangles, true), layout, voxels);
