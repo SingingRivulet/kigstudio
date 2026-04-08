@@ -159,7 +159,7 @@ struct triangle_bvh {
     inline int getOctreeVoxelEdgeSize(
         number_t voxelsizex,  // Voxel size on X-axis
         number_t voxelsizey,  // Voxel size on Y-axis
-        number_t voxelsizez  // Voxel size on Z-axis
+        number_t voxelsizez   // Voxel size on Z-axis
     ) const {
         auto size = global_boundBox_max - global_boundBox_min;
         int size_x = ceil(size.x / voxelsizex);
@@ -167,7 +167,7 @@ struct triangle_bvh {
         int size_z = ceil(size.z / voxelsizez);
         int size_max = std::max(std::max(size_x, size_y), size_z);
         // 计算 2 的幂次
-        return std::bit_ceil(static_cast<uint32_t>(size_max));
+        return std::bit_ceil(static_cast<uint32_t>(size_max + 1));
     }
 
     inline auto insert(const triangle& triangle) {
@@ -365,9 +365,11 @@ struct triangle_bvh {
                     getSolid_AxisAligned(
                         ray, half_voxel_size, face, [&](auto start, auto end) {
                             auto start_i = vec3<number_t>(
-                                round(start.x / voxelsizex), start.y, start.z);
+                                round(start.x / voxelsizex) * voxelsizex,
+                                start.y, start.z);
                             auto end_i = vec3<number_t>(
-                                round(end.x / voxelsizex), end.y, end.z);
+                                round(end.x / voxelsizex) * voxelsizex, end.y,
+                                end.z);
                             callback(start_i, end_i);
                         });
                 }
@@ -388,9 +390,12 @@ struct triangle_bvh {
                     getSolid_AxisAligned(
                         ray, half_voxel_size, face, [&](auto start, auto end) {
                             auto start_i = vec3<number_t>(
-                                start.x, round(start.y / voxelsizey), start.z);
+                                start.x,
+                                round(start.y / voxelsizey) * voxelsizey,
+                                start.z);
                             auto end_i = vec3<number_t>(
-                                end.x, round(end.y / voxelsizey), end.z);
+                                end.x, round(end.y / voxelsizey) * voxelsizey,
+                                end.z);
                             callback(start_i, end_i);
                         });
                 }
@@ -408,9 +413,11 @@ struct triangle_bvh {
                 getSolid_AxisAligned(
                     ray, half_voxel_size, face, [&](auto start, auto end) {
                         auto start_i = vec3<number_t>(
-                            start.x, start.y, round(start.z / voxelsizez));
-                        auto end_i = vec3<number_t>(end.x, end.y,
-                                                    round(end.z / voxelsizez));
+                            start.x, start.y,
+                            round(start.z / voxelsizez) * voxelsizez);
+                        auto end_i = vec3<number_t>(
+                            end.x, end.y,
+                            round(end.z / voxelsizez) * voxelsizez);
                         callback(start_i, end_i);
                     });
             }

@@ -86,8 +86,11 @@ void loadSTL(const std::string& filename,
     for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(filename)) {
         bvh.insert(tri);
     }
-    sinriv::kigstudio::octree::Octree voxelData(bvh.getOctreeVoxelEdgeSize(1,1,1));
-    sinriv::kigstudio::voxel::create_solid_mesh(voxelData,bvh, 1, 1, 1);
+    float voxel_size = 1;
+    auto octree_size = bvh.getOctreeVoxelEdgeSize(voxel_size, voxel_size, voxel_size);
+    std::cout << "Octree size: " << octree_size << std::endl;
+    sinriv::kigstudio::octree::Octree voxelData(octree_size);
+    sinriv::kigstudio::voxel::create_solid_mesh(voxelData,bvh, voxel_size, voxel_size, voxel_size);
     double isolevel = 0.5;
     int numTriangles = 0;
     loadMesh(sinriv::kigstudio::voxel::generateMesh(voxelData, isolevel, numTriangles, true), layout, voxels);

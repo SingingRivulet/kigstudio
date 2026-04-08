@@ -72,7 +72,9 @@ namespace sinriv::kigstudio::voxel {
                 for (int i=start_x; i<=end_x; i++){
                     for (int j=start_y; j<=end_y; j++){
                         for (int k=start_z; k<=end_z; k++){
-                            voxelData.insert({i, j, k});
+                            if (i >= 0 && j >= 0 && k >= 0){
+                                voxelData.insert({i, j, k});
+                            }
                         }
                     }
                 }

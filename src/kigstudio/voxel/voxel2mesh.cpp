@@ -113,7 +113,7 @@ namespace sinriv::kigstudio::voxel {
                 vec3f v2 = vertlist[triTable[cubeindex][i + 1]];
                 vec3f v3 = vertlist[triTable[cubeindex][i + 2]];
 
-                vec3f normal = { 0, 0, 0 };
+                vec3f normal = { 0.f, 0.f, 0.f };
 
                 if (computeNormals) {
                     normal = (v2 - v1).cross(v3 - v1);
@@ -126,7 +126,13 @@ namespace sinriv::kigstudio::voxel {
                     }
                 }
 
-                co_yield std::tuple<Triangle, vec3f>((std::make_tuple(v1, v2, v3)), normal);
+                co_yield std::tuple<Triangle, vec3f>(
+                    Triangle(
+                        (v1*voxelData.voxel_size)+voxelData.global_position, 
+                        (v2*voxelData.voxel_size)+voxelData.global_position, 
+                        (v3*voxelData.voxel_size)+voxelData.global_position),
+                    normal
+                );
 
                 numTriangles++;
             }
@@ -194,7 +200,13 @@ namespace sinriv::kigstudio::voxel {
                     }
                 }
 
-                co_yield std::tuple<Triangle, vec3f>((std::make_tuple(v1, v2, v3)), normal);
+                co_yield std::tuple<Triangle, vec3f>(
+                    Triangle(
+                        (v1*voxelData.voxel_size)+voxelData.global_position, 
+                        (v2*voxelData.voxel_size)+voxelData.global_position, 
+                        (v3*voxelData.voxel_size)+voxelData.global_position),
+                    normal
+                );
 
                 numTriangles++;
             }

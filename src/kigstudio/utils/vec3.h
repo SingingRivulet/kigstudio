@@ -100,8 +100,14 @@ namespace sinriv::kigstudio {
         inline vec3<T> operator*(const T& p)const {
             return vec3<T>(p * x, p * y, p * z);
         }
+        inline vec3<T> operator*(const vec3<T>& p)const {
+            return vec3<T>(x * p.x, y * p.y, z * p.z);
+        }
         inline vec3<T> operator/(const T& p)const {
             return vec3<T>(x / p, y / p, z / p);
+        }
+        inline vec3<T> operator/(const vec3<T>& p)const {
+            return vec3<T>(x / p.x, y / p.y, z / p.z);
         }
         inline vec3<T> operator-()const {
             return vec3<T>(-x, -y, -z);
