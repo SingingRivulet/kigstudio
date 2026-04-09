@@ -2,7 +2,7 @@
 #include <cassert>
 #include "kigstudio/voxel/voxel2mesh.h"
 int main() {
-    sinriv::kigstudio::octree::Octree voxelData(256);
+    sinriv::kigstudio::voxel::VoxelGrid voxelData;
     for (int i = 0; i < 2;++i) {
         for (int j = 0; j < 2; ++j) {
             for (int k = 0; k < 2; ++k) {

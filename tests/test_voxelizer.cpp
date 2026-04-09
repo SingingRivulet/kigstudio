@@ -1,7 +1,7 @@
 #include "kigstudio/voxel/voxelizer_svo.h"
 
 int main() {
-    sinriv::kigstudio::octree::Octree voxelData(64);
+    sinriv::kigstudio::voxel::VoxelGrid voxelData;
     // for(auto point:sinriv::kigstudio::voxel::draw_triangle(
     //     sinriv::kigstudio::voxel::Triangle({5,0,0},{0,5,0},{0,0,5}),
     //     1,1,1,1)){
@@ -36,7 +36,7 @@ int main() {
 
     std::cout << "test_voxelizer_tmp.stl saved." << std::endl;
 
-    sinriv::kigstudio::octree::Octree voxelData2(512);
+    sinriv::kigstudio::voxel::VoxelGrid voxelData2;
     sinriv::kigstudio::mat::matrix<float> mat;
     mat.setIdentity();
     sinriv::kigstudio::voxel::create_surface_mesh(voxelData2, "test_voxelizer_tmp.stl", mat, 1, 1, 1, 0.05, 100);

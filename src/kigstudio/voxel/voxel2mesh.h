@@ -11,7 +11,8 @@ namespace sinriv::kigstudio::voxel {
     using vec3f = sinriv::kigstudio::vec3<float>;
     using Triangle = triangle_bvh<float>::triangle;
 
-    Generator<std::tuple<Triangle,vec3f>> generateMesh(sinriv::kigstudio::octree::Octree& voxelData, double isolevel, int& numTriangles, bool computeNormals = false);
+    Generator<std::tuple<Triangle,vec3f>> generateMesh(sinriv::kigstudio::voxel::VoxelGrid& voxelData, double isolevel, int& numTriangles, bool computeNormals = false);
+    Generator<std::tuple<Triangle, vec3f>> generateMesh(sinriv::kigstudio::octree::Octree& voxelData, double isolevel, int& numTriangles, bool computeNormals = false);
 
     void saveMeshToASCIISTL(const std::vector<std::tuple<Triangle,vec3f>>& meshTriangles, const std::string& filename);
     void saveMeshToBinarySTL(const std::vector<std::tuple<Triangle,vec3f>>& meshTriangles, const std::string& filename);

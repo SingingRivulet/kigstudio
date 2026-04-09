@@ -86,14 +86,14 @@ void loadSTL(const std::string& filename,
     for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(filename)) {
         bvh.insert(tri);
     }
-    float voxel_size = 1;
-    auto octree_size = bvh.getOctreeVoxelEdgeSize(voxel_size, voxel_size, voxel_size);
-    std::cout << "Octree size: " << octree_size << std::endl;
-    sinriv::kigstudio::octree::Octree voxelData(octree_size);
-    sinriv::kigstudio::voxel::create_solid_mesh(voxelData,bvh, voxel_size, voxel_size, voxel_size);
+    float voxel_size = 0.5;
+    sinriv::kigstudio::voxel::VoxelGrid voxelData;
+    sinriv::kigstudio::voxel::create_solid_mesh(voxelData, bvh, voxel_size, voxel_size, voxel_size);
+    std::cout << "create_solid_mesh success num_chunk=" << voxelData.num_chunk() << std::endl;
     double isolevel = 0.5;
     int numTriangles = 0;
-    loadMesh(sinriv::kigstudio::voxel::generateMesh(voxelData, isolevel, numTriangles, true), layout, voxels);
+    auto geometry = sinriv::kigstudio::voxel::generateMesh(voxelData, isolevel, numTriangles, true);
+    loadMesh(geometry, layout, voxels);
 }
 
 // --------- Shader Loader ---------

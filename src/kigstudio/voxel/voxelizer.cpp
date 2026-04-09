@@ -4,7 +4,7 @@
 namespace sinriv::kigstudio::voxel {
 
     void draw_triangle(
-        sinriv::kigstudio::octree::Octree& voxelData,
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
         const Triangle& triangle,
         const vec3f& normal,
         float voxelsizex,      // Voxel size on X-axis
@@ -28,7 +28,7 @@ namespace sinriv::kigstudio::voxel {
     }
 
     void draw_line(
-        sinriv::kigstudio::octree::Octree& voxelData,
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
         const vec3f& start,
         const vec3f& end
     ) {

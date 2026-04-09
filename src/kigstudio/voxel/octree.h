@@ -4,73 +4,10 @@
 #include <array>
 #include <stack>
 #include <memory>
-#include "kigstudio/utils/vec3.h"
+#include "kigstudio/voxel/voxel.h"
 
 namespace sinriv::kigstudio::octree {
-    // 定义三维向量结构体
-    struct Vec3i {
-        int x, y, z;
-
-        inline Vec3i(int x = 0, int y = 0, int z = 0) : x(x), y(y), z(z) {}
-
-        // 比较两个向量是否相等
-        inline bool operator==(const Vec3i& other) const {
-            return x == other.x && y == other.y && z == other.z;
-        }
-
-        inline bool operator!=(const Vec3i& other) const {
-            return !(*this == other);
-        }
-
-        inline bool operator<(const Vec3i& other) const {
-            return x < other.x || (x == other.x && y < other.y) || (x == other.x && y == other.y && z < other.z);
-        }
-        inline bool operator<=(const Vec3i& other) const {
-            return *this < other || *this == other;
-        }
-        inline bool operator>(const Vec3i& other) const {
-            return !(*this <= other);
-        }
-        inline bool operator>=(const Vec3i& other) const {
-            return !(*this < other);
-        }
-        inline Vec3i operator+(const Vec3i& other) const {
-            return Vec3i(x + other.x, y + other.y, z + other.z);
-        }
-        inline Vec3i operator-(const Vec3i& other) const {
-            return Vec3i(x - other.x, y - other.y, z - other.z);
-        }
-        inline Vec3i operator*(int scalar) const {
-            return Vec3i(x * scalar, y * scalar, z * scalar);
-        }
-        inline Vec3i operator/(int scalar) const {
-            return Vec3i(x / scalar, y / scalar, z / scalar);
-        }
-        inline Vec3i& operator+=(const Vec3i& other) {
-            x += other.x;
-            y += other.y;
-            z += other.z;
-            return *this;
-        }
-        inline Vec3i& operator-=(const Vec3i& other) {
-            x -= other.x;
-            y -= other.y;
-            z -= other.z;
-            return *this;
-        }
-        inline Vec3i& operator*=(int scalar) {
-            x *= scalar;
-            y *= scalar;
-            z *= scalar;
-            return *this;
-        }
-        inline Vec3i& operator/=(int scalar) {
-            x /= scalar;
-            y /= scalar;
-            z /= scalar;
-            return *this;
-        }
-    };
+    using Vec3i = sinriv::kigstudio::voxel::Vec3i;
 
     // 定义八叉树节点类
     class OctreeNode {

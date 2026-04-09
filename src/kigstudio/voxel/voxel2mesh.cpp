@@ -7,7 +7,8 @@
 #include <string>
 
 namespace sinriv::kigstudio::voxel {
-    static vec3f computeNormalFromVoxels(const sinriv::kigstudio::octree::Octree& voxelData, int x, int y, int z) {
+    template <typename T>
+    static vec3f computeNormalFromVoxels(const T& voxelData, int x, int y, int z) {
         // 初始化法向量
         vec3f normal(0.0f, 0.0f, 0.0f);
 
@@ -31,8 +32,149 @@ namespace sinriv::kigstudio::voxel {
         return normal;
     }
 
-    Generator<std::tuple<Triangle, vec3f>> generateMesh(sinriv::kigstudio::octree::Octree& voxelData, double isolevel, int& numTriangles, bool computeNormals) {
+    inline bool getVoxel(
+        const VoxelGrid& grid,
+        const Chunk& chunk,
+        int cx,int cy,int cz,
+        int lx,int ly,int lz)
+    {
+        if (lx>=0 && lx<32 && ly>=0 && ly<32 && lz>=0 && lz<32)
+            return chunk.get(lx,ly,lz);
 
+        return grid.contains(
+            (cx<<5)+lx,
+            (cy<<5)+ly,
+            (cz<<5)+lz
+        );
+    }
+
+    Generator<std::tuple<Triangle, vec3f>>
+    generateMesh(
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
+        double isolevel,
+        int& numTriangles,
+        bool computeNormals)
+    {
+        using Chunk = sinriv::kigstudio::voxel::Chunk;
+
+        numTriangles = 0;
+        vec3f vertlist[12];
+
+        // ===== 快速访问函数 =====
+        auto getVoxel = [&](int wx, int wy, int wz) -> bool {
+            return voxelData.contains(wx, wy, wz);
+        };
+
+        // ===== 遍历所有 chunk =====
+        for (const auto& [key, chunk] : voxelData.chunks) {
+
+            int cx = int(key >> 42);
+            int cy = int((key >> 21) & ((1<<21)-1));
+            int cz = int(key & ((1<<21)-1));
+
+            int baseX = cx << 5;
+            int baseY = cy << 5;
+            int baseZ = cz << 5;
+
+            // ❗关键：遍历 cell（范围扩大一圈）
+            for (int z = -1; z < 32; z++)
+            for (int y = -1; y < 32; y++)
+            for (int x = -1; x < 32; x++) {
+
+                int wx = baseX + x;
+                int wy = baseY + y;
+                int wz = baseZ + z;
+
+                // ===== 8 corner =====
+                bool v000 = getVoxel(wx,   wy,   wz);
+                bool v100 = getVoxel(wx+1, wy,   wz);
+                bool v110 = getVoxel(wx+1, wy+1, wz);
+                bool v010 = getVoxel(wx,   wy+1, wz);
+
+                bool v001 = getVoxel(wx,   wy,   wz+1);
+                bool v101 = getVoxel(wx+1, wy,   wz+1);
+                bool v111 = getVoxel(wx+1, wy+1, wz+1);
+                bool v011 = getVoxel(wx,   wy+1, wz+1);
+
+                int cubeindex = 0;
+                cubeindex |= v000 << 0;
+                cubeindex |= v100 << 1;
+                cubeindex |= v110 << 2;
+                cubeindex |= v010 << 3;
+                cubeindex |= v001 << 4;
+                cubeindex |= v101 << 5;
+                cubeindex |= v111 << 6;
+                cubeindex |= v011 << 7;
+
+                // 跳过完全空或完全满
+                if (cubeindex == 0 || cubeindex == 255)
+                    continue;
+
+                if (edgeTable[cubeindex] == 0)
+                    continue;
+
+                float fx = float(wx);
+                float fy = float(wy);
+                float fz = float(wz);
+
+                // ===== 插值（简化：中点）=====
+                if (edgeTable[cubeindex] & 1)
+                    vertlist[0] = {fx+.5f, fy, fz};
+                if (edgeTable[cubeindex] & 2)
+                    vertlist[1] = {fx+1, fy+.5f, fz};
+                if (edgeTable[cubeindex] & 4)
+                    vertlist[2] = {fx+.5f, fy+1, fz};
+                if (edgeTable[cubeindex] & 8)
+                    vertlist[3] = {fx, fy+.5f, fz};
+
+                if (edgeTable[cubeindex] & 16)
+                    vertlist[4] = {fx+.5f, fy, fz+1};
+                if (edgeTable[cubeindex] & 32)
+                    vertlist[5] = {fx+1, fy+.5f, fz+1};
+                if (edgeTable[cubeindex] & 64)
+                    vertlist[6] = {fx+.5f, fy+1, fz+1};
+                if (edgeTable[cubeindex] & 128)
+                    vertlist[7] = {fx, fy+.5f, fz+1};
+
+                if (edgeTable[cubeindex] & 256)
+                    vertlist[8] = {fx, fy, fz+.5f};
+                if (edgeTable[cubeindex] & 512)
+                    vertlist[9] = {fx+1, fy, fz+.5f};
+                if (edgeTable[cubeindex] & 1024)
+                    vertlist[10] = {fx+1, fy+1, fz+.5f};
+                if (edgeTable[cubeindex] & 2048)
+                    vertlist[11] = {fx, fy+1, fz+.5f};
+
+                // ===== triangles =====
+                for (int i = 0; triTable[cubeindex][i] != -1; i += 3) {
+
+                    vec3f v1 = vertlist[triTable[cubeindex][i]];
+                    vec3f v2 = vertlist[triTable[cubeindex][i+1]];
+                    vec3f v3 = vertlist[triTable[cubeindex][i+2]];
+
+                    vec3f normal{0,0,0};
+
+                    if (computeNormals) {
+                        normal = (v2 - v1).cross(v3 - v1).normalize();
+                        normal = -normal;
+                    }
+
+                    co_yield {
+                        Triangle(
+                            v1 * voxelData.voxel_size + voxelData.global_position,
+                            v3 * voxelData.voxel_size + voxelData.global_position,
+                            v2 * voxelData.voxel_size + voxelData.global_position
+                        ),
+                        normal
+                    };
+
+                    numTriangles++;
+                }
+            }
+        }
+    }
+
+    Generator<std::tuple<Triangle, vec3f>> generateMesh(sinriv::kigstudio::octree::Octree& voxelData, double isolevel, int& numTriangles, bool computeNormals) {
         //static int numVectorMeshes;
         //numVectorMeshes++;
         using vec3i = sinriv::kigstudio::octree::Vec3i;

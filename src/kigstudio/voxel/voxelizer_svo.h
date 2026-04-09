@@ -12,7 +12,7 @@ namespace sinriv::kigstudio::voxel {
     using vec3i = sinriv::kigstudio::octree::Vec3i;
 
     void draw_triangle(
-        sinriv::kigstudio::octree::Octree& voxelData,
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
         const Triangle& triangle,
         const vec3f& normal,
         float voxelsizex,      // Voxel size on X-axis
@@ -22,7 +22,7 @@ namespace sinriv::kigstudio::voxel {
         float solidization = 0);
     
     inline void create_surface_mesh(
-        sinriv::kigstudio::octree::Octree& voxelData,
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
         const std::string & path, 
         mat::matrix<float> transform, 
         float voxelsizex,      // Voxel size on X-axis
@@ -42,7 +42,7 @@ namespace sinriv::kigstudio::voxel {
     }
     
     inline void create_solid_mesh(
-        sinriv::kigstudio::octree::Octree& voxelData,
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
         sinriv::kigstudio::voxel::triangle_bvh<float>& bvh,
         float voxelsizex,      // Voxel size on X-axis
         float voxelsizey,      // Voxel size on Y-axis
@@ -84,7 +84,7 @@ namespace sinriv::kigstudio::voxel {
     }
 
     inline void create_solid_mesh(
-        sinriv::kigstudio::octree::Octree& voxelData,
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
         const std::string & path, 
         mat::matrix<float> transform, 
         float voxelsizex,      // Voxel size on X-axis
@@ -106,7 +106,7 @@ namespace sinriv::kigstudio::voxel {
     }
     
     void draw_line(
-        sinriv::kigstudio::octree::Octree& voxelData,
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
         const vec3f& start,
         const vec3f& end
     );
