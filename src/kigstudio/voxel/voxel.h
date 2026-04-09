@@ -1,8 +1,10 @@
 #pragma once
 #include "kigstudio/utils/vec3.h"
+#include "kigstudio/utils/plane.h"
 
 #include <bit>
 #include <bitset>
+#include <cmath>
 #include <unordered_map>
 #include <vector>
 #include <cstdint>
@@ -163,6 +165,21 @@ class VoxelGrid {
         return contains(point.x, point.y, point.z);
     }
     inline int num_chunk() const { return chunks.size(); }
+    inline vec3<float> voxelCenterToWorld(const Vec3i& voxel) const {
+        return vec3<float>((voxel.x + 0.5f) * voxel_size.x + global_position.x,
+                           (voxel.y + 0.5f) * voxel_size.y + global_position.y,
+                           (voxel.z + 0.5f) * voxel_size.z + global_position.z);
+    }
+    inline Vec3i worldToVoxel(const vec3<float>& world) const {
+        return Vec3i(
+            static_cast<int32_t>(std::floor((world.x - global_position.x) / voxel_size.x)),
+            static_cast<int32_t>(std::floor((world.y - global_position.y) / voxel_size.y)),
+            static_cast<int32_t>(std::floor((world.z - global_position.z) / voxel_size.z)));
+    }
+    inline bool containsWorldPoint(const vec3<float>& world) const {
+        const Vec3i voxel = worldToVoxel(world);
+        return contains(voxel.x, voxel.y, voxel.z);
+    }
 
     // ============ 删除 ============
     inline void remove(int x, int y, int z) {
@@ -270,7 +287,8 @@ class VoxelGrid {
 
     // ================= 集合操作 =================
 
-    inline VoxelGrid unionWith(const VoxelGrid& other) const {
+
+    inline VoxelGrid unionWith_local(const VoxelGrid& other) const {
         VoxelGrid r = *this;
 
         for (auto& [key, chunk] : other.chunks) {
@@ -281,7 +299,7 @@ class VoxelGrid {
         return r;
     }
 
-    inline VoxelGrid intersection(const VoxelGrid& other) const {
+    inline VoxelGrid intersection_local(const VoxelGrid& other) const {
         VoxelGrid r;
 
         for (auto& [key, chunk] : chunks) {
@@ -299,7 +317,7 @@ class VoxelGrid {
         return r;
     }
 
-    inline VoxelGrid difference(const VoxelGrid& other) const {
+    inline VoxelGrid difference_local(const VoxelGrid& other) const {
         VoxelGrid r;
 
         for (auto& [key, chunk] : chunks) {
@@ -315,6 +333,68 @@ class VoxelGrid {
                 r.chunks[key] = out;
         }
         return r;
+    }
+
+    inline VoxelGrid unionWith(const VoxelGrid& other) const {
+        VoxelGrid r = *this;
+
+        for (const auto& voxel : other) {
+            const vec3<float> world = other.voxelCenterToWorld(voxel);
+            r.insert(r.worldToVoxel(world));
+        }
+        return r;
+    }
+
+    inline VoxelGrid intersection(const VoxelGrid& other) const {
+        VoxelGrid r;
+        r.global_position = global_position;
+        r.voxel_size = voxel_size;
+
+        for (const auto& voxel : *this) {
+            const vec3<float> world = voxelCenterToWorld(voxel);
+            if (other.containsWorldPoint(world)) {
+                r.insert(voxel);
+            }
+        }
+        return r;
+    }
+
+    inline VoxelGrid difference(const VoxelGrid& other) const {
+        VoxelGrid r;
+        r.global_position = global_position;
+        r.voxel_size = voxel_size;
+
+        for (const auto& voxel : *this) {
+            const vec3<float> world = voxelCenterToWorld(voxel);
+            if (!other.containsWorldPoint(world)) {
+                r.insert(voxel);
+            }
+        }
+        return r;
+    }
+    inline std::tuple<VoxelGrid, VoxelGrid> segment(const Plane<float>& other) const {
+        VoxelGrid positive_side;
+        VoxelGrid negative_side;
+
+        positive_side.global_position = global_position;
+        positive_side.voxel_size = voxel_size;
+        negative_side.global_position = global_position;
+        negative_side.voxel_size = voxel_size;
+
+        for (const auto& voxel : *this) {
+            const vec3<float> world_position(
+                voxel.x * voxel_size.x + global_position.x,
+                voxel.y * voxel_size.y + global_position.y,
+                voxel.z * voxel_size.z + global_position.z);
+
+            if (other.getSide(world_position)) {
+                positive_side.insert(voxel);
+            } else {
+                negative_side.insert(voxel);
+            }
+        }
+
+        return {positive_side, negative_side};
     }
 };
 
