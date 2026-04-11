@@ -6,8 +6,6 @@
 #include <bgfx/platform.h>
 #include <bx/math.h>
 #include <iostream>
-#include <tuple>
-#include <vector>
 
 #include <iconfontheaders/icons_font_awesome.h>
 #include <iconfontheaders/icons_kenney.h>
@@ -15,100 +13,10 @@
 #include <stb/stb_truetype.h>
 
 #include "kigstudio/ui/logger.h"
-#include "kigstudio/voxel/voxelizer_svo.h"
-#include "kigstudio/voxel/voxel2mesh.h"
+#include "kigstudio/ui/render_collision.h"
+#include "kigstudio/ui/render_mesh.h"
+#include "kigstudio/ui/render_voxel.h"
 #include "tinyfiledialogs.h"
-
-struct Mesh {
-    bgfx::VertexBufferHandle vbh = BGFX_INVALID_HANDLE;
-    bgfx::IndexBufferHandle ibh = BGFX_INVALID_HANDLE;
-    uint32_t indexCount = 0;
-};
-
-struct PosNormalVertex {
-    float x, y, z;
-    float nx, ny, nz;
-
-    static void init(bgfx::VertexLayout& layout) {
-        layout.begin()
-            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-            .add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
-            .end();
-    }
-};
-
-template <class T>
-void loadMesh(T&& stl, bgfx::VertexLayout& layout, Mesh& mesh) {
-    std::vector<PosNormalVertex> vertices;
-    std::vector<uint32_t> indices;
-
-    for (auto [tri, n] : stl) {
-        uint32_t base = static_cast<uint32_t>(vertices.size());
-        vertices.push_back({std::get<0>(tri).x, std::get<0>(tri).y,
-                            std::get<0>(tri).z, n.x, n.y, n.z});
-        vertices.push_back({std::get<1>(tri).x, std::get<1>(tri).y,
-                            std::get<1>(tri).z, n.x, n.y, n.z});
-        vertices.push_back({std::get<2>(tri).x, std::get<2>(tri).y,
-                            std::get<2>(tri).z, n.x, n.y, n.z});
-
-        indices.push_back(base);
-        indices.push_back(base + 1);
-        indices.push_back(base + 2);
-    }
-
-    if (vertices.empty())
-        return;
-
-    if (bgfx::isValid(mesh.vbh))
-        bgfx::destroy(mesh.vbh);
-    if (bgfx::isValid(mesh.ibh))
-        bgfx::destroy(mesh.ibh);
-
-    mesh.vbh = bgfx::createVertexBuffer(
-        bgfx::copy(vertices.data(), vertices.size() * sizeof(PosNormalVertex)),
-        layout);
-
-    mesh.ibh = bgfx::createIndexBuffer(
-        bgfx::copy(indices.data(), indices.size() * sizeof(uint32_t)),
-        BGFX_BUFFER_INDEX32);
-
-    mesh.indexCount = indices.size();
-    std::cout << "STL loaded: " << mesh.indexCount << " indices\n";
-}
-
-// --------- STL Loader ---------
-void loadSTL(const std::string& filename,
-             bgfx::VertexLayout& layout,
-             Mesh& mesh,
-             Mesh& voxels) {
-    loadMesh(sinriv::kigstudio::voxel::readSTL(filename), layout, mesh);
-    sinriv::kigstudio::voxel::triangle_bvh<float> bvh;
-    for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(filename)) {
-        bvh.insert(tri);
-    }
-    float voxel_size = 0.5;
-    sinriv::kigstudio::voxel::VoxelGrid voxelData;
-    sinriv::kigstudio::voxel::create_solid_mesh(voxelData, bvh, voxel_size, voxel_size, voxel_size);
-    std::cout << "create_solid_mesh success num_chunk=" << voxelData.num_chunk() << std::endl;
-    double isolevel = 0.5;
-    int numTriangles = 0;
-    auto geometry = sinriv::kigstudio::voxel::generateMesh(voxelData, isolevel, numTriangles, true);
-    loadMesh(geometry, layout, voxels);
-}
-
-// --------- Shader Loader ---------
-bgfx::ShaderHandle loadShader(const char* path) {
-    FILE* file = fopen(path, "rb");
-    if (!file)
-        return BGFX_INVALID_HANDLE;
-    fseek(file, 0, SEEK_END);
-    long size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    std::vector<char> data(size);
-    fread(data.data(), 1, size, file);
-    fclose(file);
-    return bgfx::createShader(bgfx::copy(data.data(), data.size()));
-}
 
 // --------- Main ---------
 int main() {
@@ -173,18 +81,38 @@ int main() {
     SDL_GetWindowSize(window, &width, &height);
     bgfx::setViewRect(0, 0, 0, width, height);
 
-    // load shaders
-    bgfx::ProgramHandle program = bgfx::createProgram(
-        loadShader("../../shader/base/vs_mesh_base.bin"),
-        loadShader("../../shader/base/fs_mesh_base.bin"), true);
+    sinriv::ui::render::RenderMesh mesh_renderer(0);
+    sinriv::ui::render::RenderVoxel voxel_renderer(0);
+    sinriv::ui::render::RenderCollision collision_renderer(0);
+    sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
+    collision_group.add(sinriv::kigstudio::voxel::collision::Sphere{
+        {0.0f, 0.0f, 0.0f}, 35.0f});
 
-    bgfx::VertexLayout layout = {};
-    PosNormalVertex::init(layout);
-    Mesh mesh, voxels;
+    sinriv::kigstudio::voxel::collision::Transform local_cylinder;
+    local_cylinder.setPosition({0.0f, 0.0f, -40.0f});
+    collision_group.add(sinriv::kigstudio::voxel::collision::Cylinder{
+        {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 80.0f}, 12.0f}, local_cylinder);
+
+    sinriv::kigstudio::voxel::collision::Transform local_capsule;
+    local_capsule.setPosition({55.0f, 0.0f, 0.0f});
+    local_capsule.setRotationAxisAngle({{0.0f, 1.0f, 0.0f}, bx::kPiHalf});
+    collision_group.add(sinriv::kigstudio::voxel::collision::Capsule{
+        {0.0f, 0.0f, -20.0f}, {0.0f, 0.0f, 20.0f}, 10.0f}, local_capsule);
+
+    sinriv::kigstudio::voxel::collision::Transform local_obb;
+    local_obb.setPosition({-60.0f, 0.0f, 0.0f});
+    local_obb.setRotationEuler({0.0f, 0.0f, bx::kPi / 6.0f});
+    collision_group.add(sinriv::kigstudio::voxel::collision::OBB{
+        {0.0f, 0.0f, 0.0f},
+        {14.0f, 24.0f, 18.0f},
+        {1.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}}, local_obb);
 
     bool running = true;
     bool showMesh = true;
     bool showVoxels = false;
+    bool showCollision = true;
     int oldW = width;
     int oldH = height;
 
@@ -224,7 +152,8 @@ int main() {
                 const char* file = tinyfd_openFileDialog("Open STL", "", 0,
                                                          NULL, "STL file", 0);
                 if (file) {
-                    loadSTL(file, layout, mesh, voxels);
+                    mesh_renderer.loadSTL(file);
+                    voxel_renderer.loadSTLAsVoxel(file);
                 }
             }
 
@@ -255,29 +184,21 @@ int main() {
         bx::mtxProj(proj, 60.0f, float(width) / float(height), 0.1f, 1000.0f,
                     bgfx::getCaps()->homogeneousDepth);
         bgfx::setViewTransform(0, view, proj);
+        collision_group.setRotationEuler({bx::toRad(pitch), bx::toRad(yaw), 0.0f});
 
-        if (showMesh && bgfx::isValid(mesh.vbh)) {
-            float mtx[16];
-            bx::mtxRotateXY(mtx, bx::toRad(pitch), bx::toRad(yaw));
-            bgfx::setTransform(mtx);
-            bgfx::setVertexBuffer(0, mesh.vbh);
-            bgfx::setIndexBuffer(mesh.ibh);
-            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
-                           BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
-                           BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA);
-            bgfx::submit(0, program);
+        float mtx[16];
+        bx::mtxRotateXY(mtx, bx::toRad(pitch), bx::toRad(yaw));
+
+        if (showMesh) {
+            mesh_renderer.render(mtx);
         }
 
-        if (showVoxels && bgfx::isValid(voxels.vbh)) {
-            float mtx[16];
-            bx::mtxRotateXY(mtx, bx::toRad(pitch), bx::toRad(yaw));
-            bgfx::setTransform(mtx);
-            bgfx::setVertexBuffer(0, voxels.vbh);
-            bgfx::setIndexBuffer(voxels.ibh);
-            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
-                           BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
-                           BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA);
-            bgfx::submit(0, program);
+        if (showVoxels) {
+            voxel_renderer.render(mtx);
+        }
+
+        if (showCollision) {
+            collision_renderer.render(collision_group);
         }
 
         ImGui::NewFrame();
@@ -287,12 +208,14 @@ int main() {
             const char* file =
                 tinyfd_openFileDialog("Open STL", "", 0, NULL, "STL file", 0);
             if (file) {
-                loadSTL(file, layout, mesh, voxels);
+                mesh_renderer.loadSTL(file);
+                voxel_renderer.loadSTLAsVoxel(file);
             }
         }
 
         ImGui::Checkbox("show mesh", &showMesh);
         ImGui::Checkbox("show voxels", &showVoxels);
+        ImGui::Checkbox("show collision", &showCollision);
 
         ImGui::End();
         ImGui::Render();
@@ -302,6 +225,9 @@ int main() {
         bgfx::frame();
     }
 
+    collision_renderer.release();
+    voxel_renderer.release();
+    mesh_renderer.release();
     bgfx::shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();
