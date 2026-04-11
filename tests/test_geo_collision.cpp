@@ -79,6 +79,94 @@ bool testOBB() {
     ok &= expectFalse(pointIntersects(outside, obb), "pointIntersects rejects obb miss");
     return ok;
 }
+
+bool nearlyEqual(float a, float b, float eps = 1e-4f) {
+    return std::fabs(a - b) <= eps;
+}
+
+bool nearlyEqualVec3(const vec3f& a, const vec3f& b, float eps = 1e-4f) {
+    return nearlyEqual(a.x, b.x, eps) &&
+           nearlyEqual(a.y, b.y, eps) &&
+           nearlyEqual(a.z, b.z, eps);
+}
+
+bool testTransformRoundTrip() {
+    Transform transform;
+    transform.setPosition({1.0f, 2.0f, 3.0f});
+    transform.setRotationEuler({0.0f, 0.0f, 3.14159265358979323846f * 0.5f});
+    transform.setScale({2.0f, 3.0f, 4.0f});
+
+    const mat4f matrix = transform.getMatrix();
+
+    Transform restored;
+    restored.setMatrix(matrix);
+
+    bool ok = true;
+    ok &= expectTrue(nearlyEqualVec3(restored.getPosition(), {1.0f, 2.0f, 3.0f}),
+                     "transform restores position from matrix");
+    ok &= expectTrue(nearlyEqualVec3(restored.getScale(), {2.0f, 3.0f, 4.0f}),
+                     "transform restores scale from matrix");
+
+    const vec3f euler = restored.getRotationEuler();
+    ok &= expectTrue(nearlyEqual(euler.z, 3.14159265358979323846f * 0.5f),
+                     "transform restores euler rotation from matrix");
+    return ok;
+}
+
+bool testCollisionGroupGlobalAndLocalTransform() {
+    CollisionGroup group;
+    group.setPosition({5.0f, 0.0f, 0.0f});
+
+    Transform local_sphere;
+    local_sphere.setPosition({2.0f, 0.0f, 0.0f});
+    group.add(Sphere{{0.0f, 0.0f, 0.0f}, 1.0f}, local_sphere);
+
+    bool ok = true;
+    ok &= expectTrue(group.contains({7.0f, 0.0f, 0.0f}),
+                     "collision group applies global and local translation");
+    ok &= expectTrue(pointIntersects({6.5f, 0.0f, 0.0f}, group),
+                     "pointIntersects works for collision group");
+    ok &= expectFalse(group.contains({8.2f, 0.0f, 0.0f}),
+                      "collision group rejects point outside translated geometry");
+    return ok;
+}
+
+bool testCollisionGroupQuaternionRotation() {
+    CollisionGroup group;
+    group.setRotationQuaternion(quaternionFromAxisAngle({{0.0f, 0.0f, 1.0f},
+                                                         3.14159265358979323846f * 0.5f}));
+
+    group.add(Cylinder{{0.0f, 0.0f, 0.0f}, {2.0f, 0.0f, 0.0f}, 0.5f});
+
+    bool ok = true;
+    ok &= expectTrue(group.contains({0.0f, 1.0f, 0.0f}),
+                     "quaternion rotation rotates geometry group");
+    ok &= expectFalse(group.contains({1.0f, 0.6f, 0.0f}),
+                      "quaternion rotation rejects miss after rotation");
+    return ok;
+}
+
+bool testCollisionGroupAxisAngleAndScale() {
+    CollisionGroup group;
+    group.setRotationAxisAngle({{0.0f, 0.0f, 1.0f}, 3.14159265358979323846f * 0.5f});
+    group.setScale({2.0f, 1.0f, 1.0f});
+
+    Transform local_box;
+    local_box.setPosition({1.0f, 0.0f, 0.0f});
+    group.add(OBB{{0.0f, 0.0f, 0.0f},
+                  {0.5f, 0.5f, 0.5f},
+                  {1.0f, 0.0f, 0.0f},
+                  {0.0f, 1.0f, 0.0f},
+                  {0.0f, 0.0f, 1.0f}},
+              local_box);
+
+    bool ok = true;
+    ok &= expectTrue(group.contains({0.0f, 2.0f, 0.0f}),
+                     "axis-angle rotation and scale affect collision group");
+    ok &= expectFalse(group.contains({0.8f, 2.0f, 0.0f}),
+                      "axis-angle rotation and scale still reject outside point");
+    return ok;
+}
 }  // namespace
 
 int main() {
@@ -87,6 +175,10 @@ int main() {
     ok &= testCylinder();
     ok &= testCapsule();
     ok &= testOBB();
+    ok &= testTransformRoundTrip();
+    ok &= testCollisionGroupGlobalAndLocalTransform();
+    ok &= testCollisionGroupQuaternionRotation();
+    ok &= testCollisionGroupAxisAngleAndScale();
 
     if (!ok) {
         std::cerr << "collision tests failed" << std::endl;
