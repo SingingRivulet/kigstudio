@@ -113,6 +113,9 @@ int main() {
     bool showMesh = true;
     bool showVoxels = false;
     bool showCollision = true;
+    bool showMeshAxis = true;
+    bool showVoxelAxis = false;
+    bool showCollisionAxis = true;
     int oldW = width;
     int oldH = height;
 
@@ -184,6 +187,15 @@ int main() {
         bx::mtxProj(proj, 60.0f, float(width) / float(height), 0.1f, 1000.0f,
                     bgfx::getCaps()->homogeneousDepth);
         bgfx::setViewTransform(0, view, proj);
+        mesh_renderer.setViewportSize(width, height);
+        voxel_renderer.setViewportSize(width, height);
+        collision_renderer.setViewportSize(width, height);
+        mesh_renderer.setViewProjection(view, proj);
+        voxel_renderer.setViewProjection(view, proj);
+        collision_renderer.setViewProjection(view, proj);
+        mesh_renderer.showAxis = showMeshAxis;
+        voxel_renderer.showAxis = showVoxelAxis;
+        collision_renderer.showAxis = showCollisionAxis;
         collision_group.setRotationEuler({bx::toRad(pitch), bx::toRad(yaw), 0.0f});
 
         float mtx[16];
@@ -216,6 +228,9 @@ int main() {
         ImGui::Checkbox("show mesh", &showMesh);
         ImGui::Checkbox("show voxels", &showVoxels);
         ImGui::Checkbox("show collision", &showCollision);
+        ImGui::Checkbox("mesh axis", &showMeshAxis);
+        ImGui::Checkbox("voxel axis", &showVoxelAxis);
+        ImGui::Checkbox("collision axis", &showCollisionAxis);
 
         ImGui::End();
         ImGui::Render();

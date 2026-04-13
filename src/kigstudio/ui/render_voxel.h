@@ -8,6 +8,8 @@
 namespace sinriv::ui::render {
     class RenderVoxel {
        public:
+        using AxisHandle = RenderMesh::AxisHandle;
+        using vec3f = RenderMesh::vec3f;
         explicit RenderVoxel(bgfx::ViewId view_id = 0,
                              std::string shader_dir = "../../shader/base/")
             : mesh_renderer_(view_id, std::move(shader_dir)) {}
@@ -22,6 +24,29 @@ namespace sinriv::ui::render {
 
         inline void setShaderDirectory(const std::string& shader_dir) {
             mesh_renderer_.setShaderDirectory(shader_dir);
+        }
+
+        inline void setViewportSize(int width, int height) {
+            mesh_renderer_.setViewportSize(width, height);
+        }
+
+        inline void setViewProjection(const float* view, const float* proj) {
+            mesh_renderer_.setViewProjection(view, proj);
+        }
+
+        inline void setAxisLength(float value) {
+            mesh_renderer_.setAxisLength(value);
+        }
+
+        inline AxisHandle getHoveredAxis() const { return mesh_renderer_.getHoveredAxis(); }
+        inline AxisHandle getActiveAxis() const { return mesh_renderer_.getActiveAxis(); }
+
+        inline float getAxisScreenDelta(int from_x, int from_y, int to_x, int to_y) const {
+            return mesh_renderer_.getAxisScreenDelta(from_x, from_y, to_x, to_y);
+        }
+
+        inline vec3f getAxisWorldDelta(int from_x, int from_y, int to_x, int to_y) const {
+            return mesh_renderer_.getAxisWorldDelta(from_x, from_y, to_x, to_y);
         }
 
         inline void release() { mesh_renderer_.release(); }
@@ -59,8 +84,29 @@ namespace sinriv::ui::render {
         }
 
         inline void render(const float* transform) {
+            mesh_renderer_.showAxis = showAxis;
             mesh_renderer_.render(transform);
         }
+        
+        //计算物体在屏幕上覆盖的矩形区域（x1,y1,x2,y2），用于提前过滤鼠标事件
+        inline std::tuple<int, int, int, int> getScreenBoundBox() {
+            return mesh_renderer_.getScreenBoundBox();
+        }
+        //为false时，事件会继续传递给下一个渲染器
+        inline bool onMouseMove(int x, int y) {
+            mesh_renderer_.showAxis = showAxis;
+            return mesh_renderer_.onMouseMove(x, y);
+        }
+        inline bool onMousePress(int x, int y) {
+            mesh_renderer_.showAxis = showAxis;
+            return mesh_renderer_.onMousePress(x, y);
+        }
+        inline bool onMouseRelease(int x, int y) {
+            mesh_renderer_.showAxis = showAxis;
+            return mesh_renderer_.onMouseRelease(x, y);
+        }
+
+        bool showAxis = false;
 
        private:
         RenderMesh mesh_renderer_;
