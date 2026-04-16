@@ -222,15 +222,17 @@ int main() {
         voxel_renderer.showAxis = showVoxelAxis;
         collision_renderer.showAxis = showCollisionAxis;
 
-        float mtx[16];
-        bx::mtxRotateXY(mtx, bx::toRad(pitch), bx::toRad(yaw));
-        sinriv::kigstudio::mat::matrix<float> cpu_model_matrix(mtx);
+        float mtx_1[16];
+        float mtx_2[16];
+        bx::mtxRotateXY(mtx_1, bx::toRad(-pitch), bx::toRad(yaw));
+        bx::mtxRotateXY(mtx_2, bx::toRad(pitch), bx::toRad(yaw));
+        sinriv::kigstudio::mat::matrix<float> cpu_model_matrix(mtx_1);
         cpu_model_matrix.transpose();
         mesh_renderer.setModelMatrix(cpu_model_matrix);
         voxel_renderer.setModelMatrix(cpu_model_matrix);
 
         if (debugPrintRotation) {
-            sinriv::kigstudio::mat::matrix<float> gpu_raw_matrix(mtx);
+            sinriv::kigstudio::mat::matrix<float> gpu_raw_matrix(mtx_1);
             std::cout << "yaw=" << yaw << " pitch=" << pitch << std::endl;
             printMatrixAxes("gpu_raw", gpu_raw_matrix);
             printMatrixAxes("cpu_model", cpu_model_matrix);
@@ -244,11 +246,11 @@ int main() {
         }
 
         if (showMesh) {
-            mesh_renderer.renderGBuffer(mtx);
+            mesh_renderer.renderGBuffer(mtx_2);
         }
 
         if (showVoxels) {
-            voxel_renderer.renderGBuffer(mtx);
+            voxel_renderer.renderGBuffer(mtx_2);
         }
 
         deferred_renderer.render();
@@ -262,7 +264,7 @@ int main() {
         }
 
         if (showCollision) {
-            collision_renderer.render(collision_group, mtx, &cpu_model_matrix);
+            collision_renderer.render(collision_group, mtx_1, &cpu_model_matrix);
         }
 
         ImGui::NewFrame();
