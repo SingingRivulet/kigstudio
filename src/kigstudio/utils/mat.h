@@ -5,6 +5,9 @@
 
 namespace sinriv::kigstudio::mat {
 
+template <typename T>
+class vec4;
+
 template <Numeric T>
 class matrix {
    public:
@@ -40,6 +43,15 @@ class matrix {
     }
 
     void operator*=(const matrix<T>& other) { *this = *this * other; }
+
+    vec4<T> operator*(const vec4<T>& v) const {
+        vec4<T> result;
+        result[0] = data[0] * v[0] + data[1] * v[1] + data[2] * v[2] + data[3] * v[3];
+        result[1] = data[4] * v[0] + data[5] * v[1] + data[6] * v[2] + data[7] * v[3];
+        result[2] = data[8] * v[0] + data[9] * v[1] + data[10] * v[2] + data[11] * v[3];
+        result[3] = data[12] * v[0] + data[13] * v[1] + data[14] * v[2] + data[15] * v[3];
+        return result;
+    }
 
     void setIdentity() {
         for (int i = 0; i < 16; i++) {
