@@ -124,6 +124,10 @@ namespace sinriv::ui::render {
             axis_state_.proj_matrix = mat4f(proj);
         }
 
+        inline void setModelMatrix(const mat4f& model_matrix) {
+            axis_state_.model_matrix = model_matrix;
+        }
+
         inline void setAxisLength(float value) {
             axis_state_.axis_length = std::max(value, 1.0f);
         }
@@ -214,7 +218,6 @@ namespace sinriv::ui::render {
         }
 
         void renderGBuffer(const float* transform) {
-            axis_state_.model_matrix = mat4f(transform);
             if (empty() || !ensureGBufferProgram()) {
                 return;
             }

@@ -45,6 +45,10 @@ namespace sinriv::ui::render {
             mesh_renderer_.setViewProjection(view, proj);
         }
 
+        inline void setModelMatrix(const RenderMesh::mat4f& model_matrix) {
+            mesh_renderer_.setModelMatrix(model_matrix);
+        }
+
         inline void setAxisLength(float value) {
             mesh_renderer_.setAxisLength(value);
         }

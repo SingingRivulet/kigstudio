@@ -17,6 +17,7 @@
 #include "kigstudio/ui/render_deferred.h"
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/ui/render_voxel.h"
+#include "kigstudio/voxel/collision.h"
 #include "tinyfiledialogs.h"
 
 // --------- Main ---------
@@ -124,8 +125,19 @@ int main() {
     bool showMeshAxis = true;
     bool showVoxelAxis = false;
     bool showCollisionAxis = true;
+    bool debugPrintRotation = false;
     int oldW = width;
     int oldH = height;
+
+    auto printMatrixAxes = [](const char* label,
+                              const sinriv::kigstudio::mat::matrix<float>& matrix) {
+        std::cout << label
+                  << " X=(" << matrix[0][0] << ", " << matrix[0][1] << ", " << matrix[0][2] << ")"
+                  << " Y=(" << matrix[1][0] << ", " << matrix[1][1] << ", " << matrix[1][2] << ")"
+                  << " Z=(" << matrix[2][0] << ", " << matrix[2][1] << ", " << matrix[2][2] << ")"
+                  << " T=(" << matrix[3][0] << ", " << matrix[3][1] << ", " << matrix[3][2] << ")"
+                  << std::endl;
+    };
 
     while (running) {
         SDL_Event e;
@@ -209,10 +221,27 @@ int main() {
         mesh_renderer.showAxis = showMeshAxis;
         voxel_renderer.showAxis = showVoxelAxis;
         collision_renderer.showAxis = showCollisionAxis;
-        collision_group.setRotationEuler({bx::toRad(pitch), bx::toRad(yaw), 0.0f});
 
         float mtx[16];
         bx::mtxRotateXY(mtx, bx::toRad(pitch), bx::toRad(yaw));
+        sinriv::kigstudio::mat::matrix<float> cpu_model_matrix(mtx);
+        cpu_model_matrix.transpose();
+        mesh_renderer.setModelMatrix(cpu_model_matrix);
+        voxel_renderer.setModelMatrix(cpu_model_matrix);
+
+        if (debugPrintRotation) {
+            sinriv::kigstudio::mat::matrix<float> gpu_raw_matrix(mtx);
+            std::cout << "yaw=" << yaw << " pitch=" << pitch << std::endl;
+            printMatrixAxes("gpu_raw", gpu_raw_matrix);
+            printMatrixAxes("cpu_model", cpu_model_matrix);
+            debugPrintRotation = false;
+        }
+
+        if (showCollision) {
+            deferred_renderer.setCollisionGroup(collision_group);
+        } else {
+            deferred_renderer.clearCollisionTint();
+        }
 
         if (showMesh) {
             mesh_renderer.renderGBuffer(mtx);
@@ -233,7 +262,7 @@ int main() {
         }
 
         if (showCollision) {
-            collision_renderer.render(collision_group);
+            collision_renderer.render(collision_group, mtx, &cpu_model_matrix);
         }
 
         ImGui::NewFrame();
@@ -254,6 +283,7 @@ int main() {
         ImGui::Checkbox("mesh axis", &showMeshAxis);
         ImGui::Checkbox("voxel axis", &showVoxelAxis);
         ImGui::Checkbox("collision axis", &showCollisionAxis);
+        ImGui::Checkbox("debug print rotation", &debugPrintRotation);
 
         ImGui::End();
         ImGui::Render();

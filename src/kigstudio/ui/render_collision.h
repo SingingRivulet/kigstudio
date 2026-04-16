@@ -136,11 +136,21 @@ namespace sinriv::ui::render {
         }
 
         inline void render(const CollisionGroup& geo_group){
+            float identity[16];
+            bx::mtxIdentity(identity);
+            render(geo_group, identity);
+        }
+
+        inline void render(const CollisionGroup& geo_group,
+                           const float* model_transform,
+                           const mat4f* cpu_model_matrix = nullptr){
             if (!ensureProgram()) {
                 return;
             }
-            updateBounds(geo_group);
-            render_collision(geo_group);
+            const mat4f model_matrix =
+                cpu_model_matrix ? *cpu_model_matrix : mat4f(model_transform);
+            updateBounds(geo_group, model_matrix);
+            render_collision(geo_group, model_transform);
             if (showAxis) {
                 renderAxis();
             }
@@ -257,9 +267,10 @@ namespace sinriv::ui::render {
             }
         }
 
-        inline void updateBounds(const CollisionGroup& geo_group) {
+        inline void updateBounds(const CollisionGroup& geo_group,
+                                 const mat4f& model_matrix) {
             resetBounds();
-            const mat4f group_matrix = geo_group.getMatrix();
+            const mat4f group_matrix = geo_group.getMatrix() * model_matrix;
             axis_state_.model_matrix = group_matrix;
 
             for (const auto& geometry : geo_group.geometries()) {
@@ -477,7 +488,8 @@ namespace sinriv::ui::render {
             }, geometry.geometry);
         }
 
-        void render_collision(const CollisionGroup& geo_group){
+        void render_collision(const CollisionGroup& geo_group,
+                              const float* model_transform){
             std::vector<detail::CollisionLineVertex> vertices;
             vertices.reserve(geo_group.geometries().size() * vertex_count_per_circle_ * 12);
 
@@ -498,8 +510,7 @@ namespace sinriv::ui::render {
             bgfx::allocTransientVertexBuffer(&tvb, static_cast<uint32_t>(vertices.size()), layout_);
             std::memcpy(tvb.data, vertices.data(), vertices.size() * sizeof(detail::CollisionLineVertex));
 
-            bx::mtxIdentity(identity_mtx_);
-            bgfx::setTransform(identity_mtx_);
+            bgfx::setTransform(model_transform);
             bgfx::setVertexBuffer(0, &tvb);
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |

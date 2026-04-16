@@ -103,13 +103,13 @@ namespace sinriv::ui::render::axis_gizmo {
     inline vec3f extractAxisDirection(const mat4f& matrix, AxisHandle axis) {
         switch (axis) {
             case AxisHandle::X:
-                return safeNormalize({matrix[0][0], matrix[0][1], matrix[0][2]},
+                return safeNormalize({matrix[0][0], matrix[1][0], matrix[2][0]},
                                      {1.0f, 0.0f, 0.0f});
             case AxisHandle::Y:
-                return safeNormalize({matrix[1][0], matrix[1][1], matrix[1][2]},
+                return safeNormalize({matrix[0][1], matrix[1][1], matrix[2][1]},
                                      {0.0f, 1.0f, 0.0f});
             case AxisHandle::Z:
-                return safeNormalize({matrix[2][0], matrix[2][1], matrix[2][2]},
+                return safeNormalize({matrix[0][2], matrix[1][2], matrix[2][2]},
                                      {0.0f, 0.0f, 1.0f});
             default:
                 return {0.0f, 0.0f, 0.0f};
