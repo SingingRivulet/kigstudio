@@ -156,6 +156,53 @@ namespace sinriv::ui::render::axis_gizmo {
                 ndc_z >= -1.5f && ndc_z <= 1.5f};
     }
 
+    inline float computeAxisLengthForPixelSize(const GizmoState& state,
+                                            AxisHandle axis,
+                                            float target_pixels = 200.0f) {
+        const vec3f origin = extractTranslation(state.model_matrix);
+        const vec3f dir = extractAxisDirection(state.model_matrix, axis);
+
+        const float epsilon = 1e-2f; // 小步长（世界单位）
+
+        const ScreenPoint p0 = projectToScreen(origin, state);
+        const ScreenPoint p1 = projectToScreen(origin + dir * epsilon, state);
+
+        if (!p0.valid || !p1.valid) {
+            return state.axis_length; // fallback
+        }
+
+        const float dx = p1.x - p0.x;
+        const float dy = p1.y - p0.y;
+        const float pixel_per_unit = std::sqrt(dx * dx + dy * dy) / epsilon;
+
+        if (pixel_per_unit <= 1e-6f) {
+            return state.axis_length;
+        }
+
+        return target_pixels / pixel_per_unit;
+    }
+
+    inline float computeAxisLengthStable(const GizmoState& state,
+                                     float target_pixels = 200.0f) {
+        const vec3f origin = extractTranslation(state.model_matrix);
+
+        // 转到 view space
+        vec4f view_pos = vec4f(origin.x, origin.y, origin.z, 1.0f) * state.view_matrix;
+        float w = view_pos[3];
+        float z = view_pos[2];
+        float depth = std::fabs(z / w);
+        if (depth < 1e-3f) depth = 1e-3f;
+
+        float proj_yy = state.proj_matrix[1][1]; 
+
+        float viewport_height = static_cast<float>(state.viewport_height);
+
+        float world_size =
+            target_pixels * depth / (proj_yy * viewport_height * 0.5f);
+
+        return world_size;
+    }
+
     inline float distancePointToSegmentSquared(float px,
                                                float py,
                                                const ScreenPoint& a,
@@ -180,7 +227,8 @@ namespace sinriv::ui::render::axis_gizmo {
     }
 
     inline AxisHandle pickAxis(const GizmoState& state, int mouse_x, int mouse_y) {
-        const auto segments = buildAxisSegments(state.model_matrix, state.axis_length);
+        float axis_len = computeAxisLengthStable(state);
+        const auto segments = buildAxisSegments(state.model_matrix, axis_len);
         const float max_distance_sq = state.hit_radius_pixels * state.hit_radius_pixels;
         float best_distance_sq = max_distance_sq;
         AxisHandle best_axis = AxisHandle::None;
@@ -205,7 +253,8 @@ namespace sinriv::ui::render::axis_gizmo {
     }
 
     inline std::tuple<int, int, int, int> getScreenBoundBox(const GizmoState& state) {
-        const auto segments = buildAxisSegments(state.model_matrix, state.axis_length);
+        float axis_len = computeAxisLengthStable(state);
+        const auto segments = buildAxisSegments(state.model_matrix, axis_len);
         bool has_point = false;
         float min_x = std::numeric_limits<float>::max();
         float min_y = std::numeric_limits<float>::max();
@@ -286,7 +335,8 @@ namespace sinriv::ui::render::axis_gizmo {
     template <class VertexT>
     inline void appendAxisVertices(std::vector<VertexT>& vertices,
                                    const GizmoState& state) {
-        const auto segments = buildAxisSegments(state.model_matrix, state.axis_length);
+        float axis_len = computeAxisLengthStable(state);
+        const auto segments = buildAxisSegments(state.model_matrix, axis_len);
         vertices.reserve(vertices.size() + segments.size() * 2);
 
         for (const auto& segment : segments) {
