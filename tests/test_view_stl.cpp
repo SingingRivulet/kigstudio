@@ -14,6 +14,7 @@
 
 #include "kigstudio/ui/logger.h"
 #include "kigstudio/ui/render_collision.h"
+#include "kigstudio/ui/render_deferred.h"
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/ui/render_voxel.h"
 #include "tinyfiledialogs.h"
@@ -72,18 +73,25 @@ int main() {
         return -1;
     }
 
-    bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x303030ff, 1.0f,
-                       0);
+    constexpr bgfx::ViewId kGBufferView = 0;
+    constexpr bgfx::ViewId kLightingView = 1;
+    constexpr bgfx::ViewId kOverlayView = 2;
+
+    bgfx::setViewClear(kOverlayView, 0, 0x00000000, 1.0f, 0);
+    bgfx::setViewFrameBuffer(kOverlayView, BGFX_INVALID_HANDLE);
 
     imguiCreate();
 
     int width, height;
     SDL_GetWindowSize(window, &width, &height);
-    bgfx::setViewRect(0, 0, 0, width, height);
+    bgfx::setViewRect(kGBufferView, 0, 0, width, height);
+    bgfx::setViewRect(kLightingView, 0, 0, width, height);
+    bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
-    sinriv::ui::render::RenderMesh mesh_renderer(0);
-    sinriv::ui::render::RenderVoxel voxel_renderer(0);
-    sinriv::ui::render::RenderCollision collision_renderer(0);
+    sinriv::ui::render::RenderDeferred deferred_renderer(kGBufferView, kLightingView);
+    sinriv::ui::render::RenderMesh mesh_renderer(kGBufferView, kOverlayView);
+    sinriv::ui::render::RenderVoxel voxel_renderer(kGBufferView, kOverlayView);
+    sinriv::ui::render::RenderCollision collision_renderer(kOverlayView, kOverlayView);
     sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
     collision_group.add(sinriv::kigstudio::voxel::collision::Sphere{
         {0.0f, 0.0f, 0.0f}, 35.0f});
@@ -177,16 +185,21 @@ int main() {
             std::cout << "Window resized to " << width << "x" << height
                       << std::endl;
         }
-        bgfx::setViewRect(0, 0, 0, width, height);
-
-        bgfx::touch(0);
+        bgfx::setViewRect(kGBufferView, 0, 0, width, height);
+        bgfx::setViewRect(kLightingView, 0, 0, width, height);
+        bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
         float view[16];
         float proj[16];
         bx::mtxLookAt(view, bx::Vec3(0, 0, distance), bx::Vec3(0, 0, 0));
         bx::mtxProj(proj, 60.0f, float(width) / float(height), 0.1f, 1000.0f,
                     bgfx::getCaps()->homogeneousDepth);
-        bgfx::setViewTransform(0, view, proj);
+        bgfx::setViewTransform(kGBufferView, view, proj);
+        bgfx::setViewTransform(kOverlayView, view, proj);
+        bgfx::setViewFrameBuffer(kOverlayView, BGFX_INVALID_HANDLE);
+        deferred_renderer.setViewportSize(static_cast<uint16_t>(width),
+                                          static_cast<uint16_t>(height));
+        deferred_renderer.prepareFrame();
         mesh_renderer.setViewportSize(width, height);
         voxel_renderer.setViewportSize(width, height);
         collision_renderer.setViewportSize(width, height);
@@ -202,11 +215,21 @@ int main() {
         bx::mtxRotateXY(mtx, bx::toRad(pitch), bx::toRad(yaw));
 
         if (showMesh) {
-            mesh_renderer.render(mtx);
+            mesh_renderer.renderGBuffer(mtx);
         }
 
         if (showVoxels) {
-            voxel_renderer.render(mtx);
+            voxel_renderer.renderGBuffer(mtx);
+        }
+
+        deferred_renderer.render();
+
+        if (showMesh) {
+            mesh_renderer.renderOverlay();
+        }
+
+        if (showVoxels) {
+            voxel_renderer.renderOverlay();
         }
 
         if (showCollision) {
@@ -240,6 +263,7 @@ int main() {
         bgfx::frame();
     }
 
+    deferred_renderer.release();
     collision_renderer.release();
     voxel_renderer.release();
     mesh_renderer.release();

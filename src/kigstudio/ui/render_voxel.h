@@ -11,8 +11,11 @@ namespace sinriv::ui::render {
         using AxisHandle = RenderMesh::AxisHandle;
         using vec3f = RenderMesh::vec3f;
         explicit RenderVoxel(bgfx::ViewId view_id = 0,
+                             bgfx::ViewId overlay_view_id = 0,
                              std::string shader_dir = "../../shader/base/")
-            : mesh_renderer_(view_id, std::move(shader_dir)) {}
+            : mesh_renderer_(view_id, overlay_view_id, std::move(shader_dir)) {
+            mesh_renderer_.setBaseColor(0.72f, 0.80f, 0.95f, 1.0f);
+        }
 
         inline void setViewId(bgfx::ViewId view_id) {
             mesh_renderer_.setViewId(view_id);
@@ -20,6 +23,14 @@ namespace sinriv::ui::render {
 
         inline bgfx::ViewId getViewId() const {
             return mesh_renderer_.getViewId();
+        }
+
+        inline void setOverlayViewId(bgfx::ViewId view_id) {
+            mesh_renderer_.setOverlayViewId(view_id);
+        }
+
+        inline bgfx::ViewId getOverlayViewId() const {
+            return mesh_renderer_.getOverlayViewId();
         }
 
         inline void setShaderDirectory(const std::string& shader_dir) {
@@ -83,9 +94,19 @@ namespace sinriv::ui::render {
             loadVoxelGrid(voxel_data, isolevel, smooth_normals);
         }
 
-        inline void render(const float* transform) {
+        inline void renderGBuffer(const float* transform) {
             mesh_renderer_.showAxis = showAxis;
-            mesh_renderer_.render(transform);
+            mesh_renderer_.renderGBuffer(transform);
+        }
+
+        inline void renderOverlay() {
+            mesh_renderer_.showAxis = showAxis;
+            mesh_renderer_.renderOverlay();
+        }
+
+        inline void render(const float* transform) {
+            renderGBuffer(transform);
+            renderOverlay();
         }
         
         //计算物体在屏幕上覆盖的矩形区域（x1,y1,x2,y2），用于提前过滤鼠标事件

@@ -71,6 +71,19 @@ namespace sinriv::ui::render::axis_gizmo {
         }
     }
 
+    inline uint32_t getAxisColor(AxisHandle axis) {
+        switch (axis) {
+            case AxisHandle::X:
+                return 0xff0000ff;
+            case AxisHandle::Y:
+                return 0xff00ff00;
+            case AxisHandle::Z:
+                return 0xffff0000;
+            default:
+                return 0xffffffff;
+        }
+    }
+
     inline vec3f transformPoint(const mat4f& matrix, const vec3f& point) {
         return (vec4f(point.x, point.y, point.z, 1.0f) * matrix).toVec3();
     }
@@ -347,6 +360,22 @@ namespace sinriv::ui::render::axis_gizmo {
                  normal.y, normal.z});
             vertices.push_back({segment.end.x, segment.end.y, segment.end.z, normal.x,
                                 normal.y, normal.z});
+        }
+    }
+
+    template <class VertexT>
+    inline void appendAxisColorVertices(std::vector<VertexT>& vertices,
+                                        const GizmoState& state) {
+        float axis_len = computeAxisLengthStable(state);
+        const auto segments = buildAxisSegments(state.model_matrix, axis_len);
+        vertices.reserve(vertices.size() + segments.size() * 2);
+
+        for (const auto& segment : segments) {
+            const uint32_t color = getAxisColor(segment.axis);
+            vertices.push_back(
+                {segment.start.x, segment.start.y, segment.start.z, color});
+            vertices.push_back(
+                {segment.end.x, segment.end.y, segment.end.z, color});
         }
     }
 
