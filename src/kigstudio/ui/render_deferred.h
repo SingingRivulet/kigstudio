@@ -263,33 +263,7 @@ namespace sinriv::ui::render {
             bgfx::setUniform(u_light_dir_, light_dir_.data());
             bgfx::setUniform(u_space_div_, space_div.data());
             bgfx::setUniform(u_space_div_mix_, space_div_mix.data());
-            bgfx::setUniform(u_collision_counts_, collision_counts_.data());
-            if (sphere_count_ > 0) {
-                bgfx::setUniform(u_collision_spheres_, sphere_data_.data(),
-                                 static_cast<uint16_t>(sphere_count_));
-            }
-            if (cylinder_count_ > 0) {
-                bgfx::setUniform(u_collision_cylinders_a_, cylinder_start_radius_.data(),
-                                 static_cast<uint16_t>(cylinder_count_));
-                bgfx::setUniform(u_collision_cylinders_b_, cylinder_end_.data(),
-                                 static_cast<uint16_t>(cylinder_count_));
-            }
-            if (capsule_count_ > 0) {
-                bgfx::setUniform(u_collision_capsules_a_, capsule_start_radius_.data(),
-                                 static_cast<uint16_t>(capsule_count_));
-                bgfx::setUniform(u_collision_capsules_b_, capsule_end_.data(),
-                                 static_cast<uint16_t>(capsule_count_));
-            }
-            if (obb_count_ > 0) {
-                bgfx::setUniform(u_collision_obb_center_, obb_center_.data(),
-                                 static_cast<uint16_t>(obb_count_));
-                bgfx::setUniform(u_collision_obb_axis_x_, obb_axis_x_.data(),
-                                 static_cast<uint16_t>(obb_count_));
-                bgfx::setUniform(u_collision_obb_axis_y_, obb_axis_y_.data(),
-                                 static_cast<uint16_t>(obb_count_));
-                bgfx::setUniform(u_collision_obb_axis_z_, obb_axis_z_.data(),
-                                 static_cast<uint16_t>(obb_count_));
-            }
+            
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_MSAA);
             bgfx::submit(lighting_view_id_, combine_program_);
