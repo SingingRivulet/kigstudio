@@ -17,6 +17,8 @@ uniform vec4 u_collisionObbCenter[16];
 uniform vec4 u_collisionObbAxisX[16];
 uniform vec4 u_collisionObbAxisY[16];
 uniform vec4 u_collisionObbAxisZ[16];
+uniform vec4 u_space_div;
+uniform vec4 u_space_div_mix;
 
 bool insideSphere(vec3 point, vec4 sphere)
 {
@@ -115,6 +117,14 @@ void main()
     vec3 albedo = albedo_sample.rgb;
     vec3 normal = texture2D(s_normal, v_texcoord0).rgb * 2.0 - 1.0;
     vec3 world_pos = texture2D(s_worldPos, v_texcoord0).xyz;
+    // 判断在哪一面
+    float face_side = world_pos.x * u_space_div.x + world_pos.y * u_space_div.y + world_pos.z * u_space_div.z + u_space_div.w;
+    if (face_side < 0.0) {
+        albedo = mix(albedo, vec3(0.20, 1.00, 0.45), u_space_div_mix.x);
+    } else {
+        albedo = mix(albedo, vec3(1.00, 0.45, 0.20), u_space_div_mix.x);
+    }
+
     normal = normalize(normal);
 
     vec3 light_dir = normalize(u_lightDir.xyz);

@@ -105,6 +105,10 @@ namespace sinriv::ui::render {
             height_ = std::max<uint16_t>(height, 1);
         }
 
+        inline void setSpaceDivVisible(bool visible) {
+            space_div_mix[0] = visible ? 1.0f : 0.0f;
+        }
+        
         inline void setLightDirection(float x, float y, float z) {
             light_dir_[0] = x;
             light_dir_[1] = y;
@@ -202,6 +206,8 @@ namespace sinriv::ui::render {
             bgfx::setTexture(1, s_normal_, normal_texture_);
             bgfx::setTexture(2, s_world_pos_, world_pos_texture_);
             bgfx::setUniform(u_light_dir_, light_dir_.data());
+            bgfx::setUniform(u_space_div_, space_div.data());
+            bgfx::setUniform(u_space_div_mix_, space_div_mix.data());
             bgfx::setUniform(u_collision_counts_, collision_counts_.data());
             if (sphere_count_ > 0) {
                 bgfx::setUniform(u_collision_spheres_, sphere_data_.data(),
@@ -299,6 +305,14 @@ namespace sinriv::ui::render {
             if (bgfx::isValid(u_collision_obb_axis_z_)) {
                 bgfx::destroy(u_collision_obb_axis_z_);
                 u_collision_obb_axis_z_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(u_space_div_)) {
+                bgfx::destroy(u_space_div_);
+                u_space_div_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(u_space_div_mix_)) {
+                bgfx::destroy(u_space_div_mix_);
+                u_space_div_mix_ = BGFX_INVALID_HANDLE;
             }
         }
 
@@ -505,6 +519,14 @@ namespace sinriv::ui::render {
                     "u_collisionObbAxisZ", bgfx::UniformType::Vec4,
                     static_cast<uint16_t>(kMaxCollisionShapes));
             }
+            if (!bgfx::isValid(u_space_div_)) {
+                u_space_div_ = bgfx::createUniform(
+                    "u_space_div", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_space_div_mix_)) {
+                u_space_div_mix_ = bgfx::createUniform(
+                    "u_space_div_mix", bgfx::UniformType::Vec4);
+            }
 
             bgfx::ShaderHandle vs =
                 deferred_detail::loadShader(shader_dir_ + "vs_screen_quad.bin");
@@ -555,6 +577,10 @@ namespace sinriv::ui::render {
         bgfx::UniformHandle u_collision_obb_axis_x_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_collision_obb_axis_y_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_collision_obb_axis_z_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_space_div_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_space_div_mix_ = BGFX_INVALID_HANDLE;
+        std::array<float, 4> space_div = {1.0f, 0.0f, 0.0f, 0.0f};
+        std::array<float, 4> space_div_mix = {1.0f, 0.0f, 0.0f, 0.0f};
         std::array<float, 4> light_dir_ = {0.3f, 0.5f, 0.8f, 0.0f};
         std::array<float, 4> collision_counts_ = {0.0f, 0.0f, 0.0f, 0.0f};
         std::array<std::array<float, 4>, kMaxCollisionShapes> sphere_data_{};

@@ -125,6 +125,7 @@ int main() {
     bool showMeshAxis = true;
     bool showVoxelAxis = false;
     bool showCollisionAxis = true;
+    bool showDivSpace = true;
     bool debugPrintRotation = false;
     int oldW = width;
     int oldH = height;
@@ -212,6 +213,7 @@ int main() {
         deferred_renderer.setViewportSize(static_cast<uint16_t>(width),
                                           static_cast<uint16_t>(height));
         deferred_renderer.prepareFrame();
+        deferred_renderer.setSpaceDivVisible(showDivSpace);
         mesh_renderer.setViewportSize(width, height);
         voxel_renderer.setViewportSize(width, height);
         collision_renderer.setViewportSize(width, height);
@@ -285,6 +287,7 @@ int main() {
         ImGui::Checkbox("mesh axis", &showMeshAxis);
         ImGui::Checkbox("voxel axis", &showVoxelAxis);
         ImGui::Checkbox("collision axis", &showCollisionAxis);
+        ImGui::Checkbox("div space", &showDivSpace);
         ImGui::Checkbox("debug print rotation", &debugPrintRotation);
 
         ImGui::End();
