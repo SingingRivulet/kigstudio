@@ -121,10 +121,7 @@ namespace sinriv::ui::render {
         }
 
         inline void clearCollisionTint() {
-            sphere_count_ = 0;
-            cylinder_count_ = 0;
-            capsule_count_ = 0;
-            obb_count_ = 0;
+            collision_items_.clear();
         }
 
         inline void setCollisionGroup(const CollisionGroup& group) {
@@ -214,43 +211,28 @@ namespace sinriv::ui::render {
             std::memcpy(tib.data, kQuadIndices, sizeof(kQuadIndices));
 
             // ===== Collision Pass =====
-            bgfx::setTransform(identity_mtx_);
-            bgfx::setVertexBuffer(0, &tvb);
-            bgfx::setIndexBuffer(&tib);
+            for (const auto& item : collision_items_) {
+                bgfx::setTransform(identity_mtx_);
+                bgfx::setVertexBuffer(0, &tvb);
+                bgfx::setIndexBuffer(&tib);
+                bgfx::setTexture(0, s_world_pos_, world_pos_texture_);
 
-            bgfx::setTexture(0, s_world_pos_, world_pos_texture_);
-            bgfx::setUniform(u_collision_counts_, collision_counts_.data());
+                float type_vec[4] = {static_cast<float>(item.type), 0.0f, 0.0f, 0.0f};
+                bgfx::setUniform(u_shape_type_, type_vec);
+                bgfx::setUniform(u_shape_data_0_, item.data[0].data());
+                if (item.type >= 1) {
+                    bgfx::setUniform(u_shape_data_1_, item.data[1].data());
+                }
+                if (item.type == 3) {
+                    bgfx::setUniform(u_shape_data_2_, item.data[2].data());
+                    bgfx::setUniform(u_shape_data_3_, item.data[3].data());
+                }
 
-            if (sphere_count_ > 0) {
-                bgfx::setUniform(u_collision_spheres_, sphere_data_.data(),
-                                 static_cast<uint16_t>(sphere_count_));
+                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                               BGFX_STATE_MSAA |
+                               BGFX_STATE_BLEND_ADD);
+                bgfx::submit(collision_view_id_, collision_program_);
             }
-            if (cylinder_count_ > 0) {
-                bgfx::setUniform(u_collision_cylinders_a_, cylinder_start_radius_.data(),
-                                 static_cast<uint16_t>(cylinder_count_));
-                bgfx::setUniform(u_collision_cylinders_b_, cylinder_end_.data(),
-                                 static_cast<uint16_t>(cylinder_count_));
-            }
-            if (capsule_count_ > 0) {
-                bgfx::setUniform(u_collision_capsules_a_, capsule_start_radius_.data(),
-                                 static_cast<uint16_t>(capsule_count_));
-                bgfx::setUniform(u_collision_capsules_b_, capsule_end_.data(),
-                                 static_cast<uint16_t>(capsule_count_));
-            }
-            if (obb_count_ > 0) {
-                bgfx::setUniform(u_collision_obb_center_, obb_center_.data(),
-                                 static_cast<uint16_t>(obb_count_));
-                bgfx::setUniform(u_collision_obb_axis_x_, obb_axis_x_.data(),
-                                 static_cast<uint16_t>(obb_count_));
-                bgfx::setUniform(u_collision_obb_axis_y_, obb_axis_y_.data(),
-                                 static_cast<uint16_t>(obb_count_));
-                bgfx::setUniform(u_collision_obb_axis_z_, obb_axis_z_.data(),
-                                 static_cast<uint16_t>(obb_count_));
-            }
-
-            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
-                           BGFX_STATE_MSAA);
-            bgfx::submit(collision_view_id_, collision_program_);
 
             // ===== Lighting Pass =====
             bgfx::setTransform(identity_mtx_);
@@ -296,48 +278,31 @@ namespace sinriv::ui::render {
         }
 
        private:
-        static constexpr std::size_t kMaxCollisionShapes = 16;
+        struct CollisionItem {
+            uint32_t type; // 0=sphere, 1=cylinder, 2=capsule, 3=obb
+            std::array<std::array<float, 4>, 4> data{};
+        };
 
         inline void destroyCollisionUniforms() {
-            if (bgfx::isValid(u_collision_counts_)) {
-                bgfx::destroy(u_collision_counts_);
-                u_collision_counts_ = BGFX_INVALID_HANDLE;
+            if (bgfx::isValid(u_shape_type_)) {
+                bgfx::destroy(u_shape_type_);
+                u_shape_type_ = BGFX_INVALID_HANDLE;
             }
-            if (bgfx::isValid(u_collision_spheres_)) {
-                bgfx::destroy(u_collision_spheres_);
-                u_collision_spheres_ = BGFX_INVALID_HANDLE;
+            if (bgfx::isValid(u_shape_data_0_)) {
+                bgfx::destroy(u_shape_data_0_);
+                u_shape_data_0_ = BGFX_INVALID_HANDLE;
             }
-            if (bgfx::isValid(u_collision_cylinders_a_)) {
-                bgfx::destroy(u_collision_cylinders_a_);
-                u_collision_cylinders_a_ = BGFX_INVALID_HANDLE;
+            if (bgfx::isValid(u_shape_data_1_)) {
+                bgfx::destroy(u_shape_data_1_);
+                u_shape_data_1_ = BGFX_INVALID_HANDLE;
             }
-            if (bgfx::isValid(u_collision_cylinders_b_)) {
-                bgfx::destroy(u_collision_cylinders_b_);
-                u_collision_cylinders_b_ = BGFX_INVALID_HANDLE;
+            if (bgfx::isValid(u_shape_data_2_)) {
+                bgfx::destroy(u_shape_data_2_);
+                u_shape_data_2_ = BGFX_INVALID_HANDLE;
             }
-            if (bgfx::isValid(u_collision_capsules_a_)) {
-                bgfx::destroy(u_collision_capsules_a_);
-                u_collision_capsules_a_ = BGFX_INVALID_HANDLE;
-            }
-            if (bgfx::isValid(u_collision_capsules_b_)) {
-                bgfx::destroy(u_collision_capsules_b_);
-                u_collision_capsules_b_ = BGFX_INVALID_HANDLE;
-            }
-            if (bgfx::isValid(u_collision_obb_center_)) {
-                bgfx::destroy(u_collision_obb_center_);
-                u_collision_obb_center_ = BGFX_INVALID_HANDLE;
-            }
-            if (bgfx::isValid(u_collision_obb_axis_x_)) {
-                bgfx::destroy(u_collision_obb_axis_x_);
-                u_collision_obb_axis_x_ = BGFX_INVALID_HANDLE;
-            }
-            if (bgfx::isValid(u_collision_obb_axis_y_)) {
-                bgfx::destroy(u_collision_obb_axis_y_);
-                u_collision_obb_axis_y_ = BGFX_INVALID_HANDLE;
-            }
-            if (bgfx::isValid(u_collision_obb_axis_z_)) {
-                bgfx::destroy(u_collision_obb_axis_z_);
-                u_collision_obb_axis_z_ = BGFX_INVALID_HANDLE;
+            if (bgfx::isValid(u_shape_data_3_)) {
+                bgfx::destroy(u_shape_data_3_);
+                u_shape_data_3_ = BGFX_INVALID_HANDLE;
             }
             if (bgfx::isValid(u_space_div_)) {
                 bgfx::destroy(u_space_div_);
@@ -387,60 +352,50 @@ namespace sinriv::ui::render {
         }
 
         inline void appendSphere(const Sphere& sphere, const mat4f& world_matrix) {
-            if (sphere_count_ >= kMaxCollisionShapes) {
-                return;
-            }
             const vec3f center =
                 sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, sphere.center);
-            sphere_data_[sphere_count_] = {center.x, center.y, center.z,
-                                           sphere.radius * extractMaxScale(world_matrix)};
-            ++sphere_count_;
-            collision_counts_[0] = static_cast<float>(sphere_count_);
+            CollisionItem item;
+            item.type = 0;
+            item.data[0] = {center.x, center.y, center.z,
+                            sphere.radius * extractMaxScale(world_matrix)};
+            collision_items_.push_back(item);
         }
 
         inline void appendCylinder(const Cylinder& cylinder, const mat4f& world_matrix) {
-            if (cylinder_count_ >= kMaxCollisionShapes) {
-                return;
-            }
             const vec3f start =
                 sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, cylinder.start);
             const vec3f end =
                 sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, cylinder.end);
-            cylinder_start_radius_[cylinder_count_] = {
+            CollisionItem item;
+            item.type = 1;
+            item.data[0] = {
                 start.x,
                 start.y,
                 start.z,
                 cylinder.radius * extractMaxScale(world_matrix),
             };
-            cylinder_end_[cylinder_count_] = {end.x, end.y, end.z, 0.0f};
-            ++cylinder_count_;
-            collision_counts_[1] = static_cast<float>(cylinder_count_);
+            item.data[1] = {end.x, end.y, end.z, 0.0f};
+            collision_items_.push_back(item);
         }
 
         inline void appendCapsule(const Capsule& capsule, const mat4f& world_matrix) {
-            if (capsule_count_ >= kMaxCollisionShapes) {
-                return;
-            }
             const vec3f start =
                 sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, capsule.start);
             const vec3f end =
                 sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, capsule.end);
-            capsule_start_radius_[capsule_count_] = {
+            CollisionItem item;
+            item.type = 2;
+            item.data[0] = {
                 start.x,
                 start.y,
                 start.z,
                 capsule.radius * extractMaxScale(world_matrix),
             };
-            capsule_end_[capsule_count_] = {end.x, end.y, end.z, 0.0f};
-            ++capsule_count_;
-            collision_counts_[2] = static_cast<float>(capsule_count_);
+            item.data[1] = {end.x, end.y, end.z, 0.0f};
+            collision_items_.push_back(item);
         }
 
         inline void appendOBB(const OBB& obb, const mat4f& world_matrix) {
-            if (obb_count_ >= kMaxCollisionShapes) {
-                return;
-            }
-
             const vec3f center =
                 sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, obb.center);
             const vec3f axis_x =
@@ -450,12 +405,13 @@ namespace sinriv::ui::render {
             const vec3f axis_z =
                 deferred_detail::transformVector(world_matrix, obb.axis_z * obb.half_extent.z);
 
-            obb_center_[obb_count_] = {center.x, center.y, center.z, 0.0f};
-            obb_axis_x_[obb_count_] = {axis_x.x, axis_x.y, axis_x.z, 0.0f};
-            obb_axis_y_[obb_count_] = {axis_y.x, axis_y.y, axis_y.z, 0.0f};
-            obb_axis_z_[obb_count_] = {axis_z.x, axis_z.y, axis_z.z, 0.0f};
-            ++obb_count_;
-            collision_counts_[3] = static_cast<float>(obb_count_);
+            CollisionItem item;
+            item.type = 3;
+            item.data[0] = {center.x, center.y, center.z, 0.0f};
+            item.data[1] = {axis_x.x, axis_x.y, axis_x.z, 0.0f};
+            item.data[2] = {axis_y.x, axis_y.y, axis_y.z, 0.0f};
+            item.data[3] = {axis_z.x, axis_z.y, axis_z.z, 0.0f};
+            collision_items_.push_back(item);
         }
 
         inline bool ensureFrameBuffer() {
@@ -527,54 +483,20 @@ namespace sinriv::ui::render {
             if (!bgfx::isValid(u_light_dir_)) {
                 u_light_dir_ = bgfx::createUniform("u_lightDir", bgfx::UniformType::Vec4);
             }
-            if (!bgfx::isValid(u_collision_counts_)) {
-                u_collision_counts_ =
-                    bgfx::createUniform("u_collisionCounts", bgfx::UniformType::Vec4);
+            if (!bgfx::isValid(u_shape_type_)) {
+                u_shape_type_ = bgfx::createUniform("u_shapeType", bgfx::UniformType::Vec4);
             }
-            if (!bgfx::isValid(u_collision_spheres_)) {
-                u_collision_spheres_ = bgfx::createUniform(
-                    "u_collisionSpheres", bgfx::UniformType::Vec4,
-                    static_cast<uint16_t>(kMaxCollisionShapes));
+            if (!bgfx::isValid(u_shape_data_0_)) {
+                u_shape_data_0_ = bgfx::createUniform("u_shapeData0", bgfx::UniformType::Vec4);
             }
-            if (!bgfx::isValid(u_collision_cylinders_a_)) {
-                u_collision_cylinders_a_ = bgfx::createUniform(
-                    "u_collisionCylindersA", bgfx::UniformType::Vec4,
-                    static_cast<uint16_t>(kMaxCollisionShapes));
+            if (!bgfx::isValid(u_shape_data_1_)) {
+                u_shape_data_1_ = bgfx::createUniform("u_shapeData1", bgfx::UniformType::Vec4);
             }
-            if (!bgfx::isValid(u_collision_cylinders_b_)) {
-                u_collision_cylinders_b_ = bgfx::createUniform(
-                    "u_collisionCylindersB", bgfx::UniformType::Vec4,
-                    static_cast<uint16_t>(kMaxCollisionShapes));
+            if (!bgfx::isValid(u_shape_data_2_)) {
+                u_shape_data_2_ = bgfx::createUniform("u_shapeData2", bgfx::UniformType::Vec4);
             }
-            if (!bgfx::isValid(u_collision_capsules_a_)) {
-                u_collision_capsules_a_ = bgfx::createUniform(
-                    "u_collisionCapsulesA", bgfx::UniformType::Vec4,
-                    static_cast<uint16_t>(kMaxCollisionShapes));
-            }
-            if (!bgfx::isValid(u_collision_capsules_b_)) {
-                u_collision_capsules_b_ = bgfx::createUniform(
-                    "u_collisionCapsulesB", bgfx::UniformType::Vec4,
-                    static_cast<uint16_t>(kMaxCollisionShapes));
-            }
-            if (!bgfx::isValid(u_collision_obb_center_)) {
-                u_collision_obb_center_ = bgfx::createUniform(
-                    "u_collisionObbCenter", bgfx::UniformType::Vec4,
-                    static_cast<uint16_t>(kMaxCollisionShapes));
-            }
-            if (!bgfx::isValid(u_collision_obb_axis_x_)) {
-                u_collision_obb_axis_x_ = bgfx::createUniform(
-                    "u_collisionObbAxisX", bgfx::UniformType::Vec4,
-                    static_cast<uint16_t>(kMaxCollisionShapes));
-            }
-            if (!bgfx::isValid(u_collision_obb_axis_y_)) {
-                u_collision_obb_axis_y_ = bgfx::createUniform(
-                    "u_collisionObbAxisY", bgfx::UniformType::Vec4,
-                    static_cast<uint16_t>(kMaxCollisionShapes));
-            }
-            if (!bgfx::isValid(u_collision_obb_axis_z_)) {
-                u_collision_obb_axis_z_ = bgfx::createUniform(
-                    "u_collisionObbAxisZ", bgfx::UniformType::Vec4,
-                    static_cast<uint16_t>(kMaxCollisionShapes));
+            if (!bgfx::isValid(u_shape_data_3_)) {
+                u_shape_data_3_ = bgfx::createUniform("u_shapeData3", bgfx::UniformType::Vec4);
             }
             if (!bgfx::isValid(u_space_div_)) {
                 u_space_div_ = bgfx::createUniform(
@@ -637,35 +559,17 @@ namespace sinriv::ui::render {
         bgfx::UniformHandle s_world_pos_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_collision_status_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_light_dir_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_collision_counts_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_collision_spheres_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_collision_cylinders_a_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_collision_cylinders_b_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_collision_capsules_a_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_collision_capsules_b_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_collision_obb_center_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_collision_obb_axis_x_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_collision_obb_axis_y_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_collision_obb_axis_z_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_shape_type_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_shape_data_0_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_shape_data_1_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_shape_data_2_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_shape_data_3_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_space_div_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_space_div_mix_ = BGFX_INVALID_HANDLE;
         std::array<float, 4> space_div = {1.0f, 0.0f, 0.0f, 0.0f};
         std::array<float, 4> space_div_mix = {1.0f, 0.0f, 0.0f, 0.0f};
         std::array<float, 4> light_dir_ = {0.3f, 0.5f, 0.8f, 0.0f};
-        std::array<float, 4> collision_counts_ = {0.0f, 0.0f, 0.0f, 0.0f};
-        std::array<std::array<float, 4>, kMaxCollisionShapes> sphere_data_{};
-        std::array<std::array<float, 4>, kMaxCollisionShapes> cylinder_start_radius_{};
-        std::array<std::array<float, 4>, kMaxCollisionShapes> cylinder_end_{};
-        std::array<std::array<float, 4>, kMaxCollisionShapes> capsule_start_radius_{};
-        std::array<std::array<float, 4>, kMaxCollisionShapes> capsule_end_{};
-        std::array<std::array<float, 4>, kMaxCollisionShapes> obb_center_{};
-        std::array<std::array<float, 4>, kMaxCollisionShapes> obb_axis_x_{};
-        std::array<std::array<float, 4>, kMaxCollisionShapes> obb_axis_y_{};
-        std::array<std::array<float, 4>, kMaxCollisionShapes> obb_axis_z_{};
-        std::size_t sphere_count_ = 0;
-        std::size_t cylinder_count_ = 0;
-        std::size_t capsule_count_ = 0;
-        std::size_t obb_count_ = 0;
+        std::vector<CollisionItem> collision_items_;
         float identity_mtx_[16]{};
     };
 }

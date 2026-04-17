@@ -4,17 +4,11 @@ $input v_texcoord0
 
 SAMPLER2D(s_worldPos, 0);
 
-uniform vec4 u_collisionCounts;
-uniform vec4 u_collisionSpheres[16];
-uniform vec4 u_collisionCylindersA[16];
-uniform vec4 u_collisionCylindersB[16];
-uniform vec4 u_collisionCapsulesA[16];
-uniform vec4 u_collisionCapsulesB[16];
-uniform vec4 u_collisionObbCenter[16];
-uniform vec4 u_collisionObbAxisX[16];
-uniform vec4 u_collisionObbAxisY[16];
-uniform vec4 u_collisionObbAxisZ[16];
-
+uniform vec4 u_shapeData0;
+uniform vec4 u_shapeData1;
+uniform vec4 u_shapeData2;
+uniform vec4 u_shapeData3;
+uniform vec4 u_shapeType;
 
 bool insideSphere(vec3 point, vec4 sphere)
 {
@@ -75,40 +69,30 @@ bool insideObb(vec3 point, vec4 center, vec4 axis_x, vec4 axis_y, vec4 axis_z)
            abs(dot(local, dz)) <= hz;
 }
 
-bool insideAnyCollision(vec3 point)
+bool insideShape(vec3 point)
 {
-    for (int i = 0; i < 16; ++i) {
-        if (float(i) < u_collisionCounts.x && insideSphere(point, u_collisionSpheres[i])) {
-            return true;
-        }
-        if (float(i) < u_collisionCounts.y &&
-            insideCylinder(point, u_collisionCylindersA[i], u_collisionCylindersB[i])) {
-            return true;
-        }
-        if (float(i) < u_collisionCounts.z &&
-            insideCapsule(point, u_collisionCapsulesA[i], u_collisionCapsulesB[i])) {
-            return true;
-        }
-        if (float(i) < u_collisionCounts.w &&
-            insideObb(point,
-                      u_collisionObbCenter[i],
-                      u_collisionObbAxisX[i],
-                      u_collisionObbAxisY[i],
-                      u_collisionObbAxisZ[i])) {
-            return true;
-        }
+    int type = int(u_shapeType.x);
+    if (type == 0) {
+        return insideSphere(point, u_shapeData0);
     }
-
+    if (type == 1) {
+        return insideCylinder(point, u_shapeData0, u_shapeData1);
+    }
+    if (type == 2) {
+        return insideCapsule(point, u_shapeData0, u_shapeData1);
+    }
+    if (type == 3) {
+        return insideObb(point, u_shapeData0, u_shapeData1, u_shapeData2, u_shapeData3);
+    }
     return false;
 }
 
 void main()
 {
-    
     vec3 world_pos = texture2D(s_worldPos, v_texcoord0).xyz;
-    if (insideAnyCollision(world_pos)) {
+    if (insideShape(world_pos)) {
         gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-    }else{
-        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    } else {
+        discard;
     }
 }
