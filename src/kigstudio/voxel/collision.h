@@ -357,6 +357,15 @@ class Transform {
     }
 
     inline mat4f getMatrix() const { return composeMatrix(position_, rotation_, scale_); }
+    inline mat4f getBgfxMatrix() const {
+        Quaternion tmp_rotation;
+        tmp_rotation.x = -rotation_.x;
+        tmp_rotation.y = -rotation_.y;
+        tmp_rotation.z = -rotation_.z;
+        tmp_rotation.w = rotation_.w;
+        //bgfx渲染需要使用共轭的四元数，原因未知
+        return composeMatrix(position_, tmp_rotation, scale_); 
+    }
 
    private:
     vec3f position_ = {0.0f, 0.0f, 0.0f};
@@ -441,6 +450,8 @@ class CollisionGroup {
 
         for (const GeometryInstance& geometry : geometries_) {
             mat4f world_matrix = geometry.transform.getMatrix() * global_matrix;
+            // 这个是无效的
+            // mat4f world_matrix = global_matrix * geometry.transform.getMatrix();
             if (!isAffineInvertible(world_matrix)) {
                 continue;
             }

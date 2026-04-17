@@ -102,14 +102,15 @@ int main() {
 
     sinriv::kigstudio::voxel::collision::Transform local_cylinder;
     local_cylinder.setPosition({0.0f, 0.0f, -40.0f});
+    local_cylinder.setRotationAxisAngle({{1.0f, 0.0f, 0.0f}, bx::kPiHalf/1.5});
     collision_group.add(sinriv::kigstudio::voxel::collision::Cylinder{
         {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 80.0f}, 12.0f}, local_cylinder);
 
     sinriv::kigstudio::voxel::collision::Transform local_capsule;
     local_capsule.setPosition({55.0f, 0.0f, 0.0f});
-    local_capsule.setRotationAxisAngle({{0.0f, 1.0f, 0.0f}, bx::kPiHalf});
+    local_capsule.setRotationAxisAngle({{0.0f, 0.0f, 1.0f}, bx::kPiHalf/2});
     collision_group.add(sinriv::kigstudio::voxel::collision::Capsule{
-        {0.0f, 0.0f, -20.0f}, {0.0f, 0.0f, 20.0f}, 10.0f}, local_capsule);
+        {-20.0f, 0.0f, 0.0f}, {20.0f, 0.0f, 0.0f}, 10.0f}, local_capsule);
 
     sinriv::kigstudio::voxel::collision::Transform local_obb;
     local_obb.setPosition({-60.0f, 0.0f, 0.0f});

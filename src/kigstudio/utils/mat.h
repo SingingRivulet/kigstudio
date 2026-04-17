@@ -90,8 +90,39 @@ class matrix {
         data[9] = y * z * one_minus_c - x * s;
         data[10] = z * z * one_minus_c + c;
     }
+    void setRotationQuaternion(const T w, const T x, const T y, const T z) {
+        // 计算旋转角度 theta = 2 * acos(w)
+        const T angle = 2 * acos(w);
 
-    void setScale(const T x, const T y, const T z) {
+        // 计算旋转轴的模长 sin(theta/2)
+        // 根据三角恒等式: sin^2(theta/2) + cos^2(theta/2) = 1
+        // 这里 cos(theta/2) = w, 所以 sin(theta/2) = sqrt(1 - w^2)
+        const T sin_half_angle = sqrt(1.0 - w * w);
+
+        T axis_x, axis_y, axis_z;
+
+        // 检查 sin(theta/2) 是否接近 0
+        // 如果接近 0，说明 w 接近 1 或 -1，此时四元数代表无旋转或 360 度旋转
+        // 这种情况下旋转轴是未定义的，我们通常将其设为默认轴 (例如 X 轴)
+        if (sin_half_angle < 1e-6f) {
+            axis_x = 1.0f;
+            axis_y = 0.0f;
+            axis_z = 0.0f;
+        } else {
+            // 归一化旋转轴: (x, y, z) / sin(theta/2)
+            // 因为四元数 q = [w, x, y, z] = [cos(theta/2), v*sin(theta/2)]
+            // 所以 v = (x, y, z) / sin(theta/2)
+            const T inv_sin_half_angle = 1.0f / sin_half_angle;
+            axis_x = x * inv_sin_half_angle;
+            axis_y = y * inv_sin_half_angle;
+            axis_z = z * inv_sin_half_angle;
+        }
+
+        // 调用 setRotation 设置旋转
+        setRotation(angle, axis_x, axis_y, axis_z);
+    }
+
+    inline void setScale(const T x, const T y, const T z) {
         setZero();
         data[0] = x;
         data[5] = y;
@@ -237,6 +268,33 @@ class matrix {
    private:
     T data[16];
 };
+
+template<typename T>
+inline void toBGFXMat(const T& src, float* dst16) {
+    // src: row-major
+    // bgfx: column-major
+    // => 转置
+
+    dst16[0]  = src[0][0];
+    dst16[1]  = src[1][0];
+    dst16[2]  = src[2][0];
+    dst16[3]  = src[3][0];
+
+    dst16[4]  = src[0][1];
+    dst16[5]  = src[1][1];
+    dst16[6]  = src[2][1];
+    dst16[7]  = src[3][1];
+
+    dst16[8]  = src[0][2];
+    dst16[9]  = src[1][2];
+    dst16[10] = src[2][2];
+    dst16[11] = src[3][2];
+
+    dst16[12] = src[0][3];
+    dst16[13] = src[1][3];
+    dst16[14] = src[2][3];
+    dst16[15] = src[3][3];
+}
 
 template <typename T>
 class vec4 {

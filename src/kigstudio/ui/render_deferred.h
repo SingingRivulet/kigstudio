@@ -129,7 +129,7 @@ namespace sinriv::ui::render {
 
             const mat4f group_matrix = group.getMatrix();
             for (const auto& geometry : group.geometries()) {
-                const mat4f local_matrix = geometry.transform.getMatrix() * group_matrix;
+                const mat4f local_matrix = geometry.transform.getBgfxMatrix() * group_matrix;
                 std::visit(
                     [&](const auto& shape) {
                         using ShapeType = std::decay_t<decltype(shape)>;
