@@ -79,20 +79,25 @@ namespace sinriv::ui::render {
 
         explicit RenderDeferred(bgfx::ViewId gbuffer_view_id = 0,
                                 bgfx::ViewId lighting_view_id = 1,
+                                bgfx::ViewId collision_view_id = 2,
                                 std::string shader_dir = "../../shader/base/")
             : gbuffer_view_id_(gbuffer_view_id),
               lighting_view_id_(lighting_view_id),
+              collision_view_id_(collision_view_id),
               shader_dir_(std::move(shader_dir)) {}
 
         ~RenderDeferred() { release(); }
 
         inline bgfx::ViewId getGBufferViewId() const { return gbuffer_view_id_; }
         inline bgfx::ViewId getLightingViewId() const { return lighting_view_id_; }
+        inline bgfx::ViewId getCollisionViewId() const { return collision_view_id_; }
 
         inline void setViewIds(bgfx::ViewId gbuffer_view_id,
-                               bgfx::ViewId lighting_view_id) {
+                               bgfx::ViewId lighting_view_id,
+                               bgfx::ViewId collision_view_id) {
             gbuffer_view_id_ = gbuffer_view_id;
             lighting_view_id_ = lighting_view_id;
+            collision_view_id_ = collision_view_id;
         }
 
         inline void setShaderDirectory(const std::string& shader_dir) {
@@ -169,7 +174,7 @@ namespace sinriv::ui::render {
             bgfx::setViewRect(collision_view_id_, 0, 0, width_, height_);
             bgfx::setViewTransform(collision_view_id_, view, proj);
             bgfx::setViewClear(collision_view_id_,
-                BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
+                BGFX_CLEAR_COLOR,
                 0x00000000); // mask = 0
             bgfx::touch(collision_view_id_);
 
@@ -209,48 +214,43 @@ namespace sinriv::ui::render {
             std::memcpy(tib.data, kQuadIndices, sizeof(kQuadIndices));
 
             // ===== Collision Pass =====
-            // BX_ASSERT(bgfx::isValid(collision_fb_), "collision_fb invalid");
-            // bgfx::setTransform(identity_mtx_);
-            // bgfx::setVertexBuffer(0, &tvb);
-            // bgfx::setIndexBuffer(&tib);
+            bgfx::setTransform(identity_mtx_);
+            bgfx::setVertexBuffer(0, &tvb);
+            bgfx::setIndexBuffer(&tib);
 
-            // bgfx::setTexture(0, s_world_pos_, world_pos_texture_);
-            // bgfx::setUniform(u_collision_counts_, collision_counts_.data());
+            bgfx::setTexture(0, s_world_pos_, world_pos_texture_);
+            bgfx::setUniform(u_collision_counts_, collision_counts_.data());
 
-            // // 各种 shape uniform（原样复用）
-            // if (sphere_count_ > 0) {
-            //     bgfx::setUniform(u_collision_spheres_, sphere_data_.data(),
-            //                      static_cast<uint16_t>(sphere_count_));
-            // }
-            // if (cylinder_count_ > 0) {
-            //     bgfx::setUniform(u_collision_cylinders_a_, cylinder_start_radius_.data(),
-            //                      static_cast<uint16_t>(cylinder_count_));
-            //     bgfx::setUniform(u_collision_cylinders_b_, cylinder_end_.data(),
-            //                      static_cast<uint16_t>(cylinder_count_));
-            // }
-            // if (capsule_count_ > 0) {
-            //     bgfx::setUniform(u_collision_capsules_a_, capsule_start_radius_.data(),
-            //                      static_cast<uint16_t>(capsule_count_));
-            //     bgfx::setUniform(u_collision_capsules_b_, capsule_end_.data(),
-            //                      static_cast<uint16_t>(capsule_count_));
-            // }
-            // if (obb_count_ > 0) {
-            //     bgfx::setUniform(u_collision_obb_center_, obb_center_.data(),
-            //                      static_cast<uint16_t>(obb_count_));
-            //     bgfx::setUniform(u_collision_obb_axis_x_, obb_axis_x_.data(),
-            //                      static_cast<uint16_t>(obb_count_));
-            //     bgfx::setUniform(u_collision_obb_axis_y_, obb_axis_y_.data(),
-            //                      static_cast<uint16_t>(obb_count_));
-            //     bgfx::setUniform(u_collision_obb_axis_z_, obb_axis_z_.data(),
-            //                      static_cast<uint16_t>(obb_count_));
-            // }
+            if (sphere_count_ > 0) {
+                bgfx::setUniform(u_collision_spheres_, sphere_data_.data(),
+                                 static_cast<uint16_t>(sphere_count_));
+            }
+            if (cylinder_count_ > 0) {
+                bgfx::setUniform(u_collision_cylinders_a_, cylinder_start_radius_.data(),
+                                 static_cast<uint16_t>(cylinder_count_));
+                bgfx::setUniform(u_collision_cylinders_b_, cylinder_end_.data(),
+                                 static_cast<uint16_t>(cylinder_count_));
+            }
+            if (capsule_count_ > 0) {
+                bgfx::setUniform(u_collision_capsules_a_, capsule_start_radius_.data(),
+                                 static_cast<uint16_t>(capsule_count_));
+                bgfx::setUniform(u_collision_capsules_b_, capsule_end_.data(),
+                                 static_cast<uint16_t>(capsule_count_));
+            }
+            if (obb_count_ > 0) {
+                bgfx::setUniform(u_collision_obb_center_, obb_center_.data(),
+                                 static_cast<uint16_t>(obb_count_));
+                bgfx::setUniform(u_collision_obb_axis_x_, obb_axis_x_.data(),
+                                 static_cast<uint16_t>(obb_count_));
+                bgfx::setUniform(u_collision_obb_axis_y_, obb_axis_y_.data(),
+                                 static_cast<uint16_t>(obb_count_));
+                bgfx::setUniform(u_collision_obb_axis_z_, obb_axis_z_.data(),
+                                 static_cast<uint16_t>(obb_count_));
+            }
 
-            // bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
-            //                BGFX_STATE_MSAA); // 只写 mask
-            // bgfx::submit(collision_view_id_, collision_program_);
-            //取消掉注释即可复现bug
-            //需要的是Collision Pass渲染到独立buffer，Lighting Pass渲染到屏幕，但是未按预期工作
-            //现在是把两个一起渲染到了屏幕上，并且gbuffer还工作不正常了（模型渲染不出来）
+            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                           BGFX_STATE_MSAA);
+            bgfx::submit(collision_view_id_, collision_program_);
 
             // ===== Lighting Pass =====
             bgfx::setTransform(identity_mtx_);
@@ -313,6 +313,10 @@ namespace sinriv::ui::render {
             if (bgfx::isValid(u_light_dir_)) {
                 bgfx::destroy(u_light_dir_);
                 u_light_dir_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(s_collision_status_)) {
+                bgfx::destroy(s_collision_status_);
+                s_collision_status_ = BGFX_INVALID_HANDLE;
             }
             destroyCollisionUniforms();
         }
@@ -530,11 +534,7 @@ namespace sinriv::ui::render {
         }
 
         inline bool ensureProgram() {
-            if (bgfx::isValid(combine_program_)) {
-                return true;
-            }
-
-            if (bgfx::isValid(collision_program_)) {
+            if (bgfx::isValid(combine_program_) && bgfx::isValid(collision_program_)) {
                 return true;
             }
 

@@ -108,7 +108,7 @@ bool insideAnyCollision(vec3 point)
 }
 
 void main()
-{
+{   
     vec4 albedo_sample = texture2D(s_albedo, v_texcoord0);
     if (albedo_sample.a < 0.001) {
         gl_FragColor = vec4(0.188, 0.188, 0.188, 1.0);
@@ -133,7 +133,7 @@ void main()
     float lighting = 0.25 + diffuse * 0.75;
     vec3 color = albedo * lighting;
 
-    if (insideAnyCollision(world_pos)) {
+    if (texture2D(s_collision, vec2(v_texcoord0.x, 1.0-v_texcoord0.y)).r > 0.5) {
         color = mix(color, vec3(0.20, 0.45, 1.00), 0.65);
     }
 

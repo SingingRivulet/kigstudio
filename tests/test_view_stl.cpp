@@ -75,8 +75,9 @@ int main() {
     }
 
     constexpr bgfx::ViewId kGBufferView = 0;
-    constexpr bgfx::ViewId kLightingView = 1;
-    constexpr bgfx::ViewId kOverlayView = 2;
+    constexpr bgfx::ViewId kCollisionView = 1;
+    constexpr bgfx::ViewId kLightingView = 2;
+    constexpr bgfx::ViewId kOverlayView = 3;
 
     bgfx::setViewClear(kOverlayView, 0, 0x00000000, 1.0f, 0);
     bgfx::setViewFrameBuffer(kOverlayView, BGFX_INVALID_HANDLE);
@@ -87,9 +88,10 @@ int main() {
     SDL_GetWindowSize(window, &width, &height);
     bgfx::setViewRect(kGBufferView, 0, 0, width, height);
     bgfx::setViewRect(kLightingView, 0, 0, width, height);
+    bgfx::setViewRect(kCollisionView, 0, 0, width, height);
     bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
-    sinriv::ui::render::RenderDeferred deferred_renderer(kGBufferView, kLightingView);
+    sinriv::ui::render::RenderDeferred deferred_renderer(kGBufferView, kLightingView, kCollisionView);
     sinriv::ui::render::RenderMesh mesh_renderer(kGBufferView, kOverlayView);
     sinriv::ui::render::RenderVoxel voxel_renderer(kGBufferView, kOverlayView);
     sinriv::ui::render::RenderCollision collision_renderer(kOverlayView, kOverlayView);
@@ -200,6 +202,7 @@ int main() {
         }
         bgfx::setViewRect(kGBufferView, 0, 0, width, height);
         bgfx::setViewRect(kLightingView, 0, 0, width, height);
+        bgfx::setViewRect(kCollisionView, 0, 0, width, height);
         bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
         float view[16];
