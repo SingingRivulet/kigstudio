@@ -98,6 +98,10 @@ namespace sinriv::ui::render {
             loadVoxelGrid(voxel_data, isolevel, smooth_normals);
         }
 
+        inline void loadGeometry(const AsyncVoxelLoader::MeshData& data) {
+            mesh_renderer_.loadGeometry(data.vertices, data.indices);
+        }
+
         inline void renderGBuffer(const float* transform) {
             mesh_renderer_.showAxis = showAxis;
             mesh_renderer_.renderGBuffer(transform);

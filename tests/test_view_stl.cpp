@@ -95,6 +95,7 @@ int main() {
     sinriv::ui::render::RenderMesh mesh_renderer(kGBufferView, kOverlayView);
     sinriv::ui::render::RenderVoxel voxel_renderer(kGBufferView, kOverlayView);
     sinriv::ui::render::RenderCollision collision_renderer(kOverlayView, kOverlayView);
+    sinriv::ui::render::AsyncVoxelLoader async_voxel_loader;
     sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
     collision_group.add(sinriv::kigstudio::voxel::collision::Sphere{
         {0.0f, 0.0f, 0.0f}, 35.0f});
@@ -179,7 +180,7 @@ int main() {
                                                          NULL, "STL file", 0);
                 if (file) {
                     mesh_renderer.loadSTL(file);
-                    voxel_renderer.loadSTLAsVoxel(file);
+                    async_voxel_loader.start(file);
                 }
             }
 
@@ -272,6 +273,12 @@ int main() {
             collision_renderer.render(collision_group, mtx_1, &cpu_model_matrix);
         }
 
+        // Check async voxel loader result
+        sinriv::ui::render::AsyncVoxelLoader::MeshData voxel_data;
+        if (async_voxel_loader.tryTakeResult(voxel_data)) {
+            voxel_renderer.loadGeometry(voxel_data);
+        }
+
         ImGui::NewFrame();
         ImGui::Begin("STL Loader");
 
@@ -280,8 +287,13 @@ int main() {
                 tinyfd_openFileDialog("Open STL", "", 0, NULL, "STL file", 0);
             if (file) {
                 mesh_renderer.loadSTL(file);
-                voxel_renderer.loadSTLAsVoxel(file);
+                async_voxel_loader.start(file);
             }
+        }
+
+        if (async_voxel_loader.isRunning()) {
+            ImGui::Text("%s", async_voxel_loader.getStatus().c_str());
+            ImGui::ProgressBar(async_voxel_loader.getProgress(), ImVec2(-1, 0));
         }
 
         ImGui::Checkbox("show mesh", &showMesh);

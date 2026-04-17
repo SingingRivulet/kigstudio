@@ -5,11 +5,16 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <iostream>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -59,6 +64,11 @@ namespace sinriv::ui::render {
                     .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
                     .end();
             }
+        };
+
+        struct AsyncVoxelMeshData {
+            std::vector<PosNormalVertex> vertices;
+            std::vector<uint32_t> indices;
         };
 
         inline bgfx::ShaderHandle loadShader(const std::string& path) {
@@ -199,6 +209,39 @@ namespace sinriv::ui::render {
 
         inline void loadSTL(const std::string& filename) {
             loadGeometry(sinriv::kigstudio::voxel::readSTL(filename));
+        }
+
+        inline void loadGeometry(const std::vector<mesh_detail::PosNormalVertex>& vertices,
+                                 const std::vector<uint32_t>& indices) {
+            if (!layout_initialized_) {
+                mesh_detail::PosNormalVertex::init(layout_);
+                layout_initialized_ = true;
+            }
+
+            resetBounds();
+            mesh_.destroy();
+            if (vertices.empty() || indices.empty()) {
+                return;
+            }
+
+            for (const auto& v : vertices) {
+                updateLocalBounds({v.x, v.y, v.z});
+            }
+
+            mesh_.vbh = bgfx::createVertexBuffer(
+                bgfx::copy(vertices.data(),
+                           static_cast<uint32_t>(vertices.size() * sizeof(mesh_detail::PosNormalVertex))),
+                layout_);
+
+            mesh_.ibh = bgfx::createIndexBuffer(
+                bgfx::copy(indices.data(),
+                           static_cast<uint32_t>(indices.size() * sizeof(uint32_t))),
+                BGFX_BUFFER_INDEX32);
+
+            mesh_.index_count = static_cast<uint32_t>(indices.size());
+            axis_state_.axis_length =
+                axis_gizmo::estimateAxisLengthFromBounds(local_bound_min_, local_bound_max_);
+            std::cout << "mesh loaded: " << mesh_.index_count << " indices" << std::endl;
         }
 
         inline bool empty() const {
@@ -446,5 +489,232 @@ namespace sinriv::ui::render {
         vec3f local_bound_max_{};
         std::array<float, 4> base_color_ = {0.82f, 0.82f, 0.82f, 1.0f};
         float identity_mtx_[16]{};
+    };
+
+    class AsyncVoxelLoader {
+       public:
+        using PosNormalVertex = mesh_detail::PosNormalVertex;
+        using MeshData = mesh_detail::AsyncVoxelMeshData;
+
+        AsyncVoxelLoader() = default;
+        ~AsyncVoxelLoader() { cancel(); }
+
+        inline void start(const std::string& filename,
+                          float voxel_size = 0.5f,
+                          double isolevel = 0.5,
+                          bool smooth_normals = true) {
+            cancel();
+            running_.store(true);
+            ready_.store(false);
+            progress_.store(0.0f);
+            {
+                std::lock_guard<std::mutex> lock(status_mutex_);
+                status_ = "Reading STL...";
+            }
+            thread_ = std::thread(&AsyncVoxelLoader::doWork, this,
+                                  filename, voxel_size, isolevel, smooth_normals);
+        }
+
+        inline void cancel() {
+            cancel_.store(true);
+            if (thread_.joinable()) {
+                thread_.join();
+            }
+            cancel_.store(false);
+        }
+
+        inline bool isRunning() const { return running_.load(); }
+        inline bool isReady() const { return ready_.load(); }
+        inline float getProgress() const { return progress_.load(); }
+
+        inline std::string getStatus() const {
+            std::lock_guard<std::mutex> lock(status_mutex_);
+            return status_;
+        }
+
+        bool tryTakeResult(MeshData& out) {
+            if (!ready_.load()) return false;
+            if (thread_.joinable()) {
+                thread_.join();
+            }
+            {
+                std::lock_guard<std::mutex> lock(result_mutex_);
+                out = std::move(result_);
+            }
+            running_.store(false);
+            ready_.store(false);
+            progress_.store(0.0f);
+            return true;
+        }
+
+       private:
+        void setStatus(const std::string& s) {
+            std::lock_guard<std::mutex> lock(status_mutex_);
+            status_ = s;
+        }
+
+        void setProgress(float p) {
+            progress_.store(p);
+        }
+
+        void finishCancel() {
+            running_.store(false);
+            ready_.store(false);
+            progress_.store(0.0f);
+            setStatus("Cancelled");
+        }
+
+        void doWork(std::string filename, float voxel_size, double isolevel, bool smooth_normals) {
+            using namespace sinriv::kigstudio::voxel;
+            using Triangle = triangle_bvh<float>::triangle;
+
+            // Phase 1: Read STL
+            setProgress(0.05f);
+            triangle_bvh<float> bvh;
+            size_t tri_count = 0;
+            for (auto [tri, n] : readSTL(filename)) {
+                (void)n;
+                bvh.insert(tri);
+                ++tri_count;
+                if (tri_count % 1000 == 0) {
+                    setProgress(0.05f + 0.08f * std::min(1.0f,
+                        static_cast<float>(tri_count) / 50000.0f));
+                }
+                if (cancel_.load()) {
+                    finishCancel();
+                    return;
+                }
+            }
+
+            // Phase 2: Voxelize
+            setStatus("Voxelizing...");
+            setProgress(0.15f);
+
+            VoxelGrid voxel_data;
+            voxel_data.voxel_size.x = voxel_size;
+            voxel_data.voxel_size.y = voxel_size;
+            voxel_data.voxel_size.z = voxel_size;
+            voxel_data.global_position.x = bvh.global_boundBox_min.x;
+            voxel_data.global_position.y = bvh.global_boundBox_min.y;
+            voxel_data.global_position.z = bvh.global_boundBox_min.z;
+
+            float minx = floor(bvh.global_boundBox_min.x / voxel_size) * voxel_size;
+            float miny = floor(bvh.global_boundBox_min.y / voxel_size) * voxel_size;
+            float minz = floor(bvh.global_boundBox_min.z / voxel_size) * voxel_size;
+            float maxx = ceil(bvh.global_boundBox_max.x / voxel_size) * voxel_size;
+            float maxy = ceil(bvh.global_boundBox_max.y / voxel_size) * voxel_size;
+            float maxz = ceil(bvh.global_boundBox_max.z / voxel_size) * voxel_size;
+            int num_block_y = static_cast<int>(ceil((maxy - miny) / voxel_size));
+            int num_block_z = static_cast<int>(ceil((maxz - minz) / voxel_size));
+            size_t total_rays = static_cast<size_t>(num_block_y) * num_block_z;
+            if (total_rays == 0) total_rays = 1;
+
+            std::mutex locker;
+            std::atomic<size_t> callback_count{0};
+
+            bvh.getSolidByFace(
+                voxel_size, voxel_size, voxel_size,
+                triangle_bvh<float>::voxel_face_X,
+                [&](auto start, auto end) {
+                    int start_x = static_cast<int>(std::round(
+                        (start.x - voxel_data.global_position.x) / voxel_size));
+                    int start_y = static_cast<int>(std::round(
+                        (start.y - voxel_data.global_position.y) / voxel_size));
+                    int start_z = static_cast<int>(std::round(
+                        (start.z - voxel_data.global_position.z) / voxel_size));
+                    int end_x = static_cast<int>(std::round(
+                        (end.x - voxel_data.global_position.x) / voxel_size));
+                    int end_y = static_cast<int>(std::round(
+                        (end.y - voxel_data.global_position.y) / voxel_size));
+                    int end_z = static_cast<int>(std::round(
+                        (end.z - voxel_data.global_position.z) / voxel_size));
+
+                    locker.lock();
+                    for (int i = start_x; i <= end_x; ++i) {
+                        for (int j = start_y; j <= end_y; ++j) {
+                            for (int k = start_z; k <= end_z; ++k) {
+                                if (i >= 0 && j >= 0 && k >= 0) {
+                                    voxel_data.insert({i, j, k});
+                                }
+                            }
+                        }
+                    }
+                    locker.unlock();
+
+                    size_t cnt = callback_count.fetch_add(1, std::memory_order_relaxed) + 1;
+                    if (cnt % 100 == 0) {
+                        float p = 0.15f + 0.35f * std::min(1.0f,
+                            static_cast<float>(cnt) / static_cast<float>(total_rays * 2));
+                        setProgress(p);
+                    }
+                }
+            );
+
+            if (cancel_.load()) {
+                finishCancel();
+                return;
+            }
+            setProgress(0.50f);
+
+            // Phase 3: Generate mesh
+            setStatus("Generating mesh...");
+            int num_triangles = 0;
+            auto generator = generateMesh(voxel_data, isolevel, num_triangles, smooth_normals);
+
+            MeshData data;
+            size_t processed_tris = 0;
+            size_t estimated_tris = voxel_data.num_chunk() * 200;
+            if (estimated_tris == 0) estimated_tris = 1;
+
+            for (auto [tri, n] : generator) {
+                const uint32_t base = static_cast<uint32_t>(data.vertices.size());
+                data.vertices.push_back(
+                    {std::get<0>(tri).x, std::get<0>(tri).y, std::get<0>(tri).z,
+                     n.x, n.y, n.z});
+                data.vertices.push_back(
+                    {std::get<1>(tri).x, std::get<1>(tri).y, std::get<1>(tri).z,
+                     n.x, n.y, n.z});
+                data.vertices.push_back(
+                    {std::get<2>(tri).x, std::get<2>(tri).y, std::get<2>(tri).z,
+                     n.x, n.y, n.z});
+                data.indices.push_back(base);
+                data.indices.push_back(base + 1);
+                data.indices.push_back(base + 2);
+
+                ++processed_tris;
+                if (processed_tris % 1000 == 0) {
+                    float p = 0.50f + 0.40f * std::min(1.0f,
+                        static_cast<float>(processed_tris) / static_cast<float>(estimated_tris));
+                    setProgress(p);
+                }
+                if (cancel_.load()) {
+                    finishCancel();
+                    return;
+                }
+            }
+
+            setStatus("Uploading...");
+            setProgress(0.95f);
+
+            {
+                std::lock_guard<std::mutex> lock(result_mutex_);
+                result_ = std::move(data);
+            }
+
+            setStatus("Done");
+            setProgress(1.0f);
+            running_.store(false);
+            ready_.store(true);
+        }
+
+        std::atomic<bool> running_{false};
+        std::atomic<bool> ready_{false};
+        std::atomic<bool> cancel_{false};
+        std::atomic<float> progress_{0.0f};
+        mutable std::mutex status_mutex_;
+        std::string status_;
+        mutable std::mutex result_mutex_;
+        MeshData result_;
+        std::thread thread_;
     };
 }
