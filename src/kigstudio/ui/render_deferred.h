@@ -108,7 +108,7 @@ namespace sinriv::ui::render {
         inline void setSpaceDivVisible(bool visible) {
             space_div_mix[0] = visible ? 1.0f : 0.0f;
         }
-        
+
         inline void setLightDirection(float x, float y, float z) {
             light_dir_[0] = x;
             light_dir_[1] = y;
@@ -164,6 +164,15 @@ namespace sinriv::ui::render {
             bx::mtxOrtho(proj, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 100.0f, 0.0f,
                          bgfx::getCaps()->homogeneousDepth);
 
+            bgfx::setViewName(collision_view_id_, "CollisionMask");
+            bgfx::setViewFrameBuffer(collision_view_id_, collision_fb_);
+            bgfx::setViewRect(collision_view_id_, 0, 0, width_, height_);
+            bgfx::setViewTransform(collision_view_id_, view, proj);
+            bgfx::setViewClear(collision_view_id_,
+                BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
+                0x00000000); // mask = 0
+            bgfx::touch(collision_view_id_);
+
             bgfx::setViewName(lighting_view_id_, "DeferredLighting");
             bgfx::setViewFrameBuffer(lighting_view_id_, BGFX_INVALID_HANDLE);
             bgfx::setViewRect(lighting_view_id_, 0, 0, width_, height_);
@@ -199,12 +208,58 @@ namespace sinriv::ui::render {
             std::memcpy(tvb.data, kQuadVertices, sizeof(kQuadVertices));
             std::memcpy(tib.data, kQuadIndices, sizeof(kQuadIndices));
 
+            // ===== Collision Pass =====
+            // BX_ASSERT(bgfx::isValid(collision_fb_), "collision_fb invalid");
+            // bgfx::setTransform(identity_mtx_);
+            // bgfx::setVertexBuffer(0, &tvb);
+            // bgfx::setIndexBuffer(&tib);
+
+            // bgfx::setTexture(0, s_world_pos_, world_pos_texture_);
+            // bgfx::setUniform(u_collision_counts_, collision_counts_.data());
+
+            // // 各种 shape uniform（原样复用）
+            // if (sphere_count_ > 0) {
+            //     bgfx::setUniform(u_collision_spheres_, sphere_data_.data(),
+            //                      static_cast<uint16_t>(sphere_count_));
+            // }
+            // if (cylinder_count_ > 0) {
+            //     bgfx::setUniform(u_collision_cylinders_a_, cylinder_start_radius_.data(),
+            //                      static_cast<uint16_t>(cylinder_count_));
+            //     bgfx::setUniform(u_collision_cylinders_b_, cylinder_end_.data(),
+            //                      static_cast<uint16_t>(cylinder_count_));
+            // }
+            // if (capsule_count_ > 0) {
+            //     bgfx::setUniform(u_collision_capsules_a_, capsule_start_radius_.data(),
+            //                      static_cast<uint16_t>(capsule_count_));
+            //     bgfx::setUniform(u_collision_capsules_b_, capsule_end_.data(),
+            //                      static_cast<uint16_t>(capsule_count_));
+            // }
+            // if (obb_count_ > 0) {
+            //     bgfx::setUniform(u_collision_obb_center_, obb_center_.data(),
+            //                      static_cast<uint16_t>(obb_count_));
+            //     bgfx::setUniform(u_collision_obb_axis_x_, obb_axis_x_.data(),
+            //                      static_cast<uint16_t>(obb_count_));
+            //     bgfx::setUniform(u_collision_obb_axis_y_, obb_axis_y_.data(),
+            //                      static_cast<uint16_t>(obb_count_));
+            //     bgfx::setUniform(u_collision_obb_axis_z_, obb_axis_z_.data(),
+            //                      static_cast<uint16_t>(obb_count_));
+            // }
+
+            // bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+            //                BGFX_STATE_MSAA); // 只写 mask
+            // bgfx::submit(collision_view_id_, collision_program_);
+            //取消掉注释即可复现bug
+            //需要的是Collision Pass渲染到独立buffer，Lighting Pass渲染到屏幕，但是未按预期工作
+            //现在是把两个一起渲染到了屏幕上，并且gbuffer还工作不正常了（模型渲染不出来）
+
+            // ===== Lighting Pass =====
             bgfx::setTransform(identity_mtx_);
             bgfx::setVertexBuffer(0, &tvb);
             bgfx::setIndexBuffer(&tib);
             bgfx::setTexture(0, s_albedo_, albedo_texture_);
             bgfx::setTexture(1, s_normal_, normal_texture_);
             bgfx::setTexture(2, s_world_pos_, world_pos_texture_);
+            bgfx::setTexture(3, s_collision_status_, collision_body_texture_);
             bgfx::setUniform(u_light_dir_, light_dir_.data());
             bgfx::setUniform(u_space_div_, space_div.data());
             bgfx::setUniform(u_space_div_mix_, space_div_mix.data());
@@ -321,6 +376,10 @@ namespace sinriv::ui::render {
                 bgfx::destroy(combine_program_);
                 combine_program_ = BGFX_INVALID_HANDLE;
             }
+            if (bgfx::isValid(collision_program_)) {
+                bgfx::destroy(collision_program_);
+                collision_program_ = BGFX_INVALID_HANDLE;
+            }
         }
 
         inline void destroyFrameBuffer() {
@@ -328,7 +387,12 @@ namespace sinriv::ui::render {
                 bgfx::destroy(gbuffer_);
                 gbuffer_ = BGFX_INVALID_HANDLE;
             }
+            if (bgfx::isValid(collision_fb_)) {
+                bgfx::destroy(collision_fb_);
+                collision_fb_ = BGFX_INVALID_HANDLE;
+            }
             albedo_texture_ = BGFX_INVALID_HANDLE;
+            collision_body_texture_ = BGFX_INVALID_HANDLE;
             normal_texture_ = BGFX_INVALID_HANDLE;
             world_pos_texture_ = BGFX_INVALID_HANDLE;
             depth_texture_ = BGFX_INVALID_HANDLE;
@@ -423,7 +487,7 @@ namespace sinriv::ui::render {
                 bx::mtxIdentity(identity_mtx_);
             }
 
-            if (bgfx::isValid(gbuffer_) && width_ == fb_width_ && height_ == fb_height_) {
+            if (bgfx::isValid(gbuffer_) && bgfx::isValid(collision_fb_) && width_ == fb_width_ && height_ == fb_height_) {
                 return true;
             }
 
@@ -450,11 +514,27 @@ namespace sinriv::ui::render {
                 static_cast<uint8_t>(BX_COUNTOF(attachments)), attachments, true);
             fb_width_ = width_;
             fb_height_ = height_;
-            return bgfx::isValid(gbuffer_);
+            
+            collision_body_texture_ = bgfx::createTexture2D(
+                width_, height_, false, 1, bgfx::TextureFormat::BGRA8, kSamplerFlags);
+            bgfx::TextureHandle collision_attachment[] = {
+                collision_body_texture_
+            };
+            collision_fb_ = bgfx::createFrameBuffer(
+                1,
+                collision_attachment,
+                true
+            );
+
+            return bgfx::isValid(gbuffer_) && bgfx::isValid(collision_fb_);
         }
 
         inline bool ensureProgram() {
             if (bgfx::isValid(combine_program_)) {
+                return true;
+            }
+
+            if (bgfx::isValid(collision_program_)) {
                 return true;
             }
 
@@ -466,6 +546,9 @@ namespace sinriv::ui::render {
             }
             if (!bgfx::isValid(s_world_pos_)) {
                 s_world_pos_ = bgfx::createUniform("s_worldPos", bgfx::UniformType::Sampler);
+            }
+            if (!bgfx::isValid(s_collision_status_)) {
+                s_collision_status_ = bgfx::createUniform("s_collision", bgfx::UniformType::Sampler);
             }
             if (!bgfx::isValid(u_light_dir_)) {
                 u_light_dir_ = bgfx::createUniform("u_lightDir", bgfx::UniformType::Vec4);
@@ -530,26 +613,35 @@ namespace sinriv::ui::render {
 
             bgfx::ShaderHandle vs =
                 deferred_detail::loadShader(shader_dir_ + "vs_screen_quad.bin");
-            bgfx::ShaderHandle fs =
+            bgfx::ShaderHandle fs_combine =
                 deferred_detail::loadShader(shader_dir_ + "fs_deferred_combine.bin");
-            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
+            bgfx::ShaderHandle fs_collision =
+                deferred_detail::loadShader(shader_dir_ + "fs_deferred_collision.bin");
+
+            if (!bgfx::isValid(vs) || !bgfx::isValid(fs_combine) || !bgfx::isValid(fs_collision)) {
                 if (bgfx::isValid(vs)) {
                     bgfx::destroy(vs);
                 }
-                if (bgfx::isValid(fs)) {
-                    bgfx::destroy(fs);
+                if (bgfx::isValid(fs_combine)) {
+                    bgfx::destroy(fs_combine);
+                }
+                if (bgfx::isValid(fs_collision)) {
+                    bgfx::destroy(fs_collision);
                 }
                 std::cerr << "RenderDeferred shader load failed from " << shader_dir_
                           << std::endl;
                 return false;
             }
 
-            combine_program_ = bgfx::createProgram(vs, fs, true);
-            return bgfx::isValid(combine_program_);
+            combine_program_ = bgfx::createProgram(vs, fs_combine, true);
+            collision_program_ = bgfx::createProgram(vs, fs_collision, true);
+            
+            return bgfx::isValid(combine_program_) && bgfx::isValid(collision_program_);
         }
 
         bgfx::ViewId gbuffer_view_id_ = 0;
-        bgfx::ViewId lighting_view_id_ = 1;
+        bgfx::ViewId collision_view_id_ = 1;
+        bgfx::ViewId lighting_view_id_ = 2;
         std::string shader_dir_ = "../../shader/base/";
         uint16_t width_ = 1;
         uint16_t height_ = 1;
@@ -558,14 +650,18 @@ namespace sinriv::ui::render {
         bgfx::VertexLayout screen_layout_{};
         bool screen_layout_initialized_ = false;
         bgfx::FrameBufferHandle gbuffer_ = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle collision_fb_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle albedo_texture_ = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle collision_body_texture_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle normal_texture_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle world_pos_texture_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle depth_texture_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle combine_program_ = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle collision_program_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_albedo_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_normal_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_world_pos_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle s_collision_status_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_light_dir_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_collision_counts_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_collision_spheres_ = BGFX_INVALID_HANDLE;
