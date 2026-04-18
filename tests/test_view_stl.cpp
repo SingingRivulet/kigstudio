@@ -358,6 +358,7 @@ int main() {
             voxel_renderer.loadGeometry(voxel_data);
         }
 
+        io.DisplaySize = ImVec2((float)width, (float)height);
         ImGui::NewFrame();
         ImGui::Begin("STL Loader");
 
