@@ -144,12 +144,86 @@ int main() {
                   << std::endl;
     };
 
+    auto sdlToImGuiKey = [](SDL_Keycode key) -> ImGuiKey {
+        switch (key) {
+            case SDLK_TAB: return ImGuiKey_Tab;
+            case SDLK_LEFT: return ImGuiKey_LeftArrow;
+            case SDLK_RIGHT: return ImGuiKey_RightArrow;
+            case SDLK_UP: return ImGuiKey_UpArrow;
+            case SDLK_DOWN: return ImGuiKey_DownArrow;
+            case SDLK_PAGEUP: return ImGuiKey_PageUp;
+            case SDLK_PAGEDOWN: return ImGuiKey_PageDown;
+            case SDLK_HOME: return ImGuiKey_Home;
+            case SDLK_END: return ImGuiKey_End;
+            case SDLK_INSERT: return ImGuiKey_Insert;
+            case SDLK_DELETE: return ImGuiKey_Delete;
+            case SDLK_BACKSPACE: return ImGuiKey_Backspace;
+            case SDLK_SPACE: return ImGuiKey_Space;
+            case SDLK_RETURN: return ImGuiKey_Enter;
+            case SDLK_ESCAPE: return ImGuiKey_Escape;
+            case SDLK_0: return ImGuiKey_0;
+            case SDLK_1: return ImGuiKey_1;
+            case SDLK_2: return ImGuiKey_2;
+            case SDLK_3: return ImGuiKey_3;
+            case SDLK_4: return ImGuiKey_4;
+            case SDLK_5: return ImGuiKey_5;
+            case SDLK_6: return ImGuiKey_6;
+            case SDLK_7: return ImGuiKey_7;
+            case SDLK_8: return ImGuiKey_8;
+            case SDLK_9: return ImGuiKey_9;
+            case SDLK_a: return ImGuiKey_A;
+            case SDLK_b: return ImGuiKey_B;
+            case SDLK_c: return ImGuiKey_C;
+            case SDLK_d: return ImGuiKey_D;
+            case SDLK_e: return ImGuiKey_E;
+            case SDLK_f: return ImGuiKey_F;
+            case SDLK_g: return ImGuiKey_G;
+            case SDLK_h: return ImGuiKey_H;
+            case SDLK_i: return ImGuiKey_I;
+            case SDLK_j: return ImGuiKey_J;
+            case SDLK_k: return ImGuiKey_K;
+            case SDLK_l: return ImGuiKey_L;
+            case SDLK_m: return ImGuiKey_M;
+            case SDLK_n: return ImGuiKey_N;
+            case SDLK_o: return ImGuiKey_O;
+            case SDLK_p: return ImGuiKey_P;
+            case SDLK_q: return ImGuiKey_Q;
+            case SDLK_r: return ImGuiKey_R;
+            case SDLK_s: return ImGuiKey_S;
+            case SDLK_t: return ImGuiKey_T;
+            case SDLK_u: return ImGuiKey_U;
+            case SDLK_v: return ImGuiKey_V;
+            case SDLK_w: return ImGuiKey_W;
+            case SDLK_x: return ImGuiKey_X;
+            case SDLK_y: return ImGuiKey_Y;
+            case SDLK_z: return ImGuiKey_Z;
+            case SDLK_LCTRL: return ImGuiKey_LeftCtrl;
+            case SDLK_RCTRL: return ImGuiKey_RightCtrl;
+            case SDLK_LSHIFT: return ImGuiKey_LeftShift;
+            case SDLK_RSHIFT: return ImGuiKey_RightShift;
+            case SDLK_LALT: return ImGuiKey_LeftAlt;
+            case SDLK_RALT: return ImGuiKey_RightAlt;
+            case SDLK_LGUI: return ImGuiKey_LeftSuper;
+            case SDLK_RGUI: return ImGuiKey_RightSuper;
+            default: return ImGuiKey_None;
+        }
+    };
+
     while (running) {
         SDL_Event e;
         ImGuiIO& io = ImGui::GetIO();
         while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT)
-                running = false;
+            if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
+                ImGuiKey imgui_key = sdlToImGuiKey(e.key.keysym.sym);
+                if (imgui_key != ImGuiKey_None) {
+                    io.AddKeyEvent(imgui_key, e.type == SDL_KEYDOWN);
+                    io.SetKeyEventNativeData(imgui_key, e.key.keysym.sym, e.key.keysym.scancode);
+                }
+            }
+
+            if (e.type == SDL_TEXTINPUT) {
+                io.AddInputCharactersUTF8(e.text.text);
+            }
 
             if (e.type == SDL_MOUSEBUTTONDOWN &&
                 e.button.button == SDL_BUTTON_LEFT) {
@@ -169,14 +243,15 @@ int main() {
             }
 
             if (e.type == SDL_MOUSEMOTION) {
-                if (mouseDown) {
+                if (mouseDown && !io.WantCaptureMouse) {
                     yaw += e.motion.xrel * 0.3f;
                     pitch += e.motion.yrel * 0.3f;
                 }
                 io.MousePos = ImVec2((float)e.motion.x, (float)e.motion.y);
             }
 
-            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_o) {
+            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_o &&
+                !io.WantCaptureKeyboard) {
                 const char* file = tinyfd_openFileDialog("Open STL", "", 0,
                                                          NULL, "STL file", 0);
                 if (file) {
@@ -185,11 +260,14 @@ int main() {
                 }
             }
 
-            if (e.type == SDL_TEXTINPUT) {
-                io.AddInputCharactersUTF8(e.text.text);
-                break;
-            }
+            if (e.type == SDL_QUIT)
+                running = false;
         }
+
+        io.AddKeyEvent(ImGuiMod_Ctrl,  (SDL_GetModState() & KMOD_CTRL) != 0);
+        io.AddKeyEvent(ImGuiMod_Shift, (SDL_GetModState() & KMOD_SHIFT) != 0);
+        io.AddKeyEvent(ImGuiMod_Alt,   (SDL_GetModState() & KMOD_ALT) != 0);
+        io.AddKeyEvent(ImGuiMod_Super, (SDL_GetModState() & KMOD_GUI) != 0);
 
         // ===== 读取窗口尺寸 =====
         SDL_GetWindowSize(window, &width, &height);
@@ -308,9 +386,14 @@ int main() {
 
         ImGui::End();
 
-        // 独立的 ImGui 小窗口：修改每个碰撞体成员的平移和旋转
+        // 碰撞体成员平移/旋转控制面板（合并到一个带滚动条的窗口）
+        ImGui::Begin("Collision Members");
         {
             int memberIdx = 0;
+            const char* axisNames[] = {"X", "Y", "Z"};
+            float btnSize = ImGui::GetFrameHeight();
+            float spacing = ImGui::GetStyle().ItemSpacing.x;
+
             for (auto& instance : collision_group.geometries()) {
                 const char* typeName = std::visit(
                     [](const auto& geom) -> const char* {
@@ -326,27 +409,56 @@ int main() {
                         return "Unknown";
                     },
                     instance.geometry);
-                std::string windowTitle = std::string(typeName) + " [" + std::to_string(memberIdx) + "]";
-                ImGui::Begin(windowTitle.c_str());
 
-                // Position
+                ImGui::PushID(memberIdx);
+                ImGui::Text("%s [%d]", typeName, memberIdx);
+
+                // Position: [-][X][+] [-][Y][+] [-][Z][+] 固定宽度紧凑排列
                 sinriv::kigstudio::vec3<float> pos = instance.transform.getPosition();
                 float p[3] = {pos.x, pos.y, pos.z};
-                if (ImGui::DragFloat3("Position", p, 0.5f)) {
-                    instance.transform.setPosition({p[0], p[1], p[2]});
+                ImGui::Text("Position");
+                {
+                    float inputW = 55.0f;
+                    for (int i = 0; i < 3; ++i) {
+                        ImGui::PushID(i);
+                        if (i > 0) ImGui::SameLine();
+                        if (ImGui::Button("-", ImVec2(btnSize, 0))) p[i] -= 0.5f;
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(inputW);
+                        ImGui::DragFloat(axisNames[i], &p[i], 0.5f, 0.0f, 0.0f, "%.2f");
+                        ImGui::SameLine();
+                        if (ImGui::Button("+", ImVec2(btnSize, 0))) p[i] += 0.5f;
+                        ImGui::PopID();
+                    }
                 }
+                instance.transform.setPosition({p[0], p[1], p[2]});
 
-                // Rotation (Euler angles in degrees for UI, radians internally)
+                // Rotation (deg): 固定宽度紧凑排列
                 sinriv::kigstudio::vec3<float> eulerRad = instance.transform.getRotationEuler();
                 float r[3] = {bx::toDeg(eulerRad.x), bx::toDeg(eulerRad.y), bx::toDeg(eulerRad.z)};
-                if (ImGui::DragFloat3("Rotation (deg)", r, 0.5f)) {
-                    instance.transform.setRotationEuler({bx::toRad(r[0]), bx::toRad(r[1]), bx::toRad(r[2])});
+                ImGui::Text("Rotation (deg)");
+                {
+                    float inputW = 55.0f;
+                    for (int i = 0; i < 3; ++i) {
+                        ImGui::PushID(i + 3);
+                        if (i > 0) ImGui::SameLine();
+                        if (ImGui::Button("-", ImVec2(btnSize, 0))) r[i] -= 0.5f;
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(inputW);
+                        ImGui::DragFloat(axisNames[i], &r[i], 0.5f, 0.0f, 0.0f, "%.2f");
+                        ImGui::SameLine();
+                        if (ImGui::Button("+", ImVec2(btnSize, 0))) r[i] += 0.5f;
+                        ImGui::PopID();
+                    }
                 }
+                instance.transform.setRotationEuler({bx::toRad(r[0]), bx::toRad(r[1]), bx::toRad(r[2])});
 
-                ImGui::End();
+                ImGui::Separator();
+                ImGui::PopID();
                 ++memberIdx;
             }
         }
+        ImGui::End();
 
         ImGui::Render();
 
