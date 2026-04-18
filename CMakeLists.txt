@@ -7,7 +7,12 @@ find_package(OpenMP REQUIRED)
 set(SDL_DIR "${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/cmake")
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED True) 
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+# MSVC 默认使用系统代码页解析源码，添加 /utf-8 使其按 UTF-8 处理源文件和执行字符集
+if(MSVC)
+    add_compile_options("/utf-8")
+endif() 
 
 add_subdirectory(dep/bgfx.cmake)
 

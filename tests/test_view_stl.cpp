@@ -307,6 +307,47 @@ int main() {
         ImGui::Checkbox("debug print rotation", &debugPrintRotation);
 
         ImGui::End();
+
+        // 独立的 ImGui 小窗口：修改每个碰撞体成员的平移和旋转
+        {
+            int memberIdx = 0;
+            for (auto& instance : collision_group.geometries()) {
+                const char* typeName = std::visit(
+                    [](const auto& geom) -> const char* {
+                        using T = std::decay_t<decltype(geom)>;
+                        if constexpr (std::is_same_v<T, sinriv::kigstudio::voxel::collision::Sphere>)
+                            return "Sphere";
+                        if constexpr (std::is_same_v<T, sinriv::kigstudio::voxel::collision::Cylinder>)
+                            return "Cylinder";
+                        if constexpr (std::is_same_v<T, sinriv::kigstudio::voxel::collision::Capsule>)
+                            return "Capsule";
+                        if constexpr (std::is_same_v<T, sinriv::kigstudio::voxel::collision::OBB>)
+                            return "OBB";
+                        return "Unknown";
+                    },
+                    instance.geometry);
+                std::string windowTitle = std::string(typeName) + " [" + std::to_string(memberIdx) + "]";
+                ImGui::Begin(windowTitle.c_str());
+
+                // Position
+                sinriv::kigstudio::vec3<float> pos = instance.transform.getPosition();
+                float p[3] = {pos.x, pos.y, pos.z};
+                if (ImGui::DragFloat3("Position", p, 0.5f)) {
+                    instance.transform.setPosition({p[0], p[1], p[2]});
+                }
+
+                // Rotation (Euler angles in degrees for UI, radians internally)
+                sinriv::kigstudio::vec3<float> eulerRad = instance.transform.getRotationEuler();
+                float r[3] = {bx::toDeg(eulerRad.x), bx::toDeg(eulerRad.y), bx::toDeg(eulerRad.z)};
+                if (ImGui::DragFloat3("Rotation (deg)", r, 0.5f)) {
+                    instance.transform.setRotationEuler({bx::toRad(r[0]), bx::toRad(r[1]), bx::toRad(r[2])});
+                }
+
+                ImGui::End();
+                ++memberIdx;
+            }
+        }
+
         ImGui::Render();
 
         imguiEndFrame();
