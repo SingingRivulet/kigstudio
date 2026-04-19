@@ -127,7 +127,7 @@ namespace sinriv::ui::render {
         inline void setCollisionGroup(const CollisionGroup& group) {
             clearCollisionTint();
 
-            const mat4f group_matrix = group.getMatrix();
+            const mat4f group_matrix = group.transform.getBgfxMatrix();
             for (const auto& geometry : group.geometries()) {
                 const mat4f local_matrix = geometry.transform.getBgfxMatrix() * group_matrix;
                 std::visit(

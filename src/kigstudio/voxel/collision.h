@@ -395,37 +395,38 @@ struct GeometryInstance {
 
 class CollisionGroup {
    public:
-    inline void setTransform(const Transform& value) { transform_ = value; }
-    inline const Transform& getTransform() const { return transform_; }
-    inline Transform& getTransform() { return transform_; }
+    Transform transform;
+    inline void setTransform(const Transform& value) { transform = value; }
+    inline const Transform& getTransform() const { return transform; }
+    inline Transform& getTransform() { return transform; }
 
-    inline void setPosition(const vec3f& value) { transform_.setPosition(value); }
-    inline vec3f getPosition() const { return transform_.getPosition(); }
+    inline void setPosition(const vec3f& value) { transform.setPosition(value); }
+    inline vec3f getPosition() const { return transform.getPosition(); }
 
     inline void setRotationEuler(const vec3f& value) {
-        transform_.setRotationEuler(value);
+        transform.setRotationEuler(value);
     }
-    inline vec3f getRotationEuler() const { return transform_.getRotationEuler(); }
+    inline vec3f getRotationEuler() const { return transform.getRotationEuler(); }
 
     inline void setRotationQuaternion(const Quaternion& value) {
-        transform_.setRotationQuaternion(value);
+        transform.setRotationQuaternion(value);
     }
     inline Quaternion getRotationQuaternion() const {
-        return transform_.getRotationQuaternion();
+        return transform.getRotationQuaternion();
     }
 
     inline void setRotationAxisAngle(const AxisAngle& value) {
-        transform_.setRotationAxisAngle(value);
+        transform.setRotationAxisAngle(value);
     }
     inline AxisAngle getRotationAxisAngle() const {
-        return transform_.getRotationAxisAngle();
+        return transform.getRotationAxisAngle();
     }
 
-    inline void setScale(const vec3f& value) { transform_.setScale(value); }
-    inline vec3f getScale() const { return transform_.getScale(); }
+    inline void setScale(const vec3f& value) { transform.setScale(value); }
+    inline vec3f getScale() const { return transform.getScale(); }
 
-    inline void setMatrix(const mat4f& value) { transform_.setMatrix(value); }
-    inline mat4f getMatrix() const { return transform_.getMatrix(); }
+    inline void setMatrix(const mat4f& value) { transform.setMatrix(value); }
+    inline mat4f getMatrix() const { return transform.getMatrix(); }
 
     inline std::size_t add(const Sphere& shape, const Transform& local = {}) {
         geometries_.emplace_back(shape, local);
@@ -450,7 +451,7 @@ class CollisionGroup {
     inline std::vector<GeometryInstance>& geometries() { return geometries_; }
 
     inline bool contains(const vec3f& point) const {
-        const mat4f global_matrix = transform_.getMatrix();
+        const mat4f global_matrix = transform.getMatrix();
 
         for (const GeometryInstance& geometry : geometries_) {
             mat4f world_matrix = geometry.transform.getMatrix() * global_matrix;
@@ -475,7 +476,6 @@ class CollisionGroup {
     }
 
    private:
-    Transform transform_;
     std::vector<GeometryInstance> geometries_;
 };
 

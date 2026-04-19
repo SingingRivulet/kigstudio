@@ -1,6 +1,7 @@
 #pragma once
 #include "kigstudio/utils/vec3.h"
 #include "kigstudio/utils/plane.h"
+#include "kigstudio/voxel/collision.h"
 
 #include <bit>
 #include <bitset>
@@ -358,6 +359,19 @@ class VoxelGrid {
         }
         return r;
     }
+    inline VoxelGrid intersection(const collision::CollisionGroup& other) const {
+        VoxelGrid r;
+        r.global_position = global_position;
+        r.voxel_size = voxel_size;
+
+        for (const auto& voxel : *this) {
+            const vec3<float> world = voxelCenterToWorld(voxel);
+            if (other.contains(world)) {
+                r.insert(voxel);
+            }
+        }
+        return r;
+    }
 
     inline VoxelGrid difference(const VoxelGrid& other) const {
         VoxelGrid r;
@@ -372,6 +386,20 @@ class VoxelGrid {
         }
         return r;
     }
+    inline VoxelGrid difference(const collision::CollisionGroup& other) const {
+        VoxelGrid r;
+        r.global_position = global_position;
+        r.voxel_size = voxel_size;
+
+        for (const auto& voxel : *this) {
+            const vec3<float> world = voxelCenterToWorld(voxel);
+            if (!other.contains(world)) {
+                r.insert(voxel);
+            }
+        }
+        return r;
+    }
+    
     inline std::tuple<VoxelGrid, VoxelGrid> segment(const Plane<float>& other) const {
         VoxelGrid positive_side;
         VoxelGrid negative_side;

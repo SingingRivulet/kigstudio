@@ -455,13 +455,52 @@ int main() {
         // 碰撞体成员平移/旋转控制面板（合并到一个带滚动条的窗口）
         ImGui::SetNextWindowPos(ImVec2((float)width, 0.f), ImGuiCond_Once, ImVec2(1.0f, 0.0f));
         ImGui::Begin("Collision Members");
+        const char* axisNames[] = {"X", "Y", "Z"};
+        int memberIdx = 0;
+        float btnSize = ImGui::GetFrameHeight();
+        float spacing = ImGui::GetStyle().ItemSpacing.x;
         if (ImGui::CollapsingHeader("space div", ImGuiTreeNodeFlags_DefaultOpen)) {
         }
+        if (ImGui::CollapsingHeader("collision root", ImGuiTreeNodeFlags_DefaultOpen)) {
+            sinriv::kigstudio::vec3<float> pos = collision_group.transform.getPosition();
+            float p[3] = {pos.x, pos.y, pos.z};
+            {
+                float inputW = 55.0f;
+                for (int i = 0; i < 3; ++i) {
+                    ImGui::PushID(i);
+                    if (i > 0) ImGui::SameLine();
+                    if (ImGui::Button("-", ImVec2(btnSize, 0))) p[i] -= 0.5f;
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(inputW);
+                    ImGui::DragFloat(axisNames[i], &p[i], 0.5f, 0.0f, 0.0f, "%.2f");
+                    ImGui::SameLine();
+                    if (ImGui::Button("+", ImVec2(btnSize, 0))) p[i] += 0.5f;
+                    ImGui::PopID();
+                }
+            }
+            collision_group.transform.setPosition({p[0], p[1], p[2]});
+
+            // Rotation (deg): 固定宽度紧凑排列
+            sinriv::kigstudio::vec3<float> eulerRad = collision_group.transform.getRotationEuler();
+            float r[3] = {bx::toDeg(eulerRad.x), bx::toDeg(eulerRad.y), bx::toDeg(eulerRad.z)};
+            ImGui::Text("Rotation (deg)");
+            {
+                float inputW = 55.0f;
+                for (int i = 0; i < 3; ++i) {
+                    ImGui::PushID(i + 3);
+                    if (i > 0) ImGui::SameLine();
+                    if (ImGui::Button("-", ImVec2(btnSize, 0))) r[i] -= 0.5f;
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(inputW);
+                    ImGui::DragFloat(axisNames[i], &r[i], 0.5f, 0.0f, 0.0f, "%.2f");
+                    ImGui::SameLine();
+                    if (ImGui::Button("+", ImVec2(btnSize, 0))) r[i] += 0.5f;
+                    ImGui::PopID();
+                }
+            }
+            collision_group.transform.setRotationEuler({bx::toRad(r[0]), bx::toRad(r[1]), bx::toRad(r[2])});
+        }
         if (ImGui::CollapsingHeader("collision group", ImGuiTreeNodeFlags_DefaultOpen)) {
-            int memberIdx = 0;
-            const char* axisNames[] = {"X", "Y", "Z"};
-            float btnSize = ImGui::GetFrameHeight();
-            float spacing = ImGui::GetStyle().ItemSpacing.x;
 
             for (auto& instance : collision_group.geometries()) {
                 const char* typeName = std::visit(
