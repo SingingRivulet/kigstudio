@@ -364,7 +364,11 @@ class Transform {
         tmp_rotation.z = -rotation_.z;
         tmp_rotation.w = rotation_.w;
         //bgfx渲染需要使用共轭的四元数，原因未知
-        return composeMatrix(position_, tmp_rotation, scale_); 
+        vec3f tmp_position;
+        tmp_position.x = position_.x;
+        tmp_position.y = -position_.y;
+        tmp_position.z = position_.z;
+        return composeMatrix(tmp_position, tmp_rotation, scale_); 
     }
 
    private:

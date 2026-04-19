@@ -532,14 +532,15 @@ namespace sinriv::ui::render {
             return status_;
         }
 
-        bool tryTakeResult(MeshData& out) {
+        bool tryTakeResult(MeshData& out_rebuild_mesh, sinriv::kigstudio::voxel::VoxelGrid& out_voxel_data) {
             if (!ready_.load()) return false;
             if (thread_.joinable()) {
                 thread_.join();
             }
             {
                 std::lock_guard<std::mutex> lock(result_mutex_);
-                out = std::move(result_);
+                out_rebuild_mesh = std::move(result_mesh);
+                out_voxel_data = std::move(result_voxel);
             }
             running_.store(false);
             ready_.store(false);
@@ -698,7 +699,8 @@ namespace sinriv::ui::render {
 
             {
                 std::lock_guard<std::mutex> lock(result_mutex_);
-                result_ = std::move(data);
+                result_mesh = std::move(data);
+                result_voxel = std::move(voxel_data);
             }
 
             setStatus("Done");
@@ -714,7 +716,8 @@ namespace sinriv::ui::render {
         mutable std::mutex status_mutex_;
         std::string status_;
         mutable std::mutex result_mutex_;
-        MeshData result_;
+        MeshData result_mesh;
+        sinriv::kigstudio::voxel::VoxelGrid result_voxel;
         std::thread thread_;
     };
 }

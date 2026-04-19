@@ -91,9 +91,15 @@ int main() {
     bgfx::setViewRect(kCollisionView, 0, 0, width, height);
     bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
+    sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
+
     sinriv::ui::render::RenderDeferred deferred_renderer(kGBufferView, kLightingView, kCollisionView);
     sinriv::ui::render::RenderMesh mesh_renderer(kGBufferView, kOverlayView);
-    sinriv::ui::render::RenderVoxel voxel_renderer(kGBufferView, kOverlayView);
+
+    sinriv::ui::render::RenderVoxel voxel_ori_renderer(kGBufferView, kOverlayView);
+    sinriv::ui::render::RenderVoxel voxel_collision_renderer(kGBufferView, kOverlayView);
+    sinriv::ui::render::RenderVoxel voxel_spdiv_renderer(kGBufferView, kOverlayView);
+    
     sinriv::ui::render::RenderCollision collision_renderer(kOverlayView, kOverlayView);
     sinriv::ui::render::AsyncVoxelLoader async_voxel_loader;
     sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
@@ -130,6 +136,8 @@ int main() {
     bool showVoxelAxis = false;
     bool showCollisionAxis = true;
     bool showDivSpace = true;
+    bool showCollisionProcessed_voxel = false;
+    bool showSpaceDivProcessed_voxel = false;
     bool debugPrintRotation = false;
     int oldW = width;
     int oldH = height;
@@ -298,13 +306,19 @@ int main() {
         deferred_renderer.prepareFrame();
         deferred_renderer.setSpaceDivVisible(showDivSpace);
         mesh_renderer.setViewportSize(width, height);
-        voxel_renderer.setViewportSize(width, height);
+        voxel_ori_renderer.setViewportSize(width, height);
+        voxel_collision_renderer.setViewportSize(width, height);
+        voxel_spdiv_renderer.setViewportSize(width, height);
         collision_renderer.setViewportSize(width, height);
         mesh_renderer.setViewProjection(view, proj);
-        voxel_renderer.setViewProjection(view, proj);
+        voxel_ori_renderer.setViewProjection(view, proj);
+        voxel_collision_renderer.setViewProjection(view, proj);
+        voxel_spdiv_renderer.setViewProjection(view, proj);
         collision_renderer.setViewProjection(view, proj);
         mesh_renderer.showAxis = showMeshAxis;
-        voxel_renderer.showAxis = showVoxelAxis;
+        voxel_ori_renderer.showAxis = showVoxelAxis;
+        voxel_collision_renderer.showAxis = showVoxelAxis;
+        voxel_spdiv_renderer.showAxis = showVoxelAxis;
         collision_renderer.showAxis = showCollisionAxis;
 
         float mtx_1[16];
@@ -314,7 +328,9 @@ int main() {
         sinriv::kigstudio::mat::matrix<float> cpu_model_matrix(mtx_1);
         cpu_model_matrix.transpose();
         mesh_renderer.setModelMatrix(cpu_model_matrix);
-        voxel_renderer.setModelMatrix(cpu_model_matrix);
+        voxel_ori_renderer.setModelMatrix(cpu_model_matrix);
+        voxel_collision_renderer.setModelMatrix(cpu_model_matrix);
+        voxel_spdiv_renderer.setModelMatrix(cpu_model_matrix);
 
         if (debugPrintRotation) {
             sinriv::kigstudio::mat::matrix<float> gpu_raw_matrix(mtx_1);
@@ -334,8 +350,22 @@ int main() {
             mesh_renderer.renderGBuffer(mtx_2);
         }
 
+        if (showCollisionProcessed_voxel) {
+            showVoxels = false;
+            showSpaceDivProcessed_voxel = false;
+            voxel_collision_renderer.renderGBuffer(mtx_2);
+        }
+
+        if (showSpaceDivProcessed_voxel) {
+            showVoxels = false;
+            showCollisionProcessed_voxel = false;
+            voxel_spdiv_renderer.renderGBuffer(mtx_2);
+        }
+
         if (showVoxels) {
-            voxel_renderer.renderGBuffer(mtx_2);
+            showCollisionProcessed_voxel = false;
+            showSpaceDivProcessed_voxel = false;
+            voxel_ori_renderer.renderGBuffer(mtx_2);
         }
 
         deferred_renderer.render();
@@ -345,7 +375,13 @@ int main() {
         }
 
         if (showVoxels) {
-            voxel_renderer.renderOverlay();
+            voxel_ori_renderer.renderOverlay();
+        }
+        if (showCollisionProcessed_voxel) {
+            voxel_collision_renderer.renderOverlay();
+        }
+        if (showSpaceDivProcessed_voxel) {
+            voxel_spdiv_renderer.renderOverlay();
         }
 
         if (showCollision) {
@@ -353,13 +389,15 @@ int main() {
         }
 
         // Check async voxel loader result
-        sinriv::ui::render::AsyncVoxelLoader::MeshData voxel_data;
-        if (async_voxel_loader.tryTakeResult(voxel_data)) {
-            voxel_renderer.loadGeometry(voxel_data);
+        sinriv::ui::render::AsyncVoxelLoader::MeshData voxel_mesh_data;
+        if (async_voxel_loader.tryTakeResult(voxel_mesh_data, voxel_grid_data)) {
+            std::cout << "Async voxel loader finished (" << voxel_grid_data.num_chunk() << " chunks)" << std::endl;
+            voxel_ori_renderer.loadGeometry(voxel_mesh_data);
         }
 
         io.DisplaySize = ImVec2((float)width, (float)height);
         ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(0.f, 0.f), ImGuiCond_Once);
         ImGui::Begin("STL Loader");
 
         if (ImGui::Button("Open STL (O)")) {
@@ -370,26 +408,56 @@ int main() {
                 async_voxel_loader.start(file);
             }
         }
-
-        if (async_voxel_loader.isRunning()) {
-            ImGui::Text("%s", async_voxel_loader.getStatus().c_str());
-            ImGui::ProgressBar(async_voxel_loader.getProgress(), ImVec2(-1, 0));
+        ImGui::SameLine();
+        if (ImGui::Button("update collision")){
+            std::cout << "update collision" << std::endl;
+            // 应用碰撞体到两个结果体素
         }
 
         ImGui::Checkbox("show mesh", &showMesh);
-        ImGui::Checkbox("show voxels", &showVoxels);
         ImGui::Checkbox("show collision", &showCollision);
+        ImGui::Separator();
+        if (ImGui::Checkbox("show main voxels", &showVoxels) && showVoxels){
+            showCollisionProcessed_voxel = false;
+            showSpaceDivProcessed_voxel = false;
+        }
+        if (ImGui::Checkbox("show collision processed voxel", &showCollisionProcessed_voxel) && showCollisionProcessed_voxel){
+            showVoxels = false;
+            showSpaceDivProcessed_voxel = false;
+        }
+        if (ImGui::Checkbox("show space div processed voxel", &showSpaceDivProcessed_voxel) && showSpaceDivProcessed_voxel){
+            showVoxels = false;
+            showCollisionProcessed_voxel = false;
+        }
+        ImGui::Separator();
         ImGui::Checkbox("mesh axis", &showMeshAxis);
         ImGui::Checkbox("voxel axis", &showVoxelAxis);
         ImGui::Checkbox("collision axis", &showCollisionAxis);
-        ImGui::Checkbox("div space", &showDivSpace);
-        ImGui::Checkbox("debug print rotation", &debugPrintRotation);
+        ImGui::Separator();
+        ImGui::Checkbox("show div space", &showDivSpace);
+        // ImGui::Checkbox("debug print rotation", &debugPrintRotation);
 
         ImGui::End();
+        
+        if (async_voxel_loader.isRunning()) {
+            ImGui::SetNextWindowPos(ImVec2((float)width, (float)height), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
+            ImGui::Begin(
+                "async_voxel_loader", 
+                nullptr,
+                ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoTitleBar |
+                ImGuiWindowFlags_NoBringToFrontOnFocus);
+            ImGui::Text("%s", async_voxel_loader.getStatus().c_str());
+            ImGui::ProgressBar(async_voxel_loader.getProgress(), ImVec2(-1, 0));
+            ImGui::End();
+        }
 
         // 碰撞体成员平移/旋转控制面板（合并到一个带滚动条的窗口）
+        ImGui::SetNextWindowPos(ImVec2((float)width, 0.f), ImGuiCond_Once, ImVec2(1.0f, 0.0f));
         ImGui::Begin("Collision Members");
-        {
+        if (ImGui::CollapsingHeader("space div", ImGuiTreeNodeFlags_DefaultOpen)) {
+        }
+        if (ImGui::CollapsingHeader("collision group", ImGuiTreeNodeFlags_DefaultOpen)) {
             int memberIdx = 0;
             const char* axisNames[] = {"X", "Y", "Z"};
             float btnSize = ImGui::GetFrameHeight();
@@ -470,7 +538,9 @@ int main() {
 
     deferred_renderer.release();
     collision_renderer.release();
-    voxel_renderer.release();
+    voxel_ori_renderer.release();
+    voxel_collision_renderer.release();
+    voxel_spdiv_renderer.release();
     mesh_renderer.release();
     bgfx::shutdown();
     SDL_DestroyWindow(window);
