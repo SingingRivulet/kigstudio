@@ -451,10 +451,10 @@ class CollisionGroup {
     inline std::vector<GeometryInstance>& geometries() { return geometries_; }
 
     inline bool contains(const vec3f& point) const {
-        const mat4f global_matrix = transform.getMatrix();
+        const mat4f global_matrix = transform.getBgfxMatrix();
 
         for (const GeometryInstance& geometry : geometries_) {
-            mat4f world_matrix = geometry.transform.getMatrix() * global_matrix;
+            mat4f world_matrix = geometry.transform.getBgfxMatrix() * global_matrix;
             // 这个是无效的
             // mat4f world_matrix = global_matrix * geometry.transform.getMatrix();
             if (!isAffineInvertible(world_matrix)) {

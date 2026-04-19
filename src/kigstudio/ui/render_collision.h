@@ -270,7 +270,7 @@ namespace sinriv::ui::render {
         inline void updateBounds(const CollisionGroup& geo_group,
                                  const mat4f& model_matrix) {
             resetBounds();
-            const mat4f group_matrix = geo_group.getMatrix() * model_matrix;
+            const mat4f group_matrix = geo_group.transform.getBgfxMatrix() * model_matrix;
             axis_state_.model_matrix = group_matrix;
 
             for (const auto& geometry : geo_group.geometries()) {

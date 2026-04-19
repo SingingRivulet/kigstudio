@@ -76,6 +76,10 @@ struct Vec3i {
         z /= scalar;
         return *this;
     }
+    inline friend std::ostream& operator<<(std::ostream& os, const Vec3i& v) {
+        os << "(" << v.x << ", " << v.y << ", " << v.z << ")";
+        return os;
+    }
 };
 
 // ================= Chunk =================
@@ -228,36 +232,60 @@ class VoxelGrid {
             valid = false;
 
             while (true) {
-                if (it == end)
+                // ===== 1. 结束条件 =====
+                if (it == end) {
                     return;
+                }
 
-                if (bits == 0) {
-                    while (word < Chunk::WORD_COUNT) {
-                        bits = it->second.data[word];
-                        if (bits)
-                            break;
-                        word++;
+                // ===== 2. word 扫完，进入下一个 chunk =====
+                if (word >= Chunk::WORD_COUNT) {
+                    ++it;
+                    word = 0;
+                    bits = 0;
+
+                    if (it == end) {
+                        return;
                     }
+                    continue;
+                }
 
-                    if (word == Chunk::WORD_COUNT) {
-                        ++it;
-                        word = 0;
+                // ===== 3. 如果当前没有 bits，加载当前 word =====
+                if (bits == 0) {
+                    bits = it->second.data[word];
+
+                    if (bits == 0) {
+                        // 当前 word 为空 → 跳下一个
+                        word++;
                         continue;
                     }
                 }
 
-                bit = std::countr_zero(bits);
-                bits &= bits - 1;
+                // ===== 4. 提取最低位 bit =====
+                int current_word = word;  // ⚠️ 必须保存（因为 word 可能会递增）
 
-                int idx = (word << 6) + bit;
+                bit = std::countr_zero(bits);
+                bits &= (bits - 1);  // 清掉最低位的 1
+
+                // ===== 5. 如果这个 word 用完了，推进到下一个 =====
+                if (bits == 0) {
+                    word++;
+                }
+
+                // ===== 6. 计算 voxel index =====
+                int idx = (current_word << 6) + bit;
 
                 int lx = idx & 31;
                 int ly = (idx >> 5) & 31;
                 int lz = (idx >> 10) & 31;
 
+                // ===== 7. 解 chunk 坐标 =====
                 unpackKey(it->first, cx, cy, cz);
 
-                current = {(cx << 5) + lx, (cy << 5) + ly, (cz << 5) + lz};
+                current = {
+                    (cx << 5) + lx,
+                    (cy << 5) + ly,
+                    (cz << 5) + lz
+                };
 
                 valid = true;
                 return;
@@ -278,7 +306,7 @@ class VoxelGrid {
         }
 
         inline bool operator!=(const Iterator& o) const {
-            return valid != o.valid || it != o.it;
+            return it != o.it;
         }
     };
 

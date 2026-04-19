@@ -412,6 +412,8 @@ int main() {
         if (ImGui::Button("update collision")){
             std::cout << "update collision" << std::endl;
             // 应用碰撞体到两个结果体素
+            auto res = voxel_grid_data.difference(collision_group);
+            voxel_collision_renderer.loadVoxelGrid(res);
         }
 
         ImGui::Checkbox("show mesh", &showMesh);
