@@ -371,7 +371,6 @@ class Transform {
         return composeMatrix(tmp_position, tmp_rotation, scale_); 
     }
 
-   private:
     vec3f position_ = {0.0f, 0.0f, 0.0f};
     Quaternion rotation_;
     vec3f scale_ = {1.0f, 1.0f, 1.0f};

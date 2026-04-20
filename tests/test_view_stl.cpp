@@ -385,7 +385,7 @@ int main() {
         }
 
         if (showCollision) {
-            collision_renderer.render(collision_group, mtx_1, &cpu_model_matrix);
+            collision_renderer.render(collision_group, mtx_1, mtx_2, &cpu_model_matrix);
         }
 
         // Check async voxel loader result
