@@ -42,29 +42,35 @@ class RenderVoxelList {
         sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
         kigstudio::Plane<float> plane;
 
-        inline void render_gbuffer(const float* transform) {
+        inline void render_gbuffer(const float* transform, sinriv::ui::render::RenderMeshShader& mesh_shader) {
             if (showMesh) {
-                mesh_renderer.renderGBuffer(transform);
+                mesh_renderer.renderGBuffer(transform, mesh_shader);
             }
 
             if (showVoxel) {
-                voxel_renderer.renderGBuffer(transform);
+                voxel_renderer.renderGBuffer(transform, mesh_shader);
             }
         }
         inline void render_overlay(
             sinriv::ui::render::RenderCollision& collision_renderer,
             const float* model_transform,
             const float* model_transform_2,
+            sinriv::ui::render::RenderCollisionShader& collision_shader,
+            sinriv::ui::render::RenderMeshShader& mesh_shader,
             const mat4f* cpu_model_matrix = nullptr) {
             if (showMesh) {
-                mesh_renderer.renderOverlay();
+                mesh_renderer.renderOverlay(mesh_shader);
             }
             if (showVoxel) {
-                voxel_renderer.renderOverlay();
+                voxel_renderer.renderOverlay(mesh_shader);
             }
             if (showCollision) {
-                collision_renderer.render(collision_group, model_transform,
-                                          model_transform_2, cpu_model_matrix);
+                collision_renderer.render(
+                    collision_group, 
+                    model_transform,
+                    model_transform_2,
+                    collision_shader,
+                    cpu_model_matrix);
             }
         }
         inline void upload_collision(
@@ -105,10 +111,10 @@ class RenderVoxelList {
 
     int render_id = 0;
 
-    inline void render_gbuffer(const float* transform) {
+    inline void render_gbuffer(const float* transform, sinriv::ui::render::RenderMeshShader& mesh_shader) {
         locker.lock();
         if (render_id >= 0 && render_id < items.size()) {
-            items[render_id]->render_gbuffer(transform);
+            items[render_id]->render_gbuffer(transform, mesh_shader);
         }
         locker.unlock();
     }
@@ -117,12 +123,18 @@ class RenderVoxelList {
         sinriv::ui::render::RenderCollision& collision_renderer,
         const float* model_transform,
         const float* model_transform_2,
+        sinriv::ui::render::RenderCollisionShader& collision_shader,
+        sinriv::ui::render::RenderMeshShader& mesh_shader,
         const mat4f* cpu_model_matrix = nullptr) {
         locker.lock();
         if (render_id >= 0 && render_id < items.size()) {
-            items[render_id]->render_overlay(collision_renderer,
-                                             model_transform, model_transform_2,
-                                             cpu_model_matrix);
+            items[render_id]->render_overlay(
+                collision_renderer,
+                model_transform, 
+                model_transform_2,
+                collision_shader,
+                mesh_shader,
+                cpu_model_matrix);
         }
         locker.unlock();
     }
@@ -135,6 +147,17 @@ class RenderVoxelList {
             render.clearCollisionTint();
         }
         locker.unlock();
+    }
+
+    inline RenderVoxelItem* create_item() {
+        auto item = std::make_unique<RenderVoxelItem>();
+        item->manager = this;
+        item->id = current_id++;
+        auto item_ptr = item.get();
+        locker.lock();
+        items[item->id] = std::move(item);
+        locker.unlock();
+        return item_ptr;
     }
 
     inline std::tuple<RenderVoxelItem*, RenderVoxelItem*> do_segment(
@@ -161,6 +184,11 @@ class RenderVoxelList {
         }
         return std::make_tuple(nullptr, nullptr);
     }
+    
+    inline void process_queue_result() {
+    }
+
+    inline void queue_thread() {}
 };
 
 }  // namespace sinriv::ui::render
