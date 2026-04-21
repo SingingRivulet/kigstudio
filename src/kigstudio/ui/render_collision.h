@@ -51,6 +51,53 @@ namespace sinriv::ui::render {
         }
     }
 
+    class RenderCollisionShader {
+    public:
+        bgfx::ViewId view_id_ = 0;
+        bgfx::ViewId overlay_view_id_ = 0;
+        std::string shader_dir_ = "../../shader/base/";
+        bgfx::ProgramHandle program_ = BGFX_INVALID_HANDLE;
+
+        inline explicit RenderCollisionShader(bgfx::ViewId view_id = 0,
+                                 bgfx::ViewId overlay_view_id = 0,
+                                 std::string shader_dir = "../../shader/base/")
+            : view_id_(view_id),
+              overlay_view_id_(overlay_view_id),
+              shader_dir_(std::move(shader_dir)) {}
+
+        inline bool ensureProgram() {
+            if (bgfx::isValid(program_)) {
+                return true;
+            }
+
+            bgfx::ShaderHandle vs = detail::loadShader(shader_dir_ + "vs_color_line.bin");
+            bgfx::ShaderHandle fs = detail::loadShader(shader_dir_ + "fs_color_line.bin");
+            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
+                if (bgfx::isValid(vs)) {
+                    bgfx::destroy(vs);
+                }
+                if (bgfx::isValid(fs)) {
+                    bgfx::destroy(fs);
+                }
+                std::cerr << "RenderCollision shader load failed from " << shader_dir_ << std::endl;
+                return false;
+            }
+
+            program_ = bgfx::createProgram(vs, fs, true);
+            return bgfx::isValid(program_);
+        }
+        inline void destroyProgram() {
+            if (bgfx::isValid(program_)) {
+                bgfx::destroy(program_);
+                program_ = BGFX_INVALID_HANDLE;
+                std::cout << "RenderCollision shader destroyed" << std::endl;
+            }
+        }
+        inline void release() {
+            destroyProgram();
+        }
+    };
+
     class RenderCollision {
     public:
         using vec3f = sinriv::kigstudio::vec3<float>;
@@ -63,37 +110,14 @@ namespace sinriv::ui::render {
         using OBB = sinriv::kigstudio::voxel::collision::OBB;
         using AxisHandle = axis_gizmo::AxisHandle;
 
-        explicit RenderCollision(bgfx::ViewId view_id = 0,
-                                 bgfx::ViewId overlay_view_id = 0,
-                                 std::string shader_dir = "../../shader/base/")
-            : view_id_(view_id),
-              overlay_view_id_(overlay_view_id),
-              vertex_count_per_circle_(32),
-              shader_dir_(std::move(shader_dir)) {}
+        inline explicit RenderCollision()
+            : vertex_count_per_circle_(32) {}
 
-        ~RenderCollision() {
+        inline ~RenderCollision() {
             release();
         }
 
-        inline void release() {
-            destroyProgram();
-        }
-
-        inline void setViewId(bgfx::ViewId view_id) {
-            view_id_ = view_id;
-        }
-
-        inline bgfx::ViewId getViewId() const {
-            return view_id_;
-        }
-
-        inline void setOverlayViewId(bgfx::ViewId view_id) {
-            overlay_view_id_ = view_id;
-        }
-
-        inline bgfx::ViewId getOverlayViewId() const {
-            return overlay_view_id_;
-        }
+        inline void release() {}
 
         inline void setCircleSegments(uint16_t segments) {
             vertex_count_per_circle_ = std::max<uint16_t>(segments, 8);
@@ -101,11 +125,6 @@ namespace sinriv::ui::render {
 
         inline uint16_t getCircleSegments() const {
             return vertex_count_per_circle_;
-        }
-
-        inline void setShaderDirectory(const std::string& shader_dir) {
-            shader_dir_ = shader_dir;
-            destroyProgram();
         }
 
         inline void setViewportSize(int width, int height) {
@@ -135,23 +154,28 @@ namespace sinriv::ui::render {
                                                  from_x, from_y, to_x, to_y);
         }
 
-        inline void render(const CollisionGroup& geo_group){
+        inline void render(const CollisionGroup& geo_group, RenderCollisionShader & shader){
             float identity[16];
             bx::mtxIdentity(identity);
-            render(geo_group, identity, identity);
+            render(geo_group, identity, identity, shader);
         }
 
         inline void render(const CollisionGroup& geo_group,
                            const float* model_transform,
                            const float* model_transform_2,
+                           RenderCollisionShader & shader,
                            const mat4f* cpu_model_matrix = nullptr){
-            if (!ensureProgram()) {
+            if (!layout_initialized_) {
+                detail::CollisionLineVertex::init(layout_);
+                layout_initialized_ = true;
+            }
+            if (!shader.ensureProgram()) {
                 return;
             }
             const mat4f model_matrix =
                 cpu_model_matrix ? *cpu_model_matrix : mat4f(model_transform);
             updateBounds(geo_group, model_matrix);
-            render_collision(geo_group, model_transform);
+            render_collision(geo_group, model_transform, shader);
             
             if (has_world_bounds_) {
                 axis_state_.axis_length = axis_gizmo::estimateAxisLengthFromBounds(
@@ -174,7 +198,7 @@ namespace sinriv::ui::render {
             }
 
             if (showAxis) {
-                renderAxis();
+                renderAxis(shader);
             }
         }
         //计算物体在屏幕上覆盖的矩形区域（x1,y1,x2,y2），用于提前过滤鼠标事件
@@ -212,12 +236,6 @@ namespace sinriv::ui::render {
         }
         bool showAxis = false;
     private:
-        inline void destroyProgram() {
-            if (bgfx::isValid(program_)) {
-                bgfx::destroy(program_);
-                program_ = BGFX_INVALID_HANDLE;
-            }
-        }
 
         inline void resetBounds() {
             has_world_bounds_ = false;
@@ -314,7 +332,7 @@ namespace sinriv::ui::render {
             }
         }
 
-        inline void renderAxis() {
+        inline void renderAxis(RenderCollisionShader & shader) {
             std::vector<detail::CollisionLineVertex> axis_vertices;
             axis_gizmo::appendAxisColorVertices(axis_vertices, axis_state_);
             if (axis_vertices.empty()) {
@@ -339,34 +357,7 @@ namespace sinriv::ui::render {
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
                            BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
-            bgfx::submit(overlay_view_id_, program_);
-        }
-
-        inline bool ensureProgram() {
-            if (bgfx::isValid(program_)) {
-                return true;
-            }
-
-            if (!layout_initialized_) {
-                detail::CollisionLineVertex::init(layout_);
-                layout_initialized_ = true;
-            }
-
-            bgfx::ShaderHandle vs = detail::loadShader(shader_dir_ + "vs_color_line.bin");
-            bgfx::ShaderHandle fs = detail::loadShader(shader_dir_ + "fs_color_line.bin");
-            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
-                if (bgfx::isValid(vs)) {
-                    bgfx::destroy(vs);
-                }
-                if (bgfx::isValid(fs)) {
-                    bgfx::destroy(fs);
-                }
-                std::cerr << "RenderCollision shader load failed from " << shader_dir_ << std::endl;
-                return false;
-            }
-
-            program_ = bgfx::createProgram(vs, fs, true);
-            return bgfx::isValid(program_);
+            bgfx::submit(shader.overlay_view_id_, shader.program_);
         }
 
         inline void appendLine(std::vector<detail::CollisionLineVertex>& vertices,
@@ -506,7 +497,8 @@ namespace sinriv::ui::render {
         }
 
         void render_collision(const CollisionGroup& geo_group,
-                              const float* model_transform){
+                              const float* model_transform,
+                              RenderCollisionShader & shader){
             std::vector<detail::CollisionLineVertex> vertices;
             vertices.reserve(geo_group.geometries().size() * vertex_count_per_circle_ * 12);
 
@@ -532,16 +524,12 @@ namespace sinriv::ui::render {
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
                            BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
-            bgfx::submit(overlay_view_id_, program_);
+            bgfx::submit(shader.overlay_view_id_, shader.program_);
         }
 
-        bgfx::ViewId view_id_ = 0;
-        bgfx::ViewId overlay_view_id_ = 0;
         uint16_t vertex_count_per_circle_ = 32;
-        std::string shader_dir_ = "../../shader/base/";
         bgfx::VertexLayout layout_{};
         bool layout_initialized_ = false;
-        bgfx::ProgramHandle program_ = BGFX_INVALID_HANDLE;
         axis_gizmo::GizmoState axis_state_{};
         bool has_world_bounds_ = false;
         vec3f world_bound_min_{};

@@ -428,6 +428,31 @@ class VoxelGrid {
         return r;
     }
     
+    inline std::tuple<VoxelGrid, VoxelGrid> segment(const collision::CollisionGroup& other) const {
+        VoxelGrid positive_side;
+        VoxelGrid negative_side;
+
+        positive_side.global_position = global_position;
+        positive_side.voxel_size = voxel_size;
+        negative_side.global_position = global_position;
+        negative_side.voxel_size = voxel_size;
+
+        for (const auto& voxel : *this) {
+            const vec3<float> world_position(
+                voxel.x * voxel_size.x + global_position.x,
+                voxel.y * voxel_size.y + global_position.y,
+                voxel.z * voxel_size.z + global_position.z);
+
+            if (other.contains(world_position)) {
+                positive_side.insert(voxel);
+            } else {
+                negative_side.insert(voxel);
+            }
+        }
+
+        return {positive_side, negative_side};
+    }
+
     inline std::tuple<VoxelGrid, VoxelGrid> segment(const Plane<float>& other) const {
         VoxelGrid positive_side;
         VoxelGrid negative_side;

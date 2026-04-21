@@ -113,6 +113,12 @@ namespace sinriv::ui::render {
         inline void setSpaceDivVisible(bool visible) {
             space_div_mix[0] = visible ? 1.0f : 0.0f;
         }
+        inline void setSpaceDiv(float A, float B, float C, float D) {
+            space_div_mix[1] = A;
+            space_div_mix[2] = B;
+            space_div_mix[3] = C;
+            space_div_mix[4] = D;
+        }
 
         inline void setLightDirection(float x, float y, float z) {
             light_dir_[0] = x;

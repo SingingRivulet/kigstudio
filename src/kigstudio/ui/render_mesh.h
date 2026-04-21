@@ -72,6 +72,7 @@ namespace sinriv::ui::render {
         };
 
         inline bgfx::ShaderHandle loadShader(const std::string& path) {
+            std::cout << "load shader:" << path << std::endl;
             FILE* file = std::fopen(path.c_str(), "rb");
             if (!file) {
                 return BGFX_INVALID_HANDLE;
@@ -93,23 +94,20 @@ namespace sinriv::ui::render {
         }
     }
 
-    class RenderMesh {
-       public:
-        using AxisHandle = axis_gizmo::AxisHandle;
-        using vec3f = sinriv::kigstudio::vec3<float>;
-        using mat4f = sinriv::kigstudio::mat::matrix<float>;
-
-        explicit RenderMesh(bgfx::ViewId view_id = 0,
+    class RenderMeshShader{
+      public:
+        inline explicit RenderMeshShader(bgfx::ViewId view_id = 0,
                             bgfx::ViewId overlay_view_id = 0,
                             std::string shader_dir = "../../shader/base/")
             : view_id_(view_id),
               overlay_view_id_(overlay_view_id),
-              shader_dir_(std::move(shader_dir)) {}
-
-        ~RenderMesh() {
-            release();
+              shader_dir_(std::move(shader_dir)) {
+            bx::mtxIdentity(identity_mtx_);
         }
 
+        inline ~RenderMeshShader() {
+            release();
+        }
         inline void setViewId(bgfx::ViewId view_id) { view_id_ = view_id; }
         inline bgfx::ViewId getViewId() const { return view_id_; }
         inline void setOverlayViewId(bgfx::ViewId view_id) { overlay_view_id_ = view_id; }
@@ -119,6 +117,113 @@ namespace sinriv::ui::render {
             shader_dir_ = shader_dir;
             destroyPrograms();
         }
+        
+        inline void destroyPrograms() {
+            if (bgfx::isValid(gbuffer_program_)) {
+                bgfx::destroy(gbuffer_program_);
+                gbuffer_program_ = BGFX_INVALID_HANDLE;
+                std::cout << "RenderMeshShader shader(gbuffer_program_) destroyed" << std::endl;
+            }
+            if (bgfx::isValid(line_program_)) {
+                bgfx::destroy(line_program_);
+                line_program_ = BGFX_INVALID_HANDLE;
+                std::cout << "RenderMeshShader shader(line_program_) destroyed" << std::endl;
+            }
+        }
+
+        inline void destroyUniforms() {
+            if (bgfx::isValid(u_base_color_)) {
+                bgfx::destroy(u_base_color_);
+                u_base_color_ = BGFX_INVALID_HANDLE;
+                std::cout << "RenderMeshShader uniform destroyed" << std::endl;
+            }
+        }
+
+        inline void ensureUniforms() {
+            if (!bgfx::isValid(u_base_color_)) {
+                u_base_color_ = bgfx::createUniform("u_baseColor", bgfx::UniformType::Vec4);
+            }
+        }
+
+        inline bool ensureGBufferProgram() {
+            if (bgfx::isValid(gbuffer_program_)) {
+                return true;
+            }
+            ensureUniforms();
+
+            bgfx::ShaderHandle vs =
+                mesh_detail::loadShader(shader_dir_ + "vs_mesh_gbuffer.bin");
+            bgfx::ShaderHandle fs =
+                mesh_detail::loadShader(shader_dir_ + "fs_mesh_gbuffer.bin");
+            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
+                if (bgfx::isValid(vs)) {
+                    bgfx::destroy(vs);
+                }
+                if (bgfx::isValid(fs)) {
+                    bgfx::destroy(fs);
+                }
+                std::cerr << "RenderMesh shader load failed from " << shader_dir_
+                          << std::endl;
+                return false;
+            }
+
+            gbuffer_program_ = bgfx::createProgram(vs, fs, true);
+            return bgfx::isValid(gbuffer_program_);
+        }
+
+        inline bool ensureLineProgram() {
+            if (bgfx::isValid(line_program_)) {
+                return true;
+            }
+            bx::mtxIdentity(identity_mtx_);
+
+            bgfx::ShaderHandle vs =
+                mesh_detail::loadShader(shader_dir_ + "vs_color_line.bin");
+            bgfx::ShaderHandle fs =
+                mesh_detail::loadShader(shader_dir_ + "fs_color_line.bin");
+            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
+                if (bgfx::isValid(vs)) {
+                    bgfx::destroy(vs);
+                }
+                if (bgfx::isValid(fs)) {
+                    bgfx::destroy(fs);
+                }
+                std::cerr << "RenderMesh line shader load failed from " << shader_dir_
+                          << std::endl;
+                return false;
+            }
+
+            line_program_ = bgfx::createProgram(vs, fs, true);
+            return bgfx::isValid(line_program_);
+        }
+        inline void release() {
+            destroyPrograms();
+            destroyUniforms();
+        }
+
+        bgfx::ViewId view_id_ = 0;
+        bgfx::ViewId overlay_view_id_ = 0;
+        std::string shader_dir_ = "../../shader/base/";
+        bgfx::ProgramHandle gbuffer_program_ = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle line_program_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_base_color_ = BGFX_INVALID_HANDLE;
+        float identity_mtx_[16]{};
+    };
+
+    class RenderMesh {
+       public:
+        using AxisHandle = axis_gizmo::AxisHandle;
+        using vec3f = sinriv::kigstudio::vec3<float>;
+        using mat4f = sinriv::kigstudio::mat::matrix<float>;
+
+        inline explicit RenderMesh() {
+            bx::mtxIdentity(identity_mtx_);
+        }
+
+        inline ~RenderMesh() {
+            release();
+        }
+
 
         inline void setBaseColor(float r, float g, float b, float a = 1.0f) {
             base_color_ = {r, g, b, a};
@@ -251,8 +356,6 @@ namespace sinriv::ui::render {
 
         inline void release() {
             mesh_.destroy();
-            destroyPrograms();
-            destroyUniforms();
         }
 
         inline void clear() {
@@ -260,31 +363,36 @@ namespace sinriv::ui::render {
             resetBounds();
         }
 
-        void renderGBuffer(const float* transform) {
-            if (empty() || !ensureGBufferProgram()) {
+        void renderGBuffer(const float* transform, RenderMeshShader & shader) {
+            if (!layout_initialized_) {
+                mesh_detail::PosNormalVertex::init(layout_);
+                layout_initialized_ = true;
+            }
+
+            if (empty() || !shader.ensureGBufferProgram()) {
                 return;
             }
 
             bgfx::setTransform(transform);
             bgfx::setVertexBuffer(0, mesh_.vbh);
             bgfx::setIndexBuffer(mesh_.ibh);
-            ensureUniforms();
-            bgfx::setUniform(u_base_color_, base_color_.data());
+            shader.ensureUniforms();
+            bgfx::setUniform(shader.u_base_color_, base_color_.data());
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
                            BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA);
-            bgfx::submit(view_id_, gbuffer_program_);
+            bgfx::submit(shader.view_id_, shader.gbuffer_program_);
         }
 
-        void renderOverlay() {
+        void renderOverlay(RenderMeshShader & shader) {
             if (!empty() && showAxis) {
-                renderAxis();
+                renderAxis(shader);
             }
         }
 
-        void render(const float* transform) {
-            renderGBuffer(transform);
-            renderOverlay();
+        void render(const float* transform, RenderMeshShader & shader) {
+            renderGBuffer(transform, shader);
+            renderOverlay(shader);
         }
 
         //计算物体在屏幕上覆盖的矩形区域（x1,y1,x2,y2），用于提前过滤鼠标事件
@@ -351,14 +459,14 @@ namespace sinriv::ui::render {
             return corners;
         }
 
-        inline void renderAxis() {
-            if (!ensureLineProgram()) {
-                return;
-            }
-
+        inline void renderAxis(RenderMeshShader & shader) {
             if (!line_layout_initialized_) {
                 mesh_detail::ColorLineVertex::init(line_layout_);
                 line_layout_initialized_ = true;
+            }
+
+            if (!shader.ensureLineProgram()) {
+                return;
             }
 
             std::vector<mesh_detail::ColorLineVertex> axis_vertices;
@@ -384,105 +492,14 @@ namespace sinriv::ui::render {
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
                            BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
-            bgfx::submit(overlay_view_id_, line_program_);
+            bgfx::submit(shader.overlay_view_id_, shader.line_program_);
         }
 
-        inline void destroyPrograms() {
-            if (bgfx::isValid(gbuffer_program_)) {
-                bgfx::destroy(gbuffer_program_);
-                gbuffer_program_ = BGFX_INVALID_HANDLE;
-            }
-            if (bgfx::isValid(line_program_)) {
-                bgfx::destroy(line_program_);
-                line_program_ = BGFX_INVALID_HANDLE;
-            }
-        }
-
-        inline void destroyUniforms() {
-            if (bgfx::isValid(u_base_color_)) {
-                bgfx::destroy(u_base_color_);
-                u_base_color_ = BGFX_INVALID_HANDLE;
-            }
-        }
-
-        inline void ensureUniforms() {
-            if (!bgfx::isValid(u_base_color_)) {
-                u_base_color_ = bgfx::createUniform("u_baseColor", bgfx::UniformType::Vec4);
-            }
-        }
-
-        inline bool ensureGBufferProgram() {
-            if (bgfx::isValid(gbuffer_program_)) {
-                return true;
-            }
-            if (!layout_initialized_) {
-                mesh_detail::PosNormalVertex::init(layout_);
-                layout_initialized_ = true;
-            }
-            ensureUniforms();
-            bx::mtxIdentity(identity_mtx_);
-
-            bgfx::ShaderHandle vs =
-                mesh_detail::loadShader(shader_dir_ + "vs_mesh_gbuffer.bin");
-            bgfx::ShaderHandle fs =
-                mesh_detail::loadShader(shader_dir_ + "fs_mesh_gbuffer.bin");
-            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
-                if (bgfx::isValid(vs)) {
-                    bgfx::destroy(vs);
-                }
-                if (bgfx::isValid(fs)) {
-                    bgfx::destroy(fs);
-                }
-                std::cerr << "RenderMesh shader load failed from " << shader_dir_
-                          << std::endl;
-                return false;
-            }
-
-            gbuffer_program_ = bgfx::createProgram(vs, fs, true);
-            return bgfx::isValid(gbuffer_program_);
-        }
-
-        inline bool ensureLineProgram() {
-            if (bgfx::isValid(line_program_)) {
-                return true;
-            }
-            if (!line_layout_initialized_) {
-                mesh_detail::ColorLineVertex::init(line_layout_);
-                line_layout_initialized_ = true;
-            }
-            bx::mtxIdentity(identity_mtx_);
-
-            bgfx::ShaderHandle vs =
-                mesh_detail::loadShader(shader_dir_ + "vs_color_line.bin");
-            bgfx::ShaderHandle fs =
-                mesh_detail::loadShader(shader_dir_ + "fs_color_line.bin");
-            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
-                if (bgfx::isValid(vs)) {
-                    bgfx::destroy(vs);
-                }
-                if (bgfx::isValid(fs)) {
-                    bgfx::destroy(fs);
-                }
-                std::cerr << "RenderMesh line shader load failed from " << shader_dir_
-                          << std::endl;
-                return false;
-            }
-
-            line_program_ = bgfx::createProgram(vs, fs, true);
-            return bgfx::isValid(line_program_);
-        }
-
-        bgfx::ViewId view_id_ = 0;
-        bgfx::ViewId overlay_view_id_ = 0;
-        std::string shader_dir_ = "../../shader/base/";
         bgfx::VertexLayout layout_{};
         bgfx::VertexLayout line_layout_{};
         bool layout_initialized_ = false;
         bool line_layout_initialized_ = false;
         mesh_detail::MeshHandle mesh_{};
-        bgfx::ProgramHandle gbuffer_program_ = BGFX_INVALID_HANDLE;
-        bgfx::ProgramHandle line_program_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_base_color_ = BGFX_INVALID_HANDLE;
         axis_gizmo::GizmoState axis_state_{};
         bool has_local_bounds_ = false;
         vec3f local_bound_min_{};

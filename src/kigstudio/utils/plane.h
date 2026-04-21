@@ -7,16 +7,15 @@ namespace sinriv::kigstudio {
 
 template <Numeric T>
 class Plane {
-   private:
+   public:
     // 平面参数：Ax + By + Cz + D = 0
     T A, B, C, D;
 
     // 原始数据（可选，用于调试或重新计算）
     vec3<T> m_point;
     vec3<T> m_normal;
-
-   public:
     // 构造函数：使用点法式初始化平面
+    inline Plane(): A(0), B(0), C(0), D(0){}
     inline Plane(const vec3<T>& point, const vec3<T>& normal)
         : m_point(point), m_normal(normal) {
         // 1. 法向量即为 A, B, C

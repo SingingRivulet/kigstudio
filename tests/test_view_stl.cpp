@@ -93,14 +93,17 @@ int main() {
 
     sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
 
-    sinriv::ui::render::RenderDeferred deferred_renderer(kGBufferView, kLightingView, kCollisionView);
-    sinriv::ui::render::RenderMesh mesh_renderer(kGBufferView, kOverlayView);
+    sinriv::ui::render::RenderMeshShader mesh_render_shader(kGBufferView, kOverlayView);
+    sinriv::ui::render::RenderCollisionShader collision_render_shader(kGBufferView, kOverlayView);
 
-    sinriv::ui::render::RenderVoxel voxel_ori_renderer(kGBufferView, kOverlayView);
-    sinriv::ui::render::RenderVoxel voxel_collision_renderer(kGBufferView, kOverlayView);
-    sinriv::ui::render::RenderVoxel voxel_spdiv_renderer(kGBufferView, kOverlayView);
+    sinriv::ui::render::RenderDeferred deferred_renderer(kGBufferView, kLightingView, kCollisionView);
+
+    sinriv::ui::render::RenderMesh mesh_renderer{};
+    sinriv::ui::render::RenderVoxel voxel_ori_renderer{};
+    sinriv::ui::render::RenderVoxel voxel_collision_renderer{};
+    sinriv::ui::render::RenderVoxel voxel_spdiv_renderer{};
     
-    sinriv::ui::render::RenderCollision collision_renderer(kOverlayView, kOverlayView);
+    sinriv::ui::render::RenderCollision collision_renderer{};
     sinriv::ui::render::AsyncVoxelLoader async_voxel_loader;
     sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
     collision_group.add(sinriv::kigstudio::voxel::collision::Sphere{
@@ -347,45 +350,50 @@ int main() {
         }
 
         if (showMesh) {
-            mesh_renderer.renderGBuffer(mtx_2);
+            mesh_renderer.renderGBuffer(mtx_2, mesh_render_shader);
         }
 
         if (showCollisionProcessed_voxel) {
             showVoxels = false;
             showSpaceDivProcessed_voxel = false;
-            voxel_collision_renderer.renderGBuffer(mtx_2);
+            voxel_collision_renderer.renderGBuffer(mtx_2, mesh_render_shader);
         }
 
         if (showSpaceDivProcessed_voxel) {
             showVoxels = false;
             showCollisionProcessed_voxel = false;
-            voxel_spdiv_renderer.renderGBuffer(mtx_2);
+            voxel_spdiv_renderer.renderGBuffer(mtx_2, mesh_render_shader);
         }
 
         if (showVoxels) {
             showCollisionProcessed_voxel = false;
             showSpaceDivProcessed_voxel = false;
-            voxel_ori_renderer.renderGBuffer(mtx_2);
+            voxel_ori_renderer.renderGBuffer(mtx_2, mesh_render_shader);
         }
 
         deferred_renderer.render();
 
         if (showMesh) {
-            mesh_renderer.renderOverlay();
+            mesh_renderer.renderOverlay(mesh_render_shader);
         }
 
         if (showVoxels) {
-            voxel_ori_renderer.renderOverlay();
+            voxel_ori_renderer.renderOverlay(mesh_render_shader);
         }
         if (showCollisionProcessed_voxel) {
-            voxel_collision_renderer.renderOverlay();
+            voxel_collision_renderer.renderOverlay(mesh_render_shader);
         }
         if (showSpaceDivProcessed_voxel) {
-            voxel_spdiv_renderer.renderOverlay();
+            voxel_spdiv_renderer.renderOverlay(mesh_render_shader);
         }
 
         if (showCollision) {
-            collision_renderer.render(collision_group, mtx_1, mtx_2, &cpu_model_matrix);
+            collision_renderer.render(
+                collision_group, 
+                mtx_1, 
+                mtx_2, 
+                collision_render_shader, 
+                &cpu_model_matrix);
         }
 
         // Check async voxel loader result
@@ -583,6 +591,8 @@ int main() {
     voxel_collision_renderer.release();
     voxel_spdiv_renderer.release();
     mesh_renderer.release();
+    mesh_render_shader.release();
+    collision_render_shader.release();
     bgfx::shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();
