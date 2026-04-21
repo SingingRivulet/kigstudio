@@ -1,7 +1,10 @@
 #pragma once
+#include <atomic>
 #include <iostream>
 #include <map>
+#include <queue>
 #include <string>
+#include <thread>
 
 #include "kigstudio/ui/render_collision.h"
 #include "kigstudio/ui/render_deferred.h"
@@ -42,7 +45,9 @@ class RenderVoxelList {
         sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
         kigstudio::Plane<float> plane;
 
-        inline void render_gbuffer(const float* transform, sinriv::ui::render::RenderMeshShader& mesh_shader) {
+        inline void render_gbuffer(
+            const float* transform,
+            sinriv::ui::render::RenderMeshShader& mesh_shader) {
             if (showMesh) {
                 mesh_renderer.renderGBuffer(transform, mesh_shader);
             }
@@ -65,12 +70,9 @@ class RenderVoxelList {
                 voxel_renderer.renderOverlay(mesh_shader);
             }
             if (showCollision) {
-                collision_renderer.render(
-                    collision_group, 
-                    model_transform,
-                    model_transform_2,
-                    collision_shader,
-                    cpu_model_matrix);
+                collision_renderer.render(collision_group, model_transform,
+                                          model_transform_2, collision_shader,
+                                          cpu_model_matrix);
             }
         }
         inline void upload_collision(
@@ -98,25 +100,28 @@ class RenderVoxelList {
             }
         }
 
-        int ref_count = 0;
+        std::atomic<int> ref_count = 1;
+        std::atomic<int> write_count = 0;
 
         bool showMesh = true;
         bool showVoxel = true;
         bool showCollision = true;
     };
-    RenderVoxelList() = default;
-    ~RenderVoxelList() = default;
+    inline RenderVoxelList() {}
+    inline ~RenderVoxelList() { release(); }
 
     std::map<int, std::unique_ptr<RenderVoxelItem>> items;
 
     int render_id = 0;
 
-    inline void render_gbuffer(const float* transform, sinriv::ui::render::RenderMeshShader& mesh_shader) {
-        locker.lock();
-        if (render_id >= 0 && render_id < items.size()) {
-            items[render_id]->render_gbuffer(transform, mesh_shader);
+    inline void render_gbuffer(
+        const float* transform,
+        sinriv::ui::render::RenderMeshShader& mesh_shader) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->render_gbuffer(transform, mesh_shader);
         }
-        locker.unlock();
     }
 
     inline void render_overlay(
@@ -126,46 +131,100 @@ class RenderVoxelList {
         sinriv::ui::render::RenderCollisionShader& collision_shader,
         sinriv::ui::render::RenderMeshShader& mesh_shader,
         const mat4f* cpu_model_matrix = nullptr) {
-        locker.lock();
-        if (render_id >= 0 && render_id < items.size()) {
-            items[render_id]->render_overlay(
-                collision_renderer,
-                model_transform, 
-                model_transform_2,
-                collision_shader,
-                mesh_shader,
-                cpu_model_matrix);
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->render_overlay(collision_renderer, model_transform,
+                                       model_transform_2, collision_shader,
+                                       mesh_shader, cpu_model_matrix);
         }
-        locker.unlock();
     }
 
     inline void upload_collision(sinriv::ui::render::RenderDeferred& render) {
-        locker.lock();
-        if (render_id >= 0 && render_id < items.size()) {
-            items[render_id]->upload_collision(render);
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->upload_collision(render);
         } else {
             render.clearCollisionTint();
         }
-        locker.unlock();
     }
+
+    inline void setViewportSize(int width, int height) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->mesh_renderer.setViewportSize(width, height);
+            it->second->voxel_renderer.setViewportSize(width, height);
+        }
+    }
+
+    inline void setViewProjection(const float* view, const float* proj) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->mesh_renderer.setViewProjection(view, proj);
+            it->second->voxel_renderer.setViewProjection(view, proj);
+        }
+    }
+
+    inline void setModelMatrix(const mat4f& model_matrix) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->mesh_renderer.setModelMatrix(model_matrix);
+            it->second->voxel_renderer.setModelMatrix(model_matrix);
+        }
+    }
+
+    inline void setMeshAxisVisible(bool visible) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->mesh_renderer.showAxis = visible;
+        }
+    }
+
+    inline void setVoxelAxisVisible(bool visible) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->voxel_renderer.showAxis = visible;
+        }
+    }
+
+    inline void setMeshVisible(bool status) {}
+    inline void setVoxelsVisible(bool status) {}
+    inline void setCollisionVisible(bool status) {}
 
     inline RenderVoxelItem* create_item() {
         auto item = std::make_unique<RenderVoxelItem>();
         item->manager = this;
         item->id = current_id++;
         auto item_ptr = item.get();
-        locker.lock();
-        items[item->id] = std::move(item);
-        locker.unlock();
+        {
+            std::lock_guard<std::mutex> lock(locker);
+            items[item->id] = std::move(item);
+        }
         return item_ptr;
     }
 
     inline std::tuple<RenderVoxelItem*, RenderVoxelItem*> do_segment(
         int index) {
         // 执行分割，并在manager中创建两个，然后返回
+        locker.lock();
         auto it = items.find(index);
         if (it != items.end()) {
+            if (it->second->write_count != 0) {
+                locker.unlock();
+                return std::make_tuple(nullptr, nullptr);
+            }
+            it->second->ref_count++;
+            it->second->write_count++;
+            locker.unlock();
             auto res = it->second->do_segment();
+            it->second->ref_count--;
+            it->second->write_count--;
             auto item1 = std::make_unique<RenderVoxelItem>();
             auto item2 = std::make_unique<RenderVoxelItem>();
             item1->manager = this;
@@ -176,19 +235,160 @@ class RenderVoxelList {
             item2->voxel_grid_data = std::get<1>(res);
             auto item1_ptr = item1.get();
             auto item2_ptr = item2.get();
-            locker.lock();
-            items[item1->id] = std::move(item1);
-            items[item2->id] = std::move(item2);
-            locker.unlock();
+            {
+                std::lock_guard<std::mutex> lock(locker);
+                items[item1->id] = std::move(item1);
+                items[item2->id] = std::move(item2);
+            }
             return std::make_tuple(item1_ptr, item2_ptr);
+        } else {
+            locker.unlock();
         }
         return std::make_tuple(nullptr, nullptr);
     }
-    
+
     inline void process_queue_result() {
+        // 回收ref_count和write_count为0的item
+        std::lock_guard<std::mutex> lock(locker);
+        std::vector<int> to_remove;
+        for (auto& it : items) {
+            if (it.second->ref_count == 0 && it.second->write_count == 0) {
+                to_remove.push_back(it.first);
+            }
+        }
+        for (auto& it : to_remove) {
+            items.erase(it);
+        }
+        // 重新选一个可用的render_id
+        if (items.find(render_id) == items.end()) {
+            auto it = items.begin();
+            if (it != items.end()) {
+                render_id = it->first;
+            }
+        }
     }
 
-    inline void queue_thread() {}
+    inline void setRenderId(int id) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(id);
+        if (it != items.end()) {
+            render_id = id;
+        }
+    }
+
+    enum QueueTaskType {
+        TASK_STOP = 1,
+        TASK_REMOVE_ITEM = 2,
+        TASK_LOAD_STL = 3,
+        TASK_SEGMENT = 4
+    };
+    struct QueueTask {
+        QueueTaskType type;
+        int index;
+        std::string file_path;
+    };
+    std::queue<QueueTask> queue;
+    std::mutex queue_mutex;
+
+    std::thread queue_thread_;
+
+    inline void queue_thread() {
+        std::cout << "Queue thread started" << std::endl;
+        while (true) {
+            if (queue.empty()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            queue_mutex.lock();
+            auto task = queue.front();
+            queue.pop();
+            queue_mutex.unlock();
+
+            switch (task.type) {
+                case TASK_STOP:
+                    std::cout << "Stop queue" << std::endl;
+                    return;
+                // case TASK_REMOVE_ITEM:
+                //     // 移除item
+                //     break;
+                case TASK_LOAD_STL:
+                    // 加载stl文件
+                    std::cout << "Load stl file: " << task.file_path << std::endl;
+                    break;
+                case TASK_SEGMENT:
+                    // 分割
+                    do_segment(task.index);
+                    break;
+            }
+        }
+    }
+
+    inline void start_thread() {
+        // 启动进程
+        queue_thread_ = std::thread(&RenderVoxelList::queue_thread, this);
+    }
+
+    inline void stop_thread() {
+        if (queue_thread_.joinable()) {
+            std::cout << "Waiting for queue thread to stop" << std::endl;
+            {
+                std::lock_guard<std::mutex> lock(queue_mutex);
+                QueueTask task;
+                task.type = TASK_STOP;
+                queue.push(task);
+            }
+            queue_thread_.join();
+            std::cout << "Queue thread stopped" << std::endl;
+        }
+    }
+
+    inline auto get_num_items() {
+        std::lock_guard<std::mutex> lock(locker);
+        auto res = items.size();
+        return res;
+    }
+
+    inline void queue_load_stl(const std::string& file_path) {
+        // 将加载任务加入队列
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        QueueTask task;
+        task.type = TASK_LOAD_STL;
+        task.file_path = file_path;
+        queue.push(task);
+    }
+
+    inline void queue_do_segment(int index) {
+        // 将分割任务加入队列
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        QueueTask task;
+        task.type = TASK_SEGMENT;
+        task.index = index;
+        queue.push(task);
+    }
+
+    inline void queue_do_segment() {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            queue_do_segment(it->second->id);
+        }
+    }
+
+    inline void queue_remove_item(int index) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(index);
+        if (it != items.end()) {
+            it->second->ref_count--;
+        }
+    }
+
+    inline bool isQueueRunning() { return false; }
+
+    inline std::string getQueueStatus() { return "No queue"; }
+
+    inline float getQueueProgress() { return 1.f; }
+
+    inline void release() { stop_thread(); }
 };
 
 }  // namespace sinriv::ui::render

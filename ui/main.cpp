@@ -15,6 +15,7 @@
 
 #include "kigstudio/ui/logger.h"
 #include "kigstudio/ui/render_collision.h"
+#include "kigstudio/ui/render_voxel_list.h"
 #include "kigstudio/ui/render_deferred.h"
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/ui/render_voxel.h"
@@ -92,55 +93,21 @@ int main() {
     bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
     sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
-
     sinriv::ui::render::RenderMeshShader mesh_render_shader(kGBufferView, kOverlayView);
     sinriv::ui::render::RenderCollisionShader collision_render_shader(kGBufferView, kOverlayView);
-
     sinriv::ui::render::RenderDeferred deferred_renderer(kGBufferView, kLightingView, kCollisionView);
-
-    sinriv::ui::render::RenderMesh mesh_renderer{};
-    sinriv::ui::render::RenderVoxel voxel_ori_renderer{};
-    sinriv::ui::render::RenderVoxel voxel_collision_renderer{};
-    sinriv::ui::render::RenderVoxel voxel_spdiv_renderer{};
-    
+    sinriv::ui::render::RenderVoxelList render_items;
     sinriv::ui::render::RenderCollision collision_renderer{};
-    sinriv::ui::render::AsyncVoxelLoader async_voxel_loader;
-    sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
-    collision_group.add(sinriv::kigstudio::voxel::collision::Sphere{
-        {0.0f, 0.0f, 0.0f}, 35.0f});
-
-    sinriv::kigstudio::voxel::collision::Transform local_cylinder;
-    local_cylinder.setPosition({0.0f, 0.0f, -40.0f});
-    local_cylinder.setRotationAxisAngle({{1.0f, 0.0f, 0.0f}, bx::kPiHalf/1.5});
-    collision_group.add(sinriv::kigstudio::voxel::collision::Cylinder{
-        {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 80.0f}, 12.0f}, local_cylinder);
-
-    sinriv::kigstudio::voxel::collision::Transform local_capsule;
-    local_capsule.setPosition({55.0f, 0.0f, 0.0f});
-    local_capsule.setRotationAxisAngle({{0.0f, 0.0f, 1.0f}, bx::kPiHalf/2});
-    collision_group.add(sinriv::kigstudio::voxel::collision::Capsule{
-        {-20.0f, 0.0f, 0.0f}, {20.0f, 0.0f, 0.0f}, 10.0f}, local_capsule);
-
-    sinriv::kigstudio::voxel::collision::Transform local_obb;
-    local_obb.setPosition({-60.0f, 0.0f, 0.0f});
-    local_obb.setRotationEuler({0.0f, 0.0f, bx::kPi / 6.0f});
-    collision_group.add(sinriv::kigstudio::voxel::collision::OBB{
-        {0.0f, 0.0f, 0.0f},
-        {14.0f, 24.0f, 18.0f},
-        {1.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f},
-        {0.0f, 0.0f, 1.0f}}, local_obb);
 
     bool running = true;
     bool showMesh = true;
     bool showVoxels = false;
     bool showCollision = true;
-    bool showMeshAxis = true;
+
+    bool showMeshAxis = false;
     bool showVoxelAxis = false;
-    bool showCollisionAxis = true;
-    bool showDivSpace = true;
-    bool showCollisionProcessed_voxel = false;
-    bool showSpaceDivProcessed_voxel = false;
+    bool showCollisionAxis = false;
+
     bool debugPrintRotation = false;
     int oldW = width;
     int oldH = height;
@@ -220,6 +187,8 @@ int main() {
         }
     };
 
+    render_items.start_thread();
+
     while (running) {
         SDL_Event e;
         ImGuiIO& io = ImGui::GetIO();
@@ -266,8 +235,7 @@ int main() {
                 const char* file = tinyfd_openFileDialog("Open STL", "", 0,
                                                          NULL, "STL file", 0);
                 if (file) {
-                    mesh_renderer.loadSTL(file);
-                    async_voxel_loader.start(file);
+                    render_items.queue_load_stl(file);
                 }
             }
 
@@ -307,21 +275,15 @@ int main() {
         deferred_renderer.setViewportSize(static_cast<uint16_t>(width),
                                           static_cast<uint16_t>(height));
         deferred_renderer.prepareFrame();
-        deferred_renderer.setSpaceDivVisible(showDivSpace);
-        mesh_renderer.setViewportSize(width, height);
-        voxel_ori_renderer.setViewportSize(width, height);
-        voxel_collision_renderer.setViewportSize(width, height);
-        voxel_spdiv_renderer.setViewportSize(width, height);
+        render_items.setViewportSize(width, height);
+        render_items.setViewProjection(view, proj);
+        render_items.setMeshAxisVisible(showMeshAxis);
+        render_items.setVoxelAxisVisible(showVoxelAxis);
+        render_items.setMeshVisible(showMesh);
+        render_items.setVoxelsVisible(showVoxels);
+        render_items.setCollisionVisible(showCollision);
         collision_renderer.setViewportSize(width, height);
-        mesh_renderer.setViewProjection(view, proj);
-        voxel_ori_renderer.setViewProjection(view, proj);
-        voxel_collision_renderer.setViewProjection(view, proj);
-        voxel_spdiv_renderer.setViewProjection(view, proj);
         collision_renderer.setViewProjection(view, proj);
-        mesh_renderer.showAxis = showMeshAxis;
-        voxel_ori_renderer.showAxis = showVoxelAxis;
-        voxel_collision_renderer.showAxis = showVoxelAxis;
-        voxel_spdiv_renderer.showAxis = showVoxelAxis;
         collision_renderer.showAxis = showCollisionAxis;
 
         float mtx_1[16];
@@ -330,10 +292,7 @@ int main() {
         bx::mtxRotateXY(mtx_2, bx::toRad(pitch), bx::toRad(yaw));
         sinriv::kigstudio::mat::matrix<float> cpu_model_matrix(mtx_1);
         cpu_model_matrix.transpose();
-        mesh_renderer.setModelMatrix(cpu_model_matrix);
-        voxel_ori_renderer.setModelMatrix(cpu_model_matrix);
-        voxel_collision_renderer.setModelMatrix(cpu_model_matrix);
-        voxel_spdiv_renderer.setModelMatrix(cpu_model_matrix);
+        render_items.setModelMatrix(cpu_model_matrix);
 
         if (debugPrintRotation) {
             sinriv::kigstudio::mat::matrix<float> gpu_raw_matrix(mtx_1);
@@ -343,113 +302,49 @@ int main() {
             debugPrintRotation = false;
         }
 
-        if (showCollision) {
-            deferred_renderer.setCollisionGroup(collision_group);
-        } else {
-            deferred_renderer.clearCollisionTint();
-        }
-
-        if (showMesh) {
-            mesh_renderer.renderGBuffer(mtx_2, mesh_render_shader);
-        }
-
-        if (showCollisionProcessed_voxel) {
-            showVoxels = false;
-            showSpaceDivProcessed_voxel = false;
-            voxel_collision_renderer.renderGBuffer(mtx_2, mesh_render_shader);
-        }
-
-        if (showSpaceDivProcessed_voxel) {
-            showVoxels = false;
-            showCollisionProcessed_voxel = false;
-            voxel_spdiv_renderer.renderGBuffer(mtx_2, mesh_render_shader);
-        }
-
-        if (showVoxels) {
-            showCollisionProcessed_voxel = false;
-            showSpaceDivProcessed_voxel = false;
-            voxel_ori_renderer.renderGBuffer(mtx_2, mesh_render_shader);
-        }
-
+        render_items.upload_collision(deferred_renderer);
+        render_items.render_gbuffer(mtx_2, mesh_render_shader);
         deferred_renderer.render();
-
-        if (showMesh) {
-            mesh_renderer.renderOverlay(mesh_render_shader);
-        }
-
-        if (showVoxels) {
-            voxel_ori_renderer.renderOverlay(mesh_render_shader);
-        }
-        if (showCollisionProcessed_voxel) {
-            voxel_collision_renderer.renderOverlay(mesh_render_shader);
-        }
-        if (showSpaceDivProcessed_voxel) {
-            voxel_spdiv_renderer.renderOverlay(mesh_render_shader);
-        }
-
-        if (showCollision) {
-            collision_renderer.render(
-                collision_group, 
-                mtx_1, 
-                mtx_2, 
-                collision_render_shader, 
-                &cpu_model_matrix);
-        }
-
-        // Check async voxel loader result
-        sinriv::ui::render::AsyncVoxelLoader::MeshData voxel_mesh_data;
-        if (async_voxel_loader.tryTakeResult(voxel_mesh_data, voxel_grid_data)) {
-            std::cout << "Async voxel loader finished (" << voxel_grid_data.num_chunk() << " chunks)" << std::endl;
-            voxel_ori_renderer.loadGeometry(voxel_mesh_data);
-        }
+        render_items.render_overlay(
+            collision_renderer,
+            mtx_1,
+            mtx_2, 
+            collision_render_shader, 
+            mesh_render_shader,
+            &cpu_model_matrix);
+        
+        render_items.process_queue_result();
 
         io.DisplaySize = ImVec2((float)width, (float)height);
         ImGui::NewFrame();
         ImGui::SetNextWindowPos(ImVec2(0.f, 0.f), ImGuiCond_Once);
         ImGui::Begin("STL Loader");
+        
+        ImGui::Text("items:%d", render_items.get_num_items());
 
         if (ImGui::Button("Open STL (O)")) {
             const char* file =
                 tinyfd_openFileDialog("Open STL", "", 0, NULL, "STL file", 0);
             if (file) {
-                mesh_renderer.loadSTL(file);
-                async_voxel_loader.start(file);
+                render_items.queue_load_stl(file);
             }
         }
         ImGui::SameLine();
         if (ImGui::Button("update collision")){
             std::cout << "update collision" << std::endl;
             // 应用碰撞体到两个结果体素
-            auto res = voxel_grid_data.difference(collision_group);
-            voxel_collision_renderer.loadVoxelGrid(res);
+            render_items.queue_do_segment();
         }
 
         ImGui::Checkbox("show mesh", &showMesh);
         ImGui::Checkbox("show collision", &showCollision);
-        ImGui::Separator();
-        if (ImGui::Checkbox("show main voxels", &showVoxels) && showVoxels){
-            showCollisionProcessed_voxel = false;
-            showSpaceDivProcessed_voxel = false;
-        }
-        if (ImGui::Checkbox("show collision processed voxel", &showCollisionProcessed_voxel) && showCollisionProcessed_voxel){
-            showVoxels = false;
-            showSpaceDivProcessed_voxel = false;
-        }
-        if (ImGui::Checkbox("show space div processed voxel", &showSpaceDivProcessed_voxel) && showSpaceDivProcessed_voxel){
-            showVoxels = false;
-            showCollisionProcessed_voxel = false;
-        }
-        ImGui::Separator();
-        ImGui::Checkbox("mesh axis", &showMeshAxis);
-        ImGui::Checkbox("voxel axis", &showVoxelAxis);
-        ImGui::Checkbox("collision axis", &showCollisionAxis);
-        ImGui::Separator();
-        ImGui::Checkbox("show div space", &showDivSpace);
-        // ImGui::Checkbox("debug print rotation", &debugPrintRotation);
-
+        ImGui::Checkbox("show voxels", &showVoxels);
+        ImGui::Checkbox("show mesh axis", &showMeshAxis);
+        ImGui::Checkbox("show voxel axis", &showVoxelAxis);
+        ImGui::Checkbox("show collision axis", &showCollisionAxis);
         ImGui::End();
         
-        if (async_voxel_loader.isRunning()) {
+        if (render_items.isQueueRunning()) {
             ImGui::SetNextWindowPos(ImVec2((float)width, (float)height), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
             ImGui::Begin(
                 "async_voxel_loader", 
@@ -457,126 +352,10 @@ int main() {
                 ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoTitleBar |
                 ImGuiWindowFlags_NoBringToFrontOnFocus);
-            ImGui::Text("%s", async_voxel_loader.getStatus().c_str());
-            ImGui::ProgressBar(async_voxel_loader.getProgress(), ImVec2(-1, 0));
+            ImGui::Text("%s", render_items.getQueueStatus().c_str());
+            ImGui::ProgressBar(render_items.getQueueProgress(), ImVec2(-1, 0));
             ImGui::End();
         }
-
-        // 碰撞体成员平移/旋转控制面板（合并到一个带滚动条的窗口）
-        ImGui::SetNextWindowPos(ImVec2((float)width, 0.f), ImGuiCond_Once, ImVec2(1.0f, 0.0f));
-        ImGui::Begin("Collision Members");
-        const char* axisNames[] = {"X", "Y", "Z"};
-        int memberIdx = 0;
-        float btnSize = ImGui::GetFrameHeight();
-        float spacing = ImGui::GetStyle().ItemSpacing.x;
-        if (ImGui::CollapsingHeader("space div", ImGuiTreeNodeFlags_DefaultOpen)) {
-        }
-        if (ImGui::CollapsingHeader("collision root", ImGuiTreeNodeFlags_DefaultOpen)) {
-            sinriv::kigstudio::vec3<float> pos = collision_group.transform.getPosition();
-            float p[3] = {pos.x, pos.y, pos.z};
-            {
-                float inputW = 55.0f;
-                for (int i = 0; i < 3; ++i) {
-                    ImGui::PushID(i);
-                    if (i > 0) ImGui::SameLine();
-                    if (ImGui::Button("-", ImVec2(btnSize, 0))) p[i] -= 0.5f;
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(inputW);
-                    ImGui::DragFloat(axisNames[i], &p[i], 0.5f, 0.0f, 0.0f, "%.2f");
-                    ImGui::SameLine();
-                    if (ImGui::Button("+", ImVec2(btnSize, 0))) p[i] += 0.5f;
-                    ImGui::PopID();
-                }
-            }
-            collision_group.transform.setPosition({p[0], p[1], p[2]});
-
-            // Rotation (deg): 固定宽度紧凑排列
-            sinriv::kigstudio::vec3<float> eulerRad = collision_group.transform.getRotationEuler();
-            float r[3] = {bx::toDeg(eulerRad.x), bx::toDeg(eulerRad.y), bx::toDeg(eulerRad.z)};
-            ImGui::Text("Rotation (deg)");
-            {
-                float inputW = 55.0f;
-                for (int i = 0; i < 3; ++i) {
-                    ImGui::PushID(i + 3);
-                    if (i > 0) ImGui::SameLine();
-                    if (ImGui::Button("-", ImVec2(btnSize, 0))) r[i] -= 0.5f;
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(inputW);
-                    ImGui::DragFloat(axisNames[i], &r[i], 0.5f, 0.0f, 0.0f, "%.2f");
-                    ImGui::SameLine();
-                    if (ImGui::Button("+", ImVec2(btnSize, 0))) r[i] += 0.5f;
-                    ImGui::PopID();
-                }
-            }
-            collision_group.transform.setRotationEuler({bx::toRad(r[0]), bx::toRad(r[1]), bx::toRad(r[2])});
-        }
-        if (ImGui::CollapsingHeader("collision group", ImGuiTreeNodeFlags_DefaultOpen)) {
-
-            for (auto& instance : collision_group.geometries()) {
-                const char* typeName = std::visit(
-                    [](const auto& geom) -> const char* {
-                        using T = std::decay_t<decltype(geom)>;
-                        if constexpr (std::is_same_v<T, sinriv::kigstudio::voxel::collision::Sphere>)
-                            return "Sphere";
-                        if constexpr (std::is_same_v<T, sinriv::kigstudio::voxel::collision::Cylinder>)
-                            return "Cylinder";
-                        if constexpr (std::is_same_v<T, sinriv::kigstudio::voxel::collision::Capsule>)
-                            return "Capsule";
-                        if constexpr (std::is_same_v<T, sinriv::kigstudio::voxel::collision::OBB>)
-                            return "OBB";
-                        return "Unknown";
-                    },
-                    instance.geometry);
-
-                ImGui::PushID(memberIdx);
-                ImGui::Text("%s [%d]", typeName, memberIdx);
-
-                // Position: [-][X][+] [-][Y][+] [-][Z][+] 固定宽度紧凑排列
-                sinriv::kigstudio::vec3<float> pos = instance.transform.getPosition();
-                float p[3] = {pos.x, pos.y, pos.z};
-                ImGui::Text("Position");
-                {
-                    float inputW = 55.0f;
-                    for (int i = 0; i < 3; ++i) {
-                        ImGui::PushID(i);
-                        if (i > 0) ImGui::SameLine();
-                        if (ImGui::Button("-", ImVec2(btnSize, 0))) p[i] -= 0.5f;
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(inputW);
-                        ImGui::DragFloat(axisNames[i], &p[i], 0.5f, 0.0f, 0.0f, "%.2f");
-                        ImGui::SameLine();
-                        if (ImGui::Button("+", ImVec2(btnSize, 0))) p[i] += 0.5f;
-                        ImGui::PopID();
-                    }
-                }
-                instance.transform.setPosition({p[0], p[1], p[2]});
-
-                // Rotation (deg): 固定宽度紧凑排列
-                sinriv::kigstudio::vec3<float> eulerRad = instance.transform.getRotationEuler();
-                float r[3] = {bx::toDeg(eulerRad.x), bx::toDeg(eulerRad.y), bx::toDeg(eulerRad.z)};
-                ImGui::Text("Rotation (deg)");
-                {
-                    float inputW = 55.0f;
-                    for (int i = 0; i < 3; ++i) {
-                        ImGui::PushID(i + 3);
-                        if (i > 0) ImGui::SameLine();
-                        if (ImGui::Button("-", ImVec2(btnSize, 0))) r[i] -= 0.5f;
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(inputW);
-                        ImGui::DragFloat(axisNames[i], &r[i], 0.5f, 0.0f, 0.0f, "%.2f");
-                        ImGui::SameLine();
-                        if (ImGui::Button("+", ImVec2(btnSize, 0))) r[i] += 0.5f;
-                        ImGui::PopID();
-                    }
-                }
-                instance.transform.setRotationEuler({bx::toRad(r[0]), bx::toRad(r[1]), bx::toRad(r[2])});
-
-                ImGui::Separator();
-                ImGui::PopID();
-                ++memberIdx;
-            }
-        }
-        ImGui::End();
 
         ImGui::Render();
 
@@ -585,12 +364,10 @@ int main() {
         bgfx::frame();
     }
 
+    render_items.release();
+
     deferred_renderer.release();
     collision_renderer.release();
-    voxel_ori_renderer.release();
-    voxel_collision_renderer.release();
-    voxel_spdiv_renderer.release();
-    mesh_renderer.release();
     mesh_render_shader.release();
     collision_render_shader.release();
     bgfx::shutdown();
