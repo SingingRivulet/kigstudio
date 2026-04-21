@@ -15,6 +15,7 @@
 #include <stb/stb_truetype.h>
 
 #include "kigstudio/ui/logger.h"
+#include "kigstudio/ui/utils.h"
 #include "kigstudio/voxel/voxel2mesh.h"
 #include "tinyfiledialogs.h"
 
