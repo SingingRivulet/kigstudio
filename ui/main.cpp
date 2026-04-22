@@ -27,7 +27,10 @@ int main() {
     float yaw = 0;
     float pitch = 0;
     float distance = 200;
-    bool mouseDown = false;
+    float cameraOffsetX = 0.0f;
+    float cameraOffsetY = 0.0f;
+    bool leftMouseDown = false;
+    bool middleMouseDown = false;
     SDL_SetMainReady();
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;
@@ -36,7 +39,7 @@ int main() {
 
     // 1. 创建 SDL 窗口，但不要创建 OpenGL Context
     SDL_Window* window = SDL_CreateWindow(
-        "bgfx + SDL", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720,
+        "kigstudio GUI SinRivProject", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
 
     if (!window) {
@@ -130,16 +133,24 @@ int main() {
                 io.AddInputCharactersUTF8(e.text.text);
             }
 
-            if (e.type == SDL_MOUSEBUTTONDOWN &&
-                e.button.button == SDL_BUTTON_LEFT) {
-                mouseDown = true;
-                io.MouseDown[0] = true;
+            if (e.type == SDL_MOUSEBUTTONDOWN) {
+                if (e.button.button == SDL_BUTTON_LEFT) {
+                    leftMouseDown = true;
+                    io.MouseDown[0] = true;
+                } else if (e.button.button == SDL_BUTTON_MIDDLE) {
+                    middleMouseDown = true;
+                    io.MouseDown[2] = true;
+                }
             }
 
-            if (e.type == SDL_MOUSEBUTTONUP &&
-                e.button.button == SDL_BUTTON_LEFT) {
-                mouseDown = false;
-                io.MouseDown[0] = false;
+            if (e.type == SDL_MOUSEBUTTONUP) {
+                if (e.button.button == SDL_BUTTON_LEFT) {
+                    leftMouseDown = false;
+                    io.MouseDown[0] = false;
+                } else if (e.button.button == SDL_BUTTON_MIDDLE) {
+                    middleMouseDown = false;
+                    io.MouseDown[2] = false;
+                }
             }
 
             if (e.type == SDL_MOUSEWHEEL) {
@@ -148,9 +159,18 @@ int main() {
             }
 
             if (e.type == SDL_MOUSEMOTION) {
-                if (mouseDown && !io.WantCaptureMouse) {
+                if (leftMouseDown && !io.WantCaptureMouse) {
                     yaw += e.motion.xrel * 0.3f;
                     pitch += e.motion.yrel * 0.3f;
+                }
+                if (middleMouseDown && !io.WantCaptureMouse) {
+                    const float fovRadians = bx::toRad(60.0f);
+                    const float viewportHeight = bx::max(1.0f, float(height));
+                    const float worldUnitsPerPixel =
+                        2.0f * distance * tanf(fovRadians * 0.5f) /
+                        viewportHeight;
+                    cameraOffsetX -= e.motion.xrel * worldUnitsPerPixel;
+                    cameraOffsetY += e.motion.yrel * worldUnitsPerPixel;
                 }
                 io.MousePos = ImVec2((float)e.motion.x, (float)e.motion.y);
             }
@@ -191,7 +211,9 @@ int main() {
 
         float view[16];
         float proj[16];
-        bx::mtxLookAt(view, bx::Vec3(0, 0, distance), bx::Vec3(0, 0, 0));
+        bx::mtxLookAt(
+            view, bx::Vec3(cameraOffsetX, cameraOffsetY, distance),
+            bx::Vec3(cameraOffsetX, cameraOffsetY, 0.0f));
         bx::mtxProj(proj, 60.0f, float(width) / float(height), 0.1f, 1000.0f,
                     bgfx::getCaps()->homogeneousDepth);
         bgfx::setViewTransform(kGBufferView, view, proj);
