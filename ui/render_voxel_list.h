@@ -331,6 +331,7 @@ class RenderVoxelList {
         }
     }
 
+    std::vector<int> find_roots();
     void update_nav_node_position();
 
     inline auto get_num_items() {

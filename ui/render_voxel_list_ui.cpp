@@ -4,6 +4,7 @@
 #include <imgui/imgui.h>
 #include <imnodes.h>
 #include <stb/stb_truetype.h>
+#include <unordered_set>
 #include "render_voxel_list.h"
 #include "tinyfiledialogs.h"
 namespace sinriv::ui::render {
@@ -100,9 +101,113 @@ void RenderVoxelList::render_ui() {
     this->update_nav_node_position();
 }
 
+struct LayoutContext {
+    float next_x = 0.0f;
+    float x_spacing = 120.0f;
+    float y_spacing = 100.0f;
+};
+
+inline float layout_node(RenderVoxelList& mgr,
+                         int node_id,
+                         int depth,
+                         LayoutContext& ctx,
+                         std::unordered_map<int, int>& visit_state,
+                         bool& has_cycle) {
+    auto it = mgr.items.find(node_id);
+
+    // ✅ 不存在 = 无效节点
+    if (it == mgr.items.end()) {
+        return -1.0f;
+    }
+
+    // 🔴 环检测
+    if (visit_state[node_id] == 1) {
+        std::cerr << "Cycle detected at node " << node_id << std::endl;
+        has_cycle = true;
+        return -1.0f;
+    }
+
+    // 已经处理过
+    if (visit_state[node_id] == 2) {
+        return (float)it->second->nav_node_position[0];
+    }
+
+    visit_state[node_id] = 1;
+
+    auto& node = *it->second;
+
+    float left_x = layout_node(mgr, node.children[0], depth + 1, ctx,
+                               visit_state, has_cycle);
+
+    float my_x;
+
+    if (left_x < 0) {
+        my_x = (float)ctx.next_x;
+        ctx.next_x += ctx.x_spacing;
+    } else {
+        my_x = left_x;
+    }
+
+    float right_x = layout_node(mgr, node.children[1], depth + 1, ctx,
+                                visit_state, has_cycle);
+
+    if (left_x >= 0 && right_x >= 0) {
+        my_x = (left_x + right_x) * 0.5f;
+    }
+
+    node.nav_node_position[0] = (int)my_x;
+    node.nav_node_position[1] = depth * ctx.y_spacing;
+
+    visit_state[node_id] = 2;
+
+    return my_x;
+}
+
+inline void compute_layout(RenderVoxelList& mgr) {
+    auto roots = mgr.find_roots();
+
+    LayoutContext ctx;
+    std::unordered_map<int, int> visit_state;
+    bool has_cycle = false;
+
+    for (int root_id : roots) {
+        layout_node(mgr, root_id, 0, ctx, visit_state, has_cycle);
+        ctx.next_x += ctx.x_spacing * 2;
+    }
+
+    if (has_cycle) {
+        std::cerr << "WARNING: Cycle detected in RenderVoxelItem graph!"
+                  << std::endl;
+    }
+}
+
+std::vector<int> RenderVoxelList::find_roots() {
+    std::unordered_set<int> has_parent;
+
+    for (auto& [id, item] : this->items) {
+        for (int i = 0; i < 2; ++i) {
+            int child = item->children[i];
+            if (this->items.find(child) != this->items.end()) {
+                has_parent.insert(child);
+            }
+        }
+    }
+
+    std::vector<int> roots;
+
+    for (auto& [id, item] : this->items) {
+        if (!has_parent.count(id)) {
+            roots.push_back(id);
+        }
+    }
+
+    return roots;
+}
+
 void RenderVoxelList::update_nav_node_position() {
     if (update_nav_node_status) {
         std::cout << "update nav node position" << std::endl;
+        compute_layout(*this);
     }
     update_nav_node_status = false;
 }
