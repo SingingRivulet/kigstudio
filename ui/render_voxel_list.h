@@ -30,10 +30,14 @@ class RenderVoxelList {
     bool queue_running = false;
     std::string queue_status;
 
+    bool update_nav_node_status = true;
+
    public:
     class RenderVoxelItem {
        public:
         int id = -1;
+        int children[2] = {-1, -1};
+        int nav_node_position[2] = {0, 0}; // 在分割演示图中的位置
         RenderVoxelList* manager = nullptr;
         RenderVoxelItem() = default;
         ~RenderVoxelItem() = default;
@@ -213,6 +217,7 @@ class RenderVoxelList {
         {
             std::lock_guard<std::mutex> lock(locker);
             items[item->id] = std::move(item);
+            update_nav_node_status = true;
         }
         return item_ptr;
     }
@@ -237,6 +242,7 @@ class RenderVoxelList {
         }
         for (auto& it : to_remove) {
             items.erase(it);
+            update_nav_node_status = true;
         }
         // 重新选一个可用的render_id
         if (items.find(render_id) == items.end()) {
@@ -324,6 +330,8 @@ class RenderVoxelList {
             std::cout << "Queue thread stopped" << std::endl;
         }
     }
+
+    void update_nav_node_position();
 
     inline auto get_num_items() {
         std::lock_guard<std::mutex> lock(locker);

@@ -2,6 +2,7 @@
 #include <iconfontheaders/icons_font_awesome.h>
 #include <iconfontheaders/icons_kenney.h>
 #include <imgui/imgui.h>
+#include <imnodes.h>
 #include <stb/stb_truetype.h>
 #include "render_voxel_list.h"
 #include "tinyfiledialogs.h"
@@ -47,12 +48,11 @@ void RenderVoxelList::render_ui() {
         menu_height =
             ImGui::CalcWindowNextAutoFitSize(ImGui::GetCurrentWindow()).y;
         ImGui::SetWindowSize(ImVec2(window_width, menu_height));
-        ImGui::End();
     }
+    ImGui::End();
 
     ImGui::SetNextWindowPos(ImVec2(0, (float)window_height), ImGuiCond_Always,
                             ImVec2(0.0f, 1.0f));
-
     if (ImGui::Begin("item status", nullptr,
                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoBringToFrontOnFocus)) {
@@ -62,9 +62,8 @@ void RenderVoxelList::render_ui() {
             ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
 
         ImGui::SetWindowSize(ImVec2(window_width, item_status_height));
-
-        ImGui::End();
     }
+    ImGui::End();
 
     ImGui::PopStyleVar();
 
@@ -79,14 +78,32 @@ void RenderVoxelList::render_ui() {
                              ImGuiWindowFlags_NoBringToFrontOnFocus)) {
             ImGui::Text("%s", this->getQueueStatus().c_str());
             ImGui::ProgressBar(this->getQueueProgress(), ImVec2(-1, 0));
-            ImGui::End();
         }
+        ImGui::End();
     }
+
+    ImGui::SetNextWindowPos(ImVec2(0.f, (float)menu_height), ImGuiCond_Always,
+                            ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(300, 600), ImGuiCond_Once);
+    if (ImGui::Begin("nav node map")) {
+        ImNodes::BeginNodeEditor();
+
+        ImNodes::EndNodeEditor();
+    }
+    ImGui::End();
 
     this->setMeshAxisVisible(showMeshAxis);
     this->setVoxelAxisVisible(showVoxelAxis);
     this->setMeshVisible(showMesh);
     this->setVoxelsVisible(showVoxels);
     this->setCollisionVisible(showCollision);
+    this->update_nav_node_position();
+}
+
+void RenderVoxelList::update_nav_node_position() {
+    if (update_nav_node_status) {
+        std::cout << "update nav node position" << std::endl;
+    }
+    update_nav_node_status = false;
 }
 }  // namespace sinriv::ui::render

@@ -11,6 +11,7 @@
 #include <iconfontheaders/icons_font_awesome.h>
 #include <iconfontheaders/icons_kenney.h>
 #include <imgui/imgui.h>
+#include <imnodes.h>
 #include <stb/stb_truetype.h>
 
 #include "kigstudio/ui/logger.h"
@@ -83,6 +84,8 @@ int main() {
     bgfx::setViewFrameBuffer(kOverlayView, BGFX_INVALID_HANDLE);
 
     imguiCreate();
+    ImGui::CreateContext();
+    ImNodes::CreateContext();
 
     int width, height;
     SDL_GetWindowSize(window, &width, &height);
@@ -245,6 +248,7 @@ int main() {
     collision_renderer.release();
     mesh_render_shader.release();
     collision_render_shader.release();
+    ImNodes::DestroyContext();
     bgfx::shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();

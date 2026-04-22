@@ -4,3 +4,6 @@
 [submodule "dep/bgfx.cmake"]
 	path = dep/bgfx.cmake
 	url = https://github.com/bkaradzic/bgfx.cmake.git
+[submodule "dep/imnodes"]
+	path = dep/imnodes
+	url = https://github.com/Nelarius/imnodes

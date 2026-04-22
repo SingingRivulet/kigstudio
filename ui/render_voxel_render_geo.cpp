@@ -14,14 +14,41 @@ RenderVoxelList::do_segment(int index) {
         it->second->write_count++;
         locker.unlock();
         auto res = it->second->do_segment();
-        it->second->ref_count--;
-        it->second->write_count--;
+        int id_1, id_2;
+        {
+            std::lock_guard<std::mutex> lock(locker);
+            it->second->ref_count--;
+            it->second->write_count--;
+            // 尝试复用已有的id
+            {
+                auto it_items = items.find(it->second->children[0]);
+                if (it_items == items.end()) {
+                    id_1 = current_id++;
+                } else {
+                    id_1 = it_items->second->id;
+                    items.erase(it_items);
+                    update_nav_node_status = true;
+                }
+            }
+            {
+                auto it_items = items.find(it->second->children[1]);
+                if (it_items == items.end()) {
+                    id_2 = current_id++;
+                } else {
+                    id_2 = it_items->second->id;
+                    items.erase(it_items);
+                    update_nav_node_status = true;
+                }
+            }
+            it->second->children[0] = id_1;
+            it->second->children[1] = id_2;
+        }
         auto item1 = std::make_unique<RenderVoxelItem>();
         auto item2 = std::make_unique<RenderVoxelItem>();
         item1->manager = this;
         item2->manager = this;
-        item1->id = current_id++;
-        item2->id = current_id++;
+        item1->id = id_1;
+        item2->id = id_2;
         item1->voxel_grid_data = std::get<0>(res);
         item2->voxel_grid_data = std::get<1>(res);
         auto item1_ptr = item1.get();
@@ -30,6 +57,7 @@ RenderVoxelList::do_segment(int index) {
             std::lock_guard<std::mutex> lock(locker);
             items[item1->id] = std::move(item1);
             items[item2->id] = std::move(item2);
+            update_nav_node_status = true;
         }
         return std::make_tuple(item1_ptr, item2_ptr);
     } else {
@@ -180,6 +208,7 @@ void RenderVoxelList::load_stl(std::string filename,
         {
             std::lock_guard<std::mutex> lock(locker);
             items[item->id] = std::move(item);
+            update_nav_node_status = true;
         }
     }
 

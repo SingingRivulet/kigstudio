@@ -30,6 +30,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/include/
     ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bx/include/
     ${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/include
+    ${CMAKE_SOURCE_DIR}/dep/imnodes
     )  
 
 # imgui
@@ -93,6 +94,7 @@ file(GLOB_RECURSE UI_FILES
 add_executable(
     kigstudio_ui 
     ${UI_FILES}
+    ${CMAKE_SOURCE_DIR}/dep/imnodes/imnodes.cpp
     )
     
 target_link_libraries(kigstudio_ui
