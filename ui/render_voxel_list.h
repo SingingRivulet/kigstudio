@@ -114,6 +114,7 @@ class RenderVoxelList {
     // ui
     int window_width;
     int window_height;
+    int menu_height=0;
     
     bool showMesh = true;
     bool showVoxels = false;
