@@ -18,8 +18,8 @@
 #include "kigstudio/ui/render_deferred.h"
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/ui/render_voxel.h"
-#include "kigstudio/ui/render_voxel_list.h"
 #include "kigstudio/voxel/collision.h"
+#include "ui/render_voxel_list.h"
 #include "tinyfiledialogs.h"
 
 int main() {
@@ -103,13 +103,6 @@ int main() {
     sinriv::ui::render::RenderCollision collision_renderer{};
 
     bool running = true;
-    bool showMesh = true;
-    bool showVoxels = false;
-    bool showCollision = true;
-
-    bool showMeshAxis = false;
-    bool showVoxelAxis = false;
-    bool showCollisionAxis = false;
 
     bool debugPrintRotation = false;
     int oldW = width;
@@ -204,16 +197,12 @@ int main() {
         deferred_renderer.setViewportSize(static_cast<uint16_t>(width),
                                           static_cast<uint16_t>(height));
         deferred_renderer.prepareFrame();
+        render_items.window_height = height;
+        render_items.window_width = width;
         render_items.setViewportSize(width, height);
         render_items.setViewProjection(view, proj);
-        render_items.setMeshAxisVisible(showMeshAxis);
-        render_items.setVoxelAxisVisible(showVoxelAxis);
-        render_items.setMeshVisible(showMesh);
-        render_items.setVoxelsVisible(showVoxels);
-        render_items.setCollisionVisible(showCollision);
         collision_renderer.setViewportSize(width, height);
         collision_renderer.setViewProjection(view, proj);
-        collision_renderer.showAxis = showCollisionAxis;
 
         float mtx_1[16];
         float mtx_2[16];
@@ -242,45 +231,7 @@ int main() {
 
         io.DisplaySize = ImVec2((float)width, (float)height);
         ImGui::NewFrame();
-        ImGui::SetNextWindowPos(ImVec2(0.f, 0.f), ImGuiCond_Once);
-        ImGui::Begin("STL Loader");
-
-        ImGui::Text("items:%d", render_items.get_num_items());
-
-        if (ImGui::Button("Open STL (O)")) {
-            const char* file =
-                tinyfd_openFileDialog("Open STL", "", 0, NULL, "STL file", 0);
-            if (file) {
-                render_items.queue_load_stl(file);
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("update collision")) {
-            std::cout << "update collision" << std::endl;
-            // 应用碰撞体到两个结果体素
-            render_items.queue_do_segment();
-        }
-
-        ImGui::Checkbox("show mesh", &showMesh);
-        ImGui::Checkbox("show collision", &showCollision);
-        ImGui::Checkbox("show voxels", &showVoxels);
-        ImGui::Checkbox("show mesh axis", &showMeshAxis);
-        ImGui::Checkbox("show voxel axis", &showVoxelAxis);
-        ImGui::Checkbox("show collision axis", &showCollisionAxis);
-        ImGui::End();
-
-        if (render_items.isQueueRunning()) {
-            ImGui::SetNextWindowPos(ImVec2((float)width, (float)height),
-                                    ImGuiCond_Always, ImVec2(1.0f, 1.0f));
-            ImGui::Begin("async_voxel_loader", nullptr,
-                         ImGuiWindowFlags_NoResize |
-                             ImGuiWindowFlags_NoTitleBar |
-                             ImGuiWindowFlags_NoBringToFrontOnFocus);
-            ImGui::Text("%s", render_items.getQueueStatus().c_str());
-            ImGui::ProgressBar(render_items.getQueueProgress(), ImVec2(-1, 0));
-            ImGui::End();
-        }
-
+        render_items.render_ui();
         ImGui::Render();
 
         imguiEndFrame();

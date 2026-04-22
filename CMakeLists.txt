@@ -21,11 +21,14 @@ set(SDL2_LIB_DIR "${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/lib/x64")
 
 # 设置包含目录  
 include_directories(
+    ${PROJECT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/dep/libtinyfiledialog 
     ${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/include
     ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/examples/common
     ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/3rdparty/
+    ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/include/
+    ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bx/include/
     ${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/include
     )  
 
@@ -83,9 +86,13 @@ foreach(TEST_FILE ${TEST_FILES})
     )
 endforeach()
 
+file(GLOB_RECURSE UI_FILES
+    "${CMAKE_SOURCE_DIR}/ui/*.cpp"
+)
+
 add_executable(
     kigstudio_ui 
-    ${CMAKE_SOURCE_DIR}/ui/main.cpp
+    ${UI_FILES}
     )
     
 target_link_libraries(kigstudio_ui
