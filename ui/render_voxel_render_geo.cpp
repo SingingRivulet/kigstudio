@@ -13,8 +13,13 @@ RenderVoxelList::do_segment(int index) {
         it->second->ref_count++;
         it->second->write_count++;
         locker.unlock();
+        queue_status = "Segmenting...";
+        queue_progress = 0.0f;
         auto res = it->second->do_segment();
+        queue_progress = 0.7f;
         int id_1, id_2;
+        int children_1[2] = {-1, -1};
+        int children_2[2] = {-1, -1};
         {
             std::lock_guard<std::mutex> lock(locker);
             it->second->ref_count--;
@@ -26,8 +31,13 @@ RenderVoxelList::do_segment(int index) {
                     id_1 = current_id++;
                 } else {
                     id_1 = it_items->second->id;
+                    children_1[0] = it_items->second->children[0];
+                    children_1[1] = it_items->second->children[1];
                     items.erase(it_items);
                     update_nav_node_status = true;
+                    if (items.find(children_1[0])!=items.end() || items.find(children_1[1])!=items.end()){
+                        queue_do_segment(id_1);
+                    }
                 }
             }
             {
@@ -36,8 +46,13 @@ RenderVoxelList::do_segment(int index) {
                     id_2 = current_id++;
                 } else {
                     id_2 = it_items->second->id;
+                    children_2[0] = it_items->second->children[0];
+                    children_2[1] = it_items->second->children[1];
                     items.erase(it_items);
                     update_nav_node_status = true;
+                    if (items.find(children_2[0])!=items.end() || items.find(children_2[1])!=items.end()){
+                        queue_do_segment(id_2);
+                    }
                 }
             }
             it->second->children[0] = id_1;
@@ -49,6 +64,10 @@ RenderVoxelList::do_segment(int index) {
         item2->manager = this;
         item1->id = id_1;
         item2->id = id_2;
+        item1->children[0] = children_1[0];
+        item1->children[1] = children_1[1];
+        item2->children[0] = children_2[0];
+        item2->children[1] = children_2[1];
         item1->voxel_grid_data = std::get<0>(res);
         item2->voxel_grid_data = std::get<1>(res);
         auto item1_ptr = item1.get();

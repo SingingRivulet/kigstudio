@@ -222,13 +222,13 @@ void RenderVoxelList::render_ui() {
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("show")) {
+            if (ImGui::BeginMenu("Show")) {
                 ImGui::Checkbox("show mesh", &showMesh);
                 ImGui::Checkbox("show collision", &showCollision);
                 ImGui::Checkbox("show voxels", &showVoxels);
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("axis")) {
+            if (ImGui::BeginMenu("Axis")) {
                 ImGui::Checkbox("show mesh axis", &showMeshAxis);
                 ImGui::Checkbox("show voxel axis", &showVoxelAxis);
                 ImGui::Checkbox("show collision axis", &showCollisionAxis);
@@ -252,7 +252,7 @@ void RenderVoxelList::render_ui() {
     if (ImGui::Begin("item status", nullptr,
                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoBringToFrontOnFocus)) {
-        ImGui::Text("items:%d", this->get_num_items());
+        ImGui::Text("items:%d tasks:%d", this->get_num_items(), this->queue_num);
 
         item_status_height =
             ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
@@ -278,15 +278,7 @@ void RenderVoxelList::render_ui() {
         ImGui::End();
     }
 
-    ImGui::SetNextWindowPos(ImVec2(0.f, (float)menu_height), ImGuiCond_Always,
-                            ImVec2(0.0f, 0.0f));
-    ImGui::SetNextWindowSize(ImVec2(300, 600), ImGuiCond_Once);
-    if (ImGui::Begin("nav node map")) {
-        ImNodes::BeginNodeEditor();
-
-        ImNodes::EndNodeEditor();
-    }
-    ImGui::End();
+    render_nav_map();
 
     ImGui::SetNextWindowPos(ImVec2((float)window_width, (float)menu_height),
                             ImGuiCond_Once, ImVec2(1.0f, 0.0f));
@@ -440,6 +432,104 @@ void RenderVoxelList::render_ui() {
     this->update_nav_node_position();
 }
 
+void RenderVoxelList::render_nav_map() {
+    std::lock_guard<std::mutex> lock(locker);
+    ImGui::SetNextWindowPos(ImVec2(0.f, (float)menu_height), ImGuiCond_Always,
+                            ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(300, 600), ImGuiCond_Once);
+    if (!ImGui::Begin("nav node map")) {
+        ImGui::End();
+        return;
+    }
+
+    ImNodes::BeginNodeEditor();
+
+    int link_id = 0;
+    for (auto& [id, item] : this->items) {
+        // 设置节点固定坐标
+        ImNodes::SetNodeGridSpacePos(
+            id, ImVec2((float)item->nav_node_position[1],
+                       (float)item->nav_node_position[0]));
+        // 禁止拖动
+        ImNodes::SetNodeDraggable(id, false);
+
+        // 当前选中节点高亮
+        bool is_current = (id == this->render_id);
+        if (is_current) {
+            ImNodes::PushColorStyle(ImNodesCol_TitleBar,
+                                    IM_COL32(56, 120, 56, 255));
+            ImNodes::PushColorStyle(ImNodesCol_TitleBarHovered,
+                                    IM_COL32(66, 150, 66, 255));
+            ImNodes::PushColorStyle(ImNodesCol_TitleBarSelected,
+                                    IM_COL32(76, 170, 76, 255));
+        }
+
+        ImNodes::BeginNode(id);
+
+        ImNodes::BeginNodeTitleBar();
+        ImGui::Text("Node %d", id);
+        ImNodes::EndNodeTitleBar();
+
+        // Input attribute (来自父节点)
+        ImNodes::BeginInputAttribute(id * 10 + 1,
+                                     ImNodesPinShape_CircleFilled);
+        ImGui::Text("In");
+        ImNodes::EndInputAttribute();
+
+        ImGui::Text(
+            "%s",
+            item->segment_mode == RenderVoxelItem::COLLISION ? "Collision"
+                                                             : "Plane");
+
+        // Output attributes (连向子节点)
+        ImNodes::BeginOutputAttribute(id * 10 + 2,
+                                      ImNodesPinShape_CircleFilled);
+        ImGui::Text("Left");
+        ImNodes::EndOutputAttribute();
+
+        ImNodes::BeginOutputAttribute(id * 10 + 3,
+                                      ImNodesPinShape_CircleFilled);
+        ImGui::Text("Right");
+        ImNodes::EndOutputAttribute();
+
+        ImNodes::EndNode();
+
+        if (is_current) {
+            ImNodes::PopColorStyle();
+            ImNodes::PopColorStyle();
+            ImNodes::PopColorStyle();
+        }
+    }
+
+    // 绘制连线：父节点的 output 连向子节点的 input
+    for (auto& [id, item] : this->items) {
+        for (int i = 0; i < 2; ++i) {
+            int child_id = item->children[i];
+            if (this->items.find(child_id) != this->items.end()) {
+                int parent_attr_id = id * 10 + (i == 0 ? 2 : 3);
+                int child_attr_id  = child_id * 10 + 1;
+                ImNodes::Link(link_id++, parent_attr_id, child_attr_id);
+            }
+        }
+    }
+
+    ImNodes::EndNodeEditor();
+
+    // 点击节点切换 render_id
+    int num_selected = ImNodes::NumSelectedNodes();
+    if (num_selected > 0) {
+        static std::vector<int> selected_nodes;
+        selected_nodes.resize(num_selected);
+        ImNodes::GetSelectedNodes(selected_nodes.data());
+        if (!selected_nodes.empty()) {
+            this->setRenderId_unsafe(selected_nodes[0]);
+        }
+        ImNodes::ClearNodeSelection();
+    }
+
+    ImGui::End();
+}
+
 struct LayoutContext {
     float next_x = 0.0f;
     float x_spacing = 120.0f;
@@ -454,12 +544,12 @@ inline float layout_node(RenderVoxelList& mgr,
                          bool& has_cycle) {
     auto it = mgr.items.find(node_id);
 
-    // ✅ 不存在 = 无效节点
+    // 不存在 = 无效节点
     if (it == mgr.items.end()) {
         return -1.0f;
     }
 
-    // 🔴 环检测
+    // 环检测
     if (visit_state[node_id] == 1) {
         std::cerr << "Cycle detected at node " << node_id << std::endl;
         has_cycle = true;
@@ -504,6 +594,7 @@ inline float layout_node(RenderVoxelList& mgr,
 
 inline void compute_layout(RenderVoxelList& mgr) {
     auto roots = mgr.find_roots();
+    std::cout << "roots: " << roots.size() << std::endl;
 
     LayoutContext ctx;
     std::unordered_map<int, int> visit_state;

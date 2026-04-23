@@ -129,6 +129,7 @@ class RenderVoxelList {
     bool showCollisionAxis = false;
 
     void render_ui();
+    void render_nav_map();
 
     inline void upload_collision(sinriv::ui::render::RenderDeferred& render) {
         std::lock_guard<std::mutex> lock(locker);
@@ -255,6 +256,10 @@ class RenderVoxelList {
 
     inline void setRenderId(int id) {
         std::lock_guard<std::mutex> lock(locker);
+        this->setRenderId(id);
+    }
+    
+    inline void setRenderId_unsafe(int id) {
         auto it = items.find(id);
         if (it != items.end()) {
             render_id = id;
@@ -274,17 +279,20 @@ class RenderVoxelList {
     };
     std::queue<QueueTask> queue;
     std::mutex queue_mutex;
+    int queue_num = 0;
 
     std::thread queue_thread_;
 
     inline void queue_thread() {
         std::cout << "Queue thread started" << std::endl;
         while (true) {
+            queue_mutex.lock();
+            this->queue_num = queue.size();
             if (queue.empty()) {
+                queue_mutex.unlock();
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
             }
-            queue_mutex.lock();
             auto task = queue.front();
             queue.pop();
             queue_mutex.unlock();
@@ -306,7 +314,9 @@ class RenderVoxelList {
                     break;
                 case TASK_SEGMENT:
                     // 分割
+                    queue_running = true;
                     do_segment(task.index);
+                    queue_running = false;
                     break;
             }
         }
@@ -347,6 +357,7 @@ class RenderVoxelList {
         task.type = TASK_LOAD_STL;
         task.file_path = file_path;
         queue.push(task);
+        this->queue_num = queue.size();
     }
 
     inline void queue_do_segment(int index) {
@@ -356,6 +367,7 @@ class RenderVoxelList {
         task.type = TASK_SEGMENT;
         task.index = index;
         queue.push(task);
+        this->queue_num = queue.size();
     }
 
     inline void queue_do_segment() {
