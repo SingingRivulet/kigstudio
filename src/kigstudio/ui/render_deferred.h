@@ -133,9 +133,9 @@ namespace sinriv::ui::render {
         inline void setCollisionGroup(const CollisionGroup& group) {
             clearCollisionTint();
 
-            const mat4f group_matrix = group.transform.getBgfxMatrix();
+            const mat4f group_matrix = group.transform.getRenderMatrix();
             for (const auto& geometry : group.geometries()) {
-                const mat4f local_matrix = geometry.transform.getBgfxMatrix() * group_matrix;
+                const mat4f local_matrix = geometry.transform.getRenderMatrix() * group_matrix;
                 std::visit(
                     [&](const auto& shape) {
                         using ShapeType = std::decay_t<decltype(shape)>;

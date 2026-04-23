@@ -181,7 +181,7 @@ namespace sinriv::ui::render {
                 axis_state_.axis_length = axis_gizmo::estimateAxisLengthFromBounds(
                     world_bound_min_, world_bound_max_);
             }
-            // axis_state_.model_matrix = geo_group.transform.getBgfxMatrix() * mat4f(model_transform);
+            // axis_state_.model_matrix = geo_group.transform.getRenderMatrix() * mat4f(model_transform);
             {
                 sinriv::kigstudio::voxel::collision::Quaternion tmp_rotation;
                 tmp_rotation.x = -geo_group.transform.rotation_.x;
@@ -310,11 +310,11 @@ namespace sinriv::ui::render {
         inline void updateBounds(const CollisionGroup& geo_group,
                                  const mat4f& model_matrix) {
             resetBounds();
-            const mat4f group_matrix = geo_group.transform.getBgfxMatrix() * model_matrix;
+            const mat4f group_matrix = geo_group.transform.getRenderMatrix() * model_matrix;
             axis_state_.model_matrix = group_matrix;
 
             for (const auto& geometry : geo_group.geometries()) {
-                const mat4f world_matrix = geometry.transform.getBgfxMatrix() * group_matrix;
+                const mat4f world_matrix = geometry.transform.getRenderMatrix() * group_matrix;
                 std::visit(
                     [&](const auto& shape) {
                         using ShapeType = std::decay_t<decltype(shape)>;

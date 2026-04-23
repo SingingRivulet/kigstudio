@@ -295,6 +295,18 @@ inline bool isAffineInvertible(const mat4f& matrix) {
     return std::fabs(det) > 1e-8f;
 }
 
+inline mat4f makeRenderSpaceFlipMatrix() {
+    mat4f flip;
+    flip.setIdentity();
+    flip[1][1] = -1.0f;
+    return flip;
+}
+
+inline mat4f toRenderSpaceMatrix(const mat4f& world_matrix) {
+    const mat4f flip = makeRenderSpaceFlipMatrix();
+    return flip * world_matrix * flip;
+}
+
 class Transform {
    public:
     inline void setPosition(const vec3f& value) { position_ = value; }
@@ -357,19 +369,8 @@ class Transform {
     }
 
     inline mat4f getMatrix() const { return composeMatrix(position_, rotation_, scale_); }
-    inline mat4f getBgfxMatrix() const {
-        Quaternion tmp_rotation;
-        tmp_rotation.x = -rotation_.x;
-        tmp_rotation.y = -rotation_.y;
-        tmp_rotation.z = -rotation_.z;
-        tmp_rotation.w = rotation_.w;
+    inline mat4f getRenderMatrix() const { return toRenderSpaceMatrix(getMatrix()); }
         //bgfx渲染需要使用共轭的四元数，原因未知
-        vec3f tmp_position;
-        tmp_position.x = position_.x;
-        tmp_position.y = -position_.y;
-        tmp_position.z = position_.z;
-        return composeMatrix(tmp_position, tmp_rotation, scale_); 
-    }
 
     vec3f position_ = {0.0f, 0.0f, 0.0f};
     Quaternion rotation_;
@@ -450,10 +451,23 @@ class CollisionGroup {
     inline std::vector<GeometryInstance>& geometries() { return geometries_; }
 
     inline bool contains(const vec3f& point) const {
-        const mat4f global_matrix = transform.getBgfxMatrix();
+        return containsImpl(point, true);
+    }
+
+    inline bool containsWorldPoint(const vec3f& point) const {
+        return containsImpl(point, false);
+    }
+
+   private:
+    inline bool containsImpl(const vec3f& point, bool use_render_space) const {
+        const mat4f global_matrix =
+            use_render_space ? transform.getRenderMatrix() : transform.getMatrix();
 
         for (const GeometryInstance& geometry : geometries_) {
-            mat4f world_matrix = geometry.transform.getBgfxMatrix() * global_matrix;
+            mat4f world_matrix =
+                (use_render_space ? geometry.transform.getRenderMatrix()
+                                  : geometry.transform.getMatrix()) *
+                global_matrix;
             // 这个是无效的
             // mat4f world_matrix = global_matrix * geometry.transform.getMatrix();
             if (!isAffineInvertible(world_matrix)) {
@@ -480,5 +494,9 @@ class CollisionGroup {
 
 inline bool pointIntersects(const vec3f& point, const CollisionGroup& group) {
     return group.contains(point);
+}
+
+inline bool pointIntersectsWorld(const vec3f& point, const CollisionGroup& group) {
+    return group.containsWorldPoint(point);
 }
 }

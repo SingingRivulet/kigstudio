@@ -122,11 +122,11 @@ bool testCollisionGroupGlobalAndLocalTransform() {
     group.add(Sphere{{0.0f, 0.0f, 0.0f}, 1.0f}, local_sphere);
 
     bool ok = true;
-    ok &= expectTrue(group.contains({7.0f, 0.0f, 0.0f}),
+    ok &= expectTrue(group.containsWorldPoint({7.0f, 0.0f, 0.0f}),
                      "collision group applies global and local translation");
-    ok &= expectTrue(pointIntersects({6.5f, 0.0f, 0.0f}, group),
+    ok &= expectTrue(pointIntersectsWorld({6.5f, 0.0f, 0.0f}, group),
                      "pointIntersects works for collision group");
-    ok &= expectFalse(group.contains({8.2f, 0.0f, 0.0f}),
+    ok &= expectFalse(group.containsWorldPoint({8.2f, 0.0f, 0.0f}),
                       "collision group rejects point outside translated geometry");
     return ok;
 }
@@ -139,9 +139,9 @@ bool testCollisionGroupQuaternionRotation() {
     group.add(Cylinder{{0.0f, 0.0f, 0.0f}, {2.0f, 0.0f, 0.0f}, 0.5f});
 
     bool ok = true;
-    ok &= expectTrue(group.contains({0.0f, 1.0f, 0.0f}),
+    ok &= expectTrue(group.containsWorldPoint({0.0f, 1.0f, 0.0f}),
                      "quaternion rotation rotates geometry group");
-    ok &= expectFalse(group.contains({1.0f, 0.6f, 0.0f}),
+    ok &= expectFalse(group.containsWorldPoint({1.0f, 0.6f, 0.0f}),
                       "quaternion rotation rejects miss after rotation");
     return ok;
 }
@@ -161,9 +161,9 @@ bool testCollisionGroupAxisAngleAndScale() {
               local_box);
 
     bool ok = true;
-    ok &= expectTrue(group.contains({0.0f, 2.0f, 0.0f}),
+    ok &= expectTrue(group.containsWorldPoint({0.0f, 2.0f, 0.0f}),
                      "axis-angle rotation and scale affect collision group");
-    ok &= expectFalse(group.contains({0.8f, 2.0f, 0.0f}),
+    ok &= expectFalse(group.containsWorldPoint({0.8f, 2.0f, 0.0f}),
                       "axis-angle rotation and scale still reject outside point");
     return ok;
 }
