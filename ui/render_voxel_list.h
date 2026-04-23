@@ -252,7 +252,15 @@ class RenderVoxelList {
 
     // 后台队列
 
+    std::vector<std::unique_ptr<RenderVoxelItem>> pending_deletion;
+    std::mutex pending_deletion_mutex;
+
     inline void process_queue_result() {
+        // 在 UI 线程中安全释放被后台线程移入的 item
+        {
+            std::lock_guard<std::mutex> lock(pending_deletion_mutex);
+            pending_deletion.clear();
+        }
         // 回收ref_count和write_count为0的item
         std::lock_guard<std::mutex> lock(locker);
         std::vector<int> to_remove;
@@ -416,6 +424,7 @@ class RenderVoxelList {
         stop_thread();
         destroyThumbnailResources();
         items.clear();
+        pending_deletion.clear();
     }
 
     void processThumbnails();

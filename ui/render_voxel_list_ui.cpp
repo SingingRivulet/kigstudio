@@ -449,8 +449,8 @@ void RenderVoxelList::render_nav_map() {
     for (auto& [id, item] : this->items) {
         // 设置节点固定坐标
         ImNodes::SetNodeGridSpacePos(
-            id, ImVec2((float)item->nav_node_position[1],
-                       (float)item->nav_node_position[0]));
+            id, ImVec2((float)item->nav_node_position[1]*1.5,
+                       (float)item->nav_node_position[0]*1.5));
         // 禁止拖动
         ImNodes::SetNodeDraggable(id, false);
 
@@ -474,13 +474,13 @@ void RenderVoxelList::render_nav_map() {
         // Input attribute (来自父节点)
         ImNodes::BeginInputAttribute(id * 10 + 1,
                                      ImNodesPinShape_CircleFilled);
-        ImGui::Text("In");
+        ImGui::Text("");
         ImNodes::EndInputAttribute();
 
-        ImGui::Text(
-            "%s",
-            item->segment_mode == RenderVoxelItem::COLLISION ? "Collision"
-                                                             : "Plane");
+        // ImGui::Text(
+        //     "%s",
+        //     item->segment_mode == RenderVoxelItem::COLLISION ? "Collision"
+        //                                                      : "Plane");
 
         // 缩略图
         if (bgfx::isValid(item->thumbnail_tex)) {
@@ -492,12 +492,12 @@ void RenderVoxelList::render_nav_map() {
         // Output attributes (连向子节点)
         ImNodes::BeginOutputAttribute(id * 10 + 2,
                                       ImNodesPinShape_CircleFilled);
-        ImGui::Text("Left");
+        ImGui::Text("");
         ImNodes::EndOutputAttribute();
 
         ImNodes::BeginOutputAttribute(id * 10 + 3,
                                       ImNodesPinShape_CircleFilled);
-        ImGui::Text("Right");
+        ImGui::Text("");
         ImNodes::EndOutputAttribute();
 
         ImNodes::EndNode();

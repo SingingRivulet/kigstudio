@@ -33,6 +33,10 @@ RenderVoxelList::do_segment(int index) {
                     id_1 = it_items->second->id;
                     children_1[0] = it_items->second->children[0];
                     children_1[1] = it_items->second->children[1];
+                    {
+                        std::lock_guard<std::mutex> lock(pending_deletion_mutex);
+                        pending_deletion.push_back(std::move(it_items->second));
+                    }
                     items.erase(it_items);
                     update_nav_node_status = true;
                     if (items.find(children_1[0])!=items.end() || items.find(children_1[1])!=items.end()){
@@ -48,6 +52,10 @@ RenderVoxelList::do_segment(int index) {
                     id_2 = it_items->second->id;
                     children_2[0] = it_items->second->children[0];
                     children_2[1] = it_items->second->children[1];
+                    {
+                        std::lock_guard<std::mutex> lock(pending_deletion_mutex);
+                        pending_deletion.push_back(std::move(it_items->second));
+                    }
                     items.erase(it_items);
                     update_nav_node_status = true;
                     if (items.find(children_2[0])!=items.end() || items.find(children_2[1])!=items.end()){
