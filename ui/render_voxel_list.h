@@ -40,7 +40,11 @@ class RenderVoxelList {
         int nav_node_position[2] = {0, 0}; // 在分割演示图中的位置
         RenderVoxelList* manager = nullptr;
         RenderVoxelItem() = default;
-        ~RenderVoxelItem() = default;
+        ~RenderVoxelItem() {
+            if (bgfx::isValid(thumbnail_tex)) {
+                bgfx::destroy(thumbnail_tex);
+            }
+        }
         enum segment_mode {
             COLLISION,
             PLANE,
@@ -79,11 +83,27 @@ class RenderVoxelList {
         bool showMesh = true;
         bool showVoxel = true;
         bool showCollision = true;
+
+        bgfx::TextureHandle thumbnail_tex = BGFX_INVALID_HANDLE;
+        bool thumbnail_dirty = true;
     };
     inline RenderVoxelList() {}
     inline ~RenderVoxelList() { release(); }
 
     std::map<int, std::unique_ptr<RenderVoxelItem>> items;
+
+    // 缩略图生成
+    struct ThumbnailTask {
+        int item_id = -1;
+        enum Stage { RENDER, WAIT, DONE } stage = RENDER;
+        int wait_frames = 0;
+    };
+    std::queue<ThumbnailTask> thumbnail_queue;
+
+    bgfx::FrameBufferHandle thumb_fb_ = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle thumb_color_tex_ = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle thumb_depth_tex_ = BGFX_INVALID_HANDLE;
+    std::unique_ptr<RenderMeshShader> thumb_shader_;
 
     // 渲染
     int render_id = 0;
@@ -121,7 +141,7 @@ class RenderVoxelList {
     int menu_height=0;
     
     bool showMesh = true;
-    bool showVoxels = false;
+    bool showVoxels = true;
     bool showCollision = true;
 
     bool showMeshAxis = false;
@@ -394,8 +414,13 @@ class RenderVoxelList {
 
     inline void release() {
         stop_thread();
+        destroyThumbnailResources();
         items.clear();
     }
+
+    void processThumbnails();
+    void ensureThumbnailResources();
+    void destroyThumbnailResources();
 };
 
 }  // namespace sinriv::ui::render

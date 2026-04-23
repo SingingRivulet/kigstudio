@@ -48,6 +48,9 @@ namespace sinriv::ui::render {
 
         inline bool empty() const { return mesh_renderer_.empty(); }
 
+        inline RenderMesh& getMeshRenderer() { return mesh_renderer_; }
+        inline const RenderMesh& getMeshRenderer() const { return mesh_renderer_; }
+
         inline void loadVoxelGrid(
             sinriv::kigstudio::voxel::VoxelGrid voxel_data,
             double isolevel = 0.5,

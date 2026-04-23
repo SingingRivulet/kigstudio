@@ -354,6 +354,10 @@ namespace sinriv::ui::render {
                    mesh_.index_count == 0;
         }
 
+        inline std::pair<vec3f, vec3f> getLocalBounds() const {
+            return {local_bound_min_, local_bound_max_};
+        }
+
         inline void release() {
             mesh_.destroy();
         }

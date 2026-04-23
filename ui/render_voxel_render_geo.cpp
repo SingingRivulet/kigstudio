@@ -70,6 +70,8 @@ RenderVoxelList::do_segment(int index) {
         item2->children[1] = children_2[1];
         item1->voxel_grid_data = std::get<0>(res);
         item2->voxel_grid_data = std::get<1>(res);
+        item1->thumbnail_dirty = true;
+        item2->thumbnail_dirty = true;
         auto item1_ptr = item1.get();
         auto item2_ptr = item2.get();
         {
@@ -224,6 +226,7 @@ void RenderVoxelList::load_stl(std::string filename,
             sinriv::kigstudio::voxel::readSTL(filename));
         item->voxel_renderer.loadGeometry(data);
         item->voxel_grid_data = std::move(voxel_data);
+        item->thumbnail_dirty = true;
         {
             std::lock_guard<std::mutex> lock(locker);
             items[item->id] = std::move(item);
