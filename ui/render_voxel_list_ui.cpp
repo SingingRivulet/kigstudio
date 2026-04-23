@@ -521,6 +521,7 @@ void RenderVoxelList::render_nav_map() {
         }
     }
 
+    ImNodes::MiniMap(0.2f, ImNodesMiniMapLocation_BottomLeft);
     ImNodes::EndNodeEditor();
 
     // 点击节点切换 render_id
@@ -728,7 +729,7 @@ void RenderVoxelList::processThumbnails() {
             // 如果 voxel_renderer 为空但有 voxel_grid_data，先生成 mesh
             if (item->voxel_renderer.empty() &&
                 item->voxel_grid_data.num_chunk() > 0) {
-                item->voxel_renderer.loadVoxelGrid(item->voxel_grid_data);
+                item->voxel_renderer.loadVoxelGrid(item->voxel_grid_data); // TODO: 这个性能消耗极大，需要放到子线程
             }
 
             if (item->voxel_renderer.empty()) {
