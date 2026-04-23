@@ -209,15 +209,19 @@ int main() {
         bgfx::setViewRect(kCollisionView, 0, 0, width, height);
         bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
-        float view[16];
+        float view_1[16];
+        float view_2[16];
         float proj[16];
         bx::mtxLookAt(
-            view, bx::Vec3(cameraOffsetX, cameraOffsetY, distance),
+            view_1, bx::Vec3(cameraOffsetX, cameraOffsetY, distance),
             bx::Vec3(cameraOffsetX, cameraOffsetY, 0.0f));
+        bx::mtxLookAt(
+            view_2, bx::Vec3(cameraOffsetX, -cameraOffsetY, distance),
+            bx::Vec3(cameraOffsetX, -cameraOffsetY, 0.0f));
         bx::mtxProj(proj, 60.0f, float(width) / float(height), 0.1f, 1000.0f,
                     bgfx::getCaps()->homogeneousDepth);
-        bgfx::setViewTransform(kGBufferView, view, proj);
-        bgfx::setViewTransform(kOverlayView, view, proj);
+        bgfx::setViewTransform(kGBufferView, view_1, proj);
+        bgfx::setViewTransform(kOverlayView, view_1, proj);
         bgfx::setViewFrameBuffer(kOverlayView, BGFX_INVALID_HANDLE);
         deferred_renderer.setViewportSize(static_cast<uint16_t>(width),
                                           static_cast<uint16_t>(height));
@@ -225,9 +229,9 @@ int main() {
         render_items.window_height = height;
         render_items.window_width = width;
         render_items.setViewportSize(width, height);
-        render_items.setViewProjection(view, proj);
+        render_items.setViewProjection(view_1, proj);
         collision_renderer.setViewportSize(width, height);
-        collision_renderer.setViewProjection(view, proj);
+        collision_renderer.setViewProjection(view_2, proj);
 
         float mtx_1[16];
         float mtx_2[16];
@@ -248,6 +252,8 @@ int main() {
         render_items.upload_collision(deferred_renderer);
         render_items.render_gbuffer(mtx_2, mesh_render_shader);
         deferred_renderer.render();
+        bgfx::setViewTransform(kOverlayView, view_2, proj);
+
         render_items.render_overlay(collision_renderer, mtx_1, mtx_2,
                                     collision_render_shader, mesh_render_shader,
                                     &cpu_model_matrix);
