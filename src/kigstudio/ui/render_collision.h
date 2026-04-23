@@ -181,20 +181,11 @@ namespace sinriv::ui::render {
                 axis_state_.axis_length = axis_gizmo::estimateAxisLengthFromBounds(
                     world_bound_min_, world_bound_max_);
             }
-            // axis_state_.model_matrix = geo_group.transform.getRenderMatrix() * mat4f(model_transform);
-            {
-                sinriv::kigstudio::voxel::collision::Quaternion tmp_rotation;
-                tmp_rotation.x = -geo_group.transform.rotation_.x;
-                tmp_rotation.y = -geo_group.transform.rotation_.y;
-                tmp_rotation.z = -geo_group.transform.rotation_.z;
-                tmp_rotation.w = geo_group.transform.rotation_.w;
+            { /*
                 //bgfx渲染需要使用共轭的四元数，原因未知
-                vec3f tmp_position;
-                tmp_position.x = geo_group.transform.position_.x;
-                tmp_position.y = geo_group.transform.position_.y;
                 tmp_position.z = -geo_group.transform.position_.z; //bgfx需要反转z轴，原因未知
-                auto mtx = sinriv::kigstudio::voxel::collision::composeMatrix(tmp_position, tmp_rotation, geo_group.transform.scale_); 
-                axis_state_.model_matrix = model_matrix * mtx;
+                */ axis_state_.model_matrix =
+                    model_matrix * geo_group.transform.getRenderMatrix();
             }
 
             if (showAxis) {
