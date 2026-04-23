@@ -169,8 +169,8 @@ int main() {
                     const float worldUnitsPerPixel =
                         2.0f * distance * tanf(fovRadians * 0.5f) /
                         viewportHeight;
-                    cameraOffsetX -= e.motion.xrel * worldUnitsPerPixel;
-                    cameraOffsetY += e.motion.yrel * worldUnitsPerPixel;
+                    cameraOffsetX += e.motion.xrel * worldUnitsPerPixel;
+                    cameraOffsetY -= e.motion.yrel * worldUnitsPerPixel;
                 }
                 io.MousePos = ImVec2((float)e.motion.x, (float)e.motion.y);
             }
@@ -212,12 +212,15 @@ int main() {
         float view_1[16];
         float view_2[16];
         float proj[16];
+        const bx::Vec3 eye(cameraOffsetX, cameraOffsetY, distance);
+        const bx::Vec3 at(cameraOffsetX, cameraOffsetY, 0.0f);
         bx::mtxLookAt(
-            view_1, bx::Vec3(cameraOffsetX, cameraOffsetY, distance),
-            bx::Vec3(cameraOffsetX, cameraOffsetY, 0.0f));
-        bx::mtxLookAt(
-            view_2, bx::Vec3(cameraOffsetX, -cameraOffsetY, distance),
-            bx::Vec3(cameraOffsetX, -cameraOffsetY, 0.0f));
+            view_1, eye, at);
+        float flip_y[16];
+        bx::mtxScale(flip_y, 1.0f, -1.0f, 1.0f);
+        const bx::Vec3 eye_2 = bx::mul(eye, flip_y);
+        const bx::Vec3 at_2 = bx::mul(at, flip_y);
+        bx::mtxLookAt(view_2, eye_2, at_2);
         bx::mtxProj(proj, 60.0f, float(width) / float(height), 0.1f, 1000.0f,
                     bgfx::getCaps()->homogeneousDepth);
         bgfx::setViewTransform(kGBufferView, view_1, proj);
