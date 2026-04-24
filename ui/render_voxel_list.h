@@ -152,7 +152,7 @@ class RenderVoxelList {
     bool showMeshAxis = false;
     bool showVoxelAxis = false;
     bool showCollisionAxis = false;
-    bool showCollisionBounds = false;
+    bool showCollisionBounds = true;
 
     void render_ui();
     void render_nav_map();

@@ -33,7 +33,8 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
     }
     if (showCollisionBounds) {
         collision_renderer.renderBounds(collision_group, model_transform,
-                                        collision_shader);
+                                        model_transform_2, collision_shader,
+                                        cpu_model_matrix);
     }
 }
 

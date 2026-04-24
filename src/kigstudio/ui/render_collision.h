@@ -181,10 +181,8 @@ namespace sinriv::ui::render {
                 axis_state_.axis_length = axis_gizmo::estimateAxisLengthFromBounds(
                     world_bound_min_, world_bound_max_);
             }
-            { /*
-                //bgfx渲染需要使用共轭的四元数，原因未知
-                tmp_position.z = -geo_group.transform.position_.z; //bgfx需要反转z轴，原因未知
-                */ axis_state_.model_matrix =
+            { 
+                axis_state_.model_matrix =
                     model_matrix * geo_group.transform.getRenderMatrix();
             }
 
@@ -227,13 +225,16 @@ namespace sinriv::ui::render {
         }
         bool showAxis = false;
 
-        inline void renderBounds(const CollisionGroup& geo_group,
-                                 const float* model_transform,
-                                 RenderCollisionShader& shader) {
+        inline void renderBounds(
+                           const CollisionGroup& geo_group,
+                           const float* model_transform,
+                           const float* model_transform_2,
+                           RenderCollisionShader & shader,
+                           const mat4f* cpu_model_matrix = nullptr) {
             if (!shader.ensureProgram()) {
                 return;
             }
-            const mat4f model_matrix = mat4f(model_transform);
+            const mat4f model_matrix = geo_group.transform.getMatrix();
             updateBounds(geo_group, model_matrix);
 
             if (!has_world_bounds_) {
@@ -283,7 +284,8 @@ namespace sinriv::ui::render {
 
             float identity[16];
             bx::mtxIdentity(identity);
-            bgfx::setTransform(identity);
+            // bgfx::setTransform(identity);
+            bgfx::setTransform(model_transform);
             bgfx::setVertexBuffer(0, &tvb);
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
@@ -321,7 +323,7 @@ namespace sinriv::ui::render {
                      vec3f{-r, -r, -r}, vec3f{r, -r, -r}, vec3f{r, r, -r}, vec3f{-r, r, -r},
                      vec3f{-r, -r, r}, vec3f{r, -r, r}, vec3f{r, r, r}, vec3f{-r, r, r}}) {
                 expandBounds(sinriv::kigstudio::voxel::collision::transformPoint(
-                    world_matrix, sphere.center + offset));
+                    world_matrix, vec3f(sphere.center.x, -sphere.center.y, sphere.center.z) + offset));
             }
         }
 
@@ -339,7 +341,7 @@ namespace sinriv::ui::render {
                 for (const vec3f& offset : std::array<vec3f, 4>{
                          tangent * r, tangent * -r, bitangent * r, bitangent * -r}) {
                     expandBounds(sinriv::kigstudio::voxel::collision::transformPoint(
-                        world_matrix, center + offset));
+                        world_matrix, vec3f(center.x, -center.y, center.z) + offset));
                 }
             }
         }
@@ -366,11 +368,11 @@ namespace sinriv::ui::render {
         inline void updateBounds(const CollisionGroup& geo_group,
                                  const mat4f& model_matrix) {
             resetBounds();
-            const mat4f group_matrix = geo_group.transform.getRenderMatrix() * model_matrix;
+            const mat4f group_matrix = geo_group.transform.getMatrix();
             axis_state_.model_matrix = group_matrix;
 
             for (const auto& geometry : geo_group.geometries()) {
-                const mat4f world_matrix = geometry.transform.getRenderMatrix() * group_matrix;
+                const mat4f world_matrix = geometry.transform.getMatrix() * group_matrix;
                 std::visit(
                     [&](const auto& shape) {
                         using ShapeType = std::decay_t<decltype(shape)>;
@@ -453,54 +455,82 @@ namespace sinriv::ui::render {
         inline void appendSphere(std::vector<detail::CollisionLineVertex>& vertices,
                                  const Sphere& sphere,
                                  const mat4f& world_matrix) const {
-            appendCircle(vertices, world_matrix, sphere.center, {1.0f, 0.0f, 0.0f},
+            auto center = vec3f(
+                sphere.center.x,
+                -sphere.center.y,
+                sphere.center.z
+            );
+            //TODO: 需要化简
+            appendCircle(vertices, world_matrix, center, {1.0f, 0.0f, 0.0f},
                          {0.0f, 1.0f, 0.0f}, sphere.radius);
-            appendCircle(vertices, world_matrix, sphere.center, {1.0f, 0.0f, 0.0f},
+            appendCircle(vertices, world_matrix, center, {1.0f, 0.0f, 0.0f},
                          {0.0f, 0.0f, 1.0f}, sphere.radius);
-            appendCircle(vertices, world_matrix, sphere.center, {0.0f, 1.0f, 0.0f},
+            appendCircle(vertices, world_matrix, center, {0.0f, 1.0f, 0.0f},
                          {0.0f, 0.0f, 1.0f}, sphere.radius);
         }
 
         inline void appendCylinder(std::vector<detail::CollisionLineVertex>& vertices,
                                    const Cylinder& cylinder,
                                    const mat4f& world_matrix) const {
-            const vec3f axis = cylinder.end - cylinder.start;
+            auto start = vec3f(
+                cylinder.start.x,
+                -cylinder.start.y,
+                cylinder.start.z
+            );
+            auto end = vec3f(
+                cylinder.end.x,
+                -cylinder.end.y,
+                cylinder.end.z
+            );
+            //TODO: 需要化简
+            const vec3f axis = end - start;
             const float axis_length = axis.length();
             const vec3f axis_dir = axis_length > 1e-6f ? axis / axis_length : vec3f(0.0f, 0.0f, 1.0f);
             const vec3f helper = std::fabs(axis_dir.z) < 0.99f ? vec3f(0.0f, 0.0f, 1.0f) : vec3f(0.0f, 1.0f, 0.0f);
             const vec3f tangent = axis_dir.cross(helper).normalize();
             const vec3f bitangent = axis_dir.cross(tangent).normalize();
 
-            appendCircle(vertices, world_matrix, cylinder.start, tangent, bitangent, cylinder.radius);
-            appendCircle(vertices, world_matrix, cylinder.end, tangent, bitangent, cylinder.radius);
+            appendCircle(vertices, world_matrix, start, tangent, bitangent, cylinder.radius);
+            appendCircle(vertices, world_matrix, end, tangent, bitangent, cylinder.radius);
 
             for (uint16_t i = 0; i < 4; ++i) {
                 const float angle = (2.0f * 3.14159265358979323846f * i) / 4.0f;
                 const vec3f offset = tangent * (std::cos(angle) * cylinder.radius) +
                                      bitangent * (std::sin(angle) * cylinder.radius);
                 appendLine(vertices,
-                           sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, cylinder.start + offset),
-                           sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, cylinder.end + offset));
+                           sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, start + offset),
+                           sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, end + offset));
             }
         }
 
         inline void appendCapsule(std::vector<detail::CollisionLineVertex>& vertices,
                                   const Capsule& capsule,
                                   const mat4f& world_matrix) const {
+            auto start = vec3f(
+                capsule.start.x,
+                -capsule.start.y,
+                capsule.start.z
+            );
+            auto end = vec3f(
+                capsule.end.x,
+                -capsule.end.y,
+                capsule.end.z
+            );
+            //TODO: 需要化简
             const Cylinder body{capsule.start, capsule.end, capsule.radius};
             appendCylinder(vertices, body, world_matrix);
 
-            const vec3f axis = capsule.end - capsule.start;
+            const vec3f axis = end - start;
             const float axis_length = axis.length();
             const vec3f axis_dir = axis_length > 1e-6f ? axis / axis_length : vec3f(0.0f, 0.0f, 1.0f);
             const vec3f helper = std::fabs(axis_dir.z) < 0.99f ? vec3f(0.0f, 0.0f, 1.0f) : vec3f(0.0f, 1.0f, 0.0f);
             const vec3f tangent = axis_dir.cross(helper).normalize();
             const vec3f bitangent = axis_dir.cross(tangent).normalize();
 
-            appendCircle(vertices, world_matrix, capsule.start, tangent, axis_dir, capsule.radius);
-            appendCircle(vertices, world_matrix, capsule.start, bitangent, axis_dir, capsule.radius);
-            appendCircle(vertices, world_matrix, capsule.end, tangent, axis_dir, capsule.radius);
-            appendCircle(vertices, world_matrix, capsule.end, bitangent, axis_dir, capsule.radius);
+            appendCircle(vertices, world_matrix, start, tangent, axis_dir, capsule.radius);
+            appendCircle(vertices, world_matrix, start, bitangent, axis_dir, capsule.radius);
+            appendCircle(vertices, world_matrix, end, tangent, axis_dir, capsule.radius);
+            appendCircle(vertices, world_matrix, end, bitangent, axis_dir, capsule.radius);
         }
 
         inline void appendOBB(std::vector<detail::CollisionLineVertex>& vertices,

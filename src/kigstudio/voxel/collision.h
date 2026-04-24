@@ -370,7 +370,6 @@ class Transform {
 
     inline mat4f getMatrix() const { return composeMatrix(position_, rotation_, scale_); }
     inline mat4f getRenderMatrix() const { return toRenderSpaceMatrix(getMatrix()); }
-        //bgfx渲染需要使用共轭的四元数，原因未知
 
     vec3f position_ = {0.0f, 0.0f, 0.0f};
     Quaternion rotation_;
