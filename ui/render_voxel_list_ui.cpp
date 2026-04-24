@@ -726,10 +726,31 @@ void RenderVoxelList::processThumbnails() {
             }
             auto& item = it->second;
 
-            // 如果 voxel_renderer 为空但有 voxel_grid_data，先生成 mesh
+            // 如果 voxel_renderer 为空但有 voxel_grid_data，先生成 mesh（放到 queue 线程）
             if (item->voxel_renderer.empty() &&
                 item->voxel_grid_data.num_chunk() > 0) {
-                item->voxel_renderer.loadVoxelGrid(item->voxel_grid_data); // TODO: 这个性能消耗极大，需要放到子线程
+                // 检查是否已有生成结果
+                {
+                    std::lock_guard<std::mutex> lock(thumbnail_mesh_mutex);
+                    auto res_it = thumbnail_mesh_results.find(task.item_id);
+                    if (res_it != thumbnail_mesh_results.end()) {
+                        item->voxel_renderer.loadGeometry(res_it->second);
+                        thumbnail_mesh_results.erase(res_it);
+                        // 继续执行后续 RENDER 逻辑
+                    } else {
+                        // 没有结果，检查是否已提交任务
+                        if (thumbnail_mesh_pending.find(task.item_id) == thumbnail_mesh_pending.end()) {
+                            // 提交任务到 queue
+                            std::lock_guard<std::mutex> qlock(queue_mutex);
+                            QueueTask qtask;
+                            qtask.type = TASK_GENERATE_THUMBNAIL_MESH;
+                            qtask.index = task.item_id;
+                            queue.push(qtask);
+                            thumbnail_mesh_pending.insert(task.item_id);
+                        }
+                        return; // 等待生成完成
+                    }
+                }
             }
 
             if (item->voxel_renderer.empty()) {

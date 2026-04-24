@@ -3,6 +3,7 @@
 #include <iostream>
 #include <map>
 #include <queue>
+#include <set>
 #include <string>
 #include <thread>
 
@@ -99,6 +100,9 @@ class RenderVoxelList {
         int wait_frames = 0;
     };
     std::queue<ThumbnailTask> thumbnail_queue;
+    std::set<int> thumbnail_mesh_pending;
+    std::map<int, mesh_detail::AsyncVoxelMeshData> thumbnail_mesh_results;
+    std::mutex thumbnail_mesh_mutex;
 
     bgfx::FrameBufferHandle thumb_fb_ = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle thumb_color_tex_ = BGFX_INVALID_HANDLE;
@@ -298,7 +302,8 @@ class RenderVoxelList {
         TASK_STOP = 1,
         TASK_REMOVE_ITEM = 2,
         TASK_LOAD_STL = 3,
-        TASK_SEGMENT = 4
+        TASK_SEGMENT = 4,
+        TASK_GENERATE_THUMBNAIL_MESH = 5
     };
     struct QueueTask {
         QueueTaskType type;
@@ -346,6 +351,63 @@ class RenderVoxelList {
                     do_segment(task.index);
                     queue_running = false;
                     break;
+                case TASK_GENERATE_THUMBNAIL_MESH: {
+                    queue_running = true;
+                    queue_status = "Generating thumbnail mesh...";
+                    queue_progress = 0.0f;
+
+                    sinriv::kigstudio::voxel::VoxelGrid voxel_data;
+                    {
+                        std::lock_guard<std::mutex> lock(locker);
+                        auto it = items.find(task.index);
+                        if (it != items.end()) {
+                            voxel_data = it->second->voxel_grid_data;
+                        }
+                    }
+
+                    mesh_detail::AsyncVoxelMeshData data;
+                    if (voxel_data.num_chunk() > 0) {
+                        int num_triangles = 0;
+                        auto generator = sinriv::kigstudio::voxel::generateMesh(
+                            voxel_data, 0.5, num_triangles, true);
+                        size_t processed_tris = 0;
+                        size_t estimated_tris = voxel_data.num_chunk() * 200;
+                        if (estimated_tris == 0) estimated_tris = 1;
+
+                        for (auto [tri, n] : generator) {
+                            const uint32_t base = static_cast<uint32_t>(data.vertices.size());
+                            data.vertices.push_back(
+                                {std::get<0>(tri).x, std::get<0>(tri).y, std::get<0>(tri).z,
+                                 n.x, n.y, n.z});
+                            data.vertices.push_back(
+                                {std::get<1>(tri).x, std::get<1>(tri).y, std::get<1>(tri).z,
+                                 n.x, n.y, n.z});
+                            data.vertices.push_back(
+                                {std::get<2>(tri).x, std::get<2>(tri).y, std::get<2>(tri).z,
+                                 n.x, n.y, n.z});
+                            data.indices.push_back(base);
+                            data.indices.push_back(base + 1);
+                            data.indices.push_back(base + 2);
+
+                            ++processed_tris;
+                            if (processed_tris % 1000 == 0) {
+                                queue_progress = 0.10f + 0.80f * std::min(1.0f,
+                                    static_cast<float>(processed_tris) / static_cast<float>(estimated_tris));
+                            }
+                        }
+                    }
+
+                    {
+                        std::lock_guard<std::mutex> lock(thumbnail_mesh_mutex);
+                        thumbnail_mesh_results[task.index] = std::move(data);
+                        thumbnail_mesh_pending.erase(task.index);
+                    }
+
+                    queue_progress = 1.0f;
+                    queue_status = "Done";
+                    queue_running = false;
+                    break;
+                }
             }
         }
     }
