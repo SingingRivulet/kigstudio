@@ -233,6 +233,9 @@ void RenderVoxelList::render_ui() {
                 ImGui::Checkbox("show mesh axis", &showMeshAxis);
                 ImGui::Checkbox("show voxel axis", &showVoxelAxis);
                 ImGui::Checkbox("show collision axis", &showCollisionAxis);
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Bound")) {
                 ImGui::Checkbox("show collision bounds", &showCollisionBounds);
                 ImGui::EndMenu();
             }
