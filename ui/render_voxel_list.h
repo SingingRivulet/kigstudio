@@ -84,6 +84,7 @@ class RenderVoxelList {
         bool showMesh = true;
         bool showVoxel = true;
         bool showCollision = true;
+        bool showCollisionBounds = false;
 
         bgfx::TextureHandle thumbnail_tex = BGFX_INVALID_HANDLE;
         bool thumbnail_dirty = true;
@@ -151,6 +152,7 @@ class RenderVoxelList {
     bool showMeshAxis = false;
     bool showVoxelAxis = false;
     bool showCollisionAxis = false;
+    bool showCollisionBounds = false;
 
     void render_ui();
     void render_nav_map();
@@ -229,6 +231,13 @@ class RenderVoxelList {
         auto it = items.find(render_id);
         if (it != items.end()) {
             it->second->showCollision = visible;
+        }
+    }
+    inline void setCollisionBoundsVisible(bool visible) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->showCollisionBounds = visible;
         }
     }
 

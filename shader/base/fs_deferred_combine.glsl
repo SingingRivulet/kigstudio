@@ -11,6 +11,9 @@ uniform vec4 u_lightDir;
 uniform vec4 u_space_div;
 uniform vec4 u_space_div_mix;
 
+uniform vec4 u_mousePos;
+uniform vec4 u_mouseHighlight;
+
 void main()
 {   
     vec4 albedo_sample = texture2D(s_albedo, v_texcoord0);

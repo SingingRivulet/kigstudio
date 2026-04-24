@@ -226,6 +226,71 @@ namespace sinriv::ui::render {
             return was_dragging;
         }
         bool showAxis = false;
+
+        inline void renderBounds(const CollisionGroup& geo_group,
+                                 const float* model_transform,
+                                 RenderCollisionShader& shader) {
+            if (!shader.ensureProgram()) {
+                return;
+            }
+            const mat4f model_matrix = mat4f(model_transform);
+            updateBounds(geo_group, model_matrix);
+
+            if (!has_world_bounds_) {
+                // std::cout << "no bounds" << std::endl;
+                return;
+            }
+
+            std::vector<detail::CollisionLineVertex> vertices;
+            vec3f corners[8] = {
+                {world_bound_min_.x, world_bound_min_.y, world_bound_min_.z},
+                {world_bound_max_.x, world_bound_min_.y, world_bound_min_.z},
+                {world_bound_max_.x, world_bound_max_.y, world_bound_min_.z},
+                {world_bound_min_.x, world_bound_max_.y, world_bound_min_.z},
+                {world_bound_min_.x, world_bound_min_.y, world_bound_max_.z},
+                {world_bound_max_.x, world_bound_min_.y, world_bound_max_.z},
+                {world_bound_max_.x, world_bound_max_.y, world_bound_max_.z},
+                {world_bound_min_.x, world_bound_max_.y, world_bound_max_.z},
+            };
+            const uint32_t color = 0xff00ffff; // yellow ABGR
+            auto addLine = [&](const vec3f& a, const vec3f& b) {
+                vertices.push_back({a.x, a.y, a.z, color});
+                vertices.push_back({b.x, b.y, b.z, color});
+            };
+            addLine(corners[0], corners[1]);
+            addLine(corners[1], corners[2]);
+            addLine(corners[2], corners[3]);
+            addLine(corners[3], corners[0]);
+            addLine(corners[4], corners[5]);
+            addLine(corners[5], corners[6]);
+            addLine(corners[6], corners[7]);
+            addLine(corners[7], corners[4]);
+            addLine(corners[0], corners[4]);
+            addLine(corners[1], corners[5]);
+            addLine(corners[2], corners[6]);
+            addLine(corners[3], corners[7]);
+
+            if (vertices.empty()) {
+                return;
+            }
+            if (bgfx::getAvailTransientVertexBuffer(static_cast<uint32_t>(vertices.size()), layout_) < vertices.size()) {
+                return;
+            }
+
+            bgfx::TransientVertexBuffer tvb;
+            bgfx::allocTransientVertexBuffer(&tvb, static_cast<uint32_t>(vertices.size()), layout_);
+            std::memcpy(tvb.data, vertices.data(), vertices.size() * sizeof(detail::CollisionLineVertex));
+
+            float identity[16];
+            bx::mtxIdentity(identity);
+            bgfx::setTransform(identity);
+            bgfx::setVertexBuffer(0, &tvb);
+            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                           BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                           BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+            bgfx::submit(shader.overlay_view_id_, shader.program_);
+            // std::cout << "rendered bounds" << std::endl;
+        }
     private:
 
         inline void resetBounds() {

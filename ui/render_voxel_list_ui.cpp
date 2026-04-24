@@ -233,6 +233,7 @@ void RenderVoxelList::render_ui() {
                 ImGui::Checkbox("show mesh axis", &showMeshAxis);
                 ImGui::Checkbox("show voxel axis", &showVoxelAxis);
                 ImGui::Checkbox("show collision axis", &showCollisionAxis);
+                ImGui::Checkbox("show collision bounds", &showCollisionBounds);
                 ImGui::EndMenu();
             }
             ImGui::EndMenuBar();
@@ -430,6 +431,7 @@ void RenderVoxelList::render_ui() {
     this->setMeshVisible(showMesh);
     this->setVoxelsVisible(showVoxels);
     this->setCollisionVisible(showCollision);
+    this->setCollisionBoundsVisible(showCollisionBounds);
     this->update_nav_node_position();
 }
 

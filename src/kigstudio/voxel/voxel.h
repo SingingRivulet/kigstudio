@@ -125,6 +125,17 @@ inline uint64_t packChunkKey(int x, int y, int z) {
            (uint64_t(uint32_t(z)));
 }
 
+// ================= Hybrid Segment =================
+
+struct HybridSegment {
+    kigstudio::Plane<float> plane;
+    collision::CollisionGroup collision_group;
+    bool enable_plane = true;
+    bool enable_collision = true;
+    bool use_plane_positive = true;
+    bool use_collision_inside = true;
+};
+
 // ================= Grid =================
 
 class VoxelGrid {
@@ -469,6 +480,43 @@ class VoxelGrid {
                 voxel.z * voxel_size.z + global_position.z);
 
             if (other.getSide(world_position)) {
+                positive_side.insert(voxel);
+            } else {
+                negative_side.insert(voxel);
+            }
+        }
+
+        return {positive_side, negative_side};
+    }
+    
+    inline std::tuple<VoxelGrid, VoxelGrid> segment(const HybridSegment& other) const {
+        VoxelGrid positive_side;
+        VoxelGrid negative_side;
+
+        positive_side.global_position = global_position;
+        positive_side.voxel_size = voxel_size;
+        negative_side.global_position = global_position;
+        negative_side.voxel_size = voxel_size;
+
+        for (const auto& voxel : *this) {
+            const vec3<float> world_position(
+                voxel.x * voxel_size.x + global_position.x,
+                voxel.y * voxel_size.y + global_position.y,
+                voxel.z * voxel_size.z + global_position.z);
+
+            bool keep = true;
+            if (other.enable_plane) {
+                if (other.plane.getSide(world_position) != other.use_plane_positive) {
+                    keep = false;
+                }
+            }
+            if (other.enable_collision) {
+                if (other.collision_group.contains(world_position) != other.use_collision_inside) {
+                    keep = false;
+                }
+            }
+
+            if (keep) {
                 positive_side.insert(voxel);
             } else {
                 negative_side.insert(voxel);
