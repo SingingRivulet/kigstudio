@@ -107,7 +107,7 @@ namespace sinriv::ui::render {
         using Sphere = sinriv::kigstudio::voxel::collision::Sphere;
         using Cylinder = sinriv::kigstudio::voxel::collision::Cylinder;
         using Capsule = sinriv::kigstudio::voxel::collision::Capsule;
-        using OBB = sinriv::kigstudio::voxel::collision::OBB;
+        using Box = sinriv::kigstudio::voxel::collision::Box;
         using AxisHandle = axis_gizmo::AxisHandle;
 
         inline explicit RenderCollision()
@@ -352,16 +352,19 @@ namespace sinriv::ui::render {
             expandCylinderBounds({capsule.start, capsule.end, capsule.radius}, world_matrix);
         }
 
-        inline void expandOBBBounds(const OBB& obb, const mat4f& world_matrix) {
-            const vec3f x = obb.axis_x * obb.half_extent.x;
-            const vec3f y = obb.axis_y * obb.half_extent.y;
-            const vec3f z = obb.axis_z * obb.half_extent.z;
-            for (const vec3f& point : std::array<vec3f, 8>{
-                     obb.center - x - y - z, obb.center + x - y - z, obb.center + x + y - z,
-                     obb.center - x + y - z, obb.center - x - y + z, obb.center + x - y + z,
-                     obb.center + x + y + z, obb.center - x + y + z}) {
-                expandBounds(sinriv::kigstudio::voxel::collision::transformPoint(world_matrix,
-                                                                                  point));
+        inline void expandBoxBounds(const Box& box, const mat4f& world_matrix) {
+            static const float signs[8][3] = {
+                {-1, -1, -1}, {1, -1, -1}, {1, 1, -1}, {-1, 1, -1},
+                {-1, -1, 1},  {1, -1, 1},  {1, 1, 1},  {-1, 1, 1},
+            };
+            for (const auto& s : signs) {
+                const vec3f local{
+                    s[0] * box.half_extent.x,
+                    s[1] * box.half_extent.y,
+                    s[2] * box.half_extent.z,
+                };
+                expandBounds(sinriv::kigstudio::voxel::collision::transformPoint(
+                    world_matrix, local));
             }
         }
 
@@ -382,8 +385,8 @@ namespace sinriv::ui::render {
                             expandCylinderBounds(shape, world_matrix);
                         } else if constexpr (std::is_same_v<ShapeType, Capsule>) {
                             expandCapsuleBounds(shape, world_matrix);
-                        } else if constexpr (std::is_same_v<ShapeType, OBB>) {
-                            expandOBBBounds(shape, world_matrix);
+                        } else if constexpr (std::is_same_v<ShapeType, Box>) {
+                            expandBoxBounds(shape, world_matrix);
                         }
                     },
                     geometry.geometry);
@@ -533,23 +536,21 @@ namespace sinriv::ui::render {
             appendCircle(vertices, world_matrix, end, bitangent, axis_dir, capsule.radius);
         }
 
-        inline void appendOBB(std::vector<detail::CollisionLineVertex>& vertices,
-                              const OBB& obb,
+        inline void appendBox(std::vector<detail::CollisionLineVertex>& vertices,
+                              const Box& box,
                               const mat4f& world_matrix) const {
-            const vec3f x = obb.axis_x * obb.half_extent.x;
-            const vec3f y = obb.axis_y * obb.half_extent.y;
-            const vec3f z = obb.axis_z * obb.half_extent.z;
-
-            const vec3f corners[8] = {
-                obb.center - x - y - z,
-                obb.center + x - y - z,
-                obb.center + x + y - z,
-                obb.center - x + y - z,
-                obb.center - x - y + z,
-                obb.center + x - y + z,
-                obb.center + x + y + z,
-                obb.center - x + y + z,
+            static const float signs[8][3] = {
+                {-1, -1, -1}, {1, -1, -1}, {1, 1, -1}, {-1, 1, -1},
+                {-1, -1, 1},  {1, -1, 1},  {1, 1, 1},  {-1, 1, 1},
             };
+            vec3f corners[8];
+            for (int i = 0; i < 8; ++i) {
+                corners[i] = sinriv::kigstudio::voxel::collision::transformPoint(
+                    world_matrix,
+                    vec3f{signs[i][0] * box.half_extent.x,
+                          signs[i][1] * box.half_extent.y,
+                          signs[i][2] * box.half_extent.z});
+            }
 
             static const uint8_t edges[12][2] = {
                 {0, 1}, {1, 2}, {2, 3}, {3, 0},
@@ -558,9 +559,7 @@ namespace sinriv::ui::render {
             };
 
             for (const auto& edge : edges) {
-                appendLine(vertices,
-                           sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, corners[edge[0]]),
-                           sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, corners[edge[1]]));
+                appendLine(vertices, corners[edge[0]], corners[edge[1]]);
             }
         }
 
@@ -576,8 +575,8 @@ namespace sinriv::ui::render {
                     appendCylinder(vertices, shape, world_matrix);
                 } else if constexpr (std::is_same_v<ShapeType, Capsule>) {
                     appendCapsule(vertices, shape, world_matrix);
-                } else if constexpr (std::is_same_v<ShapeType, OBB>) {
-                    appendOBB(vertices, shape, world_matrix);
+                } else if constexpr (std::is_same_v<ShapeType, Box>) {
+                    appendBox(vertices, shape, world_matrix);
                 }
             }, geometry.geometry);
         }

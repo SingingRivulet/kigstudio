@@ -49,24 +49,12 @@ bool insideCapsule(vec3 point, vec4 start_radius, vec4 end_point)
     return dot(delta, delta) <= start_radius.w * start_radius.w;
 }
 
-bool insideObb(vec3 point, vec4 center, vec4 axis_x, vec4 axis_y, vec4 axis_z)
+bool insideBox(vec3 point, vec4 typeWithExtent, vec4 row0, vec4 row1, vec4 row2, vec4 row3)
 {
-    vec3 local = point - center.xyz;
-
-    float hx = length(axis_x.xyz);
-    float hy = length(axis_y.xyz);
-    float hz = length(axis_z.xyz);
-    if (hx <= 1e-8 || hy <= 1e-8 || hz <= 1e-8) {
-        return false;
-    }
-
-    vec3 dx = axis_x.xyz / hx;
-    vec3 dy = axis_y.xyz / hy;
-    vec3 dz = axis_z.xyz / hz;
-
-    return abs(dot(local, dx)) <= hx &&
-           abs(dot(local, dy)) <= hy &&
-           abs(dot(local, dz)) <= hz;
+    mat4 invMatrix = mat4(row0, row1, row2, row3);
+    vec3 local = (invMatrix * vec4(point, 1.0)).xyz;
+    vec3 halfExtent = typeWithExtent.yzw;
+    return all(lessThanEqual(abs(local), halfExtent));
 }
 
 bool insideShape(vec3 point)
@@ -82,7 +70,7 @@ bool insideShape(vec3 point)
         return insideCapsule(point, u_shapeData0, u_shapeData1);
     }
     if (type == 3) {
-        return insideObb(point, u_shapeData0, u_shapeData1, u_shapeData2, u_shapeData3);
+        return insideBox(point, u_shapeType, u_shapeData0, u_shapeData1, u_shapeData2, u_shapeData3);
     }
     return false;
 }

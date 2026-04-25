@@ -77,23 +77,13 @@ struct Capsule {
     }
 };
 
-struct OBB {
-    vec3f center = {0.0f, 0.0f, 0.0f};
+struct Box {
     vec3f half_extent = {0.0f, 0.0f, 0.0f};
-    vec3f axis_x = {1.0f, 0.0f, 0.0f};
-    vec3f axis_y = {0.0f, 1.0f, 0.0f};
-    vec3f axis_z = {0.0f, 0.0f, 1.0f};
 
     inline bool contains(const vec3f& point) const {
-        const vec3f local = point - center;
-
-        const float x = local.dot(axis_x);
-        const float y = local.dot(axis_y);
-        const float z = local.dot(axis_z);
-
-        return std::fabs(x) <= half_extent.x &&
-               std::fabs(y) <= half_extent.y &&
-               std::fabs(z) <= half_extent.z;
+        return std::fabs(point.x) <= half_extent.x &&
+               std::fabs(point.y) <= half_extent.y &&
+               std::fabs(point.z) <= half_extent.z;
     }
 };
 
@@ -109,8 +99,8 @@ inline bool pointIntersects(const vec3f& point, const Capsule& capsule) {
     return capsule.contains(point);
 }
 
-inline bool pointIntersects(const vec3f& point, const OBB& obb) {
-    return obb.contains(point);
+inline bool pointIntersects(const vec3f& point, const Box& box) {
+    return box.contains(point);
 }
 
 struct Quaternion {
@@ -376,7 +366,7 @@ class Transform {
     vec3f scale_ = {1.0f, 1.0f, 1.0f};
 };
 
-using Geometry = std::variant<Sphere, Cylinder, Capsule, OBB>;
+using Geometry = std::variant<Sphere, Cylinder, Capsule, Box>;
 
 struct GeometryInstance {
     Geometry geometry;
@@ -388,7 +378,7 @@ struct GeometryInstance {
         : geometry(value), transform(local) {}
     inline GeometryInstance(const Capsule& value, const Transform& local = {})
         : geometry(value), transform(local) {}
-    inline GeometryInstance(const OBB& value, const Transform& local = {})
+    inline GeometryInstance(const Box& value, const Transform& local = {})
         : geometry(value), transform(local) {}
 };
 
@@ -439,7 +429,7 @@ class CollisionGroup {
         geometries_.emplace_back(shape, local);
         return geometries_.size() - 1;
     }
-    inline std::size_t add(const OBB& shape, const Transform& local = {}) {
+    inline std::size_t add(const Box& shape, const Transform& local = {}) {
         geometries_.emplace_back(shape, local);
         return geometries_.size() - 1;
     }

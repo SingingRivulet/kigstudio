@@ -122,15 +122,11 @@ int main() {
     collision_group.add(sinriv::kigstudio::voxel::collision::Capsule{
         {-20.0f, 0.0f, 0.0f}, {20.0f, 0.0f, 0.0f}, 10.0f}, local_capsule);
 
-    sinriv::kigstudio::voxel::collision::Transform local_obb;
-    local_obb.setPosition({-60.0f, 0.0f, 0.0f});
-    local_obb.setRotationEuler({0.0f, 0.0f, bx::kPi / 6.0f});
-    collision_group.add(sinriv::kigstudio::voxel::collision::OBB{
-        {0.0f, 0.0f, 0.0f},
-        {14.0f, 24.0f, 18.0f},
-        {1.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f},
-        {0.0f, 0.0f, 1.0f}}, local_obb);
+    sinriv::kigstudio::voxel::collision::Transform local_box;
+    local_box.setPosition({-60.0f, 0.0f, 0.0f});
+    local_box.setRotationEuler({0.0f, 0.0f, bx::kPi / 6.0f});
+    collision_group.add(sinriv::kigstudio::voxel::collision::Box{
+        {14.0f, 24.0f, 18.0f}}, local_box);
 
     bool running = true;
     bool showMesh = true;
@@ -448,8 +444,8 @@ int main() {
                             return "Cylinder";
                         if constexpr (std::is_same_v<T, sinriv::kigstudio::voxel::collision::Capsule>)
                             return "Capsule";
-                        if constexpr (std::is_same_v<T, sinriv::kigstudio::voxel::collision::OBB>)
-                            return "OBB";
+                        if constexpr (std::is_same_v<T, sinriv::kigstudio::voxel::collision::Box>)
+                            return "Box";
                         return "Unknown";
                     },
                     instance.geometry);

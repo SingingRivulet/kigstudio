@@ -58,25 +58,21 @@ bool testCapsule() {
     return ok;
 }
 
-bool testOBB() {
-    OBB obb;
-    obb.center = {0.0f, 0.0f, 0.0f};
-    obb.half_extent = {2.0f, 1.0f, 1.0f};
-    obb.axis_x = vec3f(1.0f, 1.0f, 0.0f).normalize();
-    obb.axis_y = vec3f(-1.0f, 1.0f, 0.0f).normalize();
-    obb.axis_z = {0.0f, 0.0f, 1.0f};
+bool testBox() {
+    Box box;
+    box.half_extent = {2.0f, 1.0f, 1.0f};
 
-    const vec3f inside = obb.center + obb.axis_x * 1.5f + obb.axis_y * 0.5f + obb.axis_z * 0.5f;
-    const vec3f boundary = obb.center + obb.axis_x * 2.0f;
-    const vec3f outside = obb.center + obb.axis_x * 2.1f;
+    const vec3f inside = {1.5f, 0.5f, 0.5f};
+    const vec3f boundary = {2.0f, 0.0f, 0.0f};
+    const vec3f outside = {2.1f, 0.0f, 0.0f};
 
     bool ok = true;
-    ok &= expectTrue(obb.contains(inside), "obb contains inner point");
-    ok &= expectTrue(obb.contains(boundary), "obb contains boundary point");
-    ok &= expectFalse(obb.contains(outside), "obb rejects outside point");
+    ok &= expectTrue(box.contains(inside), "box contains inner point");
+    ok &= expectTrue(box.contains(boundary), "box contains boundary point");
+    ok &= expectFalse(box.contains(outside), "box rejects outside point");
 
-    ok &= expectTrue(pointIntersects(inside, obb), "pointIntersects works for obb");
-    ok &= expectFalse(pointIntersects(outside, obb), "pointIntersects rejects obb miss");
+    ok &= expectTrue(pointIntersects(inside, box), "pointIntersects works for box");
+    ok &= expectFalse(pointIntersects(outside, box), "pointIntersects rejects box miss");
     return ok;
 }
 
@@ -153,12 +149,7 @@ bool testCollisionGroupAxisAngleAndScale() {
 
     Transform local_box;
     local_box.setPosition({1.0f, 0.0f, 0.0f});
-    group.add(OBB{{0.0f, 0.0f, 0.0f},
-                  {0.5f, 0.5f, 0.5f},
-                  {1.0f, 0.0f, 0.0f},
-                  {0.0f, 1.0f, 0.0f},
-                  {0.0f, 0.0f, 1.0f}},
-              local_box);
+    group.add(Box{{0.5f, 0.5f, 0.5f}}, local_box);
 
     bool ok = true;
     ok &= expectTrue(group.containsWorldPoint({0.0f, 2.0f, 0.0f}),
@@ -174,7 +165,7 @@ int main() {
     ok &= testSphere();
     ok &= testCylinder();
     ok &= testCapsule();
-    ok &= testOBB();
+    ok &= testBox();
     ok &= testTransformRoundTrip();
     ok &= testCollisionGroupGlobalAndLocalTransform();
     ok &= testCollisionGroupQuaternionRotation();

@@ -73,7 +73,7 @@ namespace sinriv::ui::render {
         using Sphere = sinriv::kigstudio::voxel::collision::Sphere;
         using Cylinder = sinriv::kigstudio::voxel::collision::Cylinder;
         using Capsule = sinriv::kigstudio::voxel::collision::Capsule;
-        using OBB = sinriv::kigstudio::voxel::collision::OBB;
+        using Box = sinriv::kigstudio::voxel::collision::Box;
         using vec3f = deferred_detail::vec3f;
         using mat4f = deferred_detail::mat4f;
 
@@ -145,8 +145,8 @@ namespace sinriv::ui::render {
                             appendCylinder(shape, local_matrix);
                         } else if constexpr (std::is_same_v<ShapeType, Capsule>) {
                             appendCapsule(shape, local_matrix);
-                        } else if constexpr (std::is_same_v<ShapeType, OBB>) {
-                            appendOBB(shape, local_matrix);
+                        } else if constexpr (std::is_same_v<ShapeType, Box>) {
+                            appendBox(shape, local_matrix);
                         }
                     },
                     geometry.geometry);
@@ -224,6 +224,11 @@ namespace sinriv::ui::render {
                 bgfx::setTexture(0, s_world_pos_, world_pos_texture_);
 
                 float type_vec[4] = {static_cast<float>(item.type), 0.0f, 0.0f, 0.0f};
+                if (item.type == 3) {
+                    type_vec[1] = item.half_extent.x;
+                    type_vec[2] = item.half_extent.y;
+                    type_vec[3] = item.half_extent.z;
+                }
                 bgfx::setUniform(u_shape_type_, type_vec);
                 bgfx::setUniform(u_shape_data_0_, item.data[0].data());
                 if (item.type >= 1) {
@@ -287,8 +292,9 @@ namespace sinriv::ui::render {
 
        private:
         struct CollisionItem {
-            uint32_t type; // 0=sphere, 1=cylinder, 2=capsule, 3=obb
+            uint32_t type; // 0=sphere, 1=cylinder, 2=capsule, 3=box
             std::array<std::array<float, 4>, 4> data{};
+            vec3f half_extent = {};
         };
 
         inline void destroyCollisionUniforms() {
@@ -411,22 +417,20 @@ namespace sinriv::ui::render {
             collision_items_.push_back(item);
         }
 
-        inline void appendOBB(const OBB& obb, const mat4f& world_matrix) {
-            const vec3f center =
-                sinriv::kigstudio::voxel::collision::transformPoint(world_matrix, obb.center);
-            const vec3f axis_x =
-                deferred_detail::transformVector(world_matrix, obb.axis_x * obb.half_extent.x);
-            const vec3f axis_y =
-                deferred_detail::transformVector(world_matrix, obb.axis_y * obb.half_extent.y);
-            const vec3f axis_z =
-                deferred_detail::transformVector(world_matrix, obb.axis_z * obb.half_extent.z);
+        inline void appendBox(const Box& box, const mat4f& world_matrix) {
+            if (!sinriv::kigstudio::voxel::collision::isAffineInvertible(world_matrix)) {
+                return;
+            }
+            mat4f inv_matrix = world_matrix;
+            inv_matrix.invert();
 
             CollisionItem item;
             item.type = 3;
-            item.data[0] = {center.x, center.y, center.z, 0.0f};
-            item.data[1] = {axis_x.x, axis_x.y, axis_x.z, 0.0f};
-            item.data[2] = {axis_y.x, axis_y.y, axis_y.z, 0.0f};
-            item.data[3] = {axis_z.x, axis_z.y, axis_z.z, 0.0f};
+            item.data[0] = {inv_matrix[0][0], inv_matrix[0][1], inv_matrix[0][2], inv_matrix[0][3]};
+            item.data[1] = {inv_matrix[1][0], inv_matrix[1][1], inv_matrix[1][2], inv_matrix[1][3]};
+            item.data[2] = {inv_matrix[2][0], inv_matrix[2][1], inv_matrix[2][2], inv_matrix[2][3]};
+            item.data[3] = {inv_matrix[3][0], inv_matrix[3][1], inv_matrix[3][2], inv_matrix[3][3]};
+            item.half_extent = box.half_extent;
             collision_items_.push_back(item);
         }
 

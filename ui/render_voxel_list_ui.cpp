@@ -17,7 +17,7 @@ using GeometryInstance = sinriv::kigstudio::voxel::collision::GeometryInstance;
 using Sphere = sinriv::kigstudio::voxel::collision::Sphere;
 using Cylinder = sinriv::kigstudio::voxel::collision::Cylinder;
 using Capsule = sinriv::kigstudio::voxel::collision::Capsule;
-using OBB = sinriv::kigstudio::voxel::collision::OBB;
+using Box = sinriv::kigstudio::voxel::collision::Box;
 using Transform = sinriv::kigstudio::voxel::collision::Transform;
 using vec3f = sinriv::kigstudio::voxel::collision::vec3f;
 using Plane = sinriv::kigstudio::Plane<float>;
@@ -82,8 +82,8 @@ const char* geometry_type_name(const GeometryInstance& instance) {
                 return "Cylinder";
             } else if constexpr (std::is_same_v<T, Capsule>) {
                 return "Capsule";
-            } else if constexpr (std::is_same_v<T, OBB>) {
-                return "OBB";
+            } else if constexpr (std::is_same_v<T, Box>) {
+                return "Box";
             } else {
                 return "Unknown";
             }
@@ -109,15 +109,11 @@ void edit_geometry_shape(GeometryInstance& instance) {
                 edit_vec3_stepper("End", geometry.end);
                 edit_float_stepper("Radius", geometry.radius);
                 geometry.radius = bx::max(0.0f, geometry.radius);
-            } else if constexpr (std::is_same_v<T, OBB>) {
-                edit_vec3_stepper("Center", geometry.center);
+            } else if constexpr (std::is_same_v<T, Box>) {
                 edit_vec3_stepper("Half Extent", geometry.half_extent);
                 geometry.half_extent.x = bx::max(0.0f, geometry.half_extent.x);
                 geometry.half_extent.y = bx::max(0.0f, geometry.half_extent.y);
                 geometry.half_extent.z = bx::max(0.0f, geometry.half_extent.z);
-                edit_vec3_stepper("Axis X", geometry.axis_x, 0.1f, true);
-                edit_vec3_stepper("Axis Y", geometry.axis_y, 0.1f, true);
-                edit_vec3_stepper("Axis Z", geometry.axis_z, 0.1f, true);
             }
         },
         instance.geometry);
@@ -139,11 +135,7 @@ void add_collision_geometry(CollisionGroup& group, int type_index) {
                               6.0f});
             break;
         case 3:
-            group.add(OBB{{0.0f, 0.0f, 0.0f},
-                          {8.0f, 8.0f, 8.0f},
-                          {1.0f, 0.0f, 0.0f},
-                          {0.0f, 1.0f, 0.0f},
-                          {0.0f, 0.0f, 1.0f}});
+            group.add(Box{{8.0f, 8.0f, 8.0f}});
             break;
     }
 }
@@ -383,7 +375,7 @@ void RenderVoxelList::render_ui() {
                                         ImGuiTreeNodeFlags_DefaultOpen)) {
                 static int new_geometry_type = 0;
                 const char* geometry_types[] = {"Sphere", "Cylinder",
-                                                "Capsule", "OBB"};
+                                                "Capsule", "Box"};
 
                 ImGui::SetNextItemWidth(140.0f);
                 ImGui::Combo("new shape", &new_geometry_type, geometry_types,
