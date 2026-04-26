@@ -297,6 +297,7 @@ void RenderVoxelList::render_ui() {
                 item_it->second->ref_count--;
                 //TODO: 防止重复点击
             }
+            ImGui::SameLine();
             if (ImGui::Button("Save as STL")) {
                 const char* filters[] = {"*.stl"};
                 const char* file = tinyfd_saveFileDialog(

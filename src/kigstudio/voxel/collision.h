@@ -64,6 +64,55 @@ struct Cylinder {
         const vec3f closest = start + axis * t;
         return lengthSquared(point - closest) <= radius * radius;
     }
+    inline Cylinder(const vec3f &start, const vec3f &end, float radius)
+        : start(start), end(end), radius(radius) {}
+    inline Cylinder() = default;
+    inline Cylinder(
+        const vec3f& p0,
+        const vec3f& p1,
+        const vec3f& p2,
+        const vec3f& p3,
+        const vec3f& p4) {
+        // --- Step 1: 底面圆拟合 (p0, p1, p2) ---
+        const vec3f v1 = p1 - p0;
+        const vec3f v2 = p2 - p0;
+
+        const vec3f normal = v1.cross(v2).normalize();
+
+        // 在平面内求圆心（用垂直平分线法）
+        const vec3f mid1 = (p0 + p1) * 0.5f;
+        const vec3f mid2 = (p0 + p2) * 0.5f;
+
+        const vec3f dir1 = normal.cross(v1).normalize();
+        const vec3f dir2 = normal.cross(v2).normalize();
+
+        // 解两条线交点: mid1 + t1 * dir1 = mid2 + t2 * dir2
+        const vec3f r = mid2 - mid1;
+
+        const float a = dir1.dot(dir1);
+        const float b = dir1.dot(dir2);
+        const float c = dir2.dot(dir2);
+        const float d = dir1.dot(r);
+        const float e = dir2.dot(r);
+
+        const float denom = a * c - b * b;
+
+        float t1 = 0.0f;
+        if (std::abs(denom) > 1e-6f) {
+            t1 = (d * c - b * e) / denom;
+        }
+
+        const vec3f center_bottom = mid1 + dir1 * t1;
+
+        // 半径
+        radius = sqrt(lengthSquared(p0 - center_bottom));
+
+        // --- Step 2: 顶部中心 ---
+        const vec3f center_top = (p3 + p4) * 0.5f;
+
+        start = center_bottom;
+        end   = center_top;
+    }
 };
 
 struct Capsule {
@@ -71,6 +120,55 @@ struct Capsule {
     vec3f end = {0.0f, 0.0f, 0.0f};
     float radius = 0.0f;
 
+    inline Capsule(const vec3f &start, const vec3f &end, float radius)
+        : start(start), end(end), radius(radius) {}
+    inline Capsule() = default;
+    inline Capsule(
+        const vec3f& p0,
+        const vec3f& p1,
+        const vec3f& p2,
+        const vec3f& p3,
+        const vec3f& p4) {
+        // --- Step 1: 底面圆拟合 (p0, p1, p2) ---
+        const vec3f v1 = p1 - p0;
+        const vec3f v2 = p2 - p0;
+
+        const vec3f normal = v1.cross(v2).normalize();
+
+        // 在平面内求圆心（用垂直平分线法）
+        const vec3f mid1 = (p0 + p1) * 0.5f;
+        const vec3f mid2 = (p0 + p2) * 0.5f;
+
+        const vec3f dir1 = normal.cross(v1).normalize();
+        const vec3f dir2 = normal.cross(v2).normalize();
+
+        // 解两条线交点: mid1 + t1 * dir1 = mid2 + t2 * dir2
+        const vec3f r = mid2 - mid1;
+
+        const float a = dir1.dot(dir1);
+        const float b = dir1.dot(dir2);
+        const float c = dir2.dot(dir2);
+        const float d = dir1.dot(r);
+        const float e = dir2.dot(r);
+
+        const float denom = a * c - b * b;
+
+        float t1 = 0.0f;
+        if (std::abs(denom) > 1e-6f) {
+            t1 = (d * c - b * e) / denom;
+        }
+
+        const vec3f center_bottom = mid1 + dir1 * t1;
+
+        // 半径
+        radius = sqrt(lengthSquared(p0 - center_bottom));
+
+        // --- Step 2: 顶部中心 ---
+        const vec3f center_top = (p3 + p4) * 0.5f;
+
+        start = center_bottom;
+        end   = center_top;
+    }
     inline bool contains(const vec3f& point) const {
         const vec3f closest = closestPointOnSegment(point, start, end);
         return lengthSquared(point - closest) <= radius * radius;
