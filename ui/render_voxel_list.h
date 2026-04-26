@@ -184,9 +184,9 @@ class RenderVoxelList {
                     sinriv::kigstudio::ray<float>(
                         sinriv::kigstudio::voxel::collision::vec3f(mouse_ray_origin.x, mouse_ray_origin.y,
                               mouse_ray_origin.z),
-                        sinriv::kigstudio::voxel::collision::vec3f(mouse_ray_origin.x + mouse_ray_dir.x,
-                              mouse_ray_origin.y + mouse_ray_dir.y,
-                              mouse_ray_origin.z + mouse_ray_dir.z)),
+                        sinriv::kigstudio::voxel::collision::vec3f(mouse_ray_origin.x + mouse_ray_dir.x*1000,
+                              mouse_ray_origin.y + mouse_ray_dir.y*1000,
+                              mouse_ray_origin.z + mouse_ray_dir.z*1000)),
                     [&](auto node, auto coll_pos) {
                         mouse_world_pos = coll_pos;
                         mouse_world_pos_valid = true;

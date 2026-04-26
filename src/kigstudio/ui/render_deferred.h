@@ -258,6 +258,8 @@ namespace sinriv::ui::render {
             bgfx::setUniform(u_space_div_mix_, space_div_mix.data());
             bgfx::setUniform(u_mouse_pos_, mouse_pos_.data());
             bgfx::setUniform(u_mouse_highlight_, mouse_highlight_.data());
+            bgfx::setUniform(u_mouse_ori_, mouse_ori_.data());
+            bgfx::setUniform(u_mouse_dir_, mouse_dir_.data());
 
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_MSAA);
@@ -332,6 +334,14 @@ namespace sinriv::ui::render {
             if (bgfx::isValid(u_mouse_highlight_)) {
                 bgfx::destroy(u_mouse_highlight_);
                 u_mouse_highlight_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(u_mouse_ori_)) {
+                bgfx::destroy(u_mouse_ori_);
+                u_mouse_ori_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(u_mouse_dir_)) {
+                bgfx::destroy(u_mouse_dir_);
+                u_mouse_dir_ = BGFX_INVALID_HANDLE;
             }
         }
 
@@ -531,6 +541,12 @@ namespace sinriv::ui::render {
             if (!bgfx::isValid(u_mouse_highlight_)) {
                 u_mouse_highlight_ = bgfx::createUniform("u_mouseHighlight", bgfx::UniformType::Vec4);
             }
+            if (!bgfx::isValid(u_mouse_ori_)) {
+                u_mouse_ori_ = bgfx::createUniform("u_mouseOri", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_mouse_dir_)) {
+                u_mouse_dir_ = bgfx::createUniform("u_mouseDir", bgfx::UniformType::Vec4);
+            }
 
             bgfx::ShaderHandle vs =
                 deferred_detail::loadShader(shader_dir_ + "vs_screen_quad.bin");
@@ -593,11 +609,15 @@ namespace sinriv::ui::render {
         bgfx::UniformHandle u_space_div_mix_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_mouse_pos_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_mouse_highlight_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_mouse_ori_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_mouse_dir_ = BGFX_INVALID_HANDLE;
         std::array<float, 4> space_div = {1.0f, 0.0f, 0.0f, 0.0f};
         std::array<float, 4> space_div_mix = {1.0f, 0.0f, 0.0f, 0.0f};
         std::array<float, 4> light_dir_ = {0.3f, 0.5f, 0.8f, 0.0f};
         std::array<float, 4> mouse_pos_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 4> mouse_highlight_ = {0.f, 0.f, 0.f, 0.f};
+        std::array<float, 4> mouse_ori_ = {0.f, 0.f, 0.f, 0.f};
+        std::array<float, 4> mouse_dir_ = {0.f, 0.f, 0.f, 0.f};
         std::vector<CollisionItem> collision_items_;
         float identity_mtx_[16]{};
     };

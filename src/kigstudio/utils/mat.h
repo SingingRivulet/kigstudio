@@ -265,7 +265,6 @@ class matrix {
         }
     }
 
-   private:
     T data[16];
 };
 
