@@ -45,5 +45,13 @@ void main()
         color = mix(color, vec3(0.20, 0.45, 1.00), 0.65);
     }
 
+    if (u_mouseHighlight.x > 0.5) {
+        vec3 mouse_world_pos = vec3(u_mousePos.x, u_mousePos.y, u_mousePos.z);
+        float dist = length(mouse_world_pos - world_pos);
+        if (dist < 3) {
+            color = mix(color, vec3(1.00, 0.45, 0.20), 0.65);
+        }
+    }
+
     gl_FragColor = vec4(color, 1.0);
 }

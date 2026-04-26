@@ -23,6 +23,51 @@
 #include "ui/render_voxel_list.h"
 #include "tinyfiledialogs.h"
 
+void screenToWorldRay(
+    float mouse_x, float mouse_y,
+    int width, int height,
+    const float* view,
+    const float* proj,
+    sinriv::kigstudio::voxel::collision::vec3f& out_origin,
+    sinriv::kigstudio::voxel::collision::vec3f& out_dir){
+    // 1. 屏幕 → NDC
+    float ndc_x = (2.0f * mouse_x) / width - 1.0f;
+    float ndc_y = 1.0f - (2.0f * mouse_y) / height;
+
+    // 2. clip space
+    float nearPt[4] = { ndc_x, ndc_y, 0.0f, 1.0f };
+    float farPt [4] = { ndc_x, ndc_y, 1.0f, 1.0f };
+
+    // 3. inverse(viewProj)
+    float viewProj[16];
+    bx::mtxMul(viewProj, view, proj);
+
+    float invViewProj[16];
+    bx::mtxInverse(invViewProj, viewProj);
+
+    // 4. 反投影
+    float nearWorld[4];
+    float farWorld[4];
+
+    bx::vec4MulMtx(nearWorld, nearPt, invViewProj);
+    bx::vec4MulMtx(farWorld,  farPt,  invViewProj);
+
+    // 5. 透视除法
+    for (int i = 0; i < 3; ++i) {
+        nearWorld[i] /= nearWorld[3];
+        farWorld[i]  /= farWorld[3];
+    }
+
+    bx::Vec3 p0(nearWorld[0], nearWorld[1], nearWorld[2]);
+    bx::Vec3 p1(farWorld[0],  farWorld[1],  farWorld[2]);
+
+    // 6. 输出
+    auto out_origin_bx = p0;
+    auto out_dir_bx = bx::normalize(bx::sub(p1, p0));
+    out_origin = sinriv::kigstudio::voxel::collision::vec3f(out_origin_bx.x, out_origin_bx.y, out_origin_bx.z);
+    out_dir = sinriv::kigstudio::voxel::collision::vec3f(out_dir_bx.x, out_dir_bx.y, out_dir_bx.z);
+}
+
 int main() {
     float yaw = 0;
     float pitch = 0;
@@ -98,7 +143,6 @@ int main() {
     bgfx::setViewRect(kCollisionView, 0, 0, width, height);
     bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
-    sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
     sinriv::ui::render::RenderMeshShader mesh_render_shader(kGBufferView,
                                                             kOverlayView);
     sinriv::ui::render::RenderCollisionShader collision_render_shader(
@@ -154,8 +198,13 @@ int main() {
             }
 
             if (e.type == SDL_MOUSEWHEEL) {
-                distance -= e.wheel.y * 10;
-                io.MouseWheel = (float)e.wheel.y;
+                io.AddMouseWheelEvent(0.0f, (float)e.wheel.y);
+                if (!io.WantCaptureMouse) {
+                    distance -= e.wheel.y * 10;
+                    if (distance < 1){
+                        distance = 1;
+                    }
+                }
             }
 
             if (e.type == SDL_MOUSEMOTION) {
@@ -254,6 +303,15 @@ int main() {
 
         render_items.upload_collision(deferred_renderer);
         render_items.render_gbuffer(mtx_2, mesh_render_shader);
+        if (render_items.mouse_world_pos_valid) {
+            deferred_renderer.mouse_highlight_[0] = 1.0;
+        } else {
+            deferred_renderer.mouse_highlight_[0] = 0.0;
+
+        }
+        deferred_renderer.mouse_pos_[0] = render_items.mouse_world_pos.x;
+        deferred_renderer.mouse_pos_[1] = render_items.mouse_world_pos.y;
+        deferred_renderer.mouse_pos_[2] = render_items.mouse_world_pos.z;
         deferred_renderer.render();
         bgfx::setViewTransform(kOverlayView, view_2, proj);
 
@@ -264,6 +322,9 @@ int main() {
         render_items.process_queue_result();
 
         io.DisplaySize = ImVec2((float)width, (float)height);
+        screenToWorldRay(io.MousePos.x, io.MousePos.y, width, height, view_2, proj,
+                         render_items.mouse_ray_origin, render_items.mouse_ray_dir);
+        render_items.update_mouse();
         ImGui::NewFrame();
         render_items.render_ui();
         ImGui::Render();

@@ -1,5 +1,6 @@
 #pragma once
 #include <iostream>
+#include <memory>
 #include <string>
 
 #include "kigstudio/ui/render_mesh.h"
@@ -42,7 +43,10 @@ namespace sinriv::ui::render {
             return mesh_renderer_.getAxisWorldDelta(from_x, from_y, to_x, to_y);
         }
 
-        inline void release() { mesh_renderer_.release(); }
+        inline void release() { 
+            mesh_renderer_.release();
+            collision_bvh.reset();
+        }
 
         inline void clear() { mesh_renderer_.clear(); }
 
@@ -61,25 +65,9 @@ namespace sinriv::ui::render {
             mesh_renderer_.loadGeometry(geometry);
         }
 
-        inline void loadSTLAsVoxel(const std::string& filename,
-                                   float voxel_size = 0.5f,
-                                   double isolevel = 0.5,
-                                   bool smooth_normals = true) {
-            sinriv::kigstudio::voxel::triangle_bvh<float> bvh;
-            for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(filename)) {
-                (void)n;
-                bvh.insert(tri);
-            }
-
-            sinriv::kigstudio::voxel::VoxelGrid voxel_data;
-            sinriv::kigstudio::voxel::create_solid_mesh(
-                voxel_data, bvh, voxel_size, voxel_size, voxel_size);
-            std::cout << "create_solid_mesh success num_chunk="
-                      << voxel_data.num_chunk() << std::endl;
-            loadVoxelGrid(voxel_data, isolevel, smooth_normals);
-        }
-
         inline void loadGeometry(const AsyncVoxelLoader::MeshData& data) {
+            collision_bvh = std::make_unique<sinriv::kigstudio::voxel::triangle_bvh<float>>();
+            collision_bvh->loadGeometry(data.vertices, data.indices);
             mesh_renderer_.loadGeometry(data.vertices, data.indices);
         }
 
@@ -115,6 +103,8 @@ namespace sinriv::ui::render {
             mesh_renderer_.showAxis = showAxis;
             return mesh_renderer_.onMouseRelease(x, y);
         }
+
+        std::unique_ptr<sinriv::kigstudio::voxel::triangle_bvh<float>> collision_bvh;
 
         bool showAxis = false;
 

@@ -290,7 +290,6 @@ namespace sinriv::ui::render {
             destroyCollisionUniforms();
         }
 
-       private:
         struct CollisionItem {
             uint32_t type; // 0=sphere, 1=cylinder, 2=capsule, 3=box
             std::array<std::array<float, 4>, 4> data{};

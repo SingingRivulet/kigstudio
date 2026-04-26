@@ -7,6 +7,7 @@
 #include <type_traits>
 #include <unordered_set>
 #include <variant>
+#include "kigstudio/utils/vec3.h"
 #include "render_voxel_list.h"
 #include "tinyfiledialogs.h"
 namespace sinriv::ui::render {
@@ -47,9 +48,9 @@ void edit_vec3_stepper(const char* label,
     ImGui::Text("%s", label);
     char buf[128];
     for (int i = 0; i < 3; ++i) {
-        if (i > 0) {
-            ImGui::SameLine();
-        }
+        // if (i > 0) {
+        //     ImGui::SameLine();
+        // }
         snprintf(buf, sizeof(buf), "%s##%s", axis_names[i], label);
         edit_float_stepper(buf, values[i], step);
     }
@@ -215,20 +216,23 @@ void RenderVoxelList::render_ui() {
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Show")) {
-                ImGui::Checkbox("show mesh", &showMesh);
-                ImGui::Checkbox("show collision", &showCollision);
-                ImGui::Checkbox("show voxels", &showVoxels);
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("Axis")) {
-                ImGui::Checkbox("show mesh axis", &showMeshAxis);
-                ImGui::Checkbox("show voxel axis", &showVoxelAxis);
-                ImGui::Checkbox("show collision axis", &showCollisionAxis);
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("Bound")) {
-                ImGui::Checkbox("show collision bounds", &showCollisionBounds);
+            if (ImGui::BeginMenu("View")) {
+                if (ImGui::BeginMenu("Body")) {
+                    ImGui::Checkbox("show mesh", &showMesh);
+                    ImGui::Checkbox("show collision", &showCollision);
+                    ImGui::Checkbox("show voxels", &showVoxels);
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Axis")) {
+                    ImGui::Checkbox("show mesh axis", &showMeshAxis);
+                    ImGui::Checkbox("show voxel axis", &showVoxelAxis);
+                    ImGui::Checkbox("show collision axis", &showCollisionAxis);
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Bound")) {
+                    ImGui::Checkbox("show collision bounds", &showCollisionBounds);
+                    ImGui::EndMenu();
+                }
                 ImGui::EndMenu();
             }
             ImGui::EndMenuBar();
@@ -250,6 +254,13 @@ void RenderVoxelList::render_ui() {
                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoBringToFrontOnFocus)) {
         ImGui::Text("items:%d tasks:%d", this->get_num_items(), this->queue_num);
+        ImGui::SameLine();
+        ImGui::Text("mouse: origin:(%.2f,%.2f,%.2f) dir:(%.2f,%.2f,%.2f)",
+                    mouse_ray_origin.x, mouse_ray_origin.y, mouse_ray_origin.z,
+                    mouse_ray_dir.x, mouse_ray_dir.y, mouse_ray_dir.z);
+        //显示鼠标的三维位置
+        ImGui::SameLine();
+        ImGui::Text("mouse world pos:(%.2f,%.2f,%.2f)", mouse_world_pos.x, mouse_world_pos.y, mouse_world_pos.z);
 
         item_status_height =
             ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
@@ -280,12 +291,30 @@ void RenderVoxelList::render_ui() {
     ImGui::SetNextWindowPos(ImVec2((float)window_width, (float)menu_height),
                             ImGuiCond_Once, ImVec2(1.0f, 0.0f));
     ImGui::SetNextWindowSize(ImVec2(360, 620), ImGuiCond_Once);
-    if (ImGui::Begin("Collision Members")) {
+    if (ImGui::Begin("Node")) {
         std::lock_guard<std::mutex> lock(locker);
         auto item_it = items.find(render_id);
         if (item_it == items.end()) {
             ImGui::TextUnformatted("No active item.");
         } else {
+            if (ImGui::Button("Delete")) {
+                item_it->second->ref_count--;
+                //TODO: 防止重复点击
+            }
+            if (ImGui::Button("Save as STL")) {
+                const char* filters[] = {"*.stl"};
+                const char* file = tinyfd_saveFileDialog(
+                    "Save Voxel as STL", "node_voxel.stl", 1, filters, "STL files");
+                if (file) {
+                    std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle, sinriv::kigstudio::voxel::vec3f>> mesh;
+                    int numTriangles = 0;
+                    for (auto triangles : sinriv::kigstudio::voxel::generateMesh(
+                             item_it->second->voxel_grid_data, 0.5, numTriangles, true)) {
+                        mesh.push_back(triangles);
+                    }
+                    sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, file);
+                }
+            }
             RenderVoxelItem& item = *item_it->second;
             static int plane_editor_item_id = -1;
             static int plane_input_mode = 0;
@@ -465,7 +494,11 @@ void RenderVoxelList::render_nav_map() {
         ImNodes::BeginNode(id);
 
         ImNodes::BeginNodeTitleBar();
-        ImGui::Text("Node %d", id);
+        if (item->write_count > 0) {
+            ImGui::Text("Node %d (updating...)", id);
+        } else {
+            ImGui::Text("Node %d", id);
+        }
         ImNodes::EndNodeTitleBar();
 
         // Input attribute (来自父节点)

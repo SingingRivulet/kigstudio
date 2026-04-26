@@ -170,6 +170,20 @@ struct triangle_bvh {
         return std::bit_ceil(static_cast<uint32_t>(size_max + 1));
     }
 
+    template <typename vertices_t, typename indices_t>
+    inline void loadGeometry(
+        const vertices_t& vertices,
+        const indices_t& indices) { 
+        for (size_t i = 0; i < indices.size(); i += 3) {
+            const auto& v1 = vertices.at(indices.at(i));
+            const auto& v2 = vertices.at(indices.at(i + 1));
+            const auto& v3 = vertices.at(indices.at(i + 2));
+            insert({vec3<number_t>{v1.x, v1.y, v1.z},
+                    vec3<number_t>{v2.x, v2.y, v2.z},
+                    vec3<number_t>{v3.x, v3.y, v3.z}});
+        }
+    }
+
     inline auto insert(const triangle& triangle) {
         auto ptr = std::make_unique<trangle_box>();
         ptr->vertex = triangle;
