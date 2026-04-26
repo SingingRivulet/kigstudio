@@ -258,12 +258,31 @@ namespace sinriv::ui::render {
             bgfx::setUniform(u_space_div_mix_, space_div_mix.data());
             bgfx::setUniform(u_mouse_pos_, mouse_pos_.data());
             bgfx::setUniform(u_mouse_highlight_, mouse_highlight_.data());
-            bgfx::setUniform(u_mouse_ori_, mouse_ori_.data());
-            bgfx::setUniform(u_mouse_dir_, mouse_dir_.data());
 
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_MSAA);
             bgfx::submit(lighting_view_id_, combine_program_);
+            auto mouse_x = screen_mouse_pos_[0];
+            auto mouse_y = screen_mouse_pos_[1];
+             if (mouse_x >= 0 && mouse_x < width_-2 && mouse_y >= 0 && mouse_y < height_-2) {
+                bgfx::blit(lighting_view_id_, readback_, 0, 0, world_pos_texture_, mouse_x, mouse_y, 2, 2);
+                bgfx::readTexture(readback_, readback_buffer);
+                if (readback_buffer[3] > 0.5f) {
+                    mouse_highlight_[0] = 1.0;
+                    mouse_highlight_[1] = 1.0;
+                    mouse_highlight_[2] = 1.0;
+                    mouse_highlight_[3] = 1.0;
+                    
+                    mouse_pos_[0] = readback_buffer[0];
+                    mouse_pos_[1] = readback_buffer[1];
+                    mouse_pos_[2] = readback_buffer[2];
+                }else{
+                    mouse_highlight_[0] = 0.0;
+                    mouse_highlight_[1] = 0.0;
+                    mouse_highlight_[2] = 0.0;
+                    mouse_highlight_[3] = 0.0;
+                }
+            }
         }
 
         inline void release() {
@@ -334,14 +353,6 @@ namespace sinriv::ui::render {
             if (bgfx::isValid(u_mouse_highlight_)) {
                 bgfx::destroy(u_mouse_highlight_);
                 u_mouse_highlight_ = BGFX_INVALID_HANDLE;
-            }
-            if (bgfx::isValid(u_mouse_ori_)) {
-                bgfx::destroy(u_mouse_ori_);
-                u_mouse_ori_ = BGFX_INVALID_HANDLE;
-            }
-            if (bgfx::isValid(u_mouse_dir_)) {
-                bgfx::destroy(u_mouse_dir_);
-                u_mouse_dir_ = BGFX_INVALID_HANDLE;
             }
         }
 
@@ -464,6 +475,11 @@ namespace sinriv::ui::render {
                 width_, height_, false, 1, bgfx::TextureFormat::BGRA8, kSamplerFlags);
             world_pos_texture_ = bgfx::createTexture2D(
                 width_, height_, false, 1, bgfx::TextureFormat::RGBA32F, kSamplerFlags);
+            readback_ = bgfx::createTexture2D(
+                    2, 2, false, 1,
+                    bgfx::TextureFormat::RGBA32F,
+                    BGFX_TEXTURE_READ_BACK | BGFX_TEXTURE_BLIT_DST
+                );
             depth_texture_ = bgfx::createTexture2D(
                 width_, height_, false, 1, bgfx::TextureFormat::D32F, kSamplerFlags);
 
@@ -541,12 +557,6 @@ namespace sinriv::ui::render {
             if (!bgfx::isValid(u_mouse_highlight_)) {
                 u_mouse_highlight_ = bgfx::createUniform("u_mouseHighlight", bgfx::UniformType::Vec4);
             }
-            if (!bgfx::isValid(u_mouse_ori_)) {
-                u_mouse_ori_ = bgfx::createUniform("u_mouseOri", bgfx::UniformType::Vec4);
-            }
-            if (!bgfx::isValid(u_mouse_dir_)) {
-                u_mouse_dir_ = bgfx::createUniform("u_mouseDir", bgfx::UniformType::Vec4);
-            }
 
             bgfx::ShaderHandle vs =
                 deferred_detail::loadShader(shader_dir_ + "vs_screen_quad.bin");
@@ -592,6 +602,7 @@ namespace sinriv::ui::render {
         bgfx::TextureHandle collision_body_texture_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle normal_texture_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle world_pos_texture_ = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle readback_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle depth_texture_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle combine_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle collision_program_ = BGFX_INVALID_HANDLE;
@@ -609,8 +620,6 @@ namespace sinriv::ui::render {
         bgfx::UniformHandle u_space_div_mix_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_mouse_pos_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_mouse_highlight_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_mouse_ori_ = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle u_mouse_dir_ = BGFX_INVALID_HANDLE;
         std::array<float, 4> space_div = {1.0f, 0.0f, 0.0f, 0.0f};
         std::array<float, 4> space_div_mix = {1.0f, 0.0f, 0.0f, 0.0f};
         std::array<float, 4> light_dir_ = {0.3f, 0.5f, 0.8f, 0.0f};
@@ -618,7 +627,9 @@ namespace sinriv::ui::render {
         std::array<float, 4> mouse_highlight_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 4> mouse_ori_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 4> mouse_dir_ = {0.f, 0.f, 0.f, 0.f};
+        std::array<float, 2> screen_mouse_pos_ = {0.f, 0.f};
         std::vector<CollisionItem> collision_items_;
         float identity_mtx_[16]{};
+        float readback_buffer[2 * 2 * 4]; // 用于从GPU读取碰撞信息
     };
 }

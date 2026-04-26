@@ -254,10 +254,6 @@ void RenderVoxelList::render_ui() {
                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoBringToFrontOnFocus)) {
         ImGui::Text("items:%d tasks:%d", this->get_num_items(), this->queue_num);
-        ImGui::SameLine();
-        ImGui::Text("mouse: origin:(%.2f,%.2f,%.2f) dir:(%.2f,%.2f,%.2f)",
-                    mouse_ray_origin.x, mouse_ray_origin.y, mouse_ray_origin.z,
-                    mouse_ray_dir.x, mouse_ray_dir.y, mouse_ray_dir.z);
         //显示鼠标的三维位置
         ImGui::SameLine();
         ImGui::Text("mouse world pos:(%.2f,%.2f,%.2f)", mouse_world_pos.x, mouse_world_pos.y, mouse_world_pos.z);

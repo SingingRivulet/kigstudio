@@ -258,21 +258,9 @@ int main() {
 
         render_items.upload_collision(deferred_renderer);
         render_items.render_gbuffer(mtx_2, mesh_render_shader);
-        if (render_items.mouse_world_pos_valid) {
-            deferred_renderer.mouse_highlight_[0] = 1.0;
-            deferred_renderer.mouse_highlight_[1] = 1.0;
-            deferred_renderer.mouse_highlight_[2] = 1.0;
-            deferred_renderer.mouse_highlight_[3] = 1.0;
-        } else {
-            deferred_renderer.mouse_highlight_[0] = 0.0;
-            deferred_renderer.mouse_highlight_[1] = 0.0;
-            deferred_renderer.mouse_highlight_[2] = 0.0;
-            deferred_renderer.mouse_highlight_[3] = 0.0;
 
-        }
-        deferred_renderer.mouse_pos_[0] = render_items.mouse_world_pos.x;
-        deferred_renderer.mouse_pos_[1] = render_items.mouse_world_pos.y;
-        deferred_renderer.mouse_pos_[2] = render_items.mouse_world_pos.z;
+        deferred_renderer.screen_mouse_pos_[0] = io.MousePos.x;
+        deferred_renderer.screen_mouse_pos_[1] = io.MousePos.y;
         deferred_renderer.render();
         bgfx::setViewTransform(kOverlayView, view_2, proj);
 
@@ -282,47 +270,11 @@ int main() {
 
         render_items.process_queue_result();
         io.DisplaySize = ImVec2((float)width, (float)height);
-        
-        // 正确计算逆矩阵（考虑旋转矩阵正交性）
-        sinriv::kigstudio::mat::matrix<float> cpu_model_matrix_2(mtx_2);
-        cpu_model_matrix_2.transpose();
-        float inv_model[16];
-        bx::mtxInverse(inv_model, cpu_model_matrix_2.data);
-        bx::mtxTranspose(inv_model, inv_model); // 旋转部分转置=逆
-
-        // 齐次坐标正确转换
-        float eye_world[4] = {cameraOffsetX, cameraOffsetY, distance, 1.0f};
-        float eye_object[4], at_object[4];
-        eye_object[0] = eye_world[0] * inv_model[0] + eye_world[1] * inv_model[4] + eye_world[2] * inv_model[8] + inv_model[12];
-        eye_object[1] = eye_world[0] * inv_model[1] + eye_world[1] * inv_model[5] + eye_world[2] * inv_model[9] + inv_model[13];
-        eye_object[2] = eye_world[0] * inv_model[2] + eye_world[1] * inv_model[6] + eye_world[2] * inv_model[10] + inv_model[14];
-        eye_object[3] = eye_world[0] * inv_model[3] + eye_world[1] * inv_model[7] + eye_world[2] * inv_model[11] + inv_model[15];
-
-        at_object[0] = at.x * inv_model[0] + at.y * inv_model[4] + at.z * inv_model[8] + inv_model[12];
-        at_object[1] = at.x * inv_model[1] + at.y * inv_model[5] + at.z * inv_model[9] + inv_model[13];
-        at_object[2] = at.x * inv_model[2] + at.y * inv_model[6] + at.z * inv_model[10] + inv_model[14];
-        at_object[3] = at.x * inv_model[3] + at.y * inv_model[7] + at.z * inv_model[11] + inv_model[15];
-
-        // 设置物体坐标系摄像机位置
-        render_items.mouse_ray_origin = sinriv::kigstudio::voxel::collision::vec3f(
-            eye_object[0] / eye_object[3],  // 透视除法
-            eye_object[1] / eye_object[3],
-            eye_object[2] / eye_object[3]
-        );
-        render_items.mouse_ray_dir = sinriv::kigstudio::voxel::collision::vec3f(
-            at_object[0] / at_object[3] - render_items.mouse_ray_origin.x,
-            at_object[1] / at_object[3] - render_items.mouse_ray_origin.y,
-            at_object[2] / at_object[3] - render_items.mouse_ray_origin.z
-        );
-
-        deferred_renderer.mouse_ori_[0] = render_items.mouse_ray_origin.x;
-        deferred_renderer.mouse_ori_[1] = render_items.mouse_ray_origin.y;
-        deferred_renderer.mouse_ori_[2] = render_items.mouse_ray_origin.z;
-        deferred_renderer.mouse_dir_[0] = render_items.mouse_ray_dir.x;
-        deferred_renderer.mouse_dir_[1] = render_items.mouse_ray_dir.y;
-        deferred_renderer.mouse_dir_[2] = render_items.mouse_ray_dir.z;
         render_items.update_mouse();
         ImGui::NewFrame();
+        render_items.mouse_world_pos.x = deferred_renderer.mouse_pos_[0];
+        render_items.mouse_world_pos.y = deferred_renderer.mouse_pos_[1];
+        render_items.mouse_world_pos.z = deferred_renderer.mouse_pos_[2];
         render_items.render_ui();
         ImGui::Render();
 
