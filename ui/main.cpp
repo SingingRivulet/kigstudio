@@ -16,10 +16,10 @@
 
 #include "kigstudio/ui/logger.h"
 #include "kigstudio/ui/render_collision.h"
-#include "kigstudio/ui/render_deferred.h"
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/ui/render_voxel.h"
 #include "kigstudio/voxel/collision.h"
+#include "ui/render_deferred.h"
 #include "ui/render_voxel_list.h"
 #include "tinyfiledialogs.h"
 
@@ -181,11 +181,7 @@ int main() {
 
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_o &&
                 !io.WantCaptureKeyboard) {
-                const char* file = tinyfd_openFileDialog("Open STL", "", 0,
-                                                         NULL, "STL file", 0);
-                if (file) {
-                    render_items.queue_load_stl(file);
-                }
+                render_items.show_file_loader = true;
             }
 
             if (e.type == SDL_QUIT)

@@ -54,4 +54,34 @@ void RenderVoxelList::RenderVoxelItem::upload_collision(
     }
 }
 
+void RenderVoxelList::upload_collision(
+    sinriv::ui::render::RenderDeferred& render) {
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->upload_collision(render);
+        } else {
+            render.clearCollisionTint();
+        }
+    }
+    int num = hightlight_pos.size();
+    if (num > 16) {
+        num = 16;
+    }
+    render.pos_hightlight_counts = num;
+    render.pos_hightlight_counts_gpu_[0] = num;
+    for (int i = 0; i < num; i++) {
+        render.pos_hightlight_[i][0] = std::get<0>(hightlight_pos[i]).x;
+        render.pos_hightlight_[i][1] = std::get<0>(hightlight_pos[i]).y;
+        render.pos_hightlight_[i][2] = std::get<0>(hightlight_pos[i]).z;
+        render.pos_hightlight_[i][3] = 1.0f;
+
+        render.pos_hightlight_color_[i][0] = std::get<1>(hightlight_pos[i]).x;
+        render.pos_hightlight_color_[i][1] = std::get<1>(hightlight_pos[i]).y;
+        render.pos_hightlight_color_[i][2] = std::get<1>(hightlight_pos[i]).z;
+        render.pos_hightlight_color_[i][3] = 1.0f;
+    }
+    hightlight_pos.clear();
+}
 }  // namespace sinriv::ui::render

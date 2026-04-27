@@ -14,6 +14,10 @@ uniform vec4 u_space_div_mix;
 uniform vec4 u_mousePos;
 uniform vec4 u_mouseHighlight;
 
+uniform vec4 u_pos_hightlight_counts;
+uniform vec4 u_pos_hightlight[16];
+uniform vec4 u_pos_hightlight_color[16];
+
 void main()
 {   
     vec4 albedo_sample = texture2D(s_albedo, v_texcoord0);
@@ -52,6 +56,14 @@ void main()
         color = mix(color, vec3(1.00, 0.0, 0.0), t);
     }
 
+    for (int i = 0; i < 16; ++i) {
+        if (i < int(u_pos_hightlight_counts.x)) {
+            vec3 pos = u_pos_hightlight[i].xyz;
+            float dist = max(1.0 - length(pos - world_pos), 0.0);
+            float t = smoothstep(0.0, 1.0, dist);
+            color = mix(color, u_pos_hightlight_color[i].xyz, t);
+        }
+    }
 
     gl_FragColor = vec4(color, 1.0);
 }

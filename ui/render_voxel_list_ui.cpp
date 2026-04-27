@@ -169,11 +169,7 @@ void RenderVoxelList::render_ui() {
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("File")) {
                 if (ImGui::MenuItem("Open STL (O)")) {
-                    const char* file = tinyfd_openFileDialog(
-                        "Open STL", "", 0, NULL, "STL file", 0);
-                    if (file) {
-                        this->queue_load_stl(file);
-                    }
+                    show_file_loader = true;
                 }
                 ImGui::EndMenu();
             }
@@ -248,6 +244,7 @@ void RenderVoxelList::render_ui() {
 
     render_nav_map();
     render_collision_node_editor();
+    render_file_loader();
 
     this->setMeshAxisVisible(showMeshAxis);
     this->setVoxelAxisVisible(showVoxelAxis);
@@ -256,6 +253,39 @@ void RenderVoxelList::render_ui() {
     this->setCollisionVisible(showCollision);
     this->setCollisionBoundsVisible(showCollisionBounds);
     this->update_nav_node_position();
+}
+
+void RenderVoxelList::render_file_loader() {
+    static std::string stl_file_path;
+    if (show_file_loader) {
+        if (ImGui::Begin("Load STL File", nullptr,
+                         ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Click the button below to load an STL file.");
+            if (ImGui::Button("Open File Dialog")) {
+                const char* file = tinyfd_openFileDialog(
+                    "Open STL", "", 0, NULL, "STL file", 0);
+                if (file) {
+                    stl_file_path = std::string(file);
+                }
+            }
+            if (!stl_file_path.empty()) {
+                ImGui::Text("Selected file: %s", stl_file_path.c_str());
+            } else {
+                ImGui::Text("No file selected.");
+            }
+            ImGui::BeginDisabled(stl_file_path.empty());
+            if (ImGui::Button("Open")) {
+                this->queue_load_stl(stl_file_path);
+                show_file_loader = false;
+            }
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) {
+                show_file_loader = false;
+            }
+        }
+        ImGui::End();
+    }
 }
 
 void RenderVoxelList::render_plane_editor(RenderVoxelItem& item) {
@@ -355,6 +385,12 @@ void RenderVoxelList::render_plane_editor(RenderVoxelItem& item) {
                             mouse_world_pos_picked) {
                             plane_p3 = mouse_world_pos;
                         }
+                        hightlight_pos.push_back(
+                            {plane_p1, {0.8f, 0.0f, 0.5f}});
+                        hightlight_pos.push_back(
+                            {plane_p2, {0.8f, 0.0f, 0.7f}});
+                        hightlight_pos.push_back(
+                            {plane_p3, {0.8f, 0.0f, 0.9f}});
                         const vec3f v1 = plane_p2 - plane_p1;
                         const vec3f v2 = plane_p3 - plane_p1;
                         vec3f normal = v1.cross(v2);
@@ -388,8 +424,14 @@ void RenderVoxelList::render_plane_editor(RenderVoxelItem& item) {
                         if (pick_normal_by_mouse && mouse_world_pos_valid &&
                             mouse_world_pos_picked) {
                             plane_normal = mouse_world_pos - plane_point;
-                            plane_normal = sinriv::kigstudio::voxel::collision::safeNormalize(plane_normal);
+                            plane_normal = sinriv::kigstudio::voxel::collision::
+                                safeNormalize(plane_normal);
                         }
+                        hightlight_pos.push_back(
+                            {plane_point, {0.8f, 0.0f, 0.5f}});
+                        hightlight_pos.push_back(
+                            {plane_point + plane_normal * 2.0f,
+                             {0.8f, 0.0f, 0.9f}});
                         try {
                             item.plane = Plane(plane_point, plane_normal);
                             plane_error_message.clear();
@@ -408,8 +450,8 @@ void RenderVoxelList::render_plane_editor(RenderVoxelItem& item) {
                     plane_error_message.clear();
                     show_edit_segment_plane = false;
                 }
-                ImGui::End();
             }
+            ImGui::End();
         }
     }
 }

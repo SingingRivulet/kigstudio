@@ -6,14 +6,16 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <tuple>
+#include <vector>
 
+#include "ui/render_deferred.h"
 #include "kigstudio/ui/render_collision.h"
-#include "kigstudio/ui/render_deferred.h"
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/ui/render_voxel.h"
 #include "kigstudio/utils/plane.h"
-#include "kigstudio/voxel/voxelizer_svo.h"
 #include "kigstudio/utils/vec3.h"
+#include "kigstudio/voxel/voxelizer_svo.h"
 
 namespace sinriv::ui::render {
 
@@ -39,7 +41,7 @@ class RenderVoxelList {
        public:
         int id = -1;
         int children[2] = {-1, -1};
-        int nav_node_position[2] = {0, 0}; // 在分割演示图中的位置
+        int nav_node_position[2] = {0, 0};  // 在分割演示图中的位置
         RenderVoxelList* manager = nullptr;
         RenderVoxelItem() = default;
         ~RenderVoxelItem() {
@@ -146,8 +148,8 @@ class RenderVoxelList {
     // ui
     int window_width;
     int window_height;
-    int menu_height=0;
-    
+    int menu_height = 0;
+
     bool showMesh = true;
     bool showVoxels = true;
     bool showCollision = true;
@@ -165,21 +167,18 @@ class RenderVoxelList {
     void render_collision_node_editor();
     void render_plane_editor(RenderVoxelItem& item);
     void render_nav_map();
+    void render_file_loader();
 
     bool show_edit_segment_plane = false;
+    bool show_file_loader = false;
 
-    inline void upload_collision(sinriv::ui::render::RenderDeferred& render) {
-        std::lock_guard<std::mutex> lock(locker);
-        auto it = items.find(render_id);
-        if (it != items.end()) {
-            it->second->upload_collision(render);
-        } else {
-            render.clearCollisionTint();
-        }
-    }
+    std::vector<std::tuple<sinriv::kigstudio::voxel::collision::vec3f,
+                           sinriv::kigstudio::voxel::collision::vec3f>>
+        hightlight_pos;
 
-    inline void update_mouse(){
-    }
+    void upload_collision(sinriv::ui::render::RenderDeferred& render);
+
+    inline void update_mouse() {}
 
     // 摄像机
 
@@ -273,9 +272,9 @@ class RenderVoxelList {
     std::tuple<RenderVoxelItem*, RenderVoxelItem*> do_segment(int index);
 
     void load_stl(std::string filename,
-                         float voxel_size = 0.5f,
-                         double isolevel = 0.5,
-                         bool smooth_normals = true);
+                  float voxel_size = 0.5f,
+                  double isolevel = 0.5,
+                  bool smooth_normals = true);
 
     // 后台队列
 
@@ -327,7 +326,7 @@ class RenderVoxelList {
         std::lock_guard<std::mutex> lock(locker);
         this->setRenderId(id);
     }
-    
+
     inline void setRenderId_unsafe(int id) {
         auto it = items.find(id);
         if (it != items.end()) {
@@ -353,101 +352,7 @@ class RenderVoxelList {
 
     std::thread queue_thread_;
 
-    inline void queue_thread() {
-        std::cout << "Queue thread started" << std::endl;
-        while (true) {
-            queue_mutex.lock();
-            this->queue_num = queue.size();
-            if (queue.empty()) {
-                queue_mutex.unlock();
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                continue;
-            }
-            auto task = queue.front();
-            queue.pop();
-            queue_mutex.unlock();
-
-            switch (task.type) {
-                case TASK_STOP:
-                    std::cout << "Stop queue" << std::endl;
-                    return;
-                // case TASK_REMOVE_ITEM:
-                //     // 移除item
-                //     break;
-                case TASK_LOAD_STL:
-                    // 加载stl文件
-                    std::cout << "Load stl file: " << task.file_path
-                              << std::endl;
-                    queue_running = true;
-                    load_stl(task.file_path);
-                    queue_running = false;
-                    break;
-                case TASK_SEGMENT:
-                    // 分割
-                    queue_running = true;
-                    do_segment(task.index);
-                    queue_running = false;
-                    break;
-                case TASK_GENERATE_THUMBNAIL_MESH: {
-                    queue_running = true;
-                    queue_status = "Generating thumbnail mesh...";
-                    queue_progress = 0.0f;
-
-                    sinriv::kigstudio::voxel::VoxelGrid voxel_data;
-                    {
-                        std::lock_guard<std::mutex> lock(locker);
-                        auto it = items.find(task.index);
-                        if (it != items.end()) {
-                            voxel_data = it->second->voxel_grid_data;
-                        }
-                    }
-
-                    mesh_detail::AsyncVoxelMeshData data;
-                    if (voxel_data.num_chunk() > 0) {
-                        int num_triangles = 0;
-                        auto generator = sinriv::kigstudio::voxel::generateMesh(
-                            voxel_data, 0.5, num_triangles, true);
-                        size_t processed_tris = 0;
-                        size_t estimated_tris = voxel_data.num_chunk() * 200;
-                        if (estimated_tris == 0) estimated_tris = 1;
-
-                        for (auto [tri, n] : generator) {
-                            const uint32_t base = static_cast<uint32_t>(data.vertices.size());
-                            data.vertices.push_back(
-                                {std::get<0>(tri).x, std::get<0>(tri).y, std::get<0>(tri).z,
-                                 n.x, n.y, n.z});
-                            data.vertices.push_back(
-                                {std::get<1>(tri).x, std::get<1>(tri).y, std::get<1>(tri).z,
-                                 n.x, n.y, n.z});
-                            data.vertices.push_back(
-                                {std::get<2>(tri).x, std::get<2>(tri).y, std::get<2>(tri).z,
-                                 n.x, n.y, n.z});
-                            data.indices.push_back(base);
-                            data.indices.push_back(base + 1);
-                            data.indices.push_back(base + 2);
-
-                            ++processed_tris;
-                            if (processed_tris % 1000 == 0) {
-                                queue_progress = 0.10f + 0.80f * std::min(1.0f,
-                                    static_cast<float>(processed_tris) / static_cast<float>(estimated_tris));
-                            }
-                        }
-                    }
-
-                    {
-                        std::lock_guard<std::mutex> lock(thumbnail_mesh_mutex);
-                        thumbnail_mesh_results[task.index] = std::move(data);
-                        thumbnail_mesh_pending.erase(task.index);
-                    }
-
-                    queue_progress = 1.0f;
-                    queue_status = "Done";
-                    queue_running = false;
-                    break;
-                }
-            }
-        }
-    }
+    void queue_thread();
 
     inline void start_thread() {
         // 启动进程

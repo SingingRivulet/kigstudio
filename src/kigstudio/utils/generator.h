@@ -8,6 +8,7 @@ namespace sinriv::kigstudio {
     class Generator {
     public:
         struct promise_type {
+            std::exception_ptr exception;
             inline Generator get_return_object() {
                 return Generator{ handle_type::from_promise(*this) };
             }
@@ -33,7 +34,7 @@ namespace sinriv::kigstudio {
             inline void return_void() {}
 
             inline void unhandled_exception() {
-                std::terminate();
+                exception = std::current_exception();
             }
 
             T current_value;
@@ -49,6 +50,9 @@ namespace sinriv::kigstudio {
 
             inline void operator++() {
                 handle.resume();
+                if (handle.promise().exception) {
+                    std::rethrow_exception(handle.promise().exception);
+                }
             }
 
             inline T operator*() {
@@ -96,6 +100,9 @@ namespace sinriv::kigstudio {
 
         inline iterator begin() {
             handle.resume();
+            if (handle.promise().exception) {
+                std::rethrow_exception(handle.promise().exception);
+            }
             return iterator{ handle };
         }
 
