@@ -59,6 +59,23 @@ void edit_vec3_stepper(const char* label,
         value = sinriv::kigstudio::voxel::collision::safeNormalize(value);
     }
 }
+void edit_local_position_stepper(const char* label,
+                                 vec3f& value,
+                                 float step = 0.5f,
+                                 bool normalize = false) {
+    const char* axis_names[] = {"X", "Y", "Z"};
+    float values[3] = {value.x, -value.y, value.z};
+    ImGui::Text("%s", label);
+    char buf[128];
+    for (int i = 0; i < 3; ++i) {
+        snprintf(buf, sizeof(buf), "%s##%s", axis_names[i], label);
+        edit_float_stepper(buf, values[i], step);
+    }
+    value = {values[0], -values[1], values[2]};
+    if (normalize) {
+        value = sinriv::kigstudio::voxel::collision::safeNormalize(value);
+    }
+}
 
 void edit_transform_controls(Transform& transform) {
     vec3f pos = transform.getPosition();
@@ -69,8 +86,8 @@ void edit_transform_controls(Transform& transform) {
     vec3f euler_deg = {bx::toDeg(euler_rad.x), bx::toDeg(euler_rad.y),
                        bx::toDeg(euler_rad.z)};
     edit_vec3_stepper("Rotation (deg)", euler_deg);
-    transform.setRotationEuler(
-        {bx::toRad(euler_deg.x), bx::toRad(euler_deg.y), bx::toRad(euler_deg.z)});
+    transform.setRotationEuler({bx::toRad(euler_deg.x), bx::toRad(euler_deg.y),
+                                bx::toRad(euler_deg.z)});
 }
 
 const char* geometry_type_name(const GeometryInstance& instance) {
@@ -97,17 +114,17 @@ void edit_geometry_shape(GeometryInstance& instance) {
         [](auto& geometry) {
             using T = std::decay_t<decltype(geometry)>;
             if constexpr (std::is_same_v<T, Sphere>) {
-                edit_vec3_stepper("Center", geometry.center);
+                edit_local_position_stepper("Center", geometry.center);
                 edit_float_stepper("Radius", geometry.radius);
                 geometry.radius = bx::max(0.0f, geometry.radius);
             } else if constexpr (std::is_same_v<T, Cylinder>) {
-                edit_vec3_stepper("Start", geometry.start);
-                edit_vec3_stepper("End", geometry.end);
+                edit_local_position_stepper("Start", geometry.start);
+                edit_local_position_stepper("End", geometry.end);
                 edit_float_stepper("Radius", geometry.radius);
                 geometry.radius = bx::max(0.0f, geometry.radius);
             } else if constexpr (std::is_same_v<T, Capsule>) {
-                edit_vec3_stepper("Start", geometry.start);
-                edit_vec3_stepper("End", geometry.end);
+                edit_local_position_stepper("Start", geometry.start);
+                edit_local_position_stepper("End", geometry.end);
                 edit_float_stepper("Radius", geometry.radius);
                 geometry.radius = bx::max(0.0f, geometry.radius);
             } else if constexpr (std::is_same_v<T, Box>) {
@@ -126,71 +143,15 @@ void add_collision_geometry(CollisionGroup& group, int type_index) {
             group.add(Sphere{{0.0f, 0.0f, 0.0f}, 10.0f});
             break;
         case 1:
-            group.add(Cylinder{{0.0f, 0.0f, -10.0f},
-                               {0.0f, 0.0f, 10.0f},
-                               6.0f});
+            group.add(
+                Cylinder{{0.0f, 0.0f, -10.0f}, {0.0f, 0.0f, 10.0f}, 6.0f});
             break;
         case 2:
-            group.add(Capsule{{-10.0f, 0.0f, 0.0f},
-                              {10.0f, 0.0f, 0.0f},
-                              6.0f});
+            group.add(Capsule{{-10.0f, 0.0f, 0.0f}, {10.0f, 0.0f, 0.0f}, 6.0f});
             break;
         case 3:
             group.add(Box{{8.0f, 8.0f, 8.0f}});
             break;
-    }
-}
-
-std::tuple<vec3f, vec3f, vec3f> build_plane_three_points(const Plane& plane) {
-    auto [point, normal] = plane.getPointNormalForm();
-    vec3f tangent = normal.cross(vec3f(0.0f, 0.0f, 1.0f));
-    if (tangent.length() < 1e-6f) {
-        tangent = normal.cross(vec3f(0.0f, 1.0f, 0.0f));
-    }
-    tangent = sinriv::kigstudio::voxel::collision::safeNormalize(tangent);
-    vec3f bitangent =
-        sinriv::kigstudio::voxel::collision::safeNormalize(normal.cross(tangent));
-    return {point, point + tangent, point + bitangent};
-}
-
-void edit_plane_from_point_normal(Plane& plane,
-                                  vec3f& point,
-                                  vec3f& normal,
-                                  std::string& error_message) {
-    edit_vec3_stepper("Point", point);
-    edit_vec3_stepper("Normal", normal, 0.1f);
-    if (ImGui::Button("Apply point-normal")) {
-        try {
-            plane = Plane(point, normal);
-            error_message.clear();
-            ImGui::CloseCurrentPopup();
-        } catch (const std::exception& e) {
-            error_message = e.what();
-        }
-    }
-}
-
-void edit_plane_from_three_points(Plane& plane,
-                                  vec3f& p1,
-                                  vec3f& p2,
-                                  vec3f& p3,
-                                  std::string& error_message) {
-    edit_vec3_stepper("P1", p1);
-    edit_vec3_stepper("P2", p2);
-    edit_vec3_stepper("P3", p3);
-    if (ImGui::Button("Apply three-point")) {
-        const vec3f v1 = p2 - p1;
-        const vec3f v2 = p3 - p1;
-        vec3f normal = v1.cross(v2);
-        if (normal.length() < 1e-6f) {
-            error_message = "Three points are collinear.";
-        } else {
-            normal =
-                sinriv::kigstudio::voxel::collision::safeNormalize(normal);
-            plane = Plane(p1, normal);
-            error_message.clear();
-            ImGui::CloseCurrentPopup();
-        }
     }
 }
 
@@ -230,7 +191,8 @@ void RenderVoxelList::render_ui() {
                     ImGui::EndMenu();
                 }
                 if (ImGui::BeginMenu("Bound")) {
-                    ImGui::Checkbox("show collision bounds", &showCollisionBounds);
+                    ImGui::Checkbox("show collision bounds",
+                                    &showCollisionBounds);
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
@@ -253,10 +215,12 @@ void RenderVoxelList::render_ui() {
     if (ImGui::Begin("item status", nullptr,
                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoBringToFrontOnFocus)) {
-        ImGui::Text("items:%d tasks:%d", this->get_num_items(), this->queue_num);
-        //显示鼠标的三维位置
+        ImGui::Text("items:%d tasks:%d", this->get_num_items(),
+                    this->queue_num);
+        // 显示鼠标的三维位置
         ImGui::SameLine();
-        ImGui::Text("mouse world pos:(%.2f,%.2f,%.2f)", mouse_world_pos.x, mouse_world_pos.y, mouse_world_pos.z);
+        ImGui::Text("mouse world pos:(%.2f,%.2f,%.2f)", mouse_world_pos.x,
+                    mouse_world_pos.y, mouse_world_pos.z);
 
         item_status_height =
             ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
@@ -283,44 +247,207 @@ void RenderVoxelList::render_ui() {
     }
 
     render_nav_map();
+    render_collision_node_editor();
 
+    this->setMeshAxisVisible(showMeshAxis);
+    this->setVoxelAxisVisible(showVoxelAxis);
+    this->setMeshVisible(showMesh);
+    this->setVoxelsVisible(showVoxels);
+    this->setCollisionVisible(showCollision);
+    this->setCollisionBoundsVisible(showCollisionBounds);
+    this->update_nav_node_position();
+}
+
+void RenderVoxelList::render_plane_editor(RenderVoxelItem& item) {
+    static int plane_editor_item_id = -1;
+    static int plane_input_mode = 0;
+    static vec3f plane_point = {0.0f, 0.0f, 0.0f};
+    static vec3f plane_normal = {0.0f, 1.0f, 0.0f};
+    static vec3f plane_p1 = {0.0f, 0.0f, 0.0f};
+    static vec3f plane_p2 = {1.0f, 0.0f, 0.0f};
+    static vec3f plane_p3 = {0.0f, 1.0f, 0.0f};
+    static bool pick_point_by_mouse = false;
+    static bool pick_normal_by_mouse = false;
+    static bool pick_p1_by_mouse = false;
+    static bool pick_p2_by_mouse = false;
+    static bool pick_p3_by_mouse = false;
+    static std::string plane_error_message;
+    if (ImGui::CollapsingHeader("segment plane",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text("A: %.4f", item.plane.A);
+        ImGui::Text("B: %.4f", item.plane.B);
+        ImGui::Text("C: %.4f", item.plane.C);
+        ImGui::Text("D: %.4f", item.plane.D);
+        if (ImGui::Button("Edit plane")) {
+            plane_editor_item_id = item.id;
+            auto [point, normal] = item.plane.getPointNormalForm();
+            vec3f p1, p2, p3;
+            {
+                vec3f tangent = normal.cross(vec3f(0.0f, 0.0f, 1.0f));
+                if (tangent.length() < 1e-6f) {
+                    tangent = normal.cross(vec3f(0.0f, 1.0f, 0.0f));
+                }
+                tangent =
+                    sinriv::kigstudio::voxel::collision::safeNormalize(tangent);
+                vec3f bitangent =
+                    sinriv::kigstudio::voxel::collision::safeNormalize(
+                        normal.cross(tangent));
+                p1 = point;
+                p2 = point + tangent;
+                p3 = point + bitangent;
+            }
+            plane_point = point;
+            plane_normal = normal;
+            plane_p1 = p1;
+            plane_p2 = p2;
+            plane_p3 = p3;
+            plane_error_message.clear();
+            show_edit_segment_plane = true;
+        }
+
+        if (show_edit_segment_plane) {
+            if (ImGui::Begin("Edit Segment Plane", nullptr,
+                             ImGuiWindowFlags_AlwaysAutoResize)) {
+                if (plane_editor_item_id != item.id) {
+                    ImGui::TextUnformatted(
+                        "Plane editor is bound to another item.");
+                } else {
+                    const char* plane_modes[] = {"Three-Point", "Point-Normal"};
+                    ImGui::Combo("input mode", &plane_input_mode, plane_modes,
+                                 IM_ARRAYSIZE(plane_modes));
+                    ImGui::Separator();
+
+                    if (plane_input_mode == 0) {
+                        edit_vec3_stepper("P1", plane_p1);
+                        if (ImGui::Checkbox("Pick P1 by mouse",
+                                            &pick_p1_by_mouse)) {
+                            if (pick_p1_by_mouse) {
+                                pick_p2_by_mouse = false;
+                                pick_p3_by_mouse = false;
+                            }
+                        }
+                        edit_vec3_stepper("P2", plane_p2);
+                        if (ImGui::Checkbox("Pick P2 by mouse",
+                                            &pick_p2_by_mouse)) {
+                            if (pick_p2_by_mouse) {
+                                pick_p1_by_mouse = false;
+                                pick_p3_by_mouse = false;
+                            }
+                        }
+                        edit_vec3_stepper("P3", plane_p3);
+                        if (ImGui::Checkbox("Pick P3 by mouse",
+                                            &pick_p3_by_mouse)) {
+                            if (pick_p3_by_mouse) {
+                                pick_p1_by_mouse = false;
+                                pick_p2_by_mouse = false;
+                            }
+                        }
+
+                        if (pick_p1_by_mouse && mouse_world_pos_valid &&
+                            mouse_world_pos_picked) {
+                            plane_p1 = mouse_world_pos;
+                        }
+                        if (pick_p2_by_mouse && mouse_world_pos_valid &&
+                            mouse_world_pos_picked) {
+                            plane_p2 = mouse_world_pos;
+                        }
+                        if (pick_p3_by_mouse && mouse_world_pos_valid &&
+                            mouse_world_pos_picked) {
+                            plane_p3 = mouse_world_pos;
+                        }
+                        const vec3f v1 = plane_p2 - plane_p1;
+                        const vec3f v2 = plane_p3 - plane_p1;
+                        vec3f normal = v1.cross(v2);
+                        if (normal.length() < 1e-6f) {
+                            plane_error_message = "Three points are collinear.";
+                        } else {
+                            normal = sinriv::kigstudio::voxel::collision::
+                                safeNormalize(normal);
+                            item.plane = Plane(plane_p1, normal);
+                            plane_error_message.clear();
+                        }
+                    } else if (plane_input_mode == 1) {
+                        edit_vec3_stepper("Point", plane_point);
+                        if (ImGui::Checkbox("Pick point by mouse",
+                                            &pick_point_by_mouse)) {
+                            if (pick_point_by_mouse) {
+                                pick_normal_by_mouse = false;
+                            }
+                        }
+                        edit_vec3_stepper("Normal", plane_normal, 0.1f);
+                        if (ImGui::Checkbox("Pick normal by mouse",
+                                            &pick_normal_by_mouse)) {
+                            if (pick_normal_by_mouse) {
+                                pick_point_by_mouse = false;
+                            }
+                        }
+                        if (pick_point_by_mouse && mouse_world_pos_valid &&
+                            mouse_world_pos_picked) {
+                            plane_point = mouse_world_pos;
+                        }
+                        if (pick_normal_by_mouse && mouse_world_pos_valid &&
+                            mouse_world_pos_picked) {
+                            plane_normal = mouse_world_pos - plane_point;
+                            plane_normal = sinriv::kigstudio::voxel::collision::safeNormalize(plane_normal);
+                        }
+                        try {
+                            item.plane = Plane(plane_point, plane_normal);
+                            plane_error_message.clear();
+                        } catch (const std::exception& e) {
+                            plane_error_message = e.what();
+                        }
+                    }
+
+                    if (!plane_error_message.empty()) {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s",
+                                           plane_error_message.c_str());
+                    }
+                }
+
+                if (ImGui::Button("Close")) {
+                    plane_error_message.clear();
+                    show_edit_segment_plane = false;
+                }
+                ImGui::End();
+            }
+        }
+    }
+}
+
+void RenderVoxelList::render_collision_node_editor() {
     ImGui::SetNextWindowPos(ImVec2((float)window_width, (float)menu_height),
-                            ImGuiCond_Once, ImVec2(1.0f, 0.0f));
+                            ImGuiCond_Always, ImVec2(1.0f, 0.0f));
     ImGui::SetNextWindowSize(ImVec2(360, 620), ImGuiCond_Once);
-    if (ImGui::Begin("Node")) {
+    if (ImGui::Begin("collision editor")) {
         std::lock_guard<std::mutex> lock(locker);
         auto item_it = items.find(render_id);
         if (item_it == items.end()) {
             ImGui::TextUnformatted("No active item.");
         } else {
             if (ImGui::Button("Delete")) {
-                item_it->second->ref_count--;
-                //TODO: 防止重复点击
+                item_it->second->queue_release = true;
             }
             ImGui::SameLine();
             if (ImGui::Button("Save as STL")) {
                 const char* filters[] = {"*.stl"};
-                const char* file = tinyfd_saveFileDialog(
-                    "Save Voxel as STL", "node_voxel.stl", 1, filters, "STL files");
+                const char* file =
+                    tinyfd_saveFileDialog("Save Voxel as STL", "node_voxel.stl",
+                                          1, filters, "STL files");
                 if (file) {
-                    std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle, sinriv::kigstudio::voxel::vec3f>> mesh;
+                    std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
+                                           sinriv::kigstudio::voxel::vec3f>>
+                        mesh;
                     int numTriangles = 0;
-                    for (auto triangles : sinriv::kigstudio::voxel::generateMesh(
-                             item_it->second->voxel_grid_data, 0.5, numTriangles, true)) {
+                    for (auto triangles :
+                         sinriv::kigstudio::voxel::generateMesh(
+                             item_it->second->voxel_grid_data, 0.5,
+                             numTriangles, true)) {
                         mesh.push_back(triangles);
                     }
                     sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, file);
                 }
             }
             RenderVoxelItem& item = *item_it->second;
-            static int plane_editor_item_id = -1;
-            static int plane_input_mode = 0;
-            static vec3f plane_point = {0.0f, 0.0f, 0.0f};
-            static vec3f plane_normal = {0.0f, 1.0f, 0.0f};
-            static vec3f plane_p1 = {0.0f, 0.0f, 0.0f};
-            static vec3f plane_p2 = {1.0f, 0.0f, 0.0f};
-            static vec3f plane_p3 = {0.0f, 1.0f, 0.0f};
-            static std::string plane_error_message;
 
             ImGui::Text("render item: %d", item.id);
             ImGui::Separator();
@@ -334,63 +461,7 @@ void RenderVoxelList::render_ui() {
                                         ? RenderVoxelItem::COLLISION
                                         : RenderVoxelItem::PLANE;
             }
-
-            if (ImGui::CollapsingHeader("segment plane",
-                                        ImGuiTreeNodeFlags_DefaultOpen)) {
-                ImGui::Text("A: %.4f", item.plane.A);
-                ImGui::Text("B: %.4f", item.plane.B);
-                ImGui::Text("C: %.4f", item.plane.C);
-                ImGui::Text("D: %.4f", item.plane.D);
-                if (ImGui::Button("Edit plane")) {
-                    plane_editor_item_id = item.id;
-                    auto [point, normal] = item.plane.getPointNormalForm();
-                    auto [p1, p2, p3] = build_plane_three_points(item.plane);
-                    plane_point = point;
-                    plane_normal = normal;
-                    plane_p1 = p1;
-                    plane_p2 = p2;
-                    plane_p3 = p3;
-                    plane_error_message.clear();
-                    ImGui::OpenPopup("Edit Segment Plane");
-                }
-
-                if (ImGui::BeginPopupModal("Edit Segment Plane", nullptr,
-                                           ImGuiWindowFlags_AlwaysAutoResize)) {
-                    if (plane_editor_item_id != item.id) {
-                        ImGui::TextUnformatted(
-                            "Plane editor is bound to another item.");
-                    } else {
-                        const char* plane_modes[] = {"Point-Normal",
-                                                     "Three-Point"};
-                        ImGui::Combo("input mode", &plane_input_mode,
-                                     plane_modes, IM_ARRAYSIZE(plane_modes));
-                        ImGui::Separator();
-
-                        if (plane_input_mode == 0) {
-                            edit_plane_from_point_normal(item.plane, plane_point,
-                                                         plane_normal,
-                                                         plane_error_message);
-                        } else {
-                            edit_plane_from_three_points(item.plane, plane_p1,
-                                                         plane_p2, plane_p3,
-                                                         plane_error_message);
-                        }
-
-                        if (!plane_error_message.empty()) {
-                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
-                                               "%s",
-                                               plane_error_message.c_str());
-                        }
-                    }
-
-                    ImGui::SameLine();
-                    if (ImGui::Button("Cancel")) {
-                        plane_error_message.clear();
-                        ImGui::CloseCurrentPopup();
-                    }
-                    ImGui::EndPopup();
-                }
-            }
+            render_plane_editor(item);
 
             if (ImGui::CollapsingHeader("collision root",
                                         ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -400,8 +471,8 @@ void RenderVoxelList::render_ui() {
             if (ImGui::CollapsingHeader("collision group",
                                         ImGuiTreeNodeFlags_DefaultOpen)) {
                 static int new_geometry_type = 0;
-                const char* geometry_types[] = {"Sphere", "Cylinder",
-                                                "Capsule", "Box"};
+                const char* geometry_types[] = {"Sphere", "Cylinder", "Capsule",
+                                                "Box"};
 
                 ImGui::SetNextItemWidth(140.0f);
                 ImGui::Combo("new shape", &new_geometry_type, geometry_types,
@@ -422,8 +493,8 @@ void RenderVoxelList::render_ui() {
                     const std::string header =
                         std::string(geometry_type_name(instance)) + " [" +
                         std::to_string(member_idx) + "]";
-                    if (ImGui::CollapsingHeader(header.c_str(),
-                                                ImGuiTreeNodeFlags_DefaultOpen)) {
+                    if (ImGui::CollapsingHeader(
+                            header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
                         edit_transform_controls(instance.transform);
                         ImGui::Separator();
                         edit_geometry_shape(instance);
@@ -446,14 +517,6 @@ void RenderVoxelList::render_ui() {
         }
     }
     ImGui::End();
-
-    this->setMeshAxisVisible(showMeshAxis);
-    this->setVoxelAxisVisible(showVoxelAxis);
-    this->setMeshVisible(showMesh);
-    this->setVoxelsVisible(showVoxels);
-    this->setCollisionVisible(showCollision);
-    this->setCollisionBoundsVisible(showCollisionBounds);
-    this->update_nav_node_position();
 }
 
 void RenderVoxelList::render_nav_map() {
@@ -472,8 +535,8 @@ void RenderVoxelList::render_nav_map() {
     for (auto& [id, item] : this->items) {
         // 设置节点固定坐标
         ImNodes::SetNodeGridSpacePos(
-            id, ImVec2((float)item->nav_node_position[1]*1.5,
-                       (float)item->nav_node_position[0]*1.5));
+            id, ImVec2((float)item->nav_node_position[1] * 1.5,
+                       (float)item->nav_node_position[0] * 1.5));
         // 禁止拖动
         ImNodes::SetNodeDraggable(id, false);
 
@@ -499,8 +562,7 @@ void RenderVoxelList::render_nav_map() {
         ImNodes::EndNodeTitleBar();
 
         // Input attribute (来自父节点)
-        ImNodes::BeginInputAttribute(id * 10 + 1,
-                                     ImNodesPinShape_CircleFilled);
+        ImNodes::BeginInputAttribute(id * 10 + 1, ImNodesPinShape_CircleFilled);
         ImGui::Text("");
         ImNodes::EndInputAttribute();
 
@@ -542,7 +604,7 @@ void RenderVoxelList::render_nav_map() {
             int child_id = item->children[i];
             if (this->items.find(child_id) != this->items.end()) {
                 int parent_attr_id = id * 10 + (i == 0 ? 2 : 3);
-                int child_attr_id  = child_id * 10 + 1;
+                int child_attr_id = child_id * 10 + 1;
                 ImNodes::Link(link_id++, parent_attr_id, child_attr_id);
             }
         }
@@ -630,7 +692,7 @@ inline float layout_node(RenderVoxelList& mgr,
 
 inline void compute_layout(RenderVoxelList& mgr) {
     auto roots = mgr.find_roots();
-    std::cout << "roots: " << roots.size() << std::endl;
+    std::cout << "compute_layout roots: " << roots.size() << std::endl;
 
     LayoutContext ctx;
     std::unordered_map<int, int> visit_state;
@@ -687,9 +749,9 @@ void RenderVoxelList::ensureThumbnailResources() {
         BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
 
     thumb_color_tex_ = bgfx::createTexture2D(ts, ts, false, 1,
-                                              bgfx::TextureFormat::BGRA8, flags);
+                                             bgfx::TextureFormat::BGRA8, flags);
     thumb_depth_tex_ = bgfx::createTexture2D(ts, ts, false, 1,
-                                              bgfx::TextureFormat::D32F, flags);
+                                             bgfx::TextureFormat::D32F, flags);
 
     bgfx::TextureHandle attachments[] = {thumb_color_tex_, thumb_depth_tex_};
     thumb_fb_ = bgfx::createFrameBuffer(2, attachments, false);
@@ -753,7 +815,8 @@ void RenderVoxelList::processThumbnails() {
             }
             auto& item = it->second;
 
-            // 如果 voxel_renderer 为空但有 voxel_grid_data，先生成 mesh（放到 queue 线程）
+            // 如果 voxel_renderer 为空但有 voxel_grid_data，先生成 mesh（放到
+            // queue 线程）
             if (item->voxel_renderer.empty() &&
                 item->voxel_grid_data.num_chunk() > 0) {
                 // 检查是否已有生成结果
@@ -766,7 +829,8 @@ void RenderVoxelList::processThumbnails() {
                         // 继续执行后续 RENDER 逻辑
                     } else {
                         // 没有结果，检查是否已提交任务
-                        if (thumbnail_mesh_pending.find(task.item_id) == thumbnail_mesh_pending.end()) {
+                        if (thumbnail_mesh_pending.find(task.item_id) ==
+                            thumbnail_mesh_pending.end()) {
                             // 提交任务到 queue
                             std::lock_guard<std::mutex> qlock(queue_mutex);
                             QueueTask qtask;
@@ -775,7 +839,7 @@ void RenderVoxelList::processThumbnails() {
                             queue.push(qtask);
                             thumbnail_mesh_pending.insert(task.item_id);
                         }
-                        return; // 等待生成完成
+                        return;  // 等待生成完成
                     }
                 }
             }
@@ -798,8 +862,7 @@ void RenderVoxelList::processThumbnails() {
             float dx = max_b.x - min_b.x;
             float dy = max_b.y - min_b.y;
             float dz = max_b.z - min_b.z;
-            float radius =
-                bx::sqrt(dx * dx + dy * dy + dz * dz) * 0.5f;
+            float radius = bx::sqrt(dx * dx + dy * dy + dz * dz) * 0.5f;
             float dist = bx::max(radius * 2.5f, 1.0f);
 
             bx::Vec3 eye(center.x + dist, center.y + dist * 0.6f,
@@ -820,8 +883,7 @@ void RenderVoxelList::processThumbnails() {
 
             constexpr bgfx::ViewId kThumbView = 100;
             bgfx::setViewFrameBuffer(kThumbView, thumb_fb_);
-            bgfx::setViewClear(kThumbView,
-                               BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
+            bgfx::setViewClear(kThumbView, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
                                0x333333FF, 1.0f, 0);
             bgfx::setViewRect(kThumbView, 0, 0, 128, 128);
             bgfx::setViewTransform(kThumbView, view, proj);
@@ -833,8 +895,7 @@ void RenderVoxelList::processThumbnails() {
 
             // blit 到 item 的持久纹理
             constexpr bgfx::ViewId kBlitView = 101;
-            bgfx::blit(kBlitView, item->thumbnail_tex, 0, 0,
-                       thumb_color_tex_);
+            bgfx::blit(kBlitView, item->thumbnail_tex, 0, 0, thumb_color_tex_);
 
             task.stage = ThumbnailTask::WAIT;
             task.wait_frames = 1;

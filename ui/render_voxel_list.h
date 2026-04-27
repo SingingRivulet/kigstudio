@@ -82,6 +82,8 @@ class RenderVoxelList {
         std::atomic<int> ref_count = 1;
         std::atomic<int> write_count = 0;
 
+        bool queue_release = false;
+
         bool showMesh = true;
         bool showVoxel = true;
         bool showCollision = true;
@@ -157,9 +159,14 @@ class RenderVoxelList {
 
     sinriv::kigstudio::voxel::collision::vec3f mouse_world_pos = {0, 0, 0};
     bool mouse_world_pos_valid = false;
+    bool mouse_world_pos_picked = false;
 
     void render_ui();
+    void render_collision_node_editor();
+    void render_plane_editor(RenderVoxelItem& item);
     void render_nav_map();
+
+    bool show_edit_segment_plane = false;
 
     inline void upload_collision(sinriv::ui::render::RenderDeferred& render) {
         std::lock_guard<std::mutex> lock(locker);
@@ -285,8 +292,22 @@ class RenderVoxelList {
         std::lock_guard<std::mutex> lock(locker);
         std::vector<int> to_remove;
         for (auto& it : items) {
-            if (it.second->ref_count == 0 && it.second->write_count == 0) {
+            int ref_count = it.second->ref_count;
+            int write_count = it.second->write_count;
+            if (it.second->queue_release) {
+                ref_count--;
+            }
+            if (ref_count == 0 && write_count == 0) {
                 to_remove.push_back(it.first);
+                // 检查是否有子节点
+                auto child1 = items.find(it.second->children[0]);
+                auto child2 = items.find(it.second->children[1]);
+                if (child1 != items.end()) {
+                    child1->second->queue_release = true;
+                }
+                if (child2 != items.end()) {
+                    child2->second->queue_release = true;
+                }
             }
         }
         for (auto& it : to_remove) {
