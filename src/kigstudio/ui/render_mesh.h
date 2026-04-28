@@ -21,6 +21,7 @@
 
 #include "kigstudio/ui/render_axis_gizmo.h"
 #include "kigstudio/voxel/voxel2mesh.h"
+#include "kigstudio/utils/vec3.h"
 
 namespace sinriv::ui::render {
     namespace mesh_detail {
@@ -42,10 +43,10 @@ namespace sinriv::ui::render {
             }
         };
 
-        struct PosNormalVertex {
-            float x, y, z;
-            float nx, ny, nz;
-
+        struct PosNormalVertex_bgfx: public sinriv::kigstudio::PosNormalVertex {
+            inline PosNormalVertex_bgfx() : sinriv::kigstudio::PosNormalVertex() {}
+            inline PosNormalVertex_bgfx(const sinriv::kigstudio::PosNormalVertex& v) : sinriv::kigstudio::PosNormalVertex(v) {}
+            inline PosNormalVertex_bgfx(float x, float y, float z, float nx, float ny, float nz) : sinriv::kigstudio::PosNormalVertex(x, y, z, nx, ny, nz) {}
             static inline void init(bgfx::VertexLayout& layout) {
                 layout.begin()
                     .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
@@ -67,7 +68,7 @@ namespace sinriv::ui::render {
         };
 
         struct AsyncVoxelMeshData {
-            std::vector<PosNormalVertex> vertices;
+            std::vector<PosNormalVertex_bgfx> vertices;
             std::vector<uint32_t> indices;
         };
 
@@ -263,12 +264,12 @@ namespace sinriv::ui::render {
         template <class T>
         void loadGeometry(T&& geometry) {
             if (!layout_initialized_) {
-                mesh_detail::PosNormalVertex::init(layout_);
+                mesh_detail::PosNormalVertex_bgfx::init(layout_);
                 layout_initialized_ = true;
             }
 
             resetBounds();
-            std::vector<mesh_detail::PosNormalVertex> vertices;
+            std::vector<mesh_detail::PosNormalVertex_bgfx> vertices;
             std::vector<uint32_t> indices;
 
             for (auto [tri, n] : geometry) {
@@ -298,7 +299,7 @@ namespace sinriv::ui::render {
 
             mesh_.vbh = bgfx::createVertexBuffer(
                 bgfx::copy(vertices.data(),
-                           static_cast<uint32_t>(vertices.size() * sizeof(mesh_detail::PosNormalVertex))),
+                           static_cast<uint32_t>(vertices.size() * sizeof(mesh_detail::PosNormalVertex_bgfx))),
                 layout_);
 
             mesh_.ibh = bgfx::createIndexBuffer(
@@ -316,10 +317,10 @@ namespace sinriv::ui::render {
             loadGeometry(sinriv::kigstudio::voxel::readSTL(filename));
         }
 
-        inline void loadGeometry(const std::vector<mesh_detail::PosNormalVertex>& vertices,
+        inline void loadGeometry(const std::vector<mesh_detail::PosNormalVertex_bgfx>& vertices,
                                  const std::vector<uint32_t>& indices) {
             if (!layout_initialized_) {
-                mesh_detail::PosNormalVertex::init(layout_);
+                mesh_detail::PosNormalVertex_bgfx::init(layout_);
                 layout_initialized_ = true;
             }
 
@@ -330,12 +331,12 @@ namespace sinriv::ui::render {
             }
 
             for (const auto& v : vertices) {
-                updateLocalBounds({v.x, v.y, v.z});
+                updateLocalBounds({v.pos.x, v.pos.y, v.pos.z});
             }
 
             mesh_.vbh = bgfx::createVertexBuffer(
                 bgfx::copy(vertices.data(),
-                           static_cast<uint32_t>(vertices.size() * sizeof(mesh_detail::PosNormalVertex))),
+                           static_cast<uint32_t>(vertices.size() * sizeof(mesh_detail::PosNormalVertex_bgfx))),
                 layout_);
 
             mesh_.ibh = bgfx::createIndexBuffer(
@@ -369,7 +370,7 @@ namespace sinriv::ui::render {
 
         void renderGBuffer(const float* transform, RenderMeshShader & shader) {
             if (!layout_initialized_) {
-                mesh_detail::PosNormalVertex::init(layout_);
+                mesh_detail::PosNormalVertex_bgfx::init(layout_);
                 layout_initialized_ = true;
             }
 
@@ -514,7 +515,7 @@ namespace sinriv::ui::render {
 
     class AsyncVoxelLoader {
        public:
-        using PosNormalVertex = mesh_detail::PosNormalVertex;
+        using PosNormalVertex_bgfx = mesh_detail::PosNormalVertex_bgfx;
         using MeshData = mesh_detail::AsyncVoxelMeshData;
 
         AsyncVoxelLoader() = default;

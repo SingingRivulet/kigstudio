@@ -178,9 +178,9 @@ struct triangle_bvh {
             const auto& v1 = vertices.at(indices.at(i));
             const auto& v2 = vertices.at(indices.at(i + 1));
             const auto& v3 = vertices.at(indices.at(i + 2));
-            insert({vec3<number_t>{v1.x, v1.y, v1.z},
-                    vec3<number_t>{v2.x, v2.y, v2.z},
-                    vec3<number_t>{v3.x, v3.y, v3.z}});
+            insert({vec3<number_t>{v1.pos.x, v1.pos.y, v1.pos.z},
+                    vec3<number_t>{v2.pos.x, v2.pos.y, v2.pos.z},
+                    vec3<number_t>{v3.pos.x, v3.pos.y, v3.pos.z}});
         }
     }
 

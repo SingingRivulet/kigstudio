@@ -452,4 +452,15 @@ namespace sinriv::kigstudio {
             return os;
         }
     };
+
+    struct PosNormalVertex {
+        vec3<float> pos;
+        vec3<float> normal;
+        inline PosNormalVertex() : pos(0, 0, 0), normal(0, 0, 0) {}
+        inline PosNormalVertex(const vec3<float>& p, const vec3<float>& n) : pos(p), normal(n) {}
+        inline PosNormalVertex(const vec3<float>& p) : pos(p), normal(0, 0, 0) {}
+        inline PosNormalVertex(const PosNormalVertex& v) : pos(v.pos), normal(v.normal) {}
+        inline PosNormalVertex(float x, float y, float z) : pos(x, y, z), normal(0, 0, 0) {}
+        inline PosNormalVertex(float x, float y, float z, float nx, float ny, float nz) : pos(x, y, z), normal(nx, ny, nz) {}
+    };
 }

@@ -235,6 +235,7 @@ void RenderVoxelList::load_stl(std::string filename,
         item->voxel_renderer.loadGeometry(data);
         item->voxel_grid_data = std::move(voxel_data);
         item->thumbnail_dirty = true;
+        item->stl_path = filename;
         {
             std::lock_guard<std::mutex> lock(locker);
             items[item->id] = std::move(item);

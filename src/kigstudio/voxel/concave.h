@@ -1,0 +1,46 @@
+#pragma once
+#include <algorithm>
+#include <cmath>
+#include <utility>
+#include <variant>
+#include <vector>
+#include "kigstudio/utils/mat.h"
+#include "kigstudio/utils/vec3.h"
+
+namespace sinriv::kigstudio::voxel::concave {
+
+using vec3f = sinriv::kigstudio::vec3<float>;
+using mat4f = sinriv::kigstudio::mat::matrix<float>;
+using vec4f = sinriv::kigstudio::mat::vec4<float>;
+
+class Base {
+    // 凹体基类
+   public:
+    virtual void triangulate() = 0;
+    virtual bool check(std::string& error_message) = 0;
+    virtual ~Base() = default;
+    void insertTriangle(const vec3f& v0, const vec3f& v1, const vec3f& v2);
+    virtual bool contains(const vec3f& p) = 0;
+
+    std::vector<PosNormalVertex> vertices;
+    std::vector<uint32_t> indices;
+};
+
+class Cone : public Base {
+    // 凹棱锥
+    // 顶点和底面顶点路径（环形）定义了一个锥体，底面顶点路径必须按照顺序排列
+    // 底面顶点路径必须至少包含3个顶点，且不能有重复顶点
+    // 底面顶点路径必须在顶点的同一侧，且不能穿过顶点
+    // 底面顶点路径不一定在同一个平面内，但必须是简单的（不能有自交）
+    // 锥体棱长视为无限长（三角形化时设为一个很大的值），base_vertices是棱上的点，而不是棱的端点
+   public:
+    vec3f vertex;                      // 顶点
+    std::vector<vec3f> base_vertices;  // 底面顶点路径（环形）
+    void triangulate() override;       // 构建三角形
+    bool
+    check(  // 检测是否有效(锥体夹角必须小于180度，从顶点方向看，路径不能有交叉)
+        std::string& error_message) override;  // 返回是否有效，并输出错误信息
+    bool contains(const vec3f& p) override;    // 检测点是否在锥体内
+};
+
+}  // namespace sinriv::kigstudio::voxel::concave

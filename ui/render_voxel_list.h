@@ -93,6 +93,9 @@ class RenderVoxelList {
 
         bgfx::TextureHandle thumbnail_tex = BGFX_INVALID_HANDLE;
         bool thumbnail_dirty = true;
+        
+        std::string stl_path;
+        std::string voxel_path;
     };
     inline RenderVoxelList() {}
     inline ~RenderVoxelList() { release(); }
