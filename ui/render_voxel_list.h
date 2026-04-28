@@ -345,6 +345,7 @@ class RenderVoxelList {
         QueueTaskType type;
         int index;
         std::string file_path;
+        float voxel_size;
     };
     std::queue<QueueTask> queue;
     std::mutex queue_mutex;
@@ -382,12 +383,13 @@ class RenderVoxelList {
         return res;
     }
 
-    inline void queue_load_stl(const std::string& file_path) {
+    inline void queue_load_stl(const std::string& file_path, float voxel_size) {
         // 将加载任务加入队列
         std::lock_guard<std::mutex> lock(queue_mutex);
         QueueTask task;
         task.type = TASK_LOAD_STL;
         task.file_path = file_path;
+        task.voxel_size = voxel_size;
         queue.push(task);
         this->queue_num = queue.size();
     }

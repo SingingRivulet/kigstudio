@@ -28,7 +28,7 @@ void RenderVoxelList::queue_thread() {
                 std::cout << "Load stl file: " << task.file_path << std::endl;
                 queue_running = true;
                 try {
-                    load_stl(task.file_path);
+                    load_stl(task.file_path, task.voxel_size);
                 } catch (std::runtime_error& e) {
                     std::cerr << "Runtime error loading STL file: " << e.what()
                               << std::endl;

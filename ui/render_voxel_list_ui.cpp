@@ -26,12 +26,24 @@ using Plane = sinriv::kigstudio::Plane<float>;
 void edit_float_stepper(const char* label, float& value, float step = 0.5f) {
     const float button_size = ImGui::GetFrameHeight();
     ImGui::PushID(label);
+    char buf[128];
+    //截断label中的##
+    snprintf(buf, sizeof(buf), "%s", label);
+    for (int i = 0; i < sizeof(buf) && buf[i] != '\0'; ++i) {
+        if (buf[i] == '#') {
+            buf[i] = '\0';
+            break;
+        }
+    }
+    ImGui::Text("%s", buf);
+    ImGui::SameLine();
     if (ImGui::Button("-", ImVec2(button_size, 0))) {
         value -= step;
     }
     ImGui::SameLine();
     ImGui::SetNextItemWidth(80.0f);
-    ImGui::DragFloat(label, &value, step, 0.0f, 0.0f, "%.2f");
+    snprintf(buf, sizeof(buf), "##%s", label);
+    ImGui::DragFloat(buf, &value, step, 0.0f, 0.0f, "%.2f");
     ImGui::SameLine();
     if (ImGui::Button("+", ImVec2(button_size, 0))) {
         value += step;
@@ -257,7 +269,11 @@ void RenderVoxelList::render_ui() {
 
 void RenderVoxelList::render_file_loader() {
     static std::string stl_file_path;
+    static float voxel_size = 1.0f;
     if (show_file_loader) {
+        ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImVec2 center = vp->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Once, ImVec2(0.5f, 0.5f));
         if (ImGui::Begin("Load STL File", nullptr,
                          ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::Text("Click the button below to load an STL file.");
@@ -273,9 +289,30 @@ void RenderVoxelList::render_file_loader() {
             } else {
                 ImGui::Text("No file selected.");
             }
+            const float button_size = ImGui::GetFrameHeight();
+            ImGui::Text("Voxel Size");
+            ImGui::SameLine();
+            if (ImGui::Button("-", ImVec2(button_size, 0))) {
+                auto voxel_size_tmp = voxel_size / 2.0f;
+                if (voxel_size_tmp >= 0.0001f) {
+                    voxel_size = voxel_size_tmp;
+                }
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80.0f);
+            ImGui::BeginDisabled(true);
+            ImGui::DragFloat("##Voxel Size", &voxel_size, 0.1f, 0.0f, 0.0f, "%.4f");
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("+", ImVec2(button_size, 0))) {
+                voxel_size = voxel_size * 2.0f;
+                if (voxel_size > 1000.0f) {
+                    voxel_size = 1000.0f;
+                }
+            }
             ImGui::BeginDisabled(stl_file_path.empty());
             if (ImGui::Button("Open")) {
-                this->queue_load_stl(stl_file_path);
+                this->queue_load_stl(stl_file_path, voxel_size);
                 show_file_loader = false;
             }
             ImGui::EndDisabled();
