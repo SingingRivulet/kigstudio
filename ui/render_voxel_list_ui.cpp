@@ -27,7 +27,7 @@ void edit_float_stepper(const char* label, float& value, float step = 0.5f) {
     const float button_size = ImGui::GetFrameHeight();
     ImGui::PushID(label);
     char buf[128];
-    //截断label中的##
+    // 截断label中的##
     snprintf(buf, sizeof(buf), "%s", label);
     for (int i = 0; i < sizeof(buf) && buf[i] != '\0'; ++i) {
         if (buf[i] == '#') {
@@ -74,10 +74,13 @@ void edit_vec3_stepper(const char* label,
 void edit_local_position_stepper(const char* label,
                                  vec3f& value,
                                  float step = 0.5f,
-                                 bool normalize = false) {
+                                 bool normalize = false,
+                                 bool show_label = true) {
     const char* axis_names[] = {"X", "Y", "Z"};
     float values[3] = {value.x, -value.y, value.z};
-    ImGui::Text("%s", label);
+    if (show_label) {
+        ImGui::Text("%s", label);
+    }
     char buf[128];
     for (int i = 0; i < 3; ++i) {
         snprintf(buf, sizeof(buf), "%s##%s", axis_names[i], label);
@@ -212,14 +215,14 @@ void RenderVoxelList::render_ui() {
             // 应用碰撞体到两个结果体素
             this->queue_do_segment();
         }
-        menu_height =
-            ImGui::CalcWindowNextAutoFitSize(ImGui::GetCurrentWindow()).y;
-        ImGui::SetWindowSize(ImVec2(window_width, menu_height));
+        menu_height = static_cast<int>(
+            ImGui::CalcWindowNextAutoFitSize(ImGui::GetCurrentWindow()).y);
+        ImGui::SetWindowSize(ImVec2((float)window_width, (float)menu_height));
     }
     ImGui::End();
 
-    ImGui::SetNextWindowPos(ImVec2(0, (float)window_height), ImGuiCond_Always,
-                            ImVec2(0.0f, 1.0f));
+    ImGui::SetNextWindowPos(ImVec2(0.0f, (float)window_height),
+                            ImGuiCond_Always, ImVec2(0.0f, 1.0f));
     if (ImGui::Begin("item status", nullptr,
                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoBringToFrontOnFocus)) {
@@ -233,7 +236,8 @@ void RenderVoxelList::render_ui() {
         item_status_height =
             ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
 
-        ImGui::SetWindowSize(ImVec2(window_width, item_status_height));
+        ImGui::SetWindowSize(
+            ImVec2((float)window_width, (float)item_status_height));
     }
     ImGui::End();
 
@@ -278,8 +282,8 @@ void RenderVoxelList::render_file_loader() {
                          ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::Text("Click the button below to load an STL file.");
             if (ImGui::Button("Open File Dialog")) {
-                const char* file = tinyfd_openFileDialog(
-                    "Open STL", "", 0, NULL, "STL file", 0);
+                const char* file = tinyfd_openFileDialog("Open STL", "", 0,
+                                                         NULL, "STL file", 0);
                 if (file) {
                     stl_file_path = std::string(file);
                 }
@@ -301,7 +305,8 @@ void RenderVoxelList::render_file_loader() {
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80.0f);
             ImGui::BeginDisabled(true);
-            ImGui::DragFloat("##Voxel Size", &voxel_size, 0.1f, 0.0f, 0.0f, "%.4f");
+            ImGui::DragFloat("##Voxel Size", &voxel_size, 0.1f, 0.0f, 0.0f,
+                             "%.4f");
             ImGui::EndDisabled();
             ImGui::SameLine();
             if (ImGui::Button("+", ImVec2(button_size, 0))) {
@@ -322,6 +327,229 @@ void RenderVoxelList::render_file_loader() {
             }
         }
         ImGui::End();
+    }
+}
+
+void RenderVoxelList::render_collision_body_editor(RenderVoxelItem& item) {
+    if (ImGui::CollapsingHeader("collision root",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        edit_transform_controls(item.collision_group.transform);
+    }
+
+    if (ImGui::CollapsingHeader("collision group",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        static int new_geometry_type = 0;
+        const char* geometry_types[] = {"Sphere", "Cylinder", "Capsule", "Box"};
+
+        ImGui::SetNextItemWidth(140.0f);
+        ImGui::Combo("new shape", &new_geometry_type, geometry_types,
+                     IM_ARRAYSIZE(geometry_types));
+        ImGui::SameLine();
+        if (ImGui::Button("Add shape")) {
+            add_collision_geometry(item.collision_group, new_geometry_type);
+        }
+
+        auto& geometries = item.collision_group.geometries();
+        int remove_index = -1;
+        for (int member_idx = 0;
+             member_idx < static_cast<int>(geometries.size()); ++member_idx) {
+            auto& instance = geometries[member_idx];
+            ImGui::PushID(member_idx);
+            const std::string header =
+                std::string(geometry_type_name(instance)) + " [" +
+                std::to_string(member_idx) + "]";
+            if (ImGui::CollapsingHeader(header.c_str(),
+                                        ImGuiTreeNodeFlags_DefaultOpen)) {
+                edit_transform_controls(instance.transform);
+                ImGui::Separator();
+                edit_geometry_shape(instance);
+                ImGui::Separator();
+                if (ImGui::Button("Delete")) {
+                    remove_index = member_idx;
+                }
+            }
+            ImGui::PopID();
+        }
+
+        if (remove_index >= 0) {
+            geometries.erase(geometries.begin() + remove_index);
+        }
+
+        if (geometries.empty()) {
+            ImGui::TextUnformatted("No collision shapes.");
+        }
+    }
+}
+void RenderVoxelList::render_concave_cone_editor(RenderVoxelItem& item) {
+    enum class PickMode { None, Append, Replace, InsertBefore, InsertAfter };
+
+    static PickMode pick_mode = PickMode::None;
+    static int pick_index = -1;
+
+    // ===== apex =====
+    if (ImGui::CollapsingHeader("concave cone apex",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        edit_local_position_stepper("apex", item.concave_cone.apex);
+    }
+
+    // ===== error info =====
+    if (!item.err_info.empty()) {
+        ImGui::TextColored(ImVec4(1, 0, 0, 1), "%s", item.err_info.c_str());
+    }
+
+    // ===== vertices =====
+    if (ImGui::CollapsingHeader("concave cone vertices",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        // --- append 模式 ---
+        if (pick_mode == PickMode::Append) {
+            if (ImGui::Button("add vertex (click in scene...)")) {
+                pick_mode = PickMode::None;
+                pick_index = -1;
+            }
+        } else {
+            if (ImGui::Button("add vertex")) {
+                pick_mode = PickMode::Append;
+                pick_index = -1;
+            }
+        }
+
+        // --- clear ---
+        if (ImGui::Button("clear vertices")) {
+            item.concave_cone.base_vertices.clear();
+            item.err_info.clear();
+            item.concave_cone.check(item.err_info);
+        }
+
+        // ===== vertex list =====
+        int erase_index = -1;
+
+        for (int i = 0; i < (int)item.concave_cone.base_vertices.size(); ++i) {
+            auto& v = item.concave_cone.base_vertices[i];
+
+            char label[64];
+            snprintf(label, sizeof(label), "vertex %d##%d", i, i);
+
+            if (ImGui::CollapsingHeader(label)) {
+                // ImGui::Text("pos: %.3f %.3f %.3f", v.x, v.y, v.z);
+
+                edit_local_position_stepper(("edit##" + std::to_string(i)).c_str(), v, 0.1f, false, false);
+
+                // --- delete ---
+                if (ImGui::Button(("delete##" + std::to_string(i)).c_str())) {
+                    erase_index = i;
+                }
+
+                ImGui::SameLine();
+
+                // --- replace ---
+                if (pick_mode == PickMode::Replace && pick_index == i) {
+                    if (ImGui::Button(
+                            ("replace (...)##" + std::to_string(i)).c_str())) {
+                        pick_mode = PickMode::None;
+                        pick_index = -1;
+                    }
+                } else {
+                    if (ImGui::Button(
+                            ("replace##" + std::to_string(i)).c_str())) {
+                        pick_mode = PickMode::Replace;
+                        pick_index = i;
+                    }
+                }
+
+                ImGui::SameLine();
+
+                // --- insert after ---
+                if (pick_mode == PickMode::InsertAfter && pick_index == i) {
+                    if (ImGui::Button(
+                            ("insert after (...)##" + std::to_string(i))
+                                .c_str())) {
+                        pick_mode = PickMode::None;
+                        pick_index = -1;
+                    }
+                } else {
+                    if (ImGui::Button(
+                            ("insert after##" + std::to_string(i)).c_str())) {
+                        pick_mode = PickMode::InsertAfter;
+                        pick_index = i;
+                    }
+                }
+
+                ImGui::SameLine();
+
+                // --- insert before ---
+                if (pick_mode == PickMode::InsertBefore && pick_index == i) {
+                    if (ImGui::Button(
+                            ("insert before (...)##" + std::to_string(i))
+                                .c_str())) {
+                        pick_mode = PickMode::None;
+                        pick_index = -1;
+                    }
+                } else {
+                    if (ImGui::Button(
+                            ("insert before##" + std::to_string(i)).c_str())) {
+                        pick_mode = PickMode::InsertBefore;
+                        pick_index = i;
+                    }
+                }
+            }
+        }
+
+        // ===== 删除处理 =====
+        if (erase_index >= 0 &&
+            erase_index < (int)item.concave_cone.base_vertices.size()) {
+            item.concave_cone.base_vertices.erase(
+                item.concave_cone.base_vertices.begin() + erase_index);
+
+            item.err_info.clear();
+            item.concave_cone.check(item.err_info);
+        }
+
+        // ===== picking 执行（统一入口）=====
+        if (pick_mode != PickMode::None && mouse_world_pos_valid &&
+            mouse_world_pos_picked)  // ⚠ 必须是点击瞬间
+        {
+            auto& verts = item.concave_cone.base_vertices;
+
+            switch (pick_mode) {
+                case PickMode::Append:
+                    verts.push_back(mouse_world_pos);
+                    break;
+
+                case PickMode::Replace:
+                    if (pick_index >= 0 && pick_index < (int)verts.size())
+                        verts[pick_index] = mouse_world_pos;
+                    pick_mode = PickMode::None;
+                    break;
+
+                case PickMode::InsertAfter:
+                    if (pick_index >= 0 && pick_index < (int)verts.size())
+                        verts.insert(verts.begin() + pick_index + 1,
+                                     mouse_world_pos);
+                    pick_mode = PickMode::None;
+                    break;
+
+                case PickMode::InsertBefore:
+                    if (pick_index >= 0 && pick_index < (int)verts.size())
+                        verts.insert(verts.begin() + pick_index,
+                                     mouse_world_pos);
+                    pick_mode = PickMode::None;
+                    break;
+
+                default:
+                    break;
+            }
+
+            item.err_info.clear();
+            item.concave_cone.check(item.err_info);
+
+            // 一次性消费
+            pick_index = -1;
+        }
+
+    } else {
+        // 折叠时重置
+        pick_mode = PickMode::None;
+        pick_index = -1;
     }
 }
 
@@ -531,468 +759,27 @@ void RenderVoxelList::render_collision_node_editor() {
             ImGui::Text("render item: %d", item.id);
             ImGui::Separator();
 
-            const char* segment_modes[] = {"Collision", "Plane"};
-            int current_segment_mode =
-                item.segment_mode == RenderVoxelItem::PLANE ? 1 : 0;
+            const char* segment_mode_names[] = {"Collision", "Plane",
+                                                "Concave Cone"};
+            const enum RenderVoxelItem::segment_mode segment_modes[] = {
+                RenderVoxelItem::COLLISION, RenderVoxelItem::PLANE,
+                RenderVoxelItem::CONCAVE_CONE};
+            int current_segment_mode = segment_modes[(int)item.segment_mode];
             if (ImGui::Combo("segment mode", &current_segment_mode,
-                             segment_modes, IM_ARRAYSIZE(segment_modes))) {
-                item.segment_mode = current_segment_mode == 0
-                                        ? RenderVoxelItem::COLLISION
-                                        : RenderVoxelItem::PLANE;
+                             segment_mode_names,
+                             IM_ARRAYSIZE(segment_mode_names))) {
+                item.segment_mode = segment_modes[current_segment_mode];
             }
-            render_plane_editor(item);
-
-            if (ImGui::CollapsingHeader("collision root",
-                                        ImGuiTreeNodeFlags_DefaultOpen)) {
-                edit_transform_controls(item.collision_group.transform);
-            }
-
-            if (ImGui::CollapsingHeader("collision group",
-                                        ImGuiTreeNodeFlags_DefaultOpen)) {
-                static int new_geometry_type = 0;
-                const char* geometry_types[] = {"Sphere", "Cylinder", "Capsule",
-                                                "Box"};
-
-                ImGui::SetNextItemWidth(140.0f);
-                ImGui::Combo("new shape", &new_geometry_type, geometry_types,
-                             IM_ARRAYSIZE(geometry_types));
-                ImGui::SameLine();
-                if (ImGui::Button("Add shape")) {
-                    add_collision_geometry(item.collision_group,
-                                           new_geometry_type);
-                }
-
-                auto& geometries = item.collision_group.geometries();
-                int remove_index = -1;
-                for (int member_idx = 0;
-                     member_idx < static_cast<int>(geometries.size());
-                     ++member_idx) {
-                    auto& instance = geometries[member_idx];
-                    ImGui::PushID(member_idx);
-                    const std::string header =
-                        std::string(geometry_type_name(instance)) + " [" +
-                        std::to_string(member_idx) + "]";
-                    if (ImGui::CollapsingHeader(
-                            header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
-                        edit_transform_controls(instance.transform);
-                        ImGui::Separator();
-                        edit_geometry_shape(instance);
-                        ImGui::Separator();
-                        if (ImGui::Button("Delete")) {
-                            remove_index = member_idx;
-                        }
-                    }
-                    ImGui::PopID();
-                }
-
-                if (remove_index >= 0) {
-                    geometries.erase(geometries.begin() + remove_index);
-                }
-
-                if (geometries.empty()) {
-                    ImGui::TextUnformatted("No collision shapes.");
-                }
+            if (item.segment_mode == RenderVoxelItem::PLANE) {
+                render_plane_editor(item);
+            } else if (item.segment_mode == RenderVoxelItem::COLLISION) {
+                render_collision_body_editor(item);
+            } else if (item.segment_mode == RenderVoxelItem::CONCAVE_CONE) {
+                render_concave_cone_editor(item);
             }
         }
     }
     ImGui::End();
 }
 
-void RenderVoxelList::render_nav_map() {
-    std::lock_guard<std::mutex> lock(locker);
-    ImGui::SetNextWindowPos(ImVec2(0.f, (float)menu_height), ImGuiCond_Always,
-                            ImVec2(0.0f, 0.0f));
-    ImGui::SetNextWindowSize(ImVec2(300, 600), ImGuiCond_Once);
-    if (!ImGui::Begin("nav node map")) {
-        ImGui::End();
-        return;
-    }
-
-    ImNodes::BeginNodeEditor();
-
-    int link_id = 0;
-    for (auto& [id, item] : this->items) {
-        // 设置节点固定坐标
-        ImNodes::SetNodeGridSpacePos(
-            id, ImVec2((float)item->nav_node_position[1] * 1.5,
-                       (float)item->nav_node_position[0] * 1.5));
-        // 禁止拖动
-        ImNodes::SetNodeDraggable(id, false);
-
-        // 当前选中节点高亮
-        bool is_current = (id == this->render_id);
-        if (is_current) {
-            ImNodes::PushColorStyle(ImNodesCol_TitleBar,
-                                    IM_COL32(56, 120, 56, 255));
-            ImNodes::PushColorStyle(ImNodesCol_TitleBarHovered,
-                                    IM_COL32(66, 150, 66, 255));
-            ImNodes::PushColorStyle(ImNodesCol_TitleBarSelected,
-                                    IM_COL32(76, 170, 76, 255));
-        }
-
-        ImNodes::BeginNode(id);
-
-        ImNodes::BeginNodeTitleBar();
-        if (item->write_count > 0) {
-            ImGui::Text("Node %d (updating...)", id);
-        } else {
-            ImGui::Text("Node %d", id);
-        }
-        ImNodes::EndNodeTitleBar();
-
-        // Input attribute (来自父节点)
-        ImNodes::BeginInputAttribute(id * 10 + 1, ImNodesPinShape_CircleFilled);
-        ImGui::Text("");
-        ImNodes::EndInputAttribute();
-
-        // ImGui::Text(
-        //     "%s",
-        //     item->segment_mode == RenderVoxelItem::COLLISION ? "Collision"
-        //                                                      : "Plane");
-
-        // 缩略图
-        if (bgfx::isValid(item->thumbnail_tex)) {
-            ImGui::Image(item->thumbnail_tex, ImVec2(64.0f, 64.0f));
-        } else {
-            ImGui::Dummy(ImVec2(64.0f, 64.0f));
-        }
-
-        // Output attributes (连向子节点)
-        ImNodes::BeginOutputAttribute(id * 10 + 2,
-                                      ImNodesPinShape_CircleFilled);
-        ImGui::Text("");
-        ImNodes::EndOutputAttribute();
-
-        ImNodes::BeginOutputAttribute(id * 10 + 3,
-                                      ImNodesPinShape_CircleFilled);
-        ImGui::Text("");
-        ImNodes::EndOutputAttribute();
-
-        ImNodes::EndNode();
-
-        if (is_current) {
-            ImNodes::PopColorStyle();
-            ImNodes::PopColorStyle();
-            ImNodes::PopColorStyle();
-        }
-    }
-
-    // 绘制连线：父节点的 output 连向子节点的 input
-    for (auto& [id, item] : this->items) {
-        for (int i = 0; i < 2; ++i) {
-            int child_id = item->children[i];
-            if (this->items.find(child_id) != this->items.end()) {
-                int parent_attr_id = id * 10 + (i == 0 ? 2 : 3);
-                int child_attr_id = child_id * 10 + 1;
-                ImNodes::Link(link_id++, parent_attr_id, child_attr_id);
-            }
-        }
-    }
-
-    ImNodes::MiniMap(0.2f, ImNodesMiniMapLocation_BottomLeft);
-    ImNodes::EndNodeEditor();
-
-    // 点击节点切换 render_id
-    int num_selected = ImNodes::NumSelectedNodes();
-    if (num_selected > 0) {
-        static std::vector<int> selected_nodes;
-        selected_nodes.resize(num_selected);
-        ImNodes::GetSelectedNodes(selected_nodes.data());
-        if (!selected_nodes.empty()) {
-            this->setRenderId_unsafe(selected_nodes[0]);
-        }
-        ImNodes::ClearNodeSelection();
-    }
-
-    ImGui::End();
-}
-
-struct LayoutContext {
-    float next_x = 0.0f;
-    float x_spacing = 120.0f;
-    float y_spacing = 100.0f;
-};
-
-inline float layout_node(RenderVoxelList& mgr,
-                         int node_id,
-                         int depth,
-                         LayoutContext& ctx,
-                         std::unordered_map<int, int>& visit_state,
-                         bool& has_cycle) {
-    auto it = mgr.items.find(node_id);
-
-    // 不存在 = 无效节点
-    if (it == mgr.items.end()) {
-        return -1.0f;
-    }
-
-    // 环检测
-    if (visit_state[node_id] == 1) {
-        std::cerr << "Cycle detected at node " << node_id << std::endl;
-        has_cycle = true;
-        return -1.0f;
-    }
-
-    // 已经处理过
-    if (visit_state[node_id] == 2) {
-        return (float)it->second->nav_node_position[0];
-    }
-
-    visit_state[node_id] = 1;
-
-    auto& node = *it->second;
-
-    float left_x = layout_node(mgr, node.children[0], depth + 1, ctx,
-                               visit_state, has_cycle);
-
-    float my_x;
-
-    if (left_x < 0) {
-        my_x = (float)ctx.next_x;
-        ctx.next_x += ctx.x_spacing;
-    } else {
-        my_x = left_x;
-    }
-
-    float right_x = layout_node(mgr, node.children[1], depth + 1, ctx,
-                                visit_state, has_cycle);
-
-    if (left_x >= 0 && right_x >= 0) {
-        my_x = (left_x + right_x) * 0.5f;
-    }
-
-    node.nav_node_position[0] = (int)my_x;
-    node.nav_node_position[1] = depth * ctx.y_spacing;
-
-    visit_state[node_id] = 2;
-
-    return my_x;
-}
-
-inline void compute_layout(RenderVoxelList& mgr) {
-    auto roots = mgr.find_roots();
-    std::cout << "compute_layout roots: " << roots.size() << std::endl;
-
-    LayoutContext ctx;
-    std::unordered_map<int, int> visit_state;
-    bool has_cycle = false;
-
-    for (int root_id : roots) {
-        layout_node(mgr, root_id, 0, ctx, visit_state, has_cycle);
-        ctx.next_x += ctx.x_spacing * 2;
-    }
-
-    if (has_cycle) {
-        std::cerr << "WARNING: Cycle detected in RenderVoxelItem graph!"
-                  << std::endl;
-    }
-}
-
-std::vector<int> RenderVoxelList::find_roots() {
-    std::unordered_set<int> has_parent;
-
-    for (auto& [id, item] : this->items) {
-        for (int i = 0; i < 2; ++i) {
-            int child = item->children[i];
-            if (this->items.find(child) != this->items.end()) {
-                has_parent.insert(child);
-            }
-        }
-    }
-
-    std::vector<int> roots;
-
-    for (auto& [id, item] : this->items) {
-        if (!has_parent.count(id)) {
-            roots.push_back(id);
-        }
-    }
-
-    return roots;
-}
-
-void RenderVoxelList::update_nav_node_position() {
-    if (update_nav_node_status) {
-        std::cout << "update nav node position" << std::endl;
-        compute_layout(*this);
-    }
-    update_nav_node_status = false;
-}
-
-void RenderVoxelList::ensureThumbnailResources() {
-    if (bgfx::isValid(thumb_fb_)) {
-        return;
-    }
-    constexpr uint16_t ts = 128;
-    constexpr uint64_t flags =
-        BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
-
-    thumb_color_tex_ = bgfx::createTexture2D(ts, ts, false, 1,
-                                             bgfx::TextureFormat::BGRA8, flags);
-    thumb_depth_tex_ = bgfx::createTexture2D(ts, ts, false, 1,
-                                             bgfx::TextureFormat::D32F, flags);
-
-    bgfx::TextureHandle attachments[] = {thumb_color_tex_, thumb_depth_tex_};
-    thumb_fb_ = bgfx::createFrameBuffer(2, attachments, false);
-
-    thumb_shader_ = std::make_unique<RenderMeshShader>(100, 101);
-}
-
-void RenderVoxelList::destroyThumbnailResources() {
-    if (bgfx::isValid(thumb_fb_)) {
-        bgfx::destroy(thumb_fb_);
-        thumb_fb_ = BGFX_INVALID_HANDLE;
-    }
-    if (bgfx::isValid(thumb_color_tex_)) {
-        bgfx::destroy(thumb_color_tex_);
-        thumb_color_tex_ = BGFX_INVALID_HANDLE;
-    }
-    if (bgfx::isValid(thumb_depth_tex_)) {
-        bgfx::destroy(thumb_depth_tex_);
-        thumb_depth_tex_ = BGFX_INVALID_HANDLE;
-    }
-    thumb_shader_.reset();
-}
-
-void RenderVoxelList::processThumbnails() {
-    // 1. 为 dirty 的 items 入队
-    {
-        std::lock_guard<std::mutex> lock(locker);
-        for (auto& [id, item] : items) {
-            if (item->thumbnail_dirty) {
-                // 避免重复入队
-                bool already_queued = false;
-                std::queue<ThumbnailTask> temp = thumbnail_queue;
-                while (!temp.empty()) {
-                    if (temp.front().item_id == id) {
-                        already_queued = true;
-                        break;
-                    }
-                    temp.pop();
-                }
-                if (!already_queued) {
-                    thumbnail_queue.push({id, ThumbnailTask::RENDER, 0});
-                }
-                item->thumbnail_dirty = false;
-            }
-        }
-    }
-
-    if (thumbnail_queue.empty()) {
-        return;
-    }
-
-    auto& task = thumbnail_queue.front();
-
-    switch (task.stage) {
-        case ThumbnailTask::RENDER: {
-            std::lock_guard<std::mutex> lock(locker);
-            auto it = items.find(task.item_id);
-            if (it == items.end()) {
-                thumbnail_queue.pop();
-                return;
-            }
-            auto& item = it->second;
-
-            // 如果 voxel_renderer 为空但有 voxel_grid_data，先生成 mesh（放到
-            // queue 线程）
-            if (item->voxel_renderer.empty() &&
-                item->voxel_grid_data.num_chunk() > 0) {
-                // 检查是否已有生成结果
-                {
-                    std::lock_guard<std::mutex> lock(thumbnail_mesh_mutex);
-                    auto res_it = thumbnail_mesh_results.find(task.item_id);
-                    if (res_it != thumbnail_mesh_results.end()) {
-                        item->voxel_renderer.loadGeometry(res_it->second);
-                        thumbnail_mesh_results.erase(res_it);
-                        // 继续执行后续 RENDER 逻辑
-                    } else {
-                        // 没有结果，检查是否已提交任务
-                        if (thumbnail_mesh_pending.find(task.item_id) ==
-                            thumbnail_mesh_pending.end()) {
-                            // 提交任务到 queue
-                            std::lock_guard<std::mutex> qlock(queue_mutex);
-                            QueueTask qtask;
-                            qtask.type = TASK_GENERATE_THUMBNAIL_MESH;
-                            qtask.index = task.item_id;
-                            queue.push(qtask);
-                            thumbnail_mesh_pending.insert(task.item_id);
-                        }
-                        return;  // 等待生成完成
-                    }
-                }
-            }
-
-            if (item->voxel_renderer.empty()) {
-                thumbnail_queue.pop();
-                return;
-            }
-
-            ensureThumbnailResources();
-            if (!thumb_shader_ || !thumb_shader_->ensureGBufferProgram()) {
-                return;
-            }
-
-            auto& mesh = item->voxel_renderer.getMeshRenderer();
-            auto [min_b, max_b] = mesh.getLocalBounds();
-            bx::Vec3 center((min_b.x + max_b.x) * 0.5f,
-                            (min_b.y + max_b.y) * 0.5f,
-                            (min_b.z + max_b.z) * 0.5f);
-            float dx = max_b.x - min_b.x;
-            float dy = max_b.y - min_b.y;
-            float dz = max_b.z - min_b.z;
-            float radius = bx::sqrt(dx * dx + dy * dy + dz * dz) * 0.5f;
-            float dist = bx::max(radius * 2.5f, 1.0f);
-
-            bx::Vec3 eye(center.x + dist, center.y + dist * 0.6f,
-                         center.z + dist * 0.4f);
-            float view[16];
-            bx::mtxLookAt(view, eye, center);
-            float proj[16];
-            bx::mtxProj(proj, 45.0f, 1.0f, 0.1f, dist * 10.0f,
-                        bgfx::getCaps()->homogeneousDepth);
-
-            // 为 item 创建持久的缩略图纹理
-            if (!bgfx::isValid(item->thumbnail_tex)) {
-                item->thumbnail_tex = bgfx::createTexture2D(
-                    128, 128, false, 1, bgfx::TextureFormat::BGRA8,
-                    BGFX_TEXTURE_BLIT_DST | BGFX_SAMPLER_U_CLAMP |
-                        BGFX_SAMPLER_V_CLAMP);
-            }
-
-            constexpr bgfx::ViewId kThumbView = 100;
-            bgfx::setViewFrameBuffer(kThumbView, thumb_fb_);
-            bgfx::setViewClear(kThumbView, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
-                               0x333333FF, 1.0f, 0);
-            bgfx::setViewRect(kThumbView, 0, 0, 128, 128);
-            bgfx::setViewTransform(kThumbView, view, proj);
-
-            float identity[16];
-            bx::mtxIdentity(identity);
-            mesh.renderGBuffer(identity, *thumb_shader_);
-            bgfx::touch(kThumbView);
-
-            // blit 到 item 的持久纹理
-            constexpr bgfx::ViewId kBlitView = 101;
-            bgfx::blit(kBlitView, item->thumbnail_tex, 0, 0, thumb_color_tex_);
-
-            task.stage = ThumbnailTask::WAIT;
-            task.wait_frames = 1;
-            break;
-        }
-        case ThumbnailTask::WAIT: {
-            if (task.wait_frames > 0) {
-                task.wait_frames--;
-            }
-            if (task.wait_frames <= 0) {
-                task.stage = ThumbnailTask::DONE;
-            }
-            break;
-        }
-        case ThumbnailTask::DONE: {
-            thumbnail_queue.pop();
-            break;
-        }
-    }
-}
 }  // namespace sinriv::ui::render

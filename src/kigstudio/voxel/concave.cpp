@@ -83,13 +83,6 @@ inline bool inSameHemisphere(const std::vector<vec3f>& dirs) {
                 return false;
     return true;
 }
-inline bool inSameHemisphere(const std::vector<vec3f>& dirs) {
-    for (int i = 0; i < dirs.size(); ++i)
-        for (int j = i + 1; j < dirs.size(); ++j)
-            if (dot(dirs[i], dirs[j]) <= -1.0f + 1e-4f)
-                return false;
-    return true;
-}
 inline float cross2(vec2 a, vec2 b, vec2 c) {
     return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
@@ -150,7 +143,7 @@ inline bool checkAngleMonotonic(const std::vector<vec2>& proj) {
     return true;
 }
 
-bool Cone::check(std::string& err) {
+bool Cone::check(std::string& err) const {
     if (base_vertices.size() < 3) {
         err = "too few vertices";
         return false;
@@ -161,7 +154,7 @@ bool Cone::check(std::string& err) {
         return false;
     }
 
-    auto dirs = computeDirections(vertex, base_vertices);
+    auto dirs = computeDirections(apex, base_vertices);
 
     if (!inSameHemisphere(dirs)) {
         err = "span >= 180 deg";
@@ -201,10 +194,10 @@ inline bool pointInPolygon(const std::vector<vec2>& poly, vec2 p) {
     return inside;
 }
 
-bool Cone::contains(const vec3f& p) {
-    vec3f d = normalize(p - vertex);
+bool Cone::contains(const vec3f& p) const {
+    vec3f d = normalize(p - apex);
 
-    auto dirs = computeDirections(vertex, base_vertices);
+    auto dirs = computeDirections(apex, base_vertices);
     vec3f dir = computeConeDir(dirs);
 
     vec3f right, up;
@@ -227,7 +220,7 @@ void Cone::triangulate() {
     std::vector<vec3f> dirs;
     dirs.reserve(n);
     for (auto& v : base_vertices)
-        dirs.push_back(normalize(v - vertex));
+        dirs.push_back(normalize(v - apex));
 
     vec3f cone_dir{0, 0, 0};
     for (auto& d : dirs)
@@ -240,7 +233,7 @@ void Cone::triangulate() {
 
     // ---------- 2. 生成三角形 ----------
     for (int i = 0; i < n; ++i) {
-        const vec3f& v0 = vertex;
+        const vec3f& v0 = apex;
         const vec3f& v1 = base_vertices[i];
         const vec3f& v2 = base_vertices[(i + 1) % n];
 

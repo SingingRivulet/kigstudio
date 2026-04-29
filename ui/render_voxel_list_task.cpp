@@ -2,6 +2,47 @@
 #include "render_voxel_list.h"
 namespace sinriv::ui::render {
 
+void RenderVoxelList::process_queue_result() {
+    // 在 UI 线程中安全释放被后台线程移入的 item
+    {
+        std::lock_guard<std::mutex> lock(pending_deletion_mutex);
+        pending_deletion.clear();
+    }
+    // 回收ref_count和write_count为0的item
+    std::lock_guard<std::mutex> lock(locker);
+    std::vector<int> to_remove;
+    for (auto& it : items) {
+        int ref_count = it.second->ref_count;
+        int write_count = it.second->write_count;
+        if (it.second->queue_release) {
+            ref_count--;
+        }
+        if (ref_count == 0 && write_count == 0) {
+            to_remove.push_back(it.first);
+            // 检查是否有子节点
+            auto child1 = items.find(it.second->children[0]);
+            auto child2 = items.find(it.second->children[1]);
+            if (child1 != items.end()) {
+                child1->second->queue_release = true;
+            }
+            if (child2 != items.end()) {
+                child2->second->queue_release = true;
+            }
+        }
+    }
+    for (auto& it : to_remove) {
+        items.erase(it);
+        update_nav_node_status = true;
+    }
+    // 重新选一个可用的render_id
+    if (items.find(render_id) == items.end()) {
+        auto it = items.begin();
+        if (it != items.end()) {
+            render_id = it->first;
+        }
+    }
+}
+
 void RenderVoxelList::queue_thread() {
     std::cout << "Queue thread started" << std::endl;
     while (true) {
@@ -38,8 +79,9 @@ void RenderVoxelList::queue_thread() {
                 } catch (std::exception& e) {
                     std::cerr << "Error loading STL file: " << e.what()
                               << std::endl;
-                } catch (... ) {
-                    std::cerr << "Unknown error loading STL file. " << std::endl;
+                } catch (...) {
+                    std::cerr << "Unknown error loading STL file. "
+                              << std::endl;
                 }
 
                 queue_running = false;
@@ -58,7 +100,7 @@ void RenderVoxelList::queue_thread() {
                 } catch (std::exception& e) {
                     std::cerr << "Error doing segment: " << e.what()
                               << std::endl;
-                } catch (... ) {
+                } catch (...) {
                     std::cerr << "Unknown error doing segment. " << std::endl;
                 }
                 queue_running = false;
@@ -127,12 +169,13 @@ void RenderVoxelList::queue_thread() {
                     std::cerr << "Runtime error generating thumbnail mesh: "
                               << e.what() << std::endl;
                 } catch (std::logic_error& e) {
-                    std::cerr << "Logic error generating thumbnail mesh: "
-                              << e.what() << std::endl;
+                    std::cerr
+                        << "Logic error generating thumbnail mesh: " << e.what()
+                        << std::endl;
                 } catch (std::exception& e) {
                     std::cerr << "Error generating thumbnail mesh: " << e.what()
                               << std::endl;
-                } catch (... ) {
+                } catch (...) {
                     std::cerr << "Unknown error generating thumbnail mesh. "
                               << std::endl;
                 }

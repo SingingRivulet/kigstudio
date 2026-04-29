@@ -16,6 +16,7 @@
 #include "kigstudio/utils/plane.h"
 #include "kigstudio/utils/vec3.h"
 #include "kigstudio/voxel/voxelizer_svo.h"
+#include "kigstudio/voxel/concave.h"
 
 namespace sinriv::ui::render {
 
@@ -42,6 +43,7 @@ class RenderVoxelList {
         int id = -1;
         int children[2] = {-1, -1};
         int nav_node_position[2] = {0, 0};  // 在分割演示图中的位置
+        std::string err_info;
         RenderVoxelList* manager = nullptr;
         RenderVoxelItem() = default;
         ~RenderVoxelItem() {
@@ -50,8 +52,9 @@ class RenderVoxelList {
             }
         }
         enum segment_mode {
-            COLLISION,
-            PLANE,
+            COLLISION = 0,
+            PLANE = 1,
+            CONCAVE_CONE = 2
         } segment_mode = COLLISION;
 
         sinriv::ui::render::RenderMesh mesh_renderer;
@@ -60,6 +63,7 @@ class RenderVoxelList {
 
         sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
         kigstudio::Plane<float> plane;
+        kigstudio::voxel::concave::Cone concave_cone;
 
         void render_gbuffer(const float* transform,
                             sinriv::ui::render::RenderMeshShader& mesh_shader);
@@ -78,6 +82,10 @@ class RenderVoxelList {
                 return std::move(voxel_grid_data.segment(collision_group));
             } else if (segment_mode == PLANE) {
                 return std::move(voxel_grid_data.segment(plane));
+            } else if (segment_mode == CONCAVE_CONE) {
+                return std::move(voxel_grid_data.segment(concave_cone));
+            } else {
+                throw std::runtime_error("未知的分割模式");
             }
         }
 
@@ -169,6 +177,8 @@ class RenderVoxelList {
     void render_ui();
     void render_collision_node_editor();
     void render_plane_editor(RenderVoxelItem& item);
+    void render_collision_body_editor(RenderVoxelItem& item);
+    void render_concave_cone_editor(RenderVoxelItem& item);
     void render_nav_map();
     void render_file_loader();
 
@@ -284,46 +294,7 @@ class RenderVoxelList {
     std::vector<std::unique_ptr<RenderVoxelItem>> pending_deletion;
     std::mutex pending_deletion_mutex;
 
-    inline void process_queue_result() {
-        // 在 UI 线程中安全释放被后台线程移入的 item
-        {
-            std::lock_guard<std::mutex> lock(pending_deletion_mutex);
-            pending_deletion.clear();
-        }
-        // 回收ref_count和write_count为0的item
-        std::lock_guard<std::mutex> lock(locker);
-        std::vector<int> to_remove;
-        for (auto& it : items) {
-            int ref_count = it.second->ref_count;
-            int write_count = it.second->write_count;
-            if (it.second->queue_release) {
-                ref_count--;
-            }
-            if (ref_count == 0 && write_count == 0) {
-                to_remove.push_back(it.first);
-                // 检查是否有子节点
-                auto child1 = items.find(it.second->children[0]);
-                auto child2 = items.find(it.second->children[1]);
-                if (child1 != items.end()) {
-                    child1->second->queue_release = true;
-                }
-                if (child2 != items.end()) {
-                    child2->second->queue_release = true;
-                }
-            }
-        }
-        for (auto& it : to_remove) {
-            items.erase(it);
-            update_nav_node_status = true;
-        }
-        // 重新选一个可用的render_id
-        if (items.find(render_id) == items.end()) {
-            auto it = items.begin();
-            if (it != items.end()) {
-                render_id = it->first;
-            }
-        }
-    }
+    void process_queue_result();
 
     inline void setRenderId(int id) {
         std::lock_guard<std::mutex> lock(locker);
@@ -394,7 +365,7 @@ class RenderVoxelList {
         task.file_path = file_path;
         task.voxel_size = voxel_size;
         queue.push(task);
-        this->queue_num = queue.size();
+        this->queue_num = static_cast<int>(queue.size());
     }
 
     inline void queue_do_segment(int index) {
@@ -404,7 +375,7 @@ class RenderVoxelList {
         task.type = TASK_SEGMENT;
         task.index = index;
         queue.push(task);
-        this->queue_num = queue.size();
+        this->queue_num = static_cast<int>(queue.size());
     }
 
     inline void queue_do_segment() {

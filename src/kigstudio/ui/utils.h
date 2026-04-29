@@ -157,4 +157,32 @@ inline auto sdlToImGuiKey(SDL_Keycode key) -> ImGuiKey {
             return ImGuiKey_None;
     }
 }
+
+inline bgfx::ShaderHandle loadShader(const std::string& path) {
+    // 打开二进制文件流
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        return BGFX_INVALID_HANDLE;  // 文件打开失败
+    }
+
+    // 获取文件大小
+    const auto size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    if (size <= 0) {
+        return BGFX_INVALID_HANDLE;  // 无效文件大小
+    }
+
+    // 读取文件内容
+    std::vector<char> data(static_cast<std::size_t>(size));
+    file.read(data.data(), data.size());
+
+    // 检查实际读取量（可选但推荐）
+    if (file.gcount() != static_cast<std::streamsize>(data.size())) {
+        return BGFX_INVALID_HANDLE;  // 读取不完整
+    }
+
+    // 创建shader并返回
+    return bgfx::createShader(
+        bgfx::copy(data.data(), static_cast<uint32_t>(data.size())));
+}
 }  // namespace sinriv::kigstudio::ui

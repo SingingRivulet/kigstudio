@@ -72,27 +72,6 @@ namespace sinriv::ui::render {
             std::vector<uint32_t> indices;
         };
 
-        inline bgfx::ShaderHandle loadShader(const std::string& path) {
-            std::cout << "load shader:" << path << std::endl;
-            FILE* file = std::fopen(path.c_str(), "rb");
-            if (!file) {
-                return BGFX_INVALID_HANDLE;
-            }
-
-            std::fseek(file, 0, SEEK_END);
-            const long size = std::ftell(file);
-            std::fseek(file, 0, SEEK_SET);
-            if (size <= 0) {
-                std::fclose(file);
-                return BGFX_INVALID_HANDLE;
-            }
-
-            std::vector<char> data(static_cast<std::size_t>(size));
-            std::fread(data.data(), 1, data.size(), file);
-            std::fclose(file);
-            return bgfx::createShader(
-                bgfx::copy(data.data(), static_cast<uint32_t>(data.size())));
-        }
     }
 
     class RenderMeshShader{
@@ -153,9 +132,9 @@ namespace sinriv::ui::render {
             ensureUniforms();
 
             bgfx::ShaderHandle vs =
-                mesh_detail::loadShader(shader_dir_ + "vs_mesh_gbuffer.bin");
+                sinriv::kigstudio::ui::loadShader(shader_dir_ + "vs_mesh_gbuffer.bin");
             bgfx::ShaderHandle fs =
-                mesh_detail::loadShader(shader_dir_ + "fs_mesh_gbuffer.bin");
+                sinriv::kigstudio::ui::loadShader(shader_dir_ + "fs_mesh_gbuffer.bin");
             if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
                 if (bgfx::isValid(vs)) {
                     bgfx::destroy(vs);
@@ -179,9 +158,9 @@ namespace sinriv::ui::render {
             bx::mtxIdentity(identity_mtx_);
 
             bgfx::ShaderHandle vs =
-                mesh_detail::loadShader(shader_dir_ + "vs_color_line.bin");
+                sinriv::kigstudio::ui::loadShader(shader_dir_ + "vs_color_line.bin");
             bgfx::ShaderHandle fs =
-                mesh_detail::loadShader(shader_dir_ + "fs_color_line.bin");
+                sinriv::kigstudio::ui::loadShader(shader_dir_ + "fs_color_line.bin");
             if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
                 if (bgfx::isValid(vs)) {
                     bgfx::destroy(vs);

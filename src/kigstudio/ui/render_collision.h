@@ -15,6 +15,7 @@
 
 #include "kigstudio/ui/render_axis_gizmo.h"
 #include "kigstudio/voxel/collision.h"
+#include "utils.h"
 
 namespace sinriv::ui::render {
     namespace detail {
@@ -29,26 +30,6 @@ namespace sinriv::ui::render {
                     .end();
             }
         };
-
-        inline bgfx::ShaderHandle loadShader(const std::string& path) {
-            FILE* file = std::fopen(path.c_str(), "rb");
-            if (!file) {
-                return BGFX_INVALID_HANDLE;
-            }
-
-            std::fseek(file, 0, SEEK_END);
-            const long size = std::ftell(file);
-            std::fseek(file, 0, SEEK_SET);
-            if (size <= 0) {
-                std::fclose(file);
-                return BGFX_INVALID_HANDLE;
-            }
-
-            std::vector<char> data(static_cast<std::size_t>(size));
-            std::fread(data.data(), 1, data.size(), file);
-            std::fclose(file);
-            return bgfx::createShader(bgfx::copy(data.data(), static_cast<uint32_t>(data.size())));
-        }
     }
 
     class RenderCollisionShader {
@@ -70,8 +51,8 @@ namespace sinriv::ui::render {
                 return true;
             }
 
-            bgfx::ShaderHandle vs = detail::loadShader(shader_dir_ + "vs_color_line.bin");
-            bgfx::ShaderHandle fs = detail::loadShader(shader_dir_ + "fs_color_line.bin");
+            bgfx::ShaderHandle vs = sinriv::kigstudio::ui::loadShader(shader_dir_ + "vs_color_line.bin");
+            bgfx::ShaderHandle fs = sinriv::kigstudio::ui::loadShader(shader_dir_ + "fs_color_line.bin");
             if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
                 if (bgfx::isValid(vs)) {
                     bgfx::destroy(vs);

@@ -2,6 +2,7 @@
 #include "kigstudio/utils/vec3.h"
 #include "kigstudio/utils/plane.h"
 #include "kigstudio/voxel/collision.h"
+#include "kigstudio/voxel/concave.h"
 
 #include <bit>
 #include <bitset>
@@ -180,7 +181,7 @@ class VoxelGrid {
     inline bool find(const Vec3i& point) const {
         return contains(point.x, point.y, point.z);
     }
-    inline int num_chunk() const { return chunks.size(); }
+    inline int num_chunk() const { return static_cast<int>(chunks.size()); }
     inline vec3<float> voxelCenterToWorld(const Vec3i& voxel) const {
         return vec3<float>((voxel.x + 0.5f) * voxel_size.x + global_position.x,
                            (voxel.y + 0.5f) * voxel_size.y + global_position.y,
@@ -480,6 +481,37 @@ class VoxelGrid {
                 voxel.z * voxel_size.z + global_position.z);
 
             if (other.getSide(world_position)) {
+                positive_side.insert(voxel);
+            } else {
+                negative_side.insert(voxel);
+            }
+        }
+
+        return {positive_side, negative_side};
+    }
+    
+    inline std::tuple<VoxelGrid, VoxelGrid> segment(const concave::Base& other) const {
+        VoxelGrid positive_side;
+        VoxelGrid negative_side;
+
+        positive_side.global_position = global_position;
+        positive_side.voxel_size = voxel_size;
+        negative_side.global_position = global_position;
+        negative_side.voxel_size = voxel_size;
+
+        std::string err;
+        if (!other.check(err)) {
+            std::cout << "Concave shape check failed: " << err << std::endl;
+            return {positive_side, negative_side};
+        }
+
+        for (const auto& voxel : *this) {
+            const vec3<float> world_position(
+                voxel.x * voxel_size.x + global_position.x,
+                voxel.y * voxel_size.y + global_position.y,
+                voxel.z * voxel_size.z + global_position.z);
+
+            if (other.contains(world_position)) {
                 positive_side.insert(voxel);
             } else {
                 negative_side.insert(voxel);

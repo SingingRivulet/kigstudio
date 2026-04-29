@@ -44,10 +44,14 @@ void RenderVoxelList::RenderVoxelItem::upload_collision(
         if (segment_mode == COLLISION) {
             render.setCollisionGroup(collision_group);
             render.setSpaceDivVisible(false);
-        } else {
+        } else if (segment_mode == PLANE) {
             render.clearCollisionTint();
             render.setSpaceDivVisible(true);
             render.setSpaceDiv(plane.A, plane.B, plane.C, plane.D);
+        } else if (segment_mode == CONCAVE_CONE) {
+            render.clearCollisionTint();
+            render.setSpaceDivVisible(false);
+            // Set the space division for the concave cone
         }
     } else {
         render.clearCollisionTint();
