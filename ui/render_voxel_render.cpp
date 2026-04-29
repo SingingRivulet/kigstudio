@@ -13,6 +13,12 @@ bool contains_index(const std::vector<int>& indices, int value) {
     return std::find(indices.begin(), indices.end(), value) != indices.end();
 }
 
+template <class Vec3>
+Vec3 extend_cone_edge(const Vec3& apex, const Vec3& vertex) {
+    constexpr float kEdgeScale = 4.0f;
+    return apex + (vertex - apex) * kEdgeScale;
+}
+
 bgfx::VertexLayout& concave_cone_overlay_layout() {
     static bgfx::VertexLayout layout;
     static bool initialized = false;
@@ -78,14 +84,22 @@ void RenderVoxelList::RenderVoxelItem::render_concave_cone_overlay(
 
     const uint32_t face_color = pack_abgr(0.1f, 0.72f, 1.0f, 0.22f);
     const uint32_t edge_color = pack_abgr(0.0f, 0.95f, 1.0f, 0.72f);
+    const uint32_t vertex_loop_color = pack_abgr(1.0f, 1.0f, 1.0f, 0.9f);
     const uint32_t highlight_color = pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);
+
+    std::vector<sinriv::kigstudio::voxel::concave::vec3f> extended_verts;
+    extended_verts.reserve(static_cast<size_t>(vertex_count));
+    for (const auto& vertex : verts) {
+        extended_verts.push_back(
+            extend_cone_edge(concave_cone.apex, vertex));
+    }
 
     std::vector<mesh_detail::ColorLineVertex> face_vertices;
     face_vertices.reserve(static_cast<size_t>(vertex_count) * 3);
     for (int i = 0; i < vertex_count; ++i) {
         const auto& a = concave_cone.apex;
-        const auto& b = verts[i];
-        const auto& c = verts[(i + 1) % vertex_count];
+        const auto& b = extended_verts[i];
+        const auto& c = extended_verts[(i + 1) % vertex_count];
         face_vertices.push_back({a.x, -a.y, a.z, face_color});
         face_vertices.push_back({b.x, -b.y, b.z, face_color});
         face_vertices.push_back({c.x, -c.y, c.z, face_color});
@@ -110,15 +124,18 @@ void RenderVoxelList::RenderVoxelItem::render_concave_cone_overlay(
     }
 
     std::vector<mesh_detail::ColorLineVertex> line_vertices;
-    line_vertices.reserve(static_cast<size_t>(vertex_count) * 4);
+    line_vertices.reserve(static_cast<size_t>(vertex_count) * 6);
     auto append_line = [&](const auto& a, const auto& b, uint32_t color) {
         line_vertices.push_back({a.x, -a.y, a.z, color});
         line_vertices.push_back({b.x, -b.y, b.z, color});
     };
     for (int i = 0; i < vertex_count; ++i) {
-        append_line(verts[i], verts[(i + 1) % vertex_count], edge_color);
+        append_line(extended_verts[i],
+                    extended_verts[(i + 1) % vertex_count], edge_color);
+        append_line(verts[i], verts[(i + 1) % vertex_count],
+                    vertex_loop_color);
         const bool expanded = contains_index(concave_cone_expanded_vertices, i);
-        append_line(concave_cone.apex, verts[i],
+        append_line(concave_cone.apex, extended_verts[i],
                     expanded ? highlight_color : edge_color);
     }
 

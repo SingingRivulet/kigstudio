@@ -208,7 +208,7 @@ void init_locale_strings() {
     add_locale_string("shape.cylinder",
                       {{"en", "Cylinder"}, {"zh", "圆柱体"}});
     add_locale_string("shape.capsule", {{"en", "Capsule"}, {"zh", "胶囊体"}});
-    add_locale_string("shape.box", {{"en", "Box"}, {"zh", "盒体"}});
+    add_locale_string("shape.box", {{"en", "Box"}, {"zh", "长方体"}});
     add_locale_string("shape.unknown", {{"en", "Unknown"}, {"zh", "未知"}});
 
     add_locale_string("mode.three_point",
