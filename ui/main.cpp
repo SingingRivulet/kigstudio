@@ -6,6 +6,7 @@
 #include <bgfx/platform.h>
 #include <bx/math.h>
 #include <iostream>
+#include "font.h"
 #include "render.hpp"
 
 #include <iconfontheaders/icons_font_awesome.h>
@@ -19,9 +20,9 @@
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/ui/render_voxel.h"
 #include "kigstudio/voxel/collision.h"
+#include "tinyfiledialogs.h"
 #include "ui/render_deferred.h"
 #include "ui/render_voxel_list.h"
-#include "tinyfiledialogs.h"
 
 int main() {
     float yaw = 0;
@@ -39,7 +40,8 @@ int main() {
 
     // 1. 创建 SDL 窗口，但不要创建 OpenGL Context
     SDL_Window* window = SDL_CreateWindow(
-        "kigstudio GUI SinRivProject", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720,
+        "kigstudio GUI SinRivProject", SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_CENTERED, 1280, 720,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
 
     if (!window) {
@@ -115,12 +117,31 @@ int main() {
 
     render_items.start_thread();
 
+    auto pathes = sinriv::ui::render::get_default_font_path();
+    if (!pathes.empty()) {
+        ImGuiIO& io = ImGui::GetIO();
+        static const ImWchar chinese_ranges[] = {
+            0x0020, 0x00FF,  // Latin
+            0x3000, 0x30FF,  // 日文
+            0x4E00, 0x9FAF,  // 中文
+            0,
+        };
+
+        io.Fonts->Clear();
+        for (const auto& path : pathes) {
+            std::cout << "load font: " << path << std::endl;
+            io.Fonts->AddFontFromFileTTF(path.c_str(), 16.0f, nullptr,
+                                         chinese_ranges);
+        }
+    }
+
     while (running) {
         SDL_Event e;
         ImGuiIO& io = ImGui::GetIO();
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
-                ImGuiKey imgui_key = sinriv::kigstudio::ui::sdlToImGuiKey(e.key.keysym.sym);
+                ImGuiKey imgui_key =
+                    sinriv::kigstudio::ui::sdlToImGuiKey(e.key.keysym.sym);
                 if (imgui_key != ImGuiKey_None) {
                     io.AddKeyEvent(imgui_key, e.type == SDL_KEYDOWN);
                     io.SetKeyEventNativeData(imgui_key, e.key.keysym.sym,
@@ -156,7 +177,7 @@ int main() {
                 io.AddMouseWheelEvent(0.0f, (float)e.wheel.y);
                 if (!io.WantCaptureMouse) {
                     distance -= e.wheel.y * 10;
-                    if (distance < 1){
+                    if (distance < 1) {
                         distance = 1;
                     }
                 }
@@ -170,9 +191,9 @@ int main() {
                 if (middleMouseDown && !io.WantCaptureMouse) {
                     const float fovRadians = bx::toRad(60.0f);
                     const float viewportHeight = bx::max(1.0f, float(height));
-                    const float worldUnitsPerPixel =
-                        2.0f * distance * tanf(fovRadians * 0.5f) /
-                        viewportHeight;
+                    const float worldUnitsPerPixel = 2.0f * distance *
+                                                     tanf(fovRadians * 0.5f) /
+                                                     viewportHeight;
                     cameraOffsetX += e.motion.xrel * worldUnitsPerPixel;
                     cameraOffsetY -= e.motion.yrel * worldUnitsPerPixel;
                 }
@@ -214,8 +235,7 @@ int main() {
         float proj[16];
         const bx::Vec3 eye(cameraOffsetX, cameraOffsetY, distance);
         const bx::Vec3 at(cameraOffsetX, cameraOffsetY, 0.0f);
-        bx::mtxLookAt(
-            view_1, eye, at);
+        bx::mtxLookAt(view_1, eye, at);
         float flip_y[16];
         bx::mtxScale(flip_y, 1.0f, -1.0f, 1.0f);
         const bx::Vec3 eye_2 = bx::mul(eye, flip_y);
@@ -248,7 +268,8 @@ int main() {
             sinriv::kigstudio::mat::matrix<float> gpu_raw_matrix(mtx_1);
             std::cout << "yaw=" << yaw << " pitch=" << pitch << std::endl;
             sinriv::kigstudio::ui::printMatrixAxes("gpu_raw", gpu_raw_matrix);
-            sinriv::kigstudio::ui::printMatrixAxes("cpu_model", cpu_model_matrix);
+            sinriv::kigstudio::ui::printMatrixAxes("cpu_model",
+                                                   cpu_model_matrix);
             debugPrintRotation = false;
         }
 
@@ -271,10 +292,12 @@ int main() {
         render_items.mouse_world_pos.x = deferred_renderer.mouse_pos_[0];
         render_items.mouse_world_pos.y = deferred_renderer.mouse_pos_[1];
         render_items.mouse_world_pos.z = deferred_renderer.mouse_pos_[2];
-        render_items.mouse_world_pos_valid = deferred_renderer.mouse_highlight_[0] > 0.5f;
+        render_items.mouse_world_pos_valid =
+            deferred_renderer.mouse_highlight_[0] > 0.5f;
         render_items.render_ui();
         ImGui::Render();
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.WantCaptureMouse) {
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+            !io.WantCaptureMouse) {
             render_items.mouse_world_pos_picked = true;
         } else {
             render_items.mouse_world_pos_picked = false;

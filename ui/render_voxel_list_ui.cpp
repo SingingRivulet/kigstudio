@@ -7,11 +7,59 @@
 #include <type_traits>
 #include <unordered_set>
 #include <variant>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include "kigstudio/utils/vec3.h"
 #include "render_voxel_list.h"
 #include "tinyfiledialogs.h"
 namespace sinriv::ui::render {
 namespace {
+
+#ifdef _WIN32
+// ANSI → UTF-16
+std::wstring ansi_to_utf16(const char* str) {
+    if (!str)
+        return {};
+
+    int len = MultiByteToWideChar(CP_ACP, 0, str, -1, nullptr, 0);
+
+    std::wstring w(len, 0);
+
+    MultiByteToWideChar(CP_ACP, 0, str, -1, &w[0], len);
+
+    return w;
+}
+
+// UTF-16 → UTF-8
+std::string utf16_to_utf8(const std::wstring& w) {
+    if (w.empty())
+        return {};
+
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0,
+                                  nullptr, nullptr);
+
+    std::string s(len, 0);
+
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], len, nullptr,
+                        nullptr);
+
+    return s;
+}
+
+// ANSI → UTF-8
+std::string ansi_to_utf8(const char* str) {
+    return utf16_to_utf8(ansi_to_utf16(str));
+}
+#endif
+
+std::string tinyfd_path_to_utf8(const char* path) {
+#ifdef _WIN32
+    return ansi_to_utf8(path);
+#else
+    return path ? std::string(path) : std::string();
+#endif
+}
 
 using CollisionGroup = sinriv::kigstudio::voxel::collision::CollisionGroup;
 using GeometryInstance = sinriv::kigstudio::voxel::collision::GeometryInstance;
@@ -289,7 +337,7 @@ void RenderVoxelList::render_file_loader() {
                 }
             }
             if (!stl_file_path.empty()) {
-                ImGui::Text("Selected file: %s", stl_file_path.c_str());
+                ImGui::Text("Selected file: %s", tinyfd_path_to_utf8(stl_file_path.c_str()).c_str());
             } else {
                 ImGui::Text("No file selected.");
             }
@@ -432,7 +480,9 @@ void RenderVoxelList::render_concave_cone_editor(RenderVoxelItem& item) {
             if (ImGui::CollapsingHeader(label)) {
                 // ImGui::Text("pos: %.3f %.3f %.3f", v.x, v.y, v.z);
 
-                edit_local_position_stepper(("edit##" + std::to_string(i)).c_str(), v, 0.1f, false, false);
+                edit_local_position_stepper(
+                    ("edit##" + std::to_string(i)).c_str(), v, 0.1f, false,
+                    false);
 
                 // --- delete ---
                 if (ImGui::Button(("delete##" + std::to_string(i)).c_str())) {
