@@ -6,7 +6,7 @@
 #include <bgfx/platform.h>
 #include <bx/math.h>
 #include <iostream>
-#include "font.h"
+#include "locale.h"
 #include "render.hpp"
 
 #include <iconfontheaders/icons_font_awesome.h>
@@ -114,6 +114,8 @@ int main() {
     bool debugPrintRotation = false;
     int oldW = width;
     int oldH = height;
+    
+    sinriv::ui::render::locale_init();
 
     render_items.start_thread();
 
