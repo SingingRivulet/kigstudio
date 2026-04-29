@@ -1,5 +1,28 @@
 #include "render_voxel_list.h"
 namespace sinriv::ui::render {
+namespace {
+uint32_t pack_abgr(float r, float g, float b, float a) {
+    const auto pack = [](float v) -> uint32_t {
+        v = std::max(0.0f, std::min(1.0f, v));
+        return static_cast<uint32_t>(v * 255.0f + 0.5f);
+    };
+    return (pack(a) << 24) | (pack(b) << 16) | (pack(g) << 8) | pack(r);
+}
+
+bool contains_index(const std::vector<int>& indices, int value) {
+    return std::find(indices.begin(), indices.end(), value) != indices.end();
+}
+
+bgfx::VertexLayout& concave_cone_overlay_layout() {
+    static bgfx::VertexLayout layout;
+    static bool initialized = false;
+    if (!initialized) {
+        mesh_detail::ColorLineVertex::init(layout);
+        initialized = true;
+    }
+    return layout;
+}
+}  // namespace
 
 void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     const float* transform,
@@ -36,6 +59,89 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                                         model_transform_2, collision_shader,
                                         cpu_model_matrix);
     }
+    if (showCollision && segment_mode == CONCAVE_CONE) {
+        render_concave_cone_overlay(model_transform,
+                                    mesh_shader);
+    }
+}
+
+void RenderVoxelList::RenderVoxelItem::render_concave_cone_overlay(
+    const float* model_transform,
+    sinriv::ui::render::RenderMeshShader& mesh_shader) {
+    const auto& verts = concave_cone.base_vertices;
+    const int vertex_count = static_cast<int>(verts.size());
+    if (vertex_count < 2 || !mesh_shader.ensureLineProgram()) {
+        return;
+    }
+
+    bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+
+    const uint32_t face_color = pack_abgr(0.1f, 0.72f, 1.0f, 0.22f);
+    const uint32_t edge_color = pack_abgr(0.0f, 0.95f, 1.0f, 0.72f);
+    const uint32_t highlight_color = pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);
+
+    std::vector<mesh_detail::ColorLineVertex> face_vertices;
+    face_vertices.reserve(static_cast<size_t>(vertex_count) * 3);
+    for (int i = 0; i < vertex_count; ++i) {
+        const auto& a = concave_cone.apex;
+        const auto& b = verts[i];
+        const auto& c = verts[(i + 1) % vertex_count];
+        face_vertices.push_back({a.x, -a.y, a.z, face_color});
+        face_vertices.push_back({b.x, -b.y, b.z, face_color});
+        face_vertices.push_back({c.x, -c.y, c.z, face_color});
+    }
+
+    if (!face_vertices.empty() &&
+        bgfx::getAvailTransientVertexBuffer(
+            static_cast<uint32_t>(face_vertices.size()),
+            layout) >= face_vertices.size()) {
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(
+            &tvb, static_cast<uint32_t>(face_vertices.size()),
+            layout);
+        std::memcpy(tvb.data, face_vertices.data(),
+                    face_vertices.size() * sizeof(mesh_detail::ColorLineVertex));
+
+        bgfx::setTransform(model_transform);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                       BGFX_STATE_BLEND_ALPHA | BGFX_STATE_MSAA);
+        bgfx::submit(mesh_shader.overlay_view_id_, mesh_shader.line_program_);
+    }
+
+    std::vector<mesh_detail::ColorLineVertex> line_vertices;
+    line_vertices.reserve(static_cast<size_t>(vertex_count) * 4);
+    auto append_line = [&](const auto& a, const auto& b, uint32_t color) {
+        line_vertices.push_back({a.x, -a.y, a.z, color});
+        line_vertices.push_back({b.x, -b.y, b.z, color});
+    };
+    for (int i = 0; i < vertex_count; ++i) {
+        append_line(verts[i], verts[(i + 1) % vertex_count], edge_color);
+        const bool expanded = contains_index(concave_cone_expanded_vertices, i);
+        append_line(concave_cone.apex, verts[i],
+                    expanded ? highlight_color : edge_color);
+    }
+
+    if (line_vertices.empty() ||
+        bgfx::getAvailTransientVertexBuffer(
+            static_cast<uint32_t>(line_vertices.size()),
+            layout) < line_vertices.size()) {
+        return;
+    }
+
+    bgfx::TransientVertexBuffer tvb;
+    bgfx::allocTransientVertexBuffer(
+        &tvb, static_cast<uint32_t>(line_vertices.size()),
+        layout);
+    std::memcpy(tvb.data, line_vertices.data(),
+                line_vertices.size() * sizeof(mesh_detail::ColorLineVertex));
+
+    bgfx::setTransform(model_transform);
+    bgfx::setVertexBuffer(0, &tvb);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                   BGFX_STATE_BLEND_ALPHA | BGFX_STATE_PT_LINES |
+                   BGFX_STATE_MSAA);
+    bgfx::submit(mesh_shader.overlay_view_id_, mesh_shader.line_program_);
 }
 
 void RenderVoxelList::RenderVoxelItem::upload_collision(
@@ -69,12 +175,12 @@ void RenderVoxelList::upload_collision(
             render.clearCollisionTint();
         }
     }
-    int num = hightlight_pos.size();
+    int num = static_cast<int>(hightlight_pos.size());
     if (num > 16) {
         num = 16;
     }
     render.pos_hightlight_counts = num;
-    render.pos_hightlight_counts_gpu_[0] = num;
+    render.pos_hightlight_counts_gpu_[0] = static_cast<float>(num);
     for (int i = 0; i < num; i++) {
         render.pos_hightlight_[i][0] = std::get<0>(hightlight_pos[i]).x;
         render.pos_hightlight_[i][1] = std::get<0>(hightlight_pos[i]).y;

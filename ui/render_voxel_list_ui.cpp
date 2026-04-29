@@ -448,6 +448,8 @@ void RenderVoxelList::render_concave_cone_editor(RenderVoxelItem& item) {
     // ===== vertices =====
     if (ImGui::CollapsingHeader("concave cone vertices",
                                 ImGuiTreeNodeFlags_DefaultOpen)) {
+        item.concave_cone_expanded_vertices.clear();
+
         // --- append 模式 ---
         if (pick_mode == PickMode::Append) {
             if (ImGui::Button("add vertex (click in scene...)")) {
@@ -478,6 +480,7 @@ void RenderVoxelList::render_concave_cone_editor(RenderVoxelItem& item) {
             snprintf(label, sizeof(label), "vertex %d##%d", i, i);
 
             if (ImGui::CollapsingHeader(label)) {
+                item.concave_cone_expanded_vertices.push_back(i);
                 // ImGui::Text("pos: %.3f %.3f %.3f", v.x, v.y, v.z);
 
                 edit_local_position_stepper(
@@ -598,6 +601,7 @@ void RenderVoxelList::render_concave_cone_editor(RenderVoxelItem& item) {
 
     } else {
         // 折叠时重置
+        item.concave_cone_expanded_vertices.clear();
         pick_mode = PickMode::None;
         pick_index = -1;
     }

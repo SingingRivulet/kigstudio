@@ -64,6 +64,7 @@ class RenderVoxelList {
         sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
         kigstudio::Plane<float> plane;
         kigstudio::voxel::concave::Cone concave_cone;
+        std::vector<int> concave_cone_expanded_vertices;
 
         void render_gbuffer(const float* transform,
                             sinriv::ui::render::RenderMeshShader& mesh_shader);
@@ -74,6 +75,8 @@ class RenderVoxelList {
             sinriv::ui::render::RenderCollisionShader& collision_shader,
             sinriv::ui::render::RenderMeshShader& mesh_shader,
             const mat4f* cpu_model_matrix = nullptr);
+        void render_concave_cone_overlay(const float* model_transform,
+                                         sinriv::ui::render::RenderMeshShader& mesh_shader);
         void upload_collision(sinriv::ui::render::RenderDeferred& render);
 
         inline auto do_segment() {
