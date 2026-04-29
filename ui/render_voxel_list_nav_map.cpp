@@ -8,6 +8,8 @@
 
 #include <unordered_set>
 
+#include "locale.h"
+
 namespace sinriv::ui::render {
 
 void RenderVoxelList::render_nav_map() {
@@ -15,7 +17,7 @@ void RenderVoxelList::render_nav_map() {
     ImGui::SetNextWindowPos(ImVec2(0.f, (float)menu_height), ImGuiCond_Always,
                             ImVec2(0.0f, 0.0f));
     ImGui::SetNextWindowSize(ImVec2(300, 600), ImGuiCond_Once);
-    if (!ImGui::Begin("nav node map")) {
+    if (!ImGui::Begin(get_locale_cstr("window.nav_node_map"))) {
         ImGui::End();
         return;
     }
@@ -46,9 +48,9 @@ void RenderVoxelList::render_nav_map() {
 
         ImNodes::BeginNodeTitleBar();
         if (item->write_count > 0) {
-            ImGui::Text("Node %d (updating...)", id);
+            ImGui::Text(get_locale_cstr("label.node_updating"), id);
         } else {
-            ImGui::Text("Node %d", id);
+            ImGui::Text(get_locale_cstr("label.node"), id);
         }
         ImNodes::EndNodeTitleBar();
 

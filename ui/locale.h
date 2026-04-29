@@ -56,4 +56,5 @@ inline std::string get_system_language() {
 
 void locale_init();
 std::string get_locale_string(const std::string& key);
+const char* get_locale_cstr(const std::string& key);
 }  // namespace sinriv::ui::render
