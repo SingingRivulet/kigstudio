@@ -7,9 +7,6 @@
 [submodule "dep/imnodes"]
 	path = dep/imnodes
 	url = https://github.com/Nelarius/imnodes
-[submodule "dep/cJSON"]
-	path = dep/cJSON
-	url = https://github.com/DaveGamble/cJSON.git
 [submodule "dep/zlib"]
 	path = dep/zlib
 	url = https://github.com/madler/zlib.git

@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 #include <fstream>
-// #include <cJSON.h>
+#include <cJSON.h>
 
 namespace sinriv::kigstudio {
 namespace voxel {
