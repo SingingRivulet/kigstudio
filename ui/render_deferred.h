@@ -135,8 +135,9 @@ namespace sinriv::ui::render {
         bool ensureProgram();
 
         bgfx::ViewId gbuffer_view_id_ = 0;
-        bgfx::ViewId collision_view_id_ = 1;
-        bgfx::ViewId lighting_view_id_ = 2;
+        bgfx::ViewId collision_view_id_ = 1; // 渲染collision body
+        bgfx::ViewId collision_volume_view_id_ = 2; //渲染collision volume
+        bgfx::ViewId lighting_view_id_ = 3;
         std::string shader_dir_ = "../../shader/base/";
         uint16_t width_ = 1;
         uint16_t height_ = 1;

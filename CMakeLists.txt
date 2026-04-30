@@ -15,6 +15,8 @@ if(MSVC)
 endif() 
 
 add_subdirectory(dep/bgfx.cmake)
+add_subdirectory(dep/zlib)
+# add_subdirectory(dep/cJSON)
 
 set(SDL2_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/include")
 set(SDL2_LIB_DIR "${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/lib/x64")
@@ -31,6 +33,8 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bx/include/
     ${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/include
     ${CMAKE_SOURCE_DIR}/dep/imnodes
+    ${CMAKE_SOURCE_DIR}/dep/zlib
+    # ${CMAKE_SOURCE_DIR}/dep/cJSON
     )  
 
 # imgui
@@ -115,4 +119,6 @@ target_link_libraries(kigstudio_ui
     ole32
     winmm
     imgui
+    zlib
+    # cjson
 )

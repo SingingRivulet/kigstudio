@@ -1,18 +1,22 @@
 #pragma once
-#include "kigstudio/utils/vec3.h"
 #include "kigstudio/utils/plane.h"
+#include "kigstudio/utils/vec3.h"
+#include "kigstudio/utils/compress.h"
 #include "kigstudio/voxel/collision.h"
 #include "kigstudio/voxel/concave.h"
 
 #include <bit>
 #include <bitset>
 #include <cmath>
-#include <unordered_map>
-#include <vector>
 #include <cstdint>
 #include <stack>
+#include <unordered_map>
+#include <vector>
+#include <fstream>
+// #include <cJSON.h>
 
-namespace sinriv::kigstudio::voxel {
+namespace sinriv::kigstudio {
+namespace voxel {
 // 定义三维向量结构体
 struct Vec3i {
     int32_t x, y, z;
@@ -140,11 +144,10 @@ struct HybridSegment {
 // ================= Grid =================
 
 class VoxelGrid {
-
    public:
     std::unordered_map<uint64_t, Chunk> chunks;
-    vec3<float> global_position = {0.f, 0.f, 0.f}; // 空间的全局位置
-    vec3<float> voxel_size = {1.f, 1.f, 1.f}; // 每个小立方体的边长
+    vec3<float> global_position = {0.f, 0.f, 0.f};  // 空间的全局位置
+    vec3<float> voxel_size = {1.f, 1.f, 1.f};       // 每个小立方体的边长
     // ============ 插入 ============
     inline void insert(int x, int y, int z) {
         int cx = x >> 5;
@@ -189,9 +192,12 @@ class VoxelGrid {
     }
     inline Vec3i worldToVoxel(const vec3<float>& world) const {
         return Vec3i(
-            static_cast<int32_t>(std::floor((world.x - global_position.x) / voxel_size.x)),
-            static_cast<int32_t>(std::floor((world.y - global_position.y) / voxel_size.y)),
-            static_cast<int32_t>(std::floor((world.z - global_position.z) / voxel_size.z)));
+            static_cast<int32_t>(
+                std::floor((world.x - global_position.x) / voxel_size.x)),
+            static_cast<int32_t>(
+                std::floor((world.y - global_position.y) / voxel_size.y)),
+            static_cast<int32_t>(
+                std::floor((world.z - global_position.z) / voxel_size.z)));
     }
     inline bool containsWorldPoint(const vec3<float>& world) const {
         const Vec3i voxel = worldToVoxel(world);
@@ -293,11 +299,7 @@ class VoxelGrid {
                 // ===== 7. 解 chunk 坐标 =====
                 unpackKey(it->first, cx, cy, cz);
 
-                current = {
-                    (cx << 5) + lx,
-                    (cy << 5) + ly,
-                    (cz << 5) + lz
-                };
+                current = {(cx << 5) + lx, (cy << 5) + ly, (cz << 5) + lz};
 
                 valid = true;
                 return;
@@ -317,17 +319,16 @@ class VoxelGrid {
             return *this;
         }
 
-        inline bool operator!=(const Iterator& o) const {
-            return it != o.it;
-        }
+        inline bool operator!=(const Iterator& o) const { return it != o.it; }
     };
 
-    inline Iterator begin() const { return Iterator(chunks.begin(), chunks.end()); }
+    inline Iterator begin() const {
+        return Iterator(chunks.begin(), chunks.end());
+    }
 
     inline Iterator end() const { return Iterator(chunks.end(), chunks.end()); }
 
     // ================= 集合操作 =================
-
 
     inline VoxelGrid unionWith_local(const VoxelGrid& other) const {
         VoxelGrid r = *this;
@@ -399,7 +400,8 @@ class VoxelGrid {
         }
         return r;
     }
-    inline VoxelGrid intersection(const collision::CollisionGroup& other) const {
+    inline VoxelGrid intersection(
+        const collision::CollisionGroup& other) const {
         VoxelGrid r;
         r.global_position = global_position;
         r.voxel_size = voxel_size;
@@ -439,8 +441,9 @@ class VoxelGrid {
         }
         return r;
     }
-    
-    inline std::tuple<VoxelGrid, VoxelGrid> segment(const collision::CollisionGroup& other) const {
+
+    inline std::tuple<VoxelGrid, VoxelGrid> segment(
+        const collision::CollisionGroup& other) const {
         VoxelGrid positive_side;
         VoxelGrid negative_side;
 
@@ -465,7 +468,8 @@ class VoxelGrid {
         return {positive_side, negative_side};
     }
 
-    inline std::tuple<VoxelGrid, VoxelGrid> segment(const Plane<float>& other) const {
+    inline std::tuple<VoxelGrid, VoxelGrid> segment(
+        const Plane<float>& other) const {
         VoxelGrid positive_side;
         VoxelGrid negative_side;
 
@@ -489,8 +493,9 @@ class VoxelGrid {
 
         return {positive_side, negative_side};
     }
-    
-    inline std::tuple<VoxelGrid, VoxelGrid> segment(const concave::Base& other) const {
+
+    inline std::tuple<VoxelGrid, VoxelGrid> segment(
+        const concave::Base& other) const {
         VoxelGrid positive_side;
         VoxelGrid negative_side;
 
@@ -520,8 +525,9 @@ class VoxelGrid {
 
         return {positive_side, negative_side};
     }
-    
-    inline std::tuple<VoxelGrid, VoxelGrid> segment(const HybridSegment& other) const {
+
+    inline std::tuple<VoxelGrid, VoxelGrid> segment(
+        const HybridSegment& other) const {
         VoxelGrid positive_side;
         VoxelGrid negative_side;
 
@@ -538,12 +544,14 @@ class VoxelGrid {
 
             bool keep = true;
             if (other.enable_plane) {
-                if (other.plane.getSide(world_position) != other.use_plane_positive) {
+                if (other.plane.getSide(world_position) !=
+                    other.use_plane_positive) {
                     keep = false;
                 }
             }
             if (other.enable_collision) {
-                if (other.collision_group.contains(world_position) != other.use_collision_inside) {
+                if (other.collision_group.contains(world_position) !=
+                    other.use_collision_inside) {
                     keep = false;
                 }
             }
@@ -558,5 +566,108 @@ class VoxelGrid {
         return {positive_side, negative_side};
     }
 };
+}  // namespace voxel
 
-}  // namespace sinriv::kigstudio::voxel
+inline bool save(const std::string& path, const voxel::VoxelGrid& grid) {
+    std::ofstream ofs(path, std::ios::binary);
+    if (!ofs)
+        return false;
+
+    // ===== header =====
+    const char magic[8] = {'V', 'X', 'G', 'R', 'I', 'D', '1', '\0'};
+    uint32_t version = 1;
+
+    ofs.write(magic, 8);
+    ofs.write(reinterpret_cast<char*>(&version), sizeof(version));
+
+    ofs.write(reinterpret_cast<const char*>(&grid.global_position),
+              sizeof(grid.global_position));
+    ofs.write(reinterpret_cast<const char*>(&grid.voxel_size),
+              sizeof(grid.voxel_size));
+
+    uint32_t chunk_count = (uint32_t)grid.chunks.size();
+    ofs.write(reinterpret_cast<char*>(&chunk_count), sizeof(chunk_count));
+
+    // ===== serialize raw =====
+    std::vector<uint8_t> raw;
+    raw.reserve(chunk_count * (sizeof(uint64_t) + sizeof(voxel::Chunk)));
+
+    for (const auto& [key, chunk] : grid.chunks) {
+        size_t offset = raw.size();
+        raw.resize(offset + sizeof(uint64_t) + sizeof(voxel::Chunk));
+
+        std::memcpy(raw.data() + offset, &key, sizeof(uint64_t));
+        std::memcpy(raw.data() + offset + sizeof(uint64_t), chunk.data,
+                    sizeof(chunk.data));
+    }
+
+    // ===== compress =====
+    std::vector<uint8_t> compressed;
+    if (!zlibCompress(raw, compressed))
+        return false;
+
+    uint32_t comp_size = (uint32_t)compressed.size();
+    uint32_t raw_size = (uint32_t)raw.size();
+
+    ofs.write(reinterpret_cast<char*>(&comp_size), sizeof(comp_size));
+    ofs.write(reinterpret_cast<char*>(&raw_size), sizeof(raw_size));
+    ofs.write(reinterpret_cast<char*>(compressed.data()), comp_size);
+
+    return true;
+}
+
+inline bool load(const std::string& path, voxel::VoxelGrid& grid) {
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs)
+        return false;
+
+    // ===== header =====
+    char magic[8];
+    uint32_t version;
+
+    ifs.read(magic, 8);
+    ifs.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    if (std::strncmp(magic, "VXGRID1", 7) != 0 || version != 1)
+        return false;
+
+    ifs.read(reinterpret_cast<char*>(&grid.global_position),
+             sizeof(grid.global_position));
+    ifs.read(reinterpret_cast<char*>(&grid.voxel_size),
+             sizeof(grid.voxel_size));
+
+    uint32_t chunk_count;
+    ifs.read(reinterpret_cast<char*>(&chunk_count), sizeof(chunk_count));
+
+    // ===== compressed block =====
+    uint32_t comp_size, raw_size;
+    ifs.read(reinterpret_cast<char*>(&comp_size), sizeof(comp_size));
+    ifs.read(reinterpret_cast<char*>(&raw_size), sizeof(raw_size));
+
+    std::vector<uint8_t> compressed(comp_size);
+    ifs.read(reinterpret_cast<char*>(compressed.data()), comp_size);
+
+    std::vector<uint8_t> raw;
+    if (!zlibDecompress(compressed, raw, raw_size))
+        return false;
+
+    // ===== rebuild =====
+    grid.chunks.clear();
+
+    size_t offset = 0;
+    for (uint32_t i = 0; i < chunk_count; i++) {
+        uint64_t key;
+        std::memcpy(&key, raw.data() + offset, sizeof(uint64_t));
+        offset += sizeof(uint64_t);
+
+        voxel::Chunk chunk;
+        std::memcpy(chunk.data, raw.data() + offset, sizeof(chunk.data));
+        offset += sizeof(chunk.data);
+
+        if (!chunk.empty())
+            grid.chunks[key] = chunk;
+    }
+
+    return true;
+}
+}  // namespace sinriv::kigstudio
