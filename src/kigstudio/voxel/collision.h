@@ -1,13 +1,16 @@
 #pragma once
-#include "kigstudio/utils/vec3.h"
-#include "kigstudio/utils/mat.h"
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <sstream>
 #include <utility>
 #include <variant>
 #include <vector>
+#include "kigstudio/utils/mat.h"
+#include "kigstudio/utils/vec3.h"
 
-namespace sinriv::kigstudio::voxel::collision {
+namespace sinriv::kigstudio {
+namespace voxel::collision {
 using vec3f = sinriv::kigstudio::vec3<float>;
 using mat4f = sinriv::kigstudio::mat::matrix<float>;
 using vec4f = sinriv::kigstudio::mat::vec4<float>;
@@ -64,15 +67,14 @@ struct Cylinder {
         const vec3f closest = start + axis * t;
         return lengthSquared(point - closest) <= radius * radius;
     }
-    inline Cylinder(const vec3f &start, const vec3f &end, float radius)
+    inline Cylinder(const vec3f& start, const vec3f& end, float radius)
         : start(start), end(end), radius(radius) {}
     inline Cylinder() = default;
-    inline Cylinder(
-        const vec3f& p0,
-        const vec3f& p1,
-        const vec3f& p2,
-        const vec3f& p3,
-        const vec3f& p4) {
+    inline Cylinder(const vec3f& p0,
+                    const vec3f& p1,
+                    const vec3f& p2,
+                    const vec3f& p3,
+                    const vec3f& p4) {
         // --- Step 1: 底面圆拟合 (p0, p1, p2) ---
         const vec3f v1 = p1 - p0;
         const vec3f v2 = p2 - p0;
@@ -111,7 +113,7 @@ struct Cylinder {
         const vec3f center_top = (p3 + p4) * 0.5f;
 
         start = center_bottom;
-        end   = center_top;
+        end = center_top;
     }
 };
 
@@ -120,15 +122,14 @@ struct Capsule {
     vec3f end = {0.0f, 0.0f, 0.0f};
     float radius = 0.0f;
 
-    inline Capsule(const vec3f &start, const vec3f &end, float radius)
+    inline Capsule(const vec3f& start, const vec3f& end, float radius)
         : start(start), end(end), radius(radius) {}
     inline Capsule() = default;
-    inline Capsule(
-        const vec3f& p0,
-        const vec3f& p1,
-        const vec3f& p2,
-        const vec3f& p3,
-        const vec3f& p4) {
+    inline Capsule(const vec3f& p0,
+                   const vec3f& p1,
+                   const vec3f& p2,
+                   const vec3f& p3,
+                   const vec3f& p4) {
         // --- Step 1: 底面圆拟合 (p0, p1, p2) ---
         const vec3f v1 = p1 - p0;
         const vec3f v2 = p2 - p0;
@@ -167,7 +168,7 @@ struct Capsule {
         const vec3f center_top = (p3 + p4) * 0.5f;
 
         start = center_bottom;
-        end   = center_top;
+        end = center_top;
     }
     inline bool contains(const vec3f& point) const {
         const vec3f closest = closestPointOnSegment(point, start, end);
@@ -377,9 +378,12 @@ inline vec3f transformPoint(const mat4f& matrix, const vec3f& point) {
 
 inline bool isAffineInvertible(const mat4f& matrix) {
     const float det =
-        matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) -
-        matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0]) +
-        matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
+        matrix[0][0] *
+            (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) -
+        matrix[0][1] *
+            (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0]) +
+        matrix[0][2] *
+            (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
     return std::fabs(det) > 1e-8f;
 }
 
@@ -403,7 +407,9 @@ class Transform {
     inline void setRotationEuler(const vec3f& euler_xyz_radians) {
         rotation_ = quaternionFromEuler(euler_xyz_radians);
     }
-    inline vec3f getRotationEuler() const { return eulerFromQuaternion(rotation_); }
+    inline vec3f getRotationEuler() const {
+        return eulerFromQuaternion(rotation_);
+    }
 
     inline void setRotationQuaternion(const Quaternion& value) {
         rotation_ = value.normalized();
@@ -451,13 +457,15 @@ class Transform {
         const float row22 = matrix[2][2] / sz;
 
         rotation_ = quaternionFromRotationMatrixColumns(
-            row00, row10, row20,
-            row01, row11, row21,
-            row02, row12, row22);
+            row00, row10, row20, row01, row11, row21, row02, row12, row22);
     }
 
-    inline mat4f getMatrix() const { return composeMatrix(position_, rotation_, scale_); }
-    inline mat4f getRenderMatrix() const { return toRenderSpaceMatrix(getMatrix()); }
+    inline mat4f getMatrix() const {
+        return composeMatrix(position_, rotation_, scale_);
+    }
+    inline mat4f getRenderMatrix() const {
+        return toRenderSpaceMatrix(getMatrix());
+    }
 
     vec3f position_ = {0.0f, 0.0f, 0.0f};
     Quaternion rotation_;
@@ -487,13 +495,17 @@ class CollisionGroup {
     inline const Transform& getTransform() const { return transform; }
     inline Transform& getTransform() { return transform; }
 
-    inline void setPosition(const vec3f& value) { transform.setPosition(value); }
+    inline void setPosition(const vec3f& value) {
+        transform.setPosition(value);
+    }
     inline vec3f getPosition() const { return transform.getPosition(); }
 
     inline void setRotationEuler(const vec3f& value) {
         transform.setRotationEuler(value);
     }
-    inline vec3f getRotationEuler() const { return transform.getRotationEuler(); }
+    inline vec3f getRotationEuler() const {
+        return transform.getRotationEuler();
+    }
 
     inline void setRotationQuaternion(const Quaternion& value) {
         transform.setRotationQuaternion(value);
@@ -547,8 +559,9 @@ class CollisionGroup {
 
    private:
     inline bool containsImpl(const vec3f& point, bool use_render_space) const {
-        const mat4f global_matrix =
-            use_render_space ? transform.getRenderMatrix() : transform.getMatrix();
+        const mat4f global_matrix = use_render_space
+                                        ? transform.getRenderMatrix()
+                                        : transform.getMatrix();
 
         for (const GeometryInstance& geometry : geometries_) {
             mat4f world_matrix =
@@ -556,7 +569,8 @@ class CollisionGroup {
                                   : geometry.transform.getMatrix()) *
                 global_matrix;
             // 这个是无效的
-            // mat4f world_matrix = global_matrix * geometry.transform.getMatrix();
+            // mat4f world_matrix = global_matrix *
+            // geometry.transform.getMatrix();
             if (!isAffineInvertible(world_matrix)) {
                 continue;
             }
@@ -583,7 +597,157 @@ inline bool pointIntersects(const vec3f& point, const CollisionGroup& group) {
     return group.contains(point);
 }
 
-inline bool pointIntersectsWorld(const vec3f& point, const CollisionGroup& group) {
+inline bool pointIntersectsWorld(const vec3f& point,
+                                 const CollisionGroup& group) {
     return group.containsWorldPoint(point);
 }
+}  // namespace voxel::collision
+inline cJSON* to_json(const voxel::collision::Quaternion& q) {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddNumberToObject(obj, "x", q.x);
+    cJSON_AddNumberToObject(obj, "y", q.y);
+    cJSON_AddNumberToObject(obj, "z", q.z);
+    cJSON_AddNumberToObject(obj, "w", q.w);
+    return obj;
 }
+
+inline voxel::collision::Quaternion from_json_quat(const cJSON* obj) {
+    return {(float)cJSON_GetObjectItem(obj, "x")->valuedouble,
+            (float)cJSON_GetObjectItem(obj, "y")->valuedouble,
+            (float)cJSON_GetObjectItem(obj, "z")->valuedouble,
+            (float)cJSON_GetObjectItem(obj, "w")->valuedouble};
+}
+inline cJSON* to_json(const voxel::collision::Transform& t) {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddItemToObject(obj, "position", to_json(t.getPosition()));
+    cJSON_AddItemToObject(obj, "rotation", to_json(t.getRotationQuaternion()));
+    cJSON_AddItemToObject(obj, "scale", to_json(t.getScale()));
+    return obj;
+}
+
+inline voxel::collision::Transform from_json_transform(const cJSON* obj) {
+    voxel::collision::Transform t;
+    t.setPosition(vec3_from_json<voxel::collision::vec3f>(
+        cJSON_GetObjectItem(obj, "position")));
+    t.setRotationQuaternion(
+        from_json_quat(cJSON_GetObjectItem(obj, "rotation")));
+    t.setScale(vec3_from_json<voxel::collision::vec3f>(
+        cJSON_GetObjectItem(obj, "scale")));
+    return t;
+}
+inline cJSON* to_json(const voxel::collision::Sphere& s) {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddItemToObject(obj, "center", to_json(s.center));
+    cJSON_AddNumberToObject(obj, "radius", s.radius);
+    return obj;
+}
+
+inline voxel::collision::Sphere from_json_sphere(const cJSON* obj) {
+    voxel::collision::Sphere s;
+    s.center = vec3_from_json<voxel::collision::vec3f>(
+        cJSON_GetObjectItem(obj, "center"));
+    s.radius = (float)cJSON_GetObjectItem(obj, "radius")->valuedouble;
+    return s;
+}
+
+inline cJSON* to_json(const voxel::collision::Cylinder& c) {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddItemToObject(obj, "start", to_json(c.start));
+    cJSON_AddItemToObject(obj, "end", to_json(c.end));
+    cJSON_AddNumberToObject(obj, "radius", c.radius);
+    return obj;
+}
+
+inline voxel::collision::Cylinder from_json_cylinder(const cJSON* obj) {
+    return voxel::collision::Cylinder(
+        vec3_from_json<voxel::collision::vec3f>(
+            cJSON_GetObjectItem(obj, "start")),
+        vec3_from_json<voxel::collision::vec3f>(
+            cJSON_GetObjectItem(obj, "end")),
+        (float)cJSON_GetObjectItem(obj, "radius")->valuedouble);
+}
+
+inline cJSON* to_json(const voxel::collision::Capsule& c) {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddItemToObject(obj, "start", to_json(c.start));
+    cJSON_AddItemToObject(obj, "end", to_json(c.end));
+    cJSON_AddNumberToObject(obj, "radius", c.radius);
+    return obj;
+}
+
+inline voxel::collision::Capsule from_json_capsule(const cJSON* obj) {
+    return voxel::collision::Capsule(
+        vec3_from_json<voxel::collision::vec3f>(
+            cJSON_GetObjectItem(obj, "start")),
+        vec3_from_json<voxel::collision::vec3f>(
+            cJSON_GetObjectItem(obj, "end")),
+        (float)cJSON_GetObjectItem(obj, "radius")->valuedouble);
+}
+
+inline cJSON* to_json(const voxel::collision::Box& b) {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddItemToObject(obj, "half_extent", to_json(b.half_extent));
+    return obj;
+}
+
+inline voxel::collision::Box from_json_box(const cJSON* obj) {
+    voxel::collision::Box b;
+    b.half_extent = vec3_from_json<voxel::collision::vec3f>(
+        cJSON_GetObjectItem(obj, "half_extent"));
+    return b;
+}
+
+inline cJSON* to_json(const voxel::collision::Geometry& g) {
+    cJSON* obj = cJSON_CreateObject();
+
+    std::visit(
+        [&](auto&& shape) {
+            using T = std::decay_t<decltype(shape)>;
+
+            if constexpr (std::is_same_v<T, voxel::collision::Sphere>) {
+                cJSON_AddStringToObject(obj, "type", "sphere");
+                cJSON_AddItemToObject(obj, "data", to_json(shape));
+            } else if constexpr (std::is_same_v<T,
+                                                voxel::collision::Cylinder>) {
+                cJSON_AddStringToObject(obj, "type", "cylinder");
+                cJSON_AddItemToObject(obj, "data", to_json(shape));
+            } else if constexpr (std::is_same_v<T, voxel::collision::Capsule>) {
+                cJSON_AddStringToObject(obj, "type", "capsule");
+                cJSON_AddItemToObject(obj, "data", to_json(shape));
+            } else if constexpr (std::is_same_v<T, voxel::collision::Box>) {
+                cJSON_AddStringToObject(obj, "type", "box");
+                cJSON_AddItemToObject(obj, "data", to_json(shape));
+            }
+        },
+        g);
+
+    return obj;
+}
+
+inline voxel::collision::Geometry from_json_geometry(const cJSON* obj) {
+    const char* type = cJSON_GetObjectItem(obj, "type")->valuestring;
+    const cJSON* data = cJSON_GetObjectItem(obj, "data");
+
+    if (strcmp(type, "sphere") == 0) {
+        return from_json_sphere(data);
+    } else if (strcmp(type, "cylinder") == 0) {
+        return from_json_cylinder(data);
+    } else if (strcmp(type, "capsule") == 0) {
+        return from_json_capsule(data);
+    } else if (strcmp(type, "box") == 0) {
+        return from_json_box(data);
+    }
+
+    return voxel::collision::Sphere{};
+}
+
+inline cJSON* to_json(const voxel::collision::GeometryInstance& gi) {
+    cJSON* obj = cJSON_CreateObject();
+
+    cJSON_AddItemToObject(obj, "geometry", to_json(gi.geometry));
+    cJSON_AddItemToObject(obj, "transform", to_json(gi.transform));
+
+    return obj;
+}
+
+}  // namespace sinriv::kigstudio

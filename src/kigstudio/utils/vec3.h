@@ -2,10 +2,47 @@
 #include <concepts>
 #include <iostream>
 #include <math.h>
+#include <cJSON.h>
 
 namespace sinriv::kigstudio {
     template <typename T>
     concept Numeric = std::integral<T> || std::floating_point<T>;
+    
+    template <typename T>
+    concept Vec3_c = requires(T v) {
+        ((float)v.x);
+        ((float)v.y);
+        ((float)v.z);
+    };
+
+    template<Vec3_c T>
+    cJSON* to_json(const T& v) {
+        cJSON* json = cJSON_CreateObject();
+        if (!json) return nullptr;
+        
+        cJSON_AddNumberToObject(json, "x", v.x);
+        cJSON_AddNumberToObject(json, "y", v.y);
+        cJSON_AddNumberToObject(json, "z", v.z);
+        
+        return json;
+    }
+
+    // 反序列化函数：从cJSON对象创建Vec3_c类型
+    template<Vec3_c T>
+    T vec3_from_json(const cJSON* json) {
+        T result;
+        
+        cJSON* x_item = cJSON_GetObjectItemCaseSensitive(json, "x");
+        cJSON* y_item = cJSON_GetObjectItemCaseSensitive(json, "y");
+        cJSON* z_item = cJSON_GetObjectItemCaseSensitive(json, "z");
+        
+        if (x_item) result.x = static_cast<decltype(result.x)>(x_item->valuedouble);
+        if (y_item) result.y = static_cast<decltype(result.y)>(y_item->valuedouble);
+        if (z_item) result.z = static_cast<decltype(result.z)>(z_item->valuedouble);
+        
+        return result;
+    }
+
 
     template<Numeric T> struct vec3 {
     public:
