@@ -45,4 +45,27 @@ class Cone : public Base {
     bool contains(const vec3f& p) const override;  // 检测点是否在锥体内
 };
 
+inline cJSON* to_json(const Cone& c) {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddItemToObject(obj, "apex", to_json(c.apex));
+    cJSON* arr = cJSON_CreateArray();
+    for (const auto& v : c.base_vertices) {
+        cJSON_AddItemToArray(arr, to_json(v));
+    }
+    cJSON_AddItemToObject(obj, "base_vertices", arr);
+    return obj;
+}
+
+inline Cone from_json_cone(const cJSON* obj) {
+    Cone c;
+    c.apex = vec3_from_json<vec3f>(cJSON_GetObjectItem(obj, "apex"));
+    const cJSON* arr = cJSON_GetObjectItem(obj, "base_vertices");
+    int count = cJSON_GetArraySize(arr);
+    for (int i = 0; i < count; ++i) {
+        c.base_vertices.push_back(vec3_from_json<vec3f>(cJSON_GetArrayItem(arr, i)));
+    }
+    c.triangulate();
+    return c;
+}
+
 }  // namespace sinriv::kigstudio::voxel::concave

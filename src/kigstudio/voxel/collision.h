@@ -750,4 +750,48 @@ inline cJSON* to_json(const voxel::collision::GeometryInstance& gi) {
     return obj;
 }
 
+inline voxel::collision::GeometryInstance from_json_geometry_instance(
+    const cJSON* obj) {
+    voxel::collision::Geometry geometry =
+        from_json_geometry(cJSON_GetObjectItem(obj, "geometry"));
+    voxel::collision::Transform transform =
+        from_json_transform(cJSON_GetObjectItem(obj, "transform"));
+
+    return std::visit(
+        [&](auto&& shape) {
+            return voxel::collision::GeometryInstance(shape, transform);
+        },
+        geometry);
+}
+
+inline cJSON* to_json(const voxel::collision::CollisionGroup& group) {
+    cJSON* obj = cJSON_CreateObject();
+
+    cJSON_AddItemToObject(obj, "transform", to_json(group.getTransform()));
+
+    cJSON* geometries = cJSON_CreateArray();
+    for (const auto& gi : group.geometries()) {
+        cJSON_AddItemToArray(geometries, to_json(gi));
+    }
+    cJSON_AddItemToObject(obj, "geometries", geometries);
+
+    return obj;
+}
+
+inline voxel::collision::CollisionGroup from_json_collision_group(
+    const cJSON* obj) {
+    voxel::collision::CollisionGroup group;
+    group.setTransform(
+        from_json_transform(cJSON_GetObjectItem(obj, "transform")));
+
+    const cJSON* geometries = cJSON_GetObjectItem(obj, "geometries");
+    const int count = cJSON_GetArraySize(geometries);
+    for (int i = 0; i < count; ++i) {
+        group.geometries().push_back(
+            from_json_geometry_instance(cJSON_GetArrayItem(geometries, i)));
+    }
+
+    return group;
+}
+
 }  // namespace sinriv::kigstudio

@@ -204,9 +204,15 @@ int main() {
                 io.MousePos = ImVec2((float)e.motion.x, (float)e.motion.y);
             }
 
-            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_o &&
-                !io.WantCaptureKeyboard) {
-                render_items.show_file_loader = true;
+            if (e.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
+                bool ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+                if (e.key.keysym.sym == SDLK_o && !ctrl) {
+                    render_items.show_file_loader = true;
+                } else if (e.key.keysym.sym == SDLK_s && ctrl) {
+                    render_items.show_save_dialog = true;
+                } else if (e.key.keysym.sym == SDLK_o && ctrl) {
+                    render_items.show_load_dialog = true;
+                }
             }
 
             if (e.type == SDL_QUIT)

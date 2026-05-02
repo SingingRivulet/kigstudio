@@ -1,5 +1,7 @@
 #pragma once
 #include <atomic>
+#include <cJSON.h>
+#include <filesystem>
 #include <iostream>
 #include <map>
 #include <queue>
@@ -184,9 +186,13 @@ class RenderVoxelList {
     void render_concave_cone_editor(RenderVoxelItem& item);
     void render_nav_map();
     void render_file_loader();
+    void render_save_dialog();
+    void render_load_dialog();
 
     bool show_edit_segment_plane = false;
     bool show_file_loader = false;
+    bool show_save_dialog = false;
+    bool show_load_dialog = false;
 
     std::vector<std::tuple<sinriv::kigstudio::voxel::collision::vec3f,
                            sinriv::kigstudio::voxel::collision::vec3f>>
@@ -413,6 +419,162 @@ class RenderVoxelList {
     void processThumbnails();
     void ensureThumbnailResources();
     void destroyThumbnailResources();
+
+    // ===== Project Serialization =====
+    inline cJSON* item_to_json(const RenderVoxelItem& item) const {
+        cJSON* obj = cJSON_CreateObject();
+        cJSON_AddNumberToObject(obj, "id", item.id);
+        cJSON* children = cJSON_CreateArray();
+        cJSON_AddItemToArray(children, cJSON_CreateNumber(item.children[0]));
+        cJSON_AddItemToArray(children, cJSON_CreateNumber(item.children[1]));
+        cJSON_AddItemToObject(obj, "children", children);
+        cJSON* nav_pos = cJSON_CreateArray();
+        cJSON_AddItemToArray(nav_pos, cJSON_CreateNumber(item.nav_node_position[0]));
+        cJSON_AddItemToArray(nav_pos, cJSON_CreateNumber(item.nav_node_position[1]));
+        cJSON_AddItemToObject(obj, "nav_node_position", nav_pos);
+        cJSON_AddStringToObject(obj, "segment_mode",
+            item.segment_mode == RenderVoxelItem::COLLISION ? "collision" :
+            item.segment_mode == RenderVoxelItem::PLANE ? "plane" : "concave_cone");
+        cJSON_AddBoolToObject(obj, "show_mesh", item.showMesh);
+        cJSON_AddBoolToObject(obj, "show_voxel", item.showVoxel);
+        cJSON_AddBoolToObject(obj, "show_collision", item.showCollision);
+        cJSON_AddBoolToObject(obj, "show_collision_bounds", item.showCollisionBounds);
+        cJSON_AddStringToObject(obj, "stl_path", item.stl_path.c_str());
+        cJSON_AddStringToObject(obj, "voxel_path", item.voxel_path.c_str());
+        cJSON_AddStringToObject(obj, "err_info", item.err_info.c_str());
+        cJSON_AddItemToObject(obj, "collision_group",
+            sinriv::kigstudio::to_json(item.collision_group));
+        cJSON_AddItemToObject(obj, "plane",
+            sinriv::kigstudio::to_json(item.plane));
+        cJSON_AddItemToObject(obj, "concave_cone",
+            sinriv::kigstudio::voxel::concave::to_json(item.concave_cone));
+        cJSON* expanded = cJSON_CreateArray();
+        for (int v : item.concave_cone_expanded_vertices) {
+            cJSON_AddItemToArray(expanded, cJSON_CreateNumber(v));
+        }
+        cJSON_AddItemToObject(obj, "concave_cone_expanded_vertices", expanded);
+        cJSON_AddItemToObject(obj, "voxel_global_position",
+            sinriv::kigstudio::to_json(item.voxel_grid_data.global_position));
+        cJSON_AddItemToObject(obj, "voxel_size",
+            sinriv::kigstudio::to_json(item.voxel_grid_data.voxel_size));
+        return obj;
+    }
+
+    inline std::unique_ptr<RenderVoxelItem> item_from_json(const cJSON* obj) {
+        auto item = std::make_unique<RenderVoxelItem>();
+        item->manager = this;
+        item->id = cJSON_GetObjectItem(obj, "id")->valueint;
+        const cJSON* children = cJSON_GetObjectItem(obj, "children");
+        item->children[0] = cJSON_GetArrayItem(children, 0)->valueint;
+        item->children[1] = cJSON_GetArrayItem(children, 1)->valueint;
+        const cJSON* nav_pos = cJSON_GetObjectItem(obj, "nav_node_position");
+        item->nav_node_position[0] = cJSON_GetArrayItem(nav_pos, 0)->valueint;
+        item->nav_node_position[1] = cJSON_GetArrayItem(nav_pos, 1)->valueint;
+        const char* mode_str = cJSON_GetObjectItem(obj, "segment_mode")->valuestring;
+        if (strcmp(mode_str, "collision") == 0) {
+            item->segment_mode = RenderVoxelItem::COLLISION;
+        } else if (strcmp(mode_str, "plane") == 0) {
+            item->segment_mode = RenderVoxelItem::PLANE;
+        } else {
+            item->segment_mode = RenderVoxelItem::CONCAVE_CONE;
+        }
+        item->showMesh = cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_mesh"));
+        item->showVoxel = cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_voxel"));
+        item->showCollision = cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_collision"));
+        item->showCollisionBounds = cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_collision_bounds"));
+        item->stl_path = cJSON_GetObjectItem(obj, "stl_path")->valuestring;
+        item->voxel_path = cJSON_GetObjectItem(obj, "voxel_path")->valuestring;
+        item->err_info = cJSON_GetObjectItem(obj, "err_info")->valuestring;
+        item->collision_group = sinriv::kigstudio::from_json_collision_group(
+            cJSON_GetObjectItem(obj, "collision_group"));
+        item->plane = sinriv::kigstudio::from_json_plane(
+            cJSON_GetObjectItem(obj, "plane"));
+        item->concave_cone = sinriv::kigstudio::voxel::concave::from_json_cone(
+            cJSON_GetObjectItem(obj, "concave_cone"));
+        const cJSON* expanded = cJSON_GetObjectItem(obj, "concave_cone_expanded_vertices");
+        int expanded_count = cJSON_GetArraySize(expanded);
+        for (int i = 0; i < expanded_count; ++i) {
+            item->concave_cone_expanded_vertices.push_back(
+                cJSON_GetArrayItem(expanded, i)->valueint);
+        }
+        item->voxel_grid_data.global_position = sinriv::kigstudio::vec3_from_json<sinriv::kigstudio::vec3<float>>(
+            cJSON_GetObjectItem(obj, "voxel_global_position"));
+        item->voxel_grid_data.voxel_size = sinriv::kigstudio::vec3_from_json<sinriv::kigstudio::vec3<float>>(
+            cJSON_GetObjectItem(obj, "voxel_size"));
+        return item;
+    }
+
+    inline bool save_project(const std::string& folder) {
+        std::filesystem::path dir(folder);
+        std::filesystem::create_directories(dir / "voxels");
+
+        std::lock_guard<std::mutex> lock(locker);
+        cJSON* root = cJSON_CreateObject();
+        cJSON_AddNumberToObject(root, "version", 1);
+        cJSON_AddNumberToObject(root, "current_id", current_id.load());
+        cJSON* arr = cJSON_CreateArray();
+        for (const auto& [id, item] : items) {
+            cJSON_AddItemToArray(arr, item_to_json(*item));
+            std::string voxel_path = (dir / "voxels" / (std::to_string(id) + ".vxgrid")).string();
+            sinriv::kigstudio::save(voxel_path, item->voxel_grid_data);
+        }
+        cJSON_AddItemToObject(root, "items", arr);
+
+        std::string json_path = (dir / "project.json").string();
+        char* json_str = cJSON_Print(root);
+        std::ofstream ofs(json_path);
+        bool ok = false;
+        if (ofs && json_str) {
+            ofs << json_str;
+            ok = ofs.good();
+        }
+        cJSON_free(json_str);
+        cJSON_Delete(root);
+        return ok;
+    }
+
+    inline bool load_project(const std::string& folder) {
+        release();
+        start_thread();
+        current_id = 0;
+
+        std::filesystem::path dir(folder);
+        std::string json_path = (dir / "project.json").string();
+        std::ifstream ifs(json_path);
+        if (!ifs) return false;
+        std::string json_str((std::istreambuf_iterator<char>(ifs)),
+                              std::istreambuf_iterator<char>());
+        cJSON* root = cJSON_Parse(json_str.c_str());
+        if (!root) return false;
+
+        int version = cJSON_GetObjectItem(root, "version")->valueint;
+        if (version != 1) {
+            cJSON_Delete(root);
+            return false;
+        }
+
+        current_id = cJSON_GetObjectItem(root, "current_id")->valueint;
+        const cJSON* arr = cJSON_GetObjectItem(root, "items");
+        int count = cJSON_GetArraySize(arr);
+        {
+            std::lock_guard<std::mutex> lock(locker);
+            for (int i = 0; i < count; ++i) {
+                const cJSON* item_obj = cJSON_GetArrayItem(arr, i);
+                auto item = item_from_json(item_obj);
+                int id = item->id;
+                std::string voxel_path = (dir / "voxels" / (std::to_string(id) + ".vxgrid")).string();
+                sinriv::kigstudio::load(voxel_path, item->voxel_grid_data);
+                items[id] = std::move(item);
+            }
+        }
+
+        cJSON_Delete(root);
+        if (!items.empty()) {
+            render_id = items.begin()->first;
+        }
+        update_nav_node_status = true;
+        return true;
+    }
 };
 
 }  // namespace sinriv::ui::render

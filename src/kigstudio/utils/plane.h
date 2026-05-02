@@ -133,4 +133,19 @@ class Plane {
                   << D << " = 0" << std::endl;
     }
 };
+
+inline cJSON* to_json(const Plane<float>& p) {
+    cJSON* obj = cJSON_CreateObject();
+    auto [point, normal] = p.getPointNormalForm();
+    cJSON_AddItemToObject(obj, "point", to_json(point));
+    cJSON_AddItemToObject(obj, "normal", to_json(normal));
+    return obj;
+}
+
+inline Plane<float> from_json_plane(const cJSON* obj) {
+    vec3<float> point = vec3_from_json<vec3<float>>(cJSON_GetObjectItem(obj, "point"));
+    vec3<float> normal = vec3_from_json<vec3<float>>(cJSON_GetObjectItem(obj, "normal"));
+    return Plane<float>(point, normal);
+}
+
 }  // namespace sinriv::kigstudio

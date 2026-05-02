@@ -91,6 +91,10 @@ void init_locale_strings() {
     add_locale_string("menu.bound", {{"en", "Bound"}, {"zh", "边界"}});
     add_locale_string("menu.open_stl",
                       {{"en", "Open STL (O)"}, {"zh", "打开 STL (O)"}});
+    add_locale_string("menu.save_project",
+                      {{"en", "Save Project (Ctrl+S)"}, {"zh", "保存项目 (Ctrl+S)"}});
+    add_locale_string("menu.load_project",
+                      {{"en", "Load Project (Ctrl+O)"}, {"zh", "加载项目 (Ctrl+O)"}});
 
     add_locale_string("action.update_collision",
                       {{"en", "update collision"}, {"zh", "更新碰撞"}});
@@ -234,10 +238,22 @@ void init_locale_strings() {
                       {{"en", "Save Voxel as STL"}, {"zh", "保存体素为 STL"}});
     add_locale_string("dialog.stl_files",
                       {{"en", "STL files"}, {"zh", "STL 文件"}});
+    add_locale_string("dialog.save_project_title",
+                      {{"en", "Select Folder to Save Project"},
+                       {"zh", "选择文件夹保存项目"}});
+    add_locale_string("dialog.load_project_title",
+                      {{"en", "Select Project Folder"},
+                       {"zh", "选择项目文件夹"}});
 
     add_locale_string("error.three_points_collinear",
                       {{"en", "Three points are collinear."},
                        {"zh", "三个点共线。"}});
+    add_locale_string("error.save_failed",
+                      {{"en", "Failed to save project."},
+                       {"zh", "保存项目失败。"}});
+    add_locale_string("error.load_failed",
+                      {{"en", "Failed to load project."},
+                       {"zh", "加载项目失败。"}});
 }
 
 const std::string& get_locale_string_ref(const std::string& key) {

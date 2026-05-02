@@ -248,6 +248,12 @@ void RenderVoxelList::render_ui() {
                 if (ImGui::MenuItem(get_locale_cstr("menu.open_stl"))) {
                     show_file_loader = true;
                 }
+                if (ImGui::MenuItem(get_locale_cstr("menu.save_project"))) {
+                    show_save_dialog = true;
+                }
+                if (ImGui::MenuItem(get_locale_cstr("menu.load_project"))) {
+                    show_load_dialog = true;
+                }
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(get_locale_cstr("menu.view"))) {
@@ -330,6 +336,8 @@ void RenderVoxelList::render_ui() {
     render_nav_map();
     render_collision_node_editor();
     render_file_loader();
+    render_save_dialog();
+    render_load_dialog();
 
     this->setMeshAxisVisible(showMeshAxis);
     this->setVoxelAxisVisible(showVoxelAxis);
@@ -873,6 +881,36 @@ void RenderVoxelList::render_collision_node_editor() {
         }
     }
     ImGui::End();
+}
+
+void RenderVoxelList::render_save_dialog() {
+    if (show_save_dialog) {
+        const char* folder = tinyfd_selectFolderDialog(
+            get_locale_cstr("dialog.save_project_title"), "");
+        if (folder) {
+            std::string path = tinyfd_path_to_utf8(folder);
+            if (!save_project(path)) {
+                tinyfd_messageBox("Error", get_locale_cstr("error.save_failed"),
+                                  "ok", "error", 1);
+            }
+        }
+        show_save_dialog = false;
+    }
+}
+
+void RenderVoxelList::render_load_dialog() {
+    if (show_load_dialog) {
+        const char* folder = tinyfd_selectFolderDialog(
+            get_locale_cstr("dialog.load_project_title"), "");
+        if (folder) {
+            std::string path = tinyfd_path_to_utf8(folder);
+            if (!load_project(path)) {
+                tinyfd_messageBox("Error", get_locale_cstr("error.load_failed"),
+                                  "ok", "error", 1);
+            }
+        }
+        show_load_dialog = false;
+    }
 }
 
 }  // namespace sinriv::ui::render
