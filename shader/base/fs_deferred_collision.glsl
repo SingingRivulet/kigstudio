@@ -60,6 +60,9 @@ bool insideBox(vec3 point, vec4 typeWithExtent, vec4 row0, vec4 row1, vec4 row2,
 bool insideShape(vec3 point)
 {
     int type = int(u_shapeType.x);
+    if (type == 5) {
+        return true;
+    }
     if (type == 0) {
         return insideSphere(point, u_shapeData0);
     }

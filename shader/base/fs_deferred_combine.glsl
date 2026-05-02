@@ -6,6 +6,7 @@ SAMPLER2D(s_albedo, 0);
 SAMPLER2D(s_normal, 1);
 SAMPLER2D(s_worldPos, 2);
 SAMPLER2D(s_collision, 3);
+SAMPLER2D(s_volume, 4);
 
 uniform vec4 u_lightDir;
 uniform vec4 u_space_div;
@@ -47,6 +48,10 @@ void main()
     // 必须反转y轴，bgfx中rt的y轴是反的
     if (texture2D(s_collision, vec2(v_texcoord0.x, 1.0-v_texcoord0.y)).r > 0.5) {
         color = mix(color, vec3(0.20, 0.45, 1.00), 0.65);
+    }
+
+    if (texture2D(s_volume, vec2(v_texcoord0.x, 1.0-v_texcoord0.y)).r > 0.5) {
+        color = mix(color, vec3(0.20, 1.00, 0.45), 0.65);
     }
 
     if (u_mouseHighlight.x > 0.5) {

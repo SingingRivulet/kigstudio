@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <utility>
 #include <variant>
@@ -35,6 +36,7 @@ class Cone : public Base {
    public:
     vec3f apex;                        // 顶点
     std::vector<vec3f> base_vertices;  // 底面顶点路径（环形）
+    std::vector<std::array<uint32_t, 3>> base_triangles; // 底面三角形索引（由triangulate生成）
     void triangulate() override;       // 构建三角形
     bool
     check(  // 检测是否有效(锥体夹角必须小于180度，从顶点方向看，路径不能有交叉)

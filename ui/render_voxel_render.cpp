@@ -95,7 +95,8 @@ void RenderVoxelList::RenderVoxelItem::render_concave_cone_overlay(
     }
 
     std::vector<mesh_detail::ColorLineVertex> face_vertices;
-    face_vertices.reserve(static_cast<size_t>(vertex_count) * 3);
+    face_vertices.reserve(static_cast<size_t>(vertex_count) * 3 +
+                          static_cast<size_t>(vertex_count) * 3);
     for (int i = 0; i < vertex_count; ++i) {
         const auto& a = concave_cone.apex;
         const auto& b = extended_verts[i];
@@ -103,6 +104,16 @@ void RenderVoxelList::RenderVoxelItem::render_concave_cone_overlay(
         face_vertices.push_back({a.x, -a.y, a.z, face_color});
         face_vertices.push_back({b.x, -b.y, b.z, face_color});
         face_vertices.push_back({c.x, -c.y, c.z, face_color});
+    }
+
+    concave_cone.triangulate();
+    for (const auto& tri : concave_cone.base_triangles) {
+        const auto& v0 = extended_verts[tri[0]];
+        const auto& v1 = extended_verts[tri[1]];
+        const auto& v2 = extended_verts[tri[2]];
+        face_vertices.push_back({v0.x, -v0.y, v0.z, face_color});
+        face_vertices.push_back({v1.x, -v1.y, v1.z, face_color});
+        face_vertices.push_back({v2.x, -v2.y, v2.z, face_color});
     }
 
     if (!face_vertices.empty() &&
@@ -172,9 +183,8 @@ void RenderVoxelList::RenderVoxelItem::upload_collision(
             render.setSpaceDivVisible(true);
             render.setSpaceDiv(plane.A, plane.B, plane.C, plane.D);
         } else if (segment_mode == CONCAVE_CONE) {
-            render.clearCollisionTint();
+            render.setConcaveCone(concave_cone);
             render.setSpaceDivVisible(false);
-            // Set the space division for the concave cone
         }
     } else {
         render.clearCollisionTint();

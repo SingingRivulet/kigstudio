@@ -82,8 +82,9 @@ int main() {
 
     constexpr bgfx::ViewId kGBufferView = 0;
     constexpr bgfx::ViewId kCollisionView = 1;
-    constexpr bgfx::ViewId kLightingView = 2;
-    constexpr bgfx::ViewId kOverlayView = 3;
+    constexpr bgfx::ViewId kCollisionFillView = 2;
+    constexpr bgfx::ViewId kLightingView = 3;
+    constexpr bgfx::ViewId kOverlayView = 4;
 
     bgfx::setViewClear(kOverlayView, 0, 0x00000000, 1.0f, 0);
     bgfx::setViewFrameBuffer(kOverlayView, BGFX_INVALID_HANDLE);
@@ -98,6 +99,7 @@ int main() {
     bgfx::setViewRect(kGBufferView, 0, 0, width, height);
     bgfx::setViewRect(kLightingView, 0, 0, width, height);
     bgfx::setViewRect(kCollisionView, 0, 0, width, height);
+    bgfx::setViewRect(kCollisionFillView, 0, 0, width, height);
     bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
     sinriv::ui::render::RenderMeshShader mesh_render_shader(kGBufferView,
@@ -105,7 +107,7 @@ int main() {
     sinriv::ui::render::RenderCollisionShader collision_render_shader(
         kGBufferView, kOverlayView);
     sinriv::ui::render::RenderDeferred deferred_renderer(
-        kGBufferView, kLightingView, kCollisionView);
+        kGBufferView, kLightingView, kCollisionView, kCollisionFillView);
     sinriv::ui::render::RenderVoxelList render_items;
     sinriv::ui::render::RenderCollision collision_renderer{};
 
@@ -230,6 +232,7 @@ int main() {
         bgfx::setViewRect(kGBufferView, 0, 0, width, height);
         bgfx::setViewRect(kLightingView, 0, 0, width, height);
         bgfx::setViewRect(kCollisionView, 0, 0, width, height);
+        bgfx::setViewRect(kCollisionFillView, 0, 0, width, height);
         bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
         float view_1[16];
@@ -250,6 +253,7 @@ int main() {
         bgfx::setViewFrameBuffer(kOverlayView, BGFX_INVALID_HANDLE);
         deferred_renderer.setViewportSize(static_cast<uint16_t>(width),
                                           static_cast<uint16_t>(height));
+        deferred_renderer.setSceneViewProjection(view_1, proj);
         deferred_renderer.prepareFrame();
         render_items.window_height = height;
         render_items.window_width = width;
@@ -262,6 +266,7 @@ int main() {
         float mtx_2[16];
         bx::mtxRotateXY(mtx_1, bx::toRad(-pitch), bx::toRad(yaw));
         bx::mtxRotateXY(mtx_2, bx::toRad(pitch), bx::toRad(yaw));
+        deferred_renderer.setSceneModelTransform(mtx_2);
         sinriv::kigstudio::mat::matrix<float> cpu_model_matrix(mtx_1);
         cpu_model_matrix.transpose();
         render_items.setModelMatrix(cpu_model_matrix);

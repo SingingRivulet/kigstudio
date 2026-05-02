@@ -194,6 +194,15 @@ inline bool pointInPolygon(const std::vector<vec2>& poly, vec2 p) {
     return inside;
 }
 
+inline bool pointInTriangle2D(const vec2& p, const vec2& a, const vec2& b,
+                              const vec2& c) {
+    constexpr float eps = 1e-6f;
+    const float c0 = cross2(a, b, p);
+    const float c1 = cross2(b, c, p);
+    const float c2 = cross2(c, a, p);
+    return c0 >= -eps && c1 >= -eps && c2 >= -eps;
+}
+
 bool Cone::contains(const vec3f& p) const {
     vec3f d = normalize(p - apex);
 
@@ -211,6 +220,9 @@ bool Cone::contains(const vec3f& p) const {
 }
 
 void Cone::triangulate() {
+    vertices.clear();
+    indices.clear();
+    base_triangles.clear();
     const float eps = 1e-6f;
     int n = (int)base_vertices.size();
     if (n < 2)
@@ -231,7 +243,7 @@ void Cone::triangulate() {
     else
         cone_dir = normalize(cone_dir);
 
-    // ---------- 2. 生成三角形 ----------
+    // ---------- 2. 生成侧面三角形 ----------
     for (int i = 0; i < n; ++i) {
         const vec3f& v0 = apex;
         const vec3f& v1 = base_vertices[i];
@@ -274,6 +286,106 @@ void Cone::triangulate() {
         indices.push_back(baseIndex + 0);
         indices.push_back(baseIndex + 1);
         indices.push_back(baseIndex + 2);
+    }
+
+    // ---------- 3. 底面封盖（耳切法三角化） ----------
+    vec3f right, up;
+    buildBasis(cone_dir, right, up);
+    auto proj = projectDirs(dirs, right, up);
+
+    std::vector<int> order;
+    order.reserve(n);
+    for (int i = 0; i < n; ++i)
+        order.push_back(i);
+
+    float area = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const vec2& a = proj[order[i]];
+        const vec2& b = proj[order[(i + 1) % n]];
+        area += a.x * b.y - b.x * a.y;
+    }
+    if (area < 0.0f)
+        std::reverse(order.begin(), order.end());
+
+    auto pushBaseTriangle = [&](int i0, int i1, int i2) {
+        const vec3f& v0 = base_vertices[i0];
+        const vec3f& v1 = base_vertices[i1];
+        const vec3f& v2 = base_vertices[i2];
+
+        vec3f e1 = v1 - v0;
+        vec3f e2 = v2 - v0;
+        vec3f normal = cross(e1, e2);
+        float len = length(normal);
+        if (len > eps) {
+            normal /= len;
+            if (dot(normal, cone_dir) > 0)
+                normal = -normal;
+        } else {
+            normal = -cone_dir;
+        }
+
+        uint32_t baseIndex = (uint32_t)vertices.size();
+        auto push = [&](const vec3f& p) {
+            PosNormalVertex v;
+            v.pos.x = p.x;
+            v.pos.y = p.y;
+            v.pos.z = p.z;
+            v.normal.x = normal.x;
+            v.normal.y = normal.y;
+            v.normal.z = normal.z;
+            vertices.push_back(v);
+        };
+        push(v0);
+        push(v1);
+        push(v2);
+        indices.push_back(baseIndex + 0);
+        indices.push_back(baseIndex + 1);
+        indices.push_back(baseIndex + 2);
+        base_triangles.push_back({static_cast<uint32_t>(i0), static_cast<uint32_t>(i1), static_cast<uint32_t>(i2)});
+    };
+
+    std::vector<int> remaining = order;
+    while (remaining.size() > 3) {
+        bool clipped = false;
+        for (size_t i = 0; i < remaining.size(); ++i) {
+            size_t prev_i = (i + remaining.size() - 1) % remaining.size();
+            size_t next_i = (i + 1) % remaining.size();
+            int prev = remaining[prev_i];
+            int curr = remaining[i];
+            int next = remaining[next_i];
+
+            if (cross2(proj[prev], proj[curr], proj[next]) <= 1e-6f)
+                continue;
+
+            bool contains_point = false;
+            for (size_t j = 0; j < remaining.size(); ++j) {
+                int test = remaining[j];
+                if (test == prev || test == curr || test == next)
+                    continue;
+                if (pointInTriangle2D(proj[test], proj[prev], proj[curr],
+                                      proj[next])) {
+                    contains_point = true;
+                    break;
+                }
+            }
+            if (contains_point)
+                continue;
+
+            pushBaseTriangle(prev, curr, next);
+            remaining.erase(remaining.begin() + static_cast<std::ptrdiff_t>(i));
+            clipped = true;
+            break;
+        }
+        if (!clipped)
+            break;
+    }
+
+    if (remaining.size() == 3) {
+        pushBaseTriangle(remaining[0], remaining[1], remaining[2]);
+    } else if (remaining.size() > 3) {
+        for (size_t i = 1; i + 1 < remaining.size(); ++i) {
+            pushBaseTriangle(remaining[0], remaining[i], remaining[i + 1]);
+        }
     }
 }
 

@@ -1,6 +1,64 @@
 #include "render_deferred.h"
 
 namespace sinriv::ui::render {
+namespace {
+constexpr float kConeVolumeScale = 1000.0f;
+
+template <class Vec3>
+deferred_detail::VolumeVertex makeVolumeVertex(const Vec3& value) {
+    return {value.x, value.y, value.z};
+}
+
+struct Vec2 {
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+template <class Vec3>
+float dot3(const Vec3& a, const Vec3& b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+template <class Vec3>
+Vec3 cross3(const Vec3& a, const Vec3& b) {
+    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,
+            a.x * b.y - a.y * b.x};
+}
+
+template <class Vec3>
+Vec3 normalize3(const Vec3& value, const Vec3& fallback) {
+    const float len_sq = dot3(value, value);
+    if (len_sq <= 1e-12f) {
+        return fallback;
+    }
+    return value / std::sqrt(len_sq);
+}
+
+float cross2(const Vec2& a, const Vec2& b, const Vec2& c) {
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+float polygonArea2(const std::vector<Vec2>& points,
+                   const std::vector<size_t>& order) {
+    float area = 0.0f;
+    for (size_t i = 0; i < order.size(); ++i) {
+        const Vec2& a = points[order[i]];
+        const Vec2& b = points[order[(i + 1) % order.size()]];
+        area += a.x * b.y - b.x * a.y;
+    }
+    return area;
+}
+
+bool pointInTriangle(const Vec2& p, const Vec2& a, const Vec2& b,
+                     const Vec2& c) {
+    constexpr float eps = 1e-6f;
+    const float c0 = cross2(a, b, p);
+    const float c1 = cross2(b, c, p);
+    const float c2 = cross2(c, a, p);
+    return c0 >= -eps && c1 >= -eps && c2 >= -eps;
+}
+}  // namespace
+
 bgfx::ShaderHandle deferred_detail::loadShader(const std::string& path) {
     FILE* file = std::fopen(path.c_str(), "rb");
     if (!file) {
@@ -46,36 +104,49 @@ void RenderDeferred::setCollisionGroup(const CollisionGroup& group) {
     }
 }
 
+void RenderDeferred::setConcaveCone(Cone& cone) {
+    clearCollisionTint();
+    appendConcaveCone(cone);
+}
+
 void RenderDeferred::prepareFrame() {
     if (!ensureFrameBuffer()) {
         return;
     }
 
+    float screen_view[16];
+    float screen_proj[16];
+    bx::mtxIdentity(screen_view);
+    bx::mtxOrtho(screen_proj, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 100.0f, 0.0f,
+                 bgfx::getCaps()->homogeneousDepth);
+
     bgfx::setViewName(gbuffer_view_id_, "GBuffer");
     bgfx::setViewFrameBuffer(gbuffer_view_id_, gbuffer_);
     bgfx::setViewRect(gbuffer_view_id_, 0, 0, width_, height_);
-    bgfx::setViewClear(gbuffer_view_id_, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
+    bgfx::setViewClear(gbuffer_view_id_,
+                       BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH | BGFX_CLEAR_STENCIL,
                        0x00000000, 1.0f, 0);
     bgfx::touch(gbuffer_view_id_);
 
-    float view[16];
-    float proj[16];
-    bx::mtxIdentity(view);
-    bx::mtxOrtho(proj, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 100.0f, 0.0f,
-                 bgfx::getCaps()->homogeneousDepth);
-
-    bgfx::setViewName(collision_view_id_, "CollisionMask");
-    bgfx::setViewFrameBuffer(collision_view_id_, collision_fb_);
+    bgfx::setViewName(collision_view_id_, "CollisionVolume");
+    bgfx::setViewFrameBuffer(collision_view_id_, collision_volume_fb_);
     bgfx::setViewRect(collision_view_id_, 0, 0, width_, height_);
-    bgfx::setViewTransform(collision_view_id_, view, proj);
-    bgfx::setViewClear(collision_view_id_, BGFX_CLEAR_COLOR,
+    bgfx::setViewTransform(collision_view_id_, scene_view_, scene_proj_);
+    bgfx::setViewClear(collision_view_id_, BGFX_CLEAR_COLOR | BGFX_CLEAR_STENCIL,
                        0x00000000);  // mask = 0
     bgfx::touch(collision_view_id_);
+
+    bgfx::setViewName(collision_fill_view_id_, "CollisionMask");
+    bgfx::setViewFrameBuffer(collision_fill_view_id_, collision_fb_);
+    bgfx::setViewRect(collision_fill_view_id_, 0, 0, width_, height_);
+    bgfx::setViewTransform(collision_fill_view_id_, screen_view, screen_proj);
+    bgfx::setViewClear(collision_fill_view_id_, BGFX_CLEAR_COLOR, 0x00000000);
+    bgfx::touch(collision_fill_view_id_);
 
     bgfx::setViewName(lighting_view_id_, "DeferredLighting");
     bgfx::setViewFrameBuffer(lighting_view_id_, BGFX_INVALID_HANDLE);
     bgfx::setViewRect(lighting_view_id_, 0, 0, width_, height_);
-    bgfx::setViewTransform(lighting_view_id_, view, proj);
+    bgfx::setViewTransform(lighting_view_id_, screen_view, screen_proj);
     bgfx::setViewClear(lighting_view_id_, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
                        0x303030ff, 1.0f, 0);
     bgfx::touch(lighting_view_id_);
@@ -108,6 +179,65 @@ void RenderDeferred::render() {
 
     // ===== Collision Pass =====
     for (const auto& item : collision_items_) {
+        if (item.type == 4) {
+            if (!bgfx::isValid(volume_program_) || item.volume_vertices.empty()) {
+                continue;
+            }
+            if (!volume_layout_initialized_) {
+                deferred_detail::VolumeVertex::init(volume_layout_);
+                volume_layout_initialized_ = true;
+            }
+            if (bgfx::getAvailTransientVertexBuffer(
+                    static_cast<uint32_t>(item.volume_vertices.size()),
+                    volume_layout_) < item.volume_vertices.size()) {
+                continue;
+            }
+
+            bgfx::TransientVertexBuffer volume_tvb;
+            bgfx::allocTransientVertexBuffer(
+                &volume_tvb, static_cast<uint32_t>(item.volume_vertices.size()),
+                volume_layout_);
+            std::memcpy(volume_tvb.data, item.volume_vertices.data(),
+                        item.volume_vertices.size() *
+                            sizeof(deferred_detail::VolumeVertex));
+
+            bgfx::setTransform(scene_model_mtx_);
+            bgfx::setVertexBuffer(0, &volume_tvb);
+            bgfx::setState(BGFX_STATE_DEPTH_TEST_LEQUAL | BGFX_STATE_MSAA);
+            bgfx::setStencil(
+                BGFX_STENCIL_TEST_ALWAYS | BGFX_STENCIL_FUNC_REF(1) |
+                    BGFX_STENCIL_FUNC_RMASK(0xff) |
+                    BGFX_STENCIL_OP_FAIL_S_KEEP |
+                    BGFX_STENCIL_OP_FAIL_Z_INCR |
+                    BGFX_STENCIL_OP_PASS_Z_KEEP,
+                BGFX_STENCIL_TEST_ALWAYS | BGFX_STENCIL_FUNC_REF(1) |
+                    BGFX_STENCIL_FUNC_RMASK(0xff) |
+                    BGFX_STENCIL_OP_FAIL_S_KEEP |
+                    BGFX_STENCIL_OP_FAIL_Z_DECR |
+                    BGFX_STENCIL_OP_PASS_Z_KEEP);
+            bgfx::submit(collision_view_id_, volume_program_);
+
+            bgfx::setViewFrameBuffer(collision_fill_view_id_,
+                                     collision_volume_fb_);
+            bgfx::setTransform(identity_mtx_);
+            bgfx::setVertexBuffer(0, &tvb);
+            bgfx::setIndexBuffer(&tib);
+            bgfx::setTexture(0, s_world_pos_, world_pos_texture_);
+            float type_vec[4] = {5.0f, 0.0f, 0.0f, 0.0f};
+            bgfx::setUniform(u_shape_type_, type_vec);
+            bgfx::setUniform(u_shape_data_0_, item.data[0].data());
+            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                           BGFX_STATE_MSAA | BGFX_STATE_BLEND_ADD);
+            bgfx::setStencil(
+                BGFX_STENCIL_TEST_NOTEQUAL | BGFX_STENCIL_FUNC_REF(0) |
+                    BGFX_STENCIL_FUNC_RMASK(0xff) |
+                    BGFX_STENCIL_OP_FAIL_S_KEEP |
+                    BGFX_STENCIL_OP_FAIL_Z_KEEP |
+                    BGFX_STENCIL_OP_PASS_Z_KEEP);
+            bgfx::submit(collision_fill_view_id_, collision_program_);
+            continue;
+        }
+
         bgfx::setTransform(identity_mtx_);
         bgfx::setVertexBuffer(0, &tvb);
         bgfx::setIndexBuffer(&tib);
@@ -131,7 +261,7 @@ void RenderDeferred::render() {
 
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                        BGFX_STATE_MSAA | BGFX_STATE_BLEND_ADD);
-        bgfx::submit(collision_view_id_, collision_program_);
+        bgfx::submit(collision_fill_view_id_, collision_program_);
     }
 
     // ===== Lighting Pass =====
@@ -142,6 +272,7 @@ void RenderDeferred::render() {
     bgfx::setTexture(1, s_normal_, normal_texture_);
     bgfx::setTexture(2, s_world_pos_, world_pos_texture_);
     bgfx::setTexture(3, s_collision_status_, collision_body_texture_);
+    bgfx::setTexture(4, s_volume_, collision_volume_texture_);
     bgfx::setUniform(u_light_dir_, light_dir_.data());
     bgfx::setUniform(u_space_div_, space_div.data());
     bgfx::setUniform(u_space_div_mix_, space_div_mix.data());
@@ -206,6 +337,10 @@ void RenderDeferred::release() {
         bgfx::destroy(s_collision_status_);
         s_collision_status_ = BGFX_INVALID_HANDLE;
     }
+    if (bgfx::isValid(s_volume_)) {
+        bgfx::destroy(s_volume_);
+        s_volume_ = BGFX_INVALID_HANDLE;
+    }
     destroyCollisionUniforms();
 }
 
@@ -269,6 +404,10 @@ void RenderDeferred::destroyPrograms() {
         bgfx::destroy(collision_program_);
         collision_program_ = BGFX_INVALID_HANDLE;
     }
+    if (bgfx::isValid(volume_program_)) {
+        bgfx::destroy(volume_program_);
+        volume_program_ = BGFX_INVALID_HANDLE;
+    }
 }
 
 void RenderDeferred::destroyFrameBuffer() {
@@ -280,8 +419,31 @@ void RenderDeferred::destroyFrameBuffer() {
         bgfx::destroy(collision_fb_);
         collision_fb_ = BGFX_INVALID_HANDLE;
     }
+    if (bgfx::isValid(collision_volume_fb_)) {
+        bgfx::destroy(collision_volume_fb_);
+        collision_volume_fb_ = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(albedo_texture_)) {
+        bgfx::destroy(albedo_texture_);
+    }
+    if (bgfx::isValid(normal_texture_)) {
+        bgfx::destroy(normal_texture_);
+    }
+    if (bgfx::isValid(world_pos_texture_)) {
+        bgfx::destroy(world_pos_texture_);
+    }
+    if (bgfx::isValid(collision_body_texture_)) {
+        bgfx::destroy(collision_body_texture_);
+    }
+    if (bgfx::isValid(collision_volume_texture_)) {
+        bgfx::destroy(collision_volume_texture_);
+    }
+    if (bgfx::isValid(depth_texture_)) {
+        bgfx::destroy(depth_texture_);
+    }
     albedo_texture_ = BGFX_INVALID_HANDLE;
     collision_body_texture_ = BGFX_INVALID_HANDLE;
+    collision_volume_texture_ = BGFX_INVALID_HANDLE;
     normal_texture_ = BGFX_INVALID_HANDLE;
     world_pos_texture_ = BGFX_INVALID_HANDLE;
     depth_texture_ = BGFX_INVALID_HANDLE;
@@ -366,6 +528,47 @@ void RenderDeferred::appendBox(const Box& box,
     collision_items_.push_back(item);
 }
 
+void RenderDeferred::appendConcaveCone(Cone& cone) {
+    if (cone.base_vertices.size() < 3) {
+        return;
+    }
+
+    cone.triangulate();
+
+    CollisionItem item;
+    item.type = 4;
+    item.data[0] = {cone.apex.x, cone.apex.y, cone.apex.z, 1.0f};
+
+    const auto& base = cone.base_vertices;
+    const size_t count = base.size();
+    std::vector<sinriv::kigstudio::voxel::concave::vec3f> far_vertices;
+    far_vertices.reserve(count);
+    for (const auto& vertex : base) {
+        auto far_vertex = cone.apex + (vertex - cone.apex) * kConeVolumeScale;
+        far_vertex.y = -far_vertex.y;
+        far_vertices.push_back(far_vertex);
+    }
+
+    item.volume_vertices.reserve(count * 6);
+    auto pushTriangle = [&](const auto& a, const auto& b, const auto& c) {
+        item.volume_vertices.push_back(makeVolumeVertex(a));
+        item.volume_vertices.push_back(makeVolumeVertex(b));
+        item.volume_vertices.push_back(makeVolumeVertex(c));
+    };
+
+    for (size_t i = 0; i < count; ++i) {
+        const size_t next = (i + 1) % count;
+        pushTriangle(cone.apex, far_vertices[i], far_vertices[next]);
+    }
+
+    for (const auto& tri : cone.base_triangles) {
+        pushTriangle(far_vertices[tri[0]], far_vertices[tri[1]],
+                     far_vertices[tri[2]]);
+    }
+
+    collision_items_.push_back(item);
+}
+
 bool RenderDeferred::ensureFrameBuffer() {
     if (!screen_layout_initialized_) {
         deferred_detail::ScreenVertex::init(screen_layout_);
@@ -374,6 +577,7 @@ bool RenderDeferred::ensureFrameBuffer() {
     }
 
     if (bgfx::isValid(gbuffer_) && bgfx::isValid(collision_fb_) &&
+        bgfx::isValid(collision_volume_fb_) &&
         width_ == fb_width_ && height_ == fb_height_) {
         return true;
     }
@@ -392,7 +596,7 @@ bool RenderDeferred::ensureFrameBuffer() {
         bgfx::createTexture2D(2, 2, false, 1, bgfx::TextureFormat::RGBA32F,
                               BGFX_TEXTURE_READ_BACK | BGFX_TEXTURE_BLIT_DST);
     depth_texture_ = bgfx::createTexture2D(
-        width_, height_, false, 1, bgfx::TextureFormat::D32F, kSamplerFlags);
+        width_, height_, false, 1, bgfx::TextureFormat::D24S8, kSamplerFlags);
 
     bgfx::TextureHandle attachments[] = {
         albedo_texture_,
@@ -401,20 +605,37 @@ bool RenderDeferred::ensureFrameBuffer() {
         depth_texture_,
     };
     gbuffer_ = bgfx::createFrameBuffer(
-        static_cast<uint8_t>(BX_COUNTOF(attachments)), attachments, true);
+        static_cast<uint8_t>(BX_COUNTOF(attachments)), attachments, false);
     fb_width_ = width_;
     fb_height_ = height_;
 
     collision_body_texture_ = bgfx::createTexture2D(
         width_, height_, false, 1, bgfx::TextureFormat::BGRA8, kSamplerFlags);
-    bgfx::TextureHandle collision_attachment[] = {collision_body_texture_};
-    collision_fb_ = bgfx::createFrameBuffer(1, collision_attachment, true);
+    bgfx::TextureHandle collision_attachment[] = {
+        collision_body_texture_,
+        depth_texture_,
+    };
+    collision_fb_ = bgfx::createFrameBuffer(
+        static_cast<uint8_t>(BX_COUNTOF(collision_attachment)),
+        collision_attachment, false);
 
-    return bgfx::isValid(gbuffer_) && bgfx::isValid(collision_fb_);
+    collision_volume_texture_ = bgfx::createTexture2D(
+        width_, height_, false, 1, bgfx::TextureFormat::BGRA8, kSamplerFlags);
+    bgfx::TextureHandle collision_volume_attachment[] = {
+        collision_volume_texture_,
+        depth_texture_,
+    };
+    collision_volume_fb_ = bgfx::createFrameBuffer(
+        static_cast<uint8_t>(BX_COUNTOF(collision_volume_attachment)),
+        collision_volume_attachment, false);
+
+    return bgfx::isValid(gbuffer_) && bgfx::isValid(collision_fb_) &&
+           bgfx::isValid(collision_volume_fb_);
 }
 
 bool RenderDeferred::ensureProgram() {
-    if (bgfx::isValid(combine_program_) && bgfx::isValid(collision_program_)) {
+    if (bgfx::isValid(combine_program_) && bgfx::isValid(collision_program_) &&
+        bgfx::isValid(volume_program_)) {
         return true;
     }
 
@@ -431,6 +652,10 @@ bool RenderDeferred::ensureProgram() {
     if (!bgfx::isValid(s_collision_status_)) {
         s_collision_status_ =
             bgfx::createUniform("s_collision", bgfx::UniformType::Sampler);
+    }
+    if (!bgfx::isValid(s_volume_)) {
+        s_volume_ =
+            bgfx::createUniform("s_volume", bgfx::UniformType::Sampler);
     }
     if (!bgfx::isValid(u_light_dir_)) {
         u_light_dir_ =
@@ -493,9 +718,14 @@ bool RenderDeferred::ensureProgram() {
         deferred_detail::loadShader(shader_dir_ + "fs_deferred_combine.bin");
     bgfx::ShaderHandle fs_collision =
         deferred_detail::loadShader(shader_dir_ + "fs_deferred_collision.bin");
+    bgfx::ShaderHandle vs_volume =
+        deferred_detail::loadShader(shader_dir_ + "vs_volume_pos.bin");
+    bgfx::ShaderHandle fs_volume =
+        deferred_detail::loadShader(shader_dir_ + "fs_volume_mask.bin");
 
     if (!bgfx::isValid(vs) || !bgfx::isValid(fs_combine) ||
-        !bgfx::isValid(fs_collision)) {
+        !bgfx::isValid(fs_collision) || !bgfx::isValid(vs_volume) ||
+        !bgfx::isValid(fs_volume)) {
         if (bgfx::isValid(vs)) {
             bgfx::destroy(vs);
         }
@@ -505,6 +735,12 @@ bool RenderDeferred::ensureProgram() {
         if (bgfx::isValid(fs_collision)) {
             bgfx::destroy(fs_collision);
         }
+        if (bgfx::isValid(vs_volume)) {
+            bgfx::destroy(vs_volume);
+        }
+        if (bgfx::isValid(fs_volume)) {
+            bgfx::destroy(fs_volume);
+        }
         std::cerr << "RenderDeferred shader load failed from " << shader_dir_
                   << std::endl;
         return false;
@@ -512,8 +748,10 @@ bool RenderDeferred::ensureProgram() {
 
     combine_program_ = bgfx::createProgram(vs, fs_combine, true);
     collision_program_ = bgfx::createProgram(vs, fs_collision, true);
+    volume_program_ = bgfx::createProgram(vs_volume, fs_volume, true);
 
-    return bgfx::isValid(combine_program_) && bgfx::isValid(collision_program_);
+    return bgfx::isValid(combine_program_) &&
+           bgfx::isValid(collision_program_) && bgfx::isValid(volume_program_);
 }
 
 }  // namespace sinriv::ui::render
