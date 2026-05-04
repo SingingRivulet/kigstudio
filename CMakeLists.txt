@@ -12,6 +12,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # MSVC 默认使用系统代码页解析源码，添加 /utf-8 使其按 UTF-8 处理源文件和执行字符集
 if(MSVC)
     add_compile_options("/utf-8")
+    add_compile_definitions(NOMINMAX)
 endif() 
 
 add_subdirectory(dep/bgfx.cmake)

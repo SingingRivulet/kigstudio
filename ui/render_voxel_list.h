@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cJSON.h>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <queue>
@@ -10,6 +11,10 @@
 #include <thread>
 #include <tuple>
 #include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "ui/render_deferred.h"
 #include "kigstudio/ui/render_collision.h"
@@ -21,6 +26,38 @@
 #include "kigstudio/voxel/concave.h"
 
 namespace sinriv::ui::render {
+
+#ifdef _WIN32
+inline std::wstring utf8_to_wstring(const std::string& utf8) {
+    if (utf8.empty()) return {};
+    int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+    if (len <= 1) return {};
+    std::wstring w(len - 1, 0);
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &w[0], len);
+    return w;
+}
+inline std::string wstring_to_utf8(const std::wstring& w) {
+    if (w.empty()) return {};
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 1) return {};
+    std::string s(len - 1, 0);
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], len, nullptr, nullptr);
+    return s;
+}
+inline std::filesystem::path utf8_path(const std::string& utf8) {
+    return std::filesystem::path(utf8_to_wstring(utf8));
+}
+inline std::string path_to_utf8(const std::filesystem::path& p) {
+    return wstring_to_utf8(p.wstring());
+}
+#else
+inline std::filesystem::path utf8_path(const std::string& utf8) {
+    return std::filesystem::path(utf8);
+}
+inline std::string path_to_utf8(const std::filesystem::path& p) {
+    return p.string();
+}
+#endif
 
 using mat4f = sinriv::kigstudio::mat::matrix<float>;
 class RenderVoxelList {
@@ -192,7 +229,13 @@ class RenderVoxelList {
     bool show_edit_segment_plane = false;
     bool show_file_loader = false;
     bool show_save_dialog = false;
+    bool show_save_as_dialog = false;
     bool show_load_dialog = false;
+
+    std::string project_path;
+
+    std::string last_save_error;
+    std::string last_load_error;
 
     std::vector<std::tuple<sinriv::kigstudio::voxel::collision::vec3f,
                            sinriv::kigstudio::voxel::collision::vec3f>>
@@ -504,29 +547,80 @@ class RenderVoxelList {
         return item;
     }
 
+    inline bool save_current_project() {
+        if (project_path.empty()) {
+            last_save_error = "no project path set";
+            return false;
+        }
+        return save_project(project_path);
+    }
+
     inline bool save_project(const std::string& folder) {
-        std::filesystem::path dir(folder);
-        std::filesystem::create_directories(dir / "voxels");
+        last_save_error.clear();
+        std::filesystem::path dir = utf8_path(folder);
+        try {
+            std::filesystem::create_directories(dir / "voxels");
+        } catch (const std::exception& e) {
+            last_save_error = std::string("create_directories failed: ") + e.what();
+            return false;
+        }
 
         std::lock_guard<std::mutex> lock(locker);
         cJSON* root = cJSON_CreateObject();
+        if (!root) {
+            last_save_error = "cJSON_CreateObject failed";
+            return false;
+        }
         cJSON_AddNumberToObject(root, "version", 1);
         cJSON_AddNumberToObject(root, "current_id", current_id.load());
         cJSON* arr = cJSON_CreateArray();
         for (const auto& [id, item] : items) {
-            cJSON_AddItemToArray(arr, item_to_json(*item));
-            std::string voxel_path = (dir / "voxels" / (std::to_string(id) + ".vxgrid")).string();
-            sinriv::kigstudio::save(voxel_path, item->voxel_grid_data);
+            cJSON* item_json = item_to_json(*item);
+            if (!item_json) {
+                last_save_error = "item_to_json failed for item id=" + std::to_string(id);
+                cJSON_Delete(root);
+                return false;
+            }
+            cJSON_AddItemToArray(arr, item_json);
+            std::filesystem::path voxel_path = dir / "voxels" / (std::to_string(id) + ".vxgrid");
+            if (!std::filesystem::exists(dir / "voxels")) {
+                last_save_error = "voxels directory not found: " + path_to_utf8(dir / "voxels");
+                cJSON_Delete(root);
+                return false;
+            }
+            std::string voxel_error;
+            if (!sinriv::kigstudio::save(voxel_path, item->voxel_grid_data, &voxel_error)) {
+                last_save_error = "save voxel failed: " + path_to_utf8(voxel_path) + " (" + voxel_error + ")";
+                cJSON_Delete(root);
+                return false;
+            }
         }
         cJSON_AddItemToObject(root, "items", arr);
 
-        std::string json_path = (dir / "project.json").string();
+        std::filesystem::path json_path = dir / "project.json";
         char* json_str = cJSON_Print(root);
-        std::ofstream ofs(json_path);
-        bool ok = false;
-        if (ofs && json_str) {
-            ofs << json_str;
-            ok = ofs.good();
+        if (!json_str) {
+            last_save_error = "cJSON_Print failed";
+            cJSON_Delete(root);
+            return false;
+        }
+#ifdef _WIN32
+        std::ofstream ofs(json_path.wstring().c_str());
+#else
+        std::ofstream ofs(json_path.c_str());
+#endif
+        if (!ofs) {
+            last_save_error = "failed to open project.json for writing: " + path_to_utf8(json_path);
+            cJSON_free(json_str);
+            cJSON_Delete(root);
+            return false;
+        }
+        const char utf8_bom[] = "\xEF\xBB\xBF";
+        ofs.write(utf8_bom, 3);
+        ofs << json_str;
+        bool ok = ofs.good();
+        if (!ok) {
+            last_save_error = "failed to write project.json";
         }
         cJSON_free(json_str);
         cJSON_Delete(root);
@@ -534,27 +628,63 @@ class RenderVoxelList {
     }
 
     inline bool load_project(const std::string& folder) {
+        last_load_error.clear();
         release();
         start_thread();
         current_id = 0;
 
-        std::filesystem::path dir(folder);
-        std::string json_path = (dir / "project.json").string();
-        std::ifstream ifs(json_path);
-        if (!ifs) return false;
+        std::filesystem::path dir = utf8_path(folder);
+        std::filesystem::path json_path = dir / "project.json";
+#ifdef _WIN32
+        std::ifstream ifs(json_path.wstring().c_str());
+#else
+        std::ifstream ifs(json_path.c_str());
+#endif
+        if (!ifs) {
+            last_load_error = "failed to open project.json: " + path_to_utf8(json_path);
+            return false;
+        }
         std::string json_str((std::istreambuf_iterator<char>(ifs)),
                               std::istreambuf_iterator<char>());
+        if (json_str.size() >= 3 &&
+            static_cast<unsigned char>(json_str[0]) == 0xEF &&
+            static_cast<unsigned char>(json_str[1]) == 0xBB &&
+            static_cast<unsigned char>(json_str[2]) == 0xBF) {
+            json_str.erase(0, 3);
+        }
         cJSON* root = cJSON_Parse(json_str.c_str());
-        if (!root) return false;
+        if (!root) {
+            last_load_error = "cJSON_Parse failed";
+            return false;
+        }
 
-        int version = cJSON_GetObjectItem(root, "version")->valueint;
+        cJSON* version_obj = cJSON_GetObjectItem(root, "version");
+        if (!version_obj) {
+            last_load_error = "missing 'version' field";
+            cJSON_Delete(root);
+            return false;
+        }
+        int version = version_obj->valueint;
         if (version != 1) {
+            last_load_error = "unsupported version: " + std::to_string(version);
             cJSON_Delete(root);
             return false;
         }
 
-        current_id = cJSON_GetObjectItem(root, "current_id")->valueint;
-        const cJSON* arr = cJSON_GetObjectItem(root, "items");
+        cJSON* current_id_obj = cJSON_GetObjectItem(root, "current_id");
+        if (!current_id_obj) {
+            last_load_error = "missing 'current_id' field";
+            cJSON_Delete(root);
+            return false;
+        }
+        current_id = current_id_obj->valueint;
+
+        cJSON* arr = cJSON_GetObjectItem(root, "items");
+        if (!arr) {
+            last_load_error = "missing 'items' field";
+            cJSON_Delete(root);
+            return false;
+        }
         int count = cJSON_GetArraySize(arr);
         {
             std::lock_guard<std::mutex> lock(locker);
@@ -562,8 +692,12 @@ class RenderVoxelList {
                 const cJSON* item_obj = cJSON_GetArrayItem(arr, i);
                 auto item = item_from_json(item_obj);
                 int id = item->id;
-                std::string voxel_path = (dir / "voxels" / (std::to_string(id) + ".vxgrid")).string();
-                sinriv::kigstudio::load(voxel_path, item->voxel_grid_data);
+                std::filesystem::path voxel_path = dir / "voxels" / (std::to_string(id) + ".vxgrid");
+                if (!sinriv::kigstudio::load(voxel_path, item->voxel_grid_data)) {
+                    last_load_error = "load voxel failed: " + voxel_path.string();
+                    cJSON_Delete(root);
+                    return false;
+                }
                 items[id] = std::move(item);
             }
         }
@@ -572,6 +706,7 @@ class RenderVoxelList {
         if (!items.empty()) {
             render_id = items.begin()->first;
         }
+        project_path = folder;
         update_nav_node_status = true;
         return true;
     }

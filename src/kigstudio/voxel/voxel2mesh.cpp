@@ -6,6 +6,18 @@
 #include <sstream>
 #include <string>
 
+#ifdef _WIN32
+#include <windows.h>
+inline std::wstring utf8_to_wstring_file(const std::string& utf8) {
+    if (utf8.empty()) return {};
+    int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+    if (len <= 1) return {};
+    std::wstring w(len - 1, 0);
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &w[0], len);
+    return w;
+}
+#endif
+
 namespace sinriv::kigstudio::voxel {
     template <typename T>
     static vec3f computeNormalFromVoxels(const T& voxelData, int x, int y, int z) {
@@ -356,7 +368,11 @@ namespace sinriv::kigstudio::voxel {
     }
 
     void saveMeshToASCIISTL(const std::vector<std::tuple<Triangle, vec3f>>& meshTriangles, const std::string& filename) {
+#ifdef _WIN32
+        std::ofstream outFile(utf8_to_wstring_file(filename).c_str());
+#else
         std::ofstream outFile(filename);
+#endif
 
         if (!outFile) {
             throw std::runtime_error("Failed to open file for writing: " + filename);
@@ -383,7 +399,11 @@ namespace sinriv::kigstudio::voxel {
     }
 
     void saveMeshToBinarySTL(const std::vector<std::tuple<Triangle, vec3f>>& meshTriangles, const std::string& filename) {
+#ifdef _WIN32
+        std::ofstream outFile(utf8_to_wstring_file(filename).c_str(), std::ios::binary);
+#else
         std::ofstream outFile(filename, std::ios::binary);
+#endif
 
         if (!outFile) {
             throw std::runtime_error("Failed to open file for writing: " + filename);
@@ -420,7 +440,11 @@ namespace sinriv::kigstudio::voxel {
     }
 
     Generator<std::tuple<Triangle, vec3f>> readSTL_ASCII(std::string filename) {
+#ifdef _WIN32
+        std::ifstream file(utf8_to_wstring_file(filename).c_str());
+#else
         std::ifstream file(filename);
+#endif
         if (!file.is_open()) {
             std::cout << "Failed to open file:" << filename << std::endl;
             throw std::runtime_error("Failed to open file.");
@@ -451,7 +475,11 @@ namespace sinriv::kigstudio::voxel {
         }
     }
     Generator<std::tuple<Triangle, vec3f>> readSTL_Binary(std::string filename) {
+#ifdef _WIN32
+        std::ifstream file(utf8_to_wstring_file(filename).c_str(), std::ios::binary);
+#else
         std::ifstream file(filename, std::ios::binary);
+#endif
         if (!file.is_open()) {
             std::cout << "Failed to open file:" << filename << std::endl;
             throw std::runtime_error("Failed to open file.");
@@ -484,7 +512,11 @@ namespace sinriv::kigstudio::voxel {
 
     }
     bool isBinarySTL(const std::string& filePath) {
+#ifdef _WIN32
+        std::ifstream file(utf8_to_wstring_file(filePath).c_str(), std::ios::binary);
+#else
         std::ifstream file(filePath, std::ios::binary);
+#endif
         if (!file.is_open()) {
             std::cerr << "Failed to open file: " << filePath << std::endl;
             return false; // 或者你可以抛出一个异常

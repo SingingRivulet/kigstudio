@@ -11,4 +11,5 @@ std::string get_system_language();
 void locale_init();
 std::string get_locale_string(const std::string& key);
 const char* get_locale_cstr(const std::string& key);
+std::string utf8_to_ansi(const char* str);
 }  // namespace sinriv::ui::render

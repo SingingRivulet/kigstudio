@@ -24,8 +24,10 @@ std::wstring ansi_to_utf16(const char* str) {
         return {};
 
     int len = MultiByteToWideChar(CP_ACP, 0, str, -1, nullptr, 0);
+    if (len <= 1)
+        return {};
 
-    std::wstring w(len, 0);
+    std::wstring w(len - 1, 0);
 
     MultiByteToWideChar(CP_ACP, 0, str, -1, &w[0], len);
 
@@ -39,8 +41,10 @@ std::string utf16_to_utf8(const std::wstring& w) {
 
     int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0,
                                   nullptr, nullptr);
+    if (len <= 1)
+        return {};
 
-    std::string s(len, 0);
+    std::string s(len - 1, 0);
 
     WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], len, nullptr,
                         nullptr);
@@ -59,26 +63,6 @@ std::string tinyfd_path_to_utf8(const char* path) {
     return ansi_to_utf8(path);
 #else
     return path ? std::string(path) : std::string();
-#endif
-}
-
-std::string utf8_to_ansi(const char* str) {
-#ifdef _WIN32
-    if (!str)
-        return {};
-
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, str, -1, nullptr, 0);
-    std::wstring w(wlen, 0);
-    MultiByteToWideChar(CP_UTF8, 0, str, -1, &w[0], wlen);
-
-    int alen = WideCharToMultiByte(CP_ACP, 0, w.c_str(), -1, nullptr, 0,
-                                   nullptr, nullptr);
-    std::string s(alen, 0);
-    WideCharToMultiByte(CP_ACP, 0, w.c_str(), -1, &s[0], alen,
-                        nullptr, nullptr);
-    return s;
-#else
-    return str ? std::string(str) : std::string();
 #endif
 }
 
@@ -269,7 +253,19 @@ void RenderVoxelList::render_ui() {
                     show_file_loader = true;
                 }
                 if (ImGui::MenuItem(get_locale_cstr("menu.save_project"))) {
-                    show_save_dialog = true;
+                    if (!project_path.empty()) {
+                        if (!save_current_project()) {
+                            std::string msg = get_locale_string("error.save_failed") + "\n" + last_save_error;
+                            tinyfd_messageBox("Error",
+                                utf8_to_ansi(msg.c_str()).c_str(),
+                                "ok", "error", 1);
+                        }
+                    } else {
+                        show_save_dialog = true;
+                    }
+                }
+                if (ImGui::MenuItem(get_locale_cstr("menu.save_project_as"))) {
+                    show_save_as_dialog = true;
                 }
                 if (ImGui::MenuItem(get_locale_cstr("menu.load_project"))) {
                     show_load_dialog = true;
@@ -386,7 +382,7 @@ void RenderVoxelList::render_file_loader() {
                         "", 1, filters,
                         utf8_to_ansi(get_locale_cstr("dialog.stl_file")).c_str(), 0);
                 if (file) {
-                    stl_file_path = std::string(file);
+                    stl_file_path = tinyfd_path_to_utf8(file);
                 }
             }
             if (!stl_file_path.empty()) {
@@ -906,19 +902,29 @@ void RenderVoxelList::render_collision_node_editor() {
 }
 
 void RenderVoxelList::render_save_dialog() {
-    if (show_save_dialog) {
+    auto do_save = [&](bool force_dialog) {
         const char* folder = tinyfd_selectFolderDialog(
             utf8_to_ansi(get_locale_cstr("dialog.save_project_title")).c_str(),
-            "");
+            force_dialog ? "" : project_path.c_str());
         if (folder) {
             std::string path = tinyfd_path_to_utf8(folder);
-            if (!save_project(path)) {
+            if (save_project(path)) {
+                project_path = path;
+            } else {
+                std::string msg = get_locale_string("error.save_failed") + "\n" + last_save_error;
                 tinyfd_messageBox("Error",
-                    utf8_to_ansi(get_locale_cstr("error.save_failed")).c_str(),
+                    utf8_to_ansi(msg.c_str()).c_str(),
                     "ok", "error", 1);
             }
         }
+    };
+    if (show_save_dialog) {
+        do_save(false);
         show_save_dialog = false;
+    }
+    if (show_save_as_dialog) {
+        do_save(true);
+        show_save_as_dialog = false;
     }
 }
 
@@ -930,8 +936,9 @@ void RenderVoxelList::render_load_dialog() {
         if (folder) {
             std::string path = tinyfd_path_to_utf8(folder);
             if (!load_project(path)) {
+                std::string msg = get_locale_string("error.load_failed") + "\n" + last_load_error;
                 tinyfd_messageBox("Error",
-                    utf8_to_ansi(get_locale_cstr("error.load_failed")).c_str(),
+                    utf8_to_ansi(msg.c_str()).c_str(),
                     "ok", "error", 1);
             }
         }

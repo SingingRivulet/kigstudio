@@ -92,9 +92,11 @@ void init_locale_strings() {
     add_locale_string("menu.open_stl",
                       {{"en", "Open STL (O)"}, {"zh", "打开 STL (O)"}});
     add_locale_string("menu.save_project",
-                      {{"en", "Save Project (Ctrl+S)"}, {"zh", "保存项目 (Ctrl+S)"}});
+                      {{"en", "Save (Ctrl+S)"}, {"zh", "保存 (Ctrl+S)"}});
+    add_locale_string("menu.save_project_as",
+                      {{"en", "Save As (Ctrl+Shift+S)"}, {"zh", "另存为 (Ctrl+Shift+S)"}});
     add_locale_string("menu.load_project",
-                      {{"en", "Load Project (Ctrl+O)"}, {"zh", "加载项目 (Ctrl+O)"}});
+                      {{"en", "Load (Ctrl+O)"}, {"zh", "加载 (Ctrl+O)"}});
 
     add_locale_string("action.update_collision",
                       {{"en", "update collision"}, {"zh", "更新碰撞"}});
@@ -343,5 +345,25 @@ std::string get_locale_string(const std::string& key) {
 
 const char* get_locale_cstr(const std::string& key) {
     return get_locale_string_ref(key).c_str();
+}
+
+std::string utf8_to_ansi(const char* str) {
+#ifdef _WIN32
+    if (!str)
+        return {};
+
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, str, -1, nullptr, 0);
+    std::wstring w(wlen, 0);
+    MultiByteToWideChar(CP_UTF8, 0, str, -1, &w[0], wlen);
+
+    int alen = WideCharToMultiByte(CP_ACP, 0, w.c_str(), -1, nullptr, 0,
+                                   nullptr, nullptr);
+    std::string s(alen, 0);
+    WideCharToMultiByte(CP_ACP, 0, w.c_str(), -1, &s[0], alen,
+                        nullptr, nullptr);
+    return s;
+#else
+    return str ? std::string(str) : std::string();
+#endif
 }
 }  // namespace sinriv::ui::render

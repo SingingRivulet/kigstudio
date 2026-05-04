@@ -116,6 +116,7 @@ int main() {
     bool debugPrintRotation = false;
     int oldW = width;
     int oldH = height;
+    std::string current_window_title;
     
     sinriv::ui::render::locale_init();
 
@@ -206,10 +207,22 @@ int main() {
 
             if (e.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
                 bool ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+                bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
                 if (e.key.keysym.sym == SDLK_o && !ctrl) {
                     render_items.show_file_loader = true;
+                } else if (e.key.keysym.sym == SDLK_s && ctrl && shift) {
+                    render_items.show_save_as_dialog = true;
                 } else if (e.key.keysym.sym == SDLK_s && ctrl) {
-                    render_items.show_save_dialog = true;
+                    if (!render_items.project_path.empty()) {
+                        if (!render_items.save_current_project()) {
+                            std::string msg = sinriv::ui::render::get_locale_string("error.save_failed") + "\n" + render_items.last_save_error;
+                            tinyfd_messageBox("Error",
+                                sinriv::ui::render::utf8_to_ansi(msg.c_str()).c_str(),
+                                "ok", "error", 1);
+                        }
+                    } else {
+                        render_items.show_save_dialog = true;
+                    }
                 } else if (e.key.keysym.sym == SDLK_o && ctrl) {
                     render_items.show_load_dialog = true;
                 }
@@ -314,6 +327,18 @@ int main() {
             render_items.mouse_world_pos_picked = true;
         } else {
             render_items.mouse_world_pos_picked = false;
+        }
+
+        // 更新窗口标题
+        {
+            std::string desired_title = "kigstudio";
+            if (!render_items.project_path.empty()) {
+                desired_title += " - [" + render_items.project_path + "]";
+            }
+            if (desired_title != current_window_title) {
+                current_window_title = desired_title;
+                SDL_SetWindowTitle(window, current_window_title.c_str());
+            }
         }
 
         imguiEndFrame();
