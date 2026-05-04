@@ -62,6 +62,26 @@ std::string tinyfd_path_to_utf8(const char* path) {
 #endif
 }
 
+std::string utf8_to_ansi(const char* str) {
+#ifdef _WIN32
+    if (!str)
+        return {};
+
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, str, -1, nullptr, 0);
+    std::wstring w(wlen, 0);
+    MultiByteToWideChar(CP_UTF8, 0, str, -1, &w[0], wlen);
+
+    int alen = WideCharToMultiByte(CP_ACP, 0, w.c_str(), -1, nullptr, 0,
+                                   nullptr, nullptr);
+    std::string s(alen, 0);
+    WideCharToMultiByte(CP_ACP, 0, w.c_str(), -1, &s[0], alen,
+                        nullptr, nullptr);
+    return s;
+#else
+    return str ? std::string(str) : std::string();
+#endif
+}
+
 std::string localize_id(const char* key, int id) {
     return get_locale_string(key) + "##" + std::to_string(id);
 }
@@ -359,10 +379,12 @@ void RenderVoxelList::render_file_loader() {
                          ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::TextUnformatted(get_locale_cstr("label.load_stl_hint"));
             if (ImGui::Button(get_locale_cstr("action.open_file_dialog"))) {
+                const char* filters[] = {"*.stl"};
                 const char* file =
-                    tinyfd_openFileDialog(get_locale_cstr("dialog.open_stl_title"),
-                                          "", 0, NULL,
-                                          get_locale_cstr("dialog.stl_file"), 0);
+                    tinyfd_openFileDialog(
+                        utf8_to_ansi(get_locale_cstr("dialog.open_stl_title")).c_str(),
+                        "", 1, filters,
+                        utf8_to_ansi(get_locale_cstr("dialog.stl_file")).c_str(), 0);
                 if (file) {
                     stl_file_path = std::string(file);
                 }
@@ -886,12 +908,14 @@ void RenderVoxelList::render_collision_node_editor() {
 void RenderVoxelList::render_save_dialog() {
     if (show_save_dialog) {
         const char* folder = tinyfd_selectFolderDialog(
-            get_locale_cstr("dialog.save_project_title"), "");
+            utf8_to_ansi(get_locale_cstr("dialog.save_project_title")).c_str(),
+            "");
         if (folder) {
             std::string path = tinyfd_path_to_utf8(folder);
             if (!save_project(path)) {
-                tinyfd_messageBox("Error", get_locale_cstr("error.save_failed"),
-                                  "ok", "error", 1);
+                tinyfd_messageBox("Error",
+                    utf8_to_ansi(get_locale_cstr("error.save_failed")).c_str(),
+                    "ok", "error", 1);
             }
         }
         show_save_dialog = false;
@@ -901,12 +925,14 @@ void RenderVoxelList::render_save_dialog() {
 void RenderVoxelList::render_load_dialog() {
     if (show_load_dialog) {
         const char* folder = tinyfd_selectFolderDialog(
-            get_locale_cstr("dialog.load_project_title"), "");
+            utf8_to_ansi(get_locale_cstr("dialog.load_project_title")).c_str(),
+            "");
         if (folder) {
             std::string path = tinyfd_path_to_utf8(folder);
             if (!load_project(path)) {
-                tinyfd_messageBox("Error", get_locale_cstr("error.load_failed"),
-                                  "ok", "error", 1);
+                tinyfd_messageBox("Error",
+                    utf8_to_ansi(get_locale_cstr("error.load_failed")).c_str(),
+                    "ok", "error", 1);
             }
         }
         show_load_dialog = false;
