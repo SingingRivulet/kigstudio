@@ -50,7 +50,7 @@ void main()
         color = mix(color, vec3(0.20, 0.45, 1.00), 0.65);
     }
 
-    if (texture2D(s_volume, vec2(v_texcoord0.x, 1.0-v_texcoord0.y)).r > 0.5) {
+    if (texture2D(s_volume, vec2(v_texcoord0.x, v_texcoord0.y)).r > 0.5) {
         color = mix(color, vec3(0.20, 1.00, 0.45), 0.65);
     }
 

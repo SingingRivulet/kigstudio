@@ -537,14 +537,16 @@ void RenderDeferred::appendConcaveCone(Cone& cone) {
 
     CollisionItem item;
     item.type = 4;
-    item.data[0] = {cone.apex.x, cone.apex.y, cone.apex.z, 1.0f};
+    sinriv::kigstudio::voxel::concave::vec3f apex(cone.apex.x, -cone.apex.y, cone.apex.z);
+    item.data[0] = {apex.x, apex.y, apex.z, 1.0f};
 
     const auto& base = cone.base_vertices;
     const size_t count = base.size();
     std::vector<sinriv::kigstudio::voxel::concave::vec3f> far_vertices;
     far_vertices.reserve(count);
-    for (const auto& vertex : base) {
-        auto far_vertex = cone.apex + (vertex - cone.apex) * kConeVolumeScale;
+    for (const auto& vertex_local : base) {
+        sinriv::kigstudio::voxel::concave::vec3f vertex(vertex_local.x, -vertex_local.y, vertex_local.z);
+        auto far_vertex = apex + (vertex - apex) * kConeVolumeScale;
         far_vertex.y = -far_vertex.y;
         far_vertices.push_back(far_vertex);
     }
