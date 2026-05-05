@@ -60,6 +60,18 @@ inline std::string path_to_utf8(const std::filesystem::path& p) {
 #endif
 
 using mat4f = sinriv::kigstudio::mat::matrix<float>;
+
+// Forward declaration
+class RenderVoxelList;
+
+struct CollisionEditorSnapshot {
+    sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
+    sinriv::kigstudio::Plane<float> plane;
+    sinriv::kigstudio::voxel::concave::Cone concave_cone;
+    std::vector<int> concave_cone_expanded_vertices;
+    int segment_mode;
+};
+
 class RenderVoxelList {
     // 用于显示一系列窗口
     // 每个子对象由以下部分构成：
@@ -90,7 +102,7 @@ class RenderVoxelList {
                 bgfx::destroy(thumbnail_tex);
             }
         }
-        enum segment_mode {
+        enum SegmentMode {
             COLLISION = 0,
             PLANE = 1,
             CONCAVE_CONE = 2
@@ -146,6 +158,10 @@ class RenderVoxelList {
         
         std::string stl_path;
         std::string voxel_path;
+
+        // undo/redo stacks for collision editor
+        std::vector<CollisionEditorSnapshot> undo_stack;
+        std::vector<CollisionEditorSnapshot> redo_stack;
     };
     inline RenderVoxelList() {}
     inline ~RenderVoxelList() { release(); }
@@ -236,6 +252,102 @@ class RenderVoxelList {
 
     std::string last_save_error;
     std::string last_load_error;
+
+    // undo/redo
+    struct PendingUndo {
+        int item_id;
+        CollisionEditorSnapshot snapshot;
+    };
+    std::optional<PendingUndo> pending_undo;
+    static constexpr size_t kMaxUndoSize = 50;
+
+    inline CollisionEditorSnapshot capture_snapshot(const RenderVoxelItem& item) const {
+        return {
+            item.collision_group,
+            item.plane,
+            item.concave_cone,
+            item.concave_cone_expanded_vertices,
+            item.segment_mode
+        };
+    }
+
+    inline void apply_snapshot(RenderVoxelItem& item, const CollisionEditorSnapshot& snapshot) {
+        item.collision_group = snapshot.collision_group;
+        item.plane = snapshot.plane;
+        item.concave_cone = snapshot.concave_cone;
+        item.concave_cone_expanded_vertices = snapshot.concave_cone_expanded_vertices;
+        item.segment_mode = static_cast<RenderVoxelItem::SegmentMode>(snapshot.segment_mode);
+    }
+
+    inline void begin_edit(int item_id) {
+        if (pending_undo.has_value() && pending_undo->item_id == item_id) {
+            return; // already have pending undo for this item
+        }
+        // discard pending for different item
+        pending_undo.reset();
+        auto it = items.find(item_id);
+        if (it != items.end()) {
+            pending_undo = PendingUndo{item_id, capture_snapshot(*it->second)};
+        }
+    }
+
+    inline void end_edit(int item_id) {
+        if (!pending_undo.has_value() || pending_undo->item_id != item_id) {
+            return;
+        }
+        auto it = items.find(item_id);
+        if (it != items.end()) {
+            it->second->undo_stack.push_back(pending_undo->snapshot);
+            it->second->redo_stack.clear();
+            if (it->second->undo_stack.size() > kMaxUndoSize) {
+                it->second->undo_stack.erase(it->second->undo_stack.begin());
+            }
+        }
+        pending_undo.reset();
+    }
+
+    inline void push_undo_now(int item_id, const std::optional<CollisionEditorSnapshot>& before = std::nullopt) {
+        auto it = items.find(item_id);
+        if (it == items.end()) return;
+        it->second->undo_stack.push_back(before.value_or(capture_snapshot(*it->second)));
+        it->second->redo_stack.clear();
+        if (it->second->undo_stack.size() > kMaxUndoSize) {
+            it->second->undo_stack.erase(it->second->undo_stack.begin());
+        }
+        pending_undo.reset();
+    }
+
+    inline bool undo(int item_id) {
+        auto it = items.find(item_id);
+        if (it == items.end() || it->second->undo_stack.empty()) return false;
+        // push current state to redo stack
+        it->second->redo_stack.push_back(capture_snapshot(*it->second));
+        // apply undo snapshot
+        apply_snapshot(*it->second, it->second->undo_stack.back());
+        it->second->undo_stack.pop_back();
+        return true;
+    }
+
+    inline bool redo(int item_id) {
+        auto it = items.find(item_id);
+        if (it == items.end() || it->second->redo_stack.empty()) return false;
+        // push current state to undo stack
+        it->second->undo_stack.push_back(capture_snapshot(*it->second));
+        // apply redo snapshot
+        apply_snapshot(*it->second, it->second->redo_stack.back());
+        it->second->redo_stack.pop_back();
+        return true;
+    }
+
+    inline bool can_undo(int item_id) const {
+        auto it = items.find(item_id);
+        return it != items.end() && !it->second->undo_stack.empty();
+    }
+
+    inline bool can_redo(int item_id) const {
+        auto it = items.find(item_id);
+        return it != items.end() && !it->second->redo_stack.empty();
+    }
 
     std::vector<std::tuple<sinriv::kigstudio::voxel::collision::vec3f,
                            sinriv::kigstudio::voxel::collision::vec3f>>

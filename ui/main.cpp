@@ -225,6 +225,10 @@ int main() {
                     }
                 } else if (e.key.keysym.sym == SDLK_o && ctrl) {
                     render_items.show_load_dialog = true;
+                } else if (e.key.keysym.sym == SDLK_z && ctrl) {
+                    render_items.undo(render_items.render_id);
+                } else if (e.key.keysym.sym == SDLK_y && ctrl) {
+                    render_items.redo(render_items.render_id);
                 }
             }
 

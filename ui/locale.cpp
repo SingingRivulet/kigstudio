@@ -100,6 +100,10 @@ void init_locale_strings() {
 
     add_locale_string("action.update_collision",
                       {{"en", "update collision"}, {"zh", "更新碰撞"}});
+    add_locale_string("action.undo",
+                      {{"en", "Undo (Ctrl+Z)"}, {"zh", "撤销 (Ctrl+Z)"}});
+    add_locale_string("action.redo",
+                      {{"en", "Redo (Ctrl+Y)"}, {"zh", "重做 (Ctrl+Y)"}});
     add_locale_string("action.open_file_dialog",
                       {{"en", "Open File Dialog"}, {"zh", "打开文件对话框"}});
     add_locale_string("action.open", {{"en", "Open"}, {"zh", "打开"}});
