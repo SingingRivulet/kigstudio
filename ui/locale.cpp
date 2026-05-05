@@ -98,8 +98,19 @@ void init_locale_strings() {
                       {{"en", "Save As (Ctrl+Shift+S)"}, {"zh", "另存为 (Ctrl+Shift+S)"}});
     add_locale_string("menu.load_project",
                       {{"en", "Load (Ctrl+O)"}, {"zh", "加载 (Ctrl+O)"}});
-
-    add_locale_string("action.update_collision",
+    add_locale_string("menu.log",
+                      {{"en", "Log"},
+                       {"zh", "项目处理日志"}});
+    add_locale_string("menu.export_stl_all",
+                      {{"en", "Export All STL"}, {"zh", "全部导出stl"}});
+    add_locale_string("tooltip.export_stl_all_no_project",
+                      {{"en", "Save or load a project first to enable export."},
+                       {"zh", "请先保存或加载工程以启用导出。"}});
+    add_locale_string("tooltip.export_stl_all_empty",
+                      {{"en", "No leaf nodes found to export."},
+                       {"zh", "没有找到可导出的叶子节点。"}});
+    
+                       add_locale_string("action.update_collision",
                       {{"en", "update collision"}, {"zh", "更新碰撞"}});
     add_locale_string("action.undo",
                       {{"en", "Undo (Ctrl+Z)"}, {"zh", "撤销 (Ctrl+Z)"}});
@@ -274,6 +285,8 @@ void init_locale_strings() {
     add_locale_string("dialog.load_project_title",
                       {{"en", "Select Project Folder"},
                        {"zh", "选择项目文件夹"}});
+    add_locale_string("dialog.info",
+                      {{"en", "Info"}, {"zh", "提示"}});
 
     add_locale_string("error.three_points_collinear",
                       {{"en", "Three points are collinear."},

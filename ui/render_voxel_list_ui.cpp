@@ -329,9 +329,63 @@ void RenderVoxelList::render_ui() {
                 if (ImGui::MenuItem(get_locale_cstr("menu.load_project"))) {
                     show_load_dialog = true;
                 }
+                if (project_path.empty()) {
+                    ImGui::BeginDisabled();
+                    ImGui::MenuItem(get_locale_cstr("menu.export_stl_all"));
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                        ImGui::SetTooltip(get_locale_cstr("tooltip.export_stl_all_no_project"));
+                    }
+                } else {
+                    if (ImGui::MenuItem(get_locale_cstr("menu.export_stl_all"))) {
+                        std::filesystem::path export_dir = utf8_path(project_path) / "exported_stl";
+                        std::filesystem::create_directories(export_dir);
+                        std::vector<int> exported_ids;
+                        {
+                            std::lock_guard<std::mutex> lock(locker);
+                            for (auto& [id, item] : items) {
+                                if (item->children[0] < 0 && item->children[1] < 0) {
+                                    try {
+                                        std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
+                                                               sinriv::kigstudio::voxel::vec3f>>
+                                            mesh;
+                                        int numTriangles = 0;
+                                        for (auto triangles :
+                                             sinriv::kigstudio::voxel::generateMesh(
+                                                 item->voxel_grid_data, 0.5,
+                                                 numTriangles, true)) {
+                                            mesh.push_back(triangles);
+                                        }
+                                        std::string filename = "node_" + std::to_string(id) + ".stl";
+                                        std::filesystem::path filepath = export_dir / filename;
+                                        sinriv::kigstudio::voxel::saveMeshToASCIISTL(
+                                            mesh, path_to_utf8(filepath));
+                                        exported_ids.push_back(id);
+                                    } catch (const std::exception& e) {
+                                        std::cout << "Export STL failed for node " << id
+                                                  << ": " << e.what() << std::endl;
+                                    }
+                                }
+                            }
+                        }
+                        if (exported_ids.empty()) {
+                            tinyfd_messageBox(
+                                get_locale_cstr("dialog.info"),
+                                utf8_to_ansi(get_locale_cstr("tooltip.export_stl_all_empty")).c_str(),
+                                "ok", "info", 1);
+                        } else {
+                            std::cout << "Exported " << exported_ids.size()
+                                      << " STL files to " << path_to_utf8(export_dir) << std::endl;
+                        }
+                    }
+                }
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(get_locale_cstr("menu.view"))) {
+                ImGui::Checkbox(get_locale_cstr("menu.history"),
+                                &show_history_window);
+                ImGui::Checkbox(get_locale_cstr("menu.log"),
+                                &show_log_window); // TODO
                 if (ImGui::BeginMenu(get_locale_cstr("menu.body"))) {
                     ImGui::Checkbox(get_locale_cstr("label.show_mesh"),
                                     &showMesh);
@@ -357,9 +411,6 @@ void RenderVoxelList::render_ui() {
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
-            }
-            if (ImGui::MenuItem(get_locale_cstr("menu.history"))) {
-                show_history_window = !show_history_window;
             }
             ImGui::EndMenuBar();
         }

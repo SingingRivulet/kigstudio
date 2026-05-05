@@ -379,6 +379,7 @@ class RenderVoxelList {
     bool show_history_window = false;
     void render_history_window();
 
+    bool show_log_window = false;
 
     std::vector<std::tuple<sinriv::kigstudio::voxel::collision::vec3f,
                            sinriv::kigstudio::voxel::collision::vec3f>>
