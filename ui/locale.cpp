@@ -171,6 +171,8 @@ void init_locale_strings() {
                       {{"en", "show collision bounds"}, {"zh", "显示碰撞边界"}});
     add_locale_string("window.history",
                       {{"en", "History"}, {"zh", "历史记录"}});
+    add_locale_string("window.log",
+                      {{"en", "Log"}, {"zh", "日志"}});
     add_locale_string("window.reload_stl",
                       {{"en", "Reload STL"}, {"zh", "重新加载 STL"}});
     add_locale_string("label.reload_stl_hint",

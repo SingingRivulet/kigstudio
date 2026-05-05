@@ -385,7 +385,7 @@ void RenderVoxelList::render_ui() {
                 ImGui::Checkbox(get_locale_cstr("menu.history"),
                                 &show_history_window);
                 ImGui::Checkbox(get_locale_cstr("menu.log"),
-                                &show_log_window); // TODO
+                                &show_log_window);
                 if (ImGui::BeginMenu(get_locale_cstr("menu.body"))) {
                     ImGui::Checkbox(get_locale_cstr("label.show_mesh"),
                                     &showMesh);
@@ -469,6 +469,7 @@ void RenderVoxelList::render_ui() {
     render_save_dialog();
     render_load_dialog();
     render_history_window();
+    render_log_window();
 
     this->setMeshAxisVisible(showMeshAxis);
     this->setVoxelAxisVisible(showVoxelAxis);
@@ -1321,6 +1322,34 @@ void RenderVoxelList::render_history_window() {
 
         if (undo_count == 0 && redo_count == 0) {
             ImGui::TextDisabled("%s", get_locale_cstr("label.history_empty"));
+        }
+    }
+    ImGui::End();
+}
+
+void RenderVoxelList::render_log_window() {
+    if (!show_log_window) return;
+
+    std::vector<std::string> log_copy;
+    {
+        std::lock_guard<std::mutex> lock(queue_log_mutex);
+        log_copy = queue_log;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(500, 300), ImGuiCond_Once);
+    if (ImGui::Begin(get_locale_cstr("window.log"), &show_log_window)) {
+        if (log_copy.empty()) {
+            ImGui::TextDisabled("No log entries.");
+        } else {
+            ImGui::BeginChild("log_scrolling", ImVec2(0, 0), false,
+                              ImGuiWindowFlags_HorizontalScrollbar);
+            for (const auto& entry : log_copy) {
+                ImGui::TextUnformatted(entry.c_str());
+            }
+            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 5.0f) {
+                ImGui::SetScrollHereY(1.0f);
+            }
+            ImGui::EndChild();
         }
     }
     ImGui::End();

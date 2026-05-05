@@ -380,6 +380,17 @@ class RenderVoxelList {
     void render_history_window();
 
     bool show_log_window = false;
+    void render_log_window();
+
+    std::vector<std::string> queue_log;
+    std::mutex queue_log_mutex;
+    inline void append_queue_log(const std::string& msg) {
+        std::lock_guard<std::mutex> lock(queue_log_mutex);
+        queue_log.push_back(msg);
+        if (queue_log.size() > 1000) {
+            queue_log.erase(queue_log.begin(), queue_log.begin() + (queue_log.size() - 1000));
+        }
+    }
 
     std::vector<std::tuple<sinriv::kigstudio::voxel::collision::vec3f,
                            sinriv::kigstudio::voxel::collision::vec3f>>
