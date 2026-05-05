@@ -80,6 +80,16 @@ RenderVoxelList::do_segment(int index) {
         item2->voxel_grid_data = std::get<1>(res);
         item1->thumbnail_dirty = true;
         item2->thumbnail_dirty = true;
+
+        // 继承父节点的 segment_mode
+        item1->segment_mode = it->second->segment_mode;
+        item2->segment_mode = it->second->segment_mode;
+
+        // 如果是凹锥，继承父节点的 apex 坐标
+        if (it->second->segment_mode == RenderVoxelItem::CONCAVE_CONE) {
+            item1->concave_cone.apex = it->second->concave_cone.apex;
+            item2->concave_cone.apex = it->second->concave_cone.apex;
+        }
         auto item1_ptr = item1.get();
         auto item2_ptr = item2.get();
         {

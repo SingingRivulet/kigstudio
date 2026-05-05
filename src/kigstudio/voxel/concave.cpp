@@ -204,10 +204,18 @@ inline bool pointInTriangle2D(const vec2& p, const vec2& a, const vec2& b,
 }
 
 bool Cone::contains(const vec3f& p) const {
-    vec3f d = normalize(p - apex);
+    vec3f offset = p - apex;
+    if (length(offset) < 1e-6f)
+        return true;
+
+    vec3f d = normalize(offset);
 
     auto dirs = computeDirections(apex, base_vertices);
     vec3f dir = computeConeDir(dirs);
+
+    // 点必须在 apex 的 base 方向一侧；背面对称位置不应算在锥体内
+    if (dot(d, dir) < 0.0f)
+        return false;
 
     vec3f right, up;
     buildBasis(dir, right, up);
