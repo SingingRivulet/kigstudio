@@ -137,6 +137,12 @@ void init_locale_strings() {
     add_locale_string("action.close", {{"en", "Close"}, {"zh", "关闭"}});
     add_locale_string("action.save_as_stl",
                       {{"en", "Save as STL"}, {"zh", "另存为 STL"}});
+    add_locale_string("action.reload",
+                      {{"en", "Reload"}, {"zh", "重新加载"}});
+    add_locale_string("action.reload_stl",
+                      {{"en", "Reload STL"}, {"zh", "重新加载 STL"}});
+    add_locale_string("action.apply",
+                      {{"en", "Apply"}, {"zh", "应用"}});
 
     add_locale_string("label.show_mesh",
                       {{"en", "show mesh"}, {"zh", "显示网格"}});
@@ -154,6 +160,11 @@ void init_locale_strings() {
                       {{"en", "show collision bounds"}, {"zh", "显示碰撞边界"}});
     add_locale_string("window.history",
                       {{"en", "History"}, {"zh", "历史记录"}});
+    add_locale_string("window.reload_stl",
+                      {{"en", "Reload STL"}, {"zh", "重新加载 STL"}});
+    add_locale_string("label.reload_stl_hint",
+                      {{"en", "Adjust voxel size and reload from source"},
+                       {"zh", "调整体素大小并从源文件重新加载"}});
     add_locale_string("label.history_total",
                       {{"en", "Total states"}, {"zh", "总状态数"}});
     add_locale_string("label.history_undo",

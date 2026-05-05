@@ -98,7 +98,8 @@ RenderVoxelList::do_segment(int index) {
 void RenderVoxelList::load_stl(std::string filename,
                                float voxel_size,
                                double isolevel,
-                               bool smooth_normals) {
+                               bool smooth_normals,
+                               int target_item_id) {
     using namespace sinriv::kigstudio::voxel;
     using MeshData = mesh_detail::AsyncVoxelMeshData;
     using Triangle = triangle_bvh<float>::triangle;
@@ -222,11 +223,29 @@ void RenderVoxelList::load_stl(std::string filename,
     queue_status = "Uploading...";
     queue_progress = 0.95f;
 
-    {
-        // std::lock_guard<std::mutex> lock(result_mutex_);
-        // result_mesh = std::move(data);
-        // result_voxel = std::move(voxel_data);
-
+    if (target_item_id >= 0) {
+        // 更新现有 item
+        {
+            std::lock_guard<std::mutex> lock(locker);
+            auto it = items.find(target_item_id);
+            if (it != items.end()) {
+                auto& item = *it->second;
+                item.mesh_renderer.clear();
+                item.mesh_renderer.loadGeometry(
+                    sinriv::kigstudio::voxel::readSTL(filename));
+                item.voxel_renderer.clear();
+                item.voxel_renderer.loadGeometry(data);
+                item.voxel_grid_data = std::move(voxel_data);
+                item.stl_voxel_size = voxel_size;
+                item.thumbnail_dirty = true;
+                item.dirty = true;
+                // 重新分割 children
+                if (item.children[0] >= 0 || item.children[1] >= 0) {
+                    queue_do_segment(target_item_id);
+                }
+            }
+        }
+    } else {
         auto item = std::make_unique<RenderVoxelItem>();
         item->manager = this;
         item->id = current_id++;
@@ -236,6 +255,7 @@ void RenderVoxelList::load_stl(std::string filename,
         item->voxel_grid_data = std::move(voxel_data);
         item->thumbnail_dirty = true;
         item->stl_path = filename;
+        item->stl_voxel_size = voxel_size;
         {
             std::lock_guard<std::mutex> lock(locker);
             items[item->id] = std::move(item);

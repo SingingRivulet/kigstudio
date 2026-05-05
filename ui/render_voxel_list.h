@@ -159,6 +159,7 @@ class RenderVoxelList {
         
         std::string stl_path;
         std::string voxel_path;
+        float stl_voxel_size = 1.0f;
 
         // undo/redo stacks for collision editor
         std::vector<CollisionEditorSnapshot> undo_stack;
@@ -242,11 +243,15 @@ class RenderVoxelList {
     void render_concave_cone_editor(RenderVoxelItem& item);
     void render_nav_map();
     void render_file_loader();
+    void render_reload_stl_dialog();
     void render_save_dialog();
     void render_load_dialog();
 
     bool show_edit_segment_plane = false;
     bool show_file_loader = false;
+    bool show_reload_stl_dialog = false;
+    int reload_stl_item_id = -1;
+    float reload_stl_voxel_size = 1.0f;
     bool show_save_dialog = false;
     bool show_save_as_dialog = false;
     bool show_load_dialog = false;
@@ -477,7 +482,8 @@ class RenderVoxelList {
     void load_stl(std::string filename,
                   float voxel_size = 0.5f,
                   double isolevel = 0.5,
-                  bool smooth_normals = true);
+                  bool smooth_normals = true,
+                  int target_item_id = -1);
 
     // 后台队列
 
@@ -503,7 +509,8 @@ class RenderVoxelList {
         TASK_REMOVE_ITEM = 2,
         TASK_LOAD_STL = 3,
         TASK_SEGMENT = 4,
-        TASK_GENERATE_THUMBNAIL_MESH = 5
+        TASK_GENERATE_THUMBNAIL_MESH = 5,
+        TASK_RELOAD_STL = 6,
     };
     struct QueueTask {
         QueueTaskType type;
@@ -553,6 +560,19 @@ class RenderVoxelList {
         QueueTask task;
         task.type = TASK_LOAD_STL;
         task.file_path = file_path;
+        task.voxel_size = voxel_size;
+        queue.push(task);
+        this->queue_num = static_cast<int>(queue.size());
+    }
+
+    inline void queue_reload_stl(int item_id, float voxel_size,
+                                  const std::string& stl_path) {
+        if (stl_path.empty()) return;
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        QueueTask task;
+        task.type = TASK_RELOAD_STL;
+        task.index = item_id;
+        task.file_path = stl_path;
         task.voxel_size = voxel_size;
         queue.push(task);
         this->queue_num = static_cast<int>(queue.size());
@@ -622,6 +642,7 @@ class RenderVoxelList {
         cJSON_AddBoolToObject(obj, "show_collision_bounds", item.showCollisionBounds);
         cJSON_AddStringToObject(obj, "stl_path", item.stl_path.c_str());
         cJSON_AddStringToObject(obj, "voxel_path", item.voxel_path.c_str());
+        cJSON_AddNumberToObject(obj, "stl_voxel_size", item.stl_voxel_size);
         cJSON_AddStringToObject(obj, "err_info", item.err_info.c_str());
         cJSON_AddItemToObject(obj, "collision_group",
             sinriv::kigstudio::to_json(item.collision_group));
@@ -665,6 +686,10 @@ class RenderVoxelList {
         item->showCollisionBounds = cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_collision_bounds"));
         item->stl_path = cJSON_GetObjectItem(obj, "stl_path")->valuestring;
         item->voxel_path = cJSON_GetObjectItem(obj, "voxel_path")->valuestring;
+        const cJSON* stl_voxel_size_json = cJSON_GetObjectItem(obj, "stl_voxel_size");
+        if (stl_voxel_size_json) {
+            item->stl_voxel_size = static_cast<float>(stl_voxel_size_json->valuedouble);
+        }
         item->err_info = cJSON_GetObjectItem(obj, "err_info")->valuestring;
         item->collision_group = sinriv::kigstudio::from_json_collision_group(
             cJSON_GetObjectItem(obj, "collision_group"));
@@ -836,6 +861,14 @@ class RenderVoxelList {
                     last_load_error = "load voxel failed: " + voxel_path.string();
                     cJSON_Delete(root);
                     return false;
+                }
+                if (!item->stl_path.empty()) {
+                    try {
+                        item->mesh_renderer.loadSTL(item->stl_path);
+                    } catch (const std::exception& e) {
+                        std::cout << "Failed to load STL mesh for item " << id
+                                  << ": " << e.what() << std::endl;
+                    }
                 }
                 items[id] = std::move(item);
             }

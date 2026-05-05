@@ -414,6 +414,7 @@ void RenderVoxelList::render_ui() {
     render_nav_map();
     render_collision_node_editor();
     render_file_loader();
+    render_reload_stl_dialog();
     render_save_dialog();
     render_load_dialog();
     render_history_window();
@@ -489,6 +490,65 @@ void RenderVoxelList::render_file_loader() {
         }
         ImGui::End();
     }
+}
+
+void RenderVoxelList::render_reload_stl_dialog() {
+    if (!show_reload_stl_dialog) return;
+
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImVec2 center = vp->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Once, ImVec2(0.5f, 0.5f));
+    if (ImGui::Begin(get_locale_cstr("window.reload_stl"), &show_reload_stl_dialog,
+                     ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted(get_locale_cstr("label.reload_stl_hint"));
+        ImGui::Separator();
+        ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
+        ImGui::SameLine();
+        const float button_size = ImGui::GetFrameHeight();
+        if (ImGui::Button("-##reload", ImVec2(button_size, 0))) {
+            auto tmp = reload_stl_voxel_size / 2.0f;
+            if (tmp >= 0.0001f) {
+                reload_stl_voxel_size = tmp;
+            }
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.0f);
+        ImGui::DragFloat("##ReloadVoxelSize", &reload_stl_voxel_size, 0.1f,
+                         0.0f, 0.0f, "%.4f");
+        ImGui::SameLine();
+        if (ImGui::Button("+##reload", ImVec2(button_size, 0))) {
+            reload_stl_voxel_size = reload_stl_voxel_size * 2.0f;
+            if (reload_stl_voxel_size > 1000.0f) {
+                reload_stl_voxel_size = 1000.0f;
+            }
+        }
+        ImGui::Separator();
+        {
+            std::lock_guard<std::mutex> lock(locker);
+            auto it = items.find(reload_stl_item_id);
+            if (it != items.end()) {
+                it->second->stl_voxel_size = reload_stl_voxel_size;
+            }
+        }
+        if (ImGui::Button(get_locale_cstr("action.apply"))) {
+            {
+                std::lock_guard<std::mutex> lock(locker);
+                auto it = items.find(reload_stl_item_id);
+                if (it != items.end()) {
+                    it->second->stl_voxel_size = reload_stl_voxel_size;
+                    this->queue_reload_stl(reload_stl_item_id,
+                                           reload_stl_voxel_size,
+                                           it->second->stl_path);
+                }
+            }
+            show_reload_stl_dialog = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(get_locale_cstr("action.cancel"))) {
+            show_reload_stl_dialog = false;
+        }
+    }
+    ImGui::End();
 }
 
 void RenderVoxelList::render_collision_body_editor(RenderVoxelItem& item) {
@@ -989,6 +1049,14 @@ void RenderVoxelList::render_collision_node_editor() {
                 item_it->second->queue_release = true;
             }
             ImGui::SameLine();
+            if (!item_it->second->stl_path.empty()) {
+                if (ImGui::Button(get_locale_cstr("action.reload_stl"))) {
+                    show_reload_stl_dialog = true;
+                    reload_stl_item_id = item_it->second->id;
+                    reload_stl_voxel_size = item_it->second->stl_voxel_size;
+                }
+                ImGui::SameLine();
+            }
             if (ImGui::Button(get_locale_cstr("action.save_as_stl"))) {
                 const char* filters[] = {"*.stl"};
                 const char* file =

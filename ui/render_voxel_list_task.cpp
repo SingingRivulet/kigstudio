@@ -86,6 +86,29 @@ void RenderVoxelList::queue_thread() {
 
                 queue_running = false;
                 break;
+            case TASK_RELOAD_STL:
+                // 重新加载stl文件（更改体素大小）
+                std::cout << "Reload stl file: " << task.file_path
+                          << " for item " << task.index << std::endl;
+                queue_running = true;
+                try {
+                    load_stl(task.file_path, task.voxel_size, 0.5, true,
+                             task.index);
+                } catch (std::runtime_error& e) {
+                    std::cerr << "Runtime error reloading STL file: " << e.what()
+                              << std::endl;
+                } catch (std::logic_error& e) {
+                    std::cerr << "Logic error reloading STL file: " << e.what()
+                              << std::endl;
+                } catch (std::exception& e) {
+                    std::cerr << "Error reloading STL file: " << e.what()
+                              << std::endl;
+                } catch (...) {
+                    std::cerr << "Unknown error reloading STL file. "
+                              << std::endl;
+                }
+                queue_running = false;
+                break;
             case TASK_SEGMENT:
                 // 分割
                 queue_running = true;
