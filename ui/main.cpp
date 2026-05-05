@@ -9,6 +9,10 @@
 #include "locale.h"
 #include "render.hpp"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include <iconfontheaders/icons_font_awesome.h>
 #include <iconfontheaders/icons_kenney.h>
 #include <imgui/imgui.h>
@@ -25,6 +29,9 @@
 #include "ui/render_voxel_list.h"
 
 int main() {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
     float yaw = 0;
     float pitch = 0;
     float distance = 200;
@@ -338,6 +345,9 @@ int main() {
             std::string desired_title = "kigstudio";
             if (!render_items.project_path.empty()) {
                 desired_title += " - [" + render_items.project_path + "]";
+            }
+            if (render_items.has_dirty_items()) {
+                desired_title += " (*)";
             }
             if (desired_title != current_window_title) {
                 current_window_title = desired_title;

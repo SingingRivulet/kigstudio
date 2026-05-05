@@ -70,6 +70,7 @@ struct CollisionEditorSnapshot {
     sinriv::kigstudio::voxel::concave::Cone concave_cone;
     std::vector<int> concave_cone_expanded_vertices;
     int segment_mode;
+    std::string description;
 };
 
 class RenderVoxelList {
@@ -162,6 +163,8 @@ class RenderVoxelList {
         // undo/redo stacks for collision editor
         std::vector<CollisionEditorSnapshot> undo_stack;
         std::vector<CollisionEditorSnapshot> redo_stack;
+
+        bool dirty = false;
     };
     inline RenderVoxelList() {}
     inline ~RenderVoxelList() { release(); }
@@ -291,14 +294,16 @@ class RenderVoxelList {
         }
     }
 
-    inline void end_edit(int item_id) {
+    inline void end_edit(int item_id, const std::string& desc = "Edit") {
         if (!pending_undo.has_value() || pending_undo->item_id != item_id) {
             return;
         }
         auto it = items.find(item_id);
         if (it != items.end()) {
             it->second->undo_stack.push_back(pending_undo->snapshot);
+            it->second->undo_stack.back().description = desc;
             it->second->redo_stack.clear();
+            it->second->dirty = true;
             if (it->second->undo_stack.size() > kMaxUndoSize) {
                 it->second->undo_stack.erase(it->second->undo_stack.begin());
             }
@@ -306,11 +311,13 @@ class RenderVoxelList {
         pending_undo.reset();
     }
 
-    inline void push_undo_now(int item_id, const std::optional<CollisionEditorSnapshot>& before = std::nullopt) {
+    inline void push_undo_now(int item_id, const std::optional<CollisionEditorSnapshot>& before = std::nullopt, const std::string& desc = "") {
         auto it = items.find(item_id);
         if (it == items.end()) return;
         it->second->undo_stack.push_back(before.value_or(capture_snapshot(*it->second)));
+        it->second->undo_stack.back().description = desc;
         it->second->redo_stack.clear();
+        it->second->dirty = true;
         if (it->second->undo_stack.size() > kMaxUndoSize) {
             it->second->undo_stack.erase(it->second->undo_stack.begin());
         }
@@ -325,6 +332,7 @@ class RenderVoxelList {
         // apply undo snapshot
         apply_snapshot(*it->second, it->second->undo_stack.back());
         it->second->undo_stack.pop_back();
+        it->second->dirty = true;
         return true;
     }
 
@@ -336,6 +344,7 @@ class RenderVoxelList {
         // apply redo snapshot
         apply_snapshot(*it->second, it->second->redo_stack.back());
         it->second->redo_stack.pop_back();
+        it->second->dirty = true;
         return true;
     }
 
@@ -348,6 +357,23 @@ class RenderVoxelList {
         auto it = items.find(item_id);
         return it != items.end() && !it->second->redo_stack.empty();
     }
+
+    inline bool has_dirty_items() const {
+        for (const auto& [id, item] : items) {
+            if (item->dirty) return true;
+        }
+        return false;
+    }
+
+    inline void clear_all_dirty() {
+        for (auto& [id, item] : items) {
+            item->dirty = false;
+        }
+    }
+
+    bool show_history_window = false;
+    void render_history_window();
+
 
     std::vector<std::tuple<sinriv::kigstudio::voxel::collision::vec3f,
                            sinriv::kigstudio::voxel::collision::vec3f>>
@@ -736,6 +762,7 @@ class RenderVoxelList {
         }
         cJSON_free(json_str);
         cJSON_Delete(root);
+        if (ok) clear_all_dirty();
         return ok;
     }
 
@@ -820,6 +847,7 @@ class RenderVoxelList {
         }
         project_path = folder;
         update_nav_node_status = true;
+        clear_all_dirty();
         return true;
     }
 };

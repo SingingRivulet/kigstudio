@@ -358,6 +358,9 @@ void RenderVoxelList::render_ui() {
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::MenuItem(get_locale_cstr("menu.history"))) {
+                show_history_window = !show_history_window;
+            }
             ImGui::EndMenuBar();
         }
         if (ImGui::Button(get_locale_cstr("action.update_collision"))) {
@@ -413,6 +416,7 @@ void RenderVoxelList::render_ui() {
     render_file_loader();
     render_save_dialog();
     render_load_dialog();
+    render_history_window();
 
     this->setMeshAxisVisible(showMeshAxis);
     this->setVoxelAxisVisible(showVoxelAxis);
@@ -446,7 +450,7 @@ void RenderVoxelList::render_file_loader() {
             }
             if (!stl_file_path.empty()) {
                 ImGui::Text(get_locale_cstr("label.selected_file"),
-                            tinyfd_path_to_utf8(stl_file_path.c_str()).c_str());
+                            stl_file_path.c_str());
             } else {
                 ImGui::TextUnformatted(get_locale_cstr("label.no_file_selected"));
             }
@@ -512,7 +516,7 @@ void RenderVoxelList::render_collision_body_editor(RenderVoxelItem& item) {
                      geometry_types, IM_ARRAYSIZE(geometry_types));
         ImGui::SameLine();
         if (ImGui::Button(get_locale_cstr("action.add_shape"))) {
-            push_undo_now(item.id);
+            push_undo_now(item.id, std::nullopt, get_locale_string("action.add_shape"));
             add_collision_geometry(item.collision_group, new_geometry_type);
         }
 
@@ -545,7 +549,7 @@ void RenderVoxelList::render_collision_body_editor(RenderVoxelItem& item) {
         }
 
         if (remove_index >= 0) {
-            push_undo_now(item.id);
+            push_undo_now(item.id, std::nullopt, get_locale_string("action.delete"));
             geometries.erase(geometries.begin() + remove_index);
         }
 
@@ -555,13 +559,13 @@ void RenderVoxelList::render_collision_body_editor(RenderVoxelItem& item) {
     }
 
     if (edit_result.value_changed) {
-        push_undo_now(item.id, before);
+        push_undo_now(item.id, before, get_locale_string("label.collision_root") + "/" + get_locale_string("label.collision_group"));
     }
     if (edit_result.activated) {
         begin_edit(item.id);
     }
     if (edit_result.deactivated_after_edit) {
-        end_edit(item.id);
+        end_edit(item.id, get_locale_string("label.collision_root") + "/" + get_locale_string("label.collision_group"));
     }
 }
 void RenderVoxelList::render_concave_cone_editor(RenderVoxelItem& item) {
@@ -607,7 +611,7 @@ void RenderVoxelList::render_concave_cone_editor(RenderVoxelItem& item) {
 
         // --- clear ---
         if (ImGui::Button(get_locale_cstr("action.clear_vertices"))) {
-            push_undo_now(item.id);
+            push_undo_now(item.id, std::nullopt, get_locale_string("action.clear_vertices"));
             item.concave_cone.base_vertices.clear();
             item.err_info.clear();
             item.concave_cone.check(item.err_info);
@@ -696,7 +700,7 @@ void RenderVoxelList::render_concave_cone_editor(RenderVoxelItem& item) {
         // ===== 删除处理 =====
         if (erase_index >= 0 &&
             erase_index < (int)item.concave_cone.base_vertices.size()) {
-            push_undo_now(item.id);
+            push_undo_now(item.id, std::nullopt, get_locale_string("action.delete"));
             item.concave_cone.base_vertices.erase(
                 item.concave_cone.base_vertices.begin() + erase_index);
 
@@ -708,7 +712,7 @@ void RenderVoxelList::render_concave_cone_editor(RenderVoxelItem& item) {
         if (pick_mode != PickMode::None && mouse_world_pos_valid &&
             mouse_world_pos_picked)  // ⚠ 必须是点击瞬间
         {
-            push_undo_now(item.id);
+            push_undo_now(item.id, std::nullopt, get_locale_string("label.pick_point_by_mouse"));
             auto& verts = item.concave_cone.base_vertices;
 
             switch (pick_mode) {
@@ -757,11 +761,14 @@ void RenderVoxelList::render_concave_cone_editor(RenderVoxelItem& item) {
     if (edit_result.value_changed) {
         push_undo_now(item.id, before);
     }
+    if (edit_result.value_changed) {
+        push_undo_now(item.id, before, get_locale_string("label.concave_cone_apex") + "/" + get_locale_string("label.concave_cone_vertices"));
+    }
     if (edit_result.activated) {
         begin_edit(item.id);
     }
     if (edit_result.deactivated_after_edit) {
-        end_edit(item.id);
+        end_edit(item.id, get_locale_string("label.concave_cone_apex") + "/" + get_locale_string("label.concave_cone_vertices"));
     }
 }
 
@@ -958,13 +965,13 @@ void RenderVoxelList::render_plane_editor(RenderVoxelItem& item) {
     }
 
     if (edit_result.value_changed) {
-        push_undo_now(item.id, before);
+        push_undo_now(item.id, before, get_locale_string("label.segment_mode") + " (Plane)");
     }
     if (edit_result.activated) {
         begin_edit(item.id);
     }
     if (edit_result.deactivated_after_edit) {
-        end_edit(item.id);
+        end_edit(item.id, get_locale_string("label.segment_mode") + " (Plane)");
     }
 }
 
@@ -1035,7 +1042,7 @@ void RenderVoxelList::render_collision_node_editor() {
                              &current_segment_mode,
                              segment_mode_names,
                              IM_ARRAYSIZE(segment_mode_names))) {
-                push_undo_now(item.id);
+                push_undo_now(item.id, std::nullopt, get_locale_string("label.segment_mode"));
                 item.segment_mode = segment_modes[current_segment_mode];
             }
             if (item.segment_mode == RenderVoxelItem::PLANE) {
@@ -1093,6 +1100,111 @@ void RenderVoxelList::render_load_dialog() {
         }
         show_load_dialog = false;
     }
+}
+
+void RenderVoxelList::render_history_window() {
+    if (!show_history_window) return;
+
+    std::lock_guard<std::mutex> lock(locker);
+    auto it = items.find(render_id);
+    if (it == items.end()) {
+        if (ImGui::Begin(get_locale_cstr("window.history"), &show_history_window)) {
+            ImGui::TextUnformatted(get_locale_cstr("label.no_active_item"));
+        }
+        ImGui::End();
+        return;
+    }
+
+    RenderVoxelItem& item = *it->second;
+    if (ImGui::Begin(get_locale_cstr("window.history"), &show_history_window)) {
+        ImGui::Text(get_locale_cstr("label.render_item"), item.id);
+        if (item.dirty) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "(*)");
+        }
+        ImGui::Separator();
+
+        const size_t undo_count = item.undo_stack.size();
+        const size_t redo_count = item.redo_stack.size();
+        const int total = static_cast<int>(undo_count + redo_count + 1);
+        const int current_idx = static_cast<int>(undo_count);
+
+        ImGui::Text("%s: %d", get_locale_cstr("label.history_total"), total);
+        ImGui::Separator();
+
+        // Copy descriptions locally to avoid accessing modified stacks during iteration
+        std::vector<std::string> undo_descs;
+        undo_descs.reserve(undo_count);
+        for (size_t i = 0; i < undo_count; ++i) {
+            undo_descs.push_back(item.undo_stack[i].description.empty() ? "State" : item.undo_stack[i].description);
+        }
+        std::vector<std::string> redo_descs;
+        redo_descs.reserve(redo_count);
+        for (size_t i = 0; i < redo_count; ++i) {
+            redo_descs.push_back(item.redo_stack[redo_count - 1 - i].description.empty() ? "State" : item.redo_stack[redo_count - 1 - i].description);
+        }
+
+        // Undo list (oldest first)
+        if (undo_count > 0) {
+            ImGui::TextDisabled("%s", get_locale_cstr("label.history_undo"));
+            ImGui::PushID("undo");
+            for (size_t i = 0; i < undo_count; ++i) {
+                char label[128];
+                snprintf(label, sizeof(label), "[%zu] %s",
+                         i, undo_descs[i].c_str());
+                ImGui::PushID(static_cast<int>(i));
+                if (i == undo_count - 1) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+                }
+                if (ImGui::Selectable(label, i == undo_count - 1)) {
+                    // Click to jump: undo until we reach this state
+                    size_t steps = undo_count - 1 - i;
+                    for (size_t s = 0; s < steps; ++s) {
+                        undo(item.id);
+                    }
+                }
+                if (i == undo_count - 1) {
+                    ImGui::PopStyleColor();
+                }
+                ImGui::PopID();
+            }
+            ImGui::PopID();
+        }
+
+        // Current state
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 1.0f, 0.4f, 1.0f));
+        ImGui::PushID("current");
+        ImGui::Selectable(get_locale_cstr("label.history_current"), true,
+                          ImGuiSelectableFlags_Disabled);
+        ImGui::PopID();
+        ImGui::PopStyleColor();
+
+        // Redo list (newest first, displayed top to bottom)
+        if (redo_count > 0) {
+            ImGui::TextDisabled("%s", get_locale_cstr("label.history_redo"));
+            ImGui::PushID("redo");
+            for (size_t i = 0; i < redo_count; ++i) {
+                char label[128];
+                snprintf(label, sizeof(label), "[%zu] %s",
+                         i, redo_descs[i].c_str());
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::Selectable(label, false)) {
+                    // Click to jump: redo until we reach this state
+                    size_t steps = i + 1;
+                    for (size_t s = 0; s < steps; ++s) {
+                        redo(item.id);
+                    }
+                }
+                ImGui::PopID();
+            }
+            ImGui::PopID();
+        }
+
+        if (undo_count == 0 && redo_count == 0) {
+            ImGui::TextDisabled("%s", get_locale_cstr("label.history_empty"));
+        }
+    }
+    ImGui::End();
 }
 
 }  // namespace sinriv::ui::render

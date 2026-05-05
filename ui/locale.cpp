@@ -89,6 +89,7 @@ void init_locale_strings() {
     add_locale_string("menu.body", {{"en", "Body"}, {"zh", "主体"}});
     add_locale_string("menu.axis", {{"en", "Axis"}, {"zh", "坐标轴"}});
     add_locale_string("menu.bound", {{"en", "Bound"}, {"zh", "边界"}});
+    add_locale_string("menu.history", {{"en", "History"}, {"zh", "历史记录"}});
     add_locale_string("menu.open_stl",
                       {{"en", "Open STL (O)"}, {"zh", "打开 STL (O)"}});
     add_locale_string("menu.save_project",
@@ -151,6 +152,18 @@ void init_locale_strings() {
                       {{"en", "show collision axis"}, {"zh", "显示碰撞坐标轴"}});
     add_locale_string("label.show_collision_bounds",
                       {{"en", "show collision bounds"}, {"zh", "显示碰撞边界"}});
+    add_locale_string("window.history",
+                      {{"en", "History"}, {"zh", "历史记录"}});
+    add_locale_string("label.history_total",
+                      {{"en", "Total states"}, {"zh", "总状态数"}});
+    add_locale_string("label.history_undo",
+                      {{"en", "Undo History"}, {"zh", "可撤销历史"}});
+    add_locale_string("label.history_redo",
+                      {{"en", "Redo History"}, {"zh", "可重做历史"}});
+    add_locale_string("label.history_current",
+                      {{"en", "[Current State]"}, {"zh", "[当前状态]"}});
+    add_locale_string("label.history_empty",
+                      {{"en", "No history records."}, {"zh", "暂无历史记录。"}});
     add_locale_string("label.items_tasks",
                       {{"en", "items:%d tasks:%d"}, {"zh", "项目:%d 任务:%d"}});
     add_locale_string("label.mouse_world_pos",
