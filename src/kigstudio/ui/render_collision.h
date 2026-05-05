@@ -36,12 +36,12 @@ namespace sinriv::ui::render {
     public:
         bgfx::ViewId view_id_ = 0;
         bgfx::ViewId overlay_view_id_ = 0;
-        std::string shader_dir_ = "../../shader/base/";
+        std::string shader_dir_ = "shader/base/";
         bgfx::ProgramHandle program_ = BGFX_INVALID_HANDLE;
 
         inline explicit RenderCollisionShader(bgfx::ViewId view_id = 0,
                                  bgfx::ViewId overlay_view_id = 0,
-                                 std::string shader_dir = "../../shader/base/")
+                                 std::string shader_dir = "shader/base/")
             : view_id_(view_id),
               overlay_view_id_(overlay_view_id),
               shader_dir_(std::move(shader_dir)) {}

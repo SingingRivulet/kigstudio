@@ -74,7 +74,7 @@ namespace sinriv::ui::render {
                                 bgfx::ViewId lighting_view_id = 3,
                                 bgfx::ViewId collision_view_id = 1,
                                 bgfx::ViewId collision_fill_view_id = 2,
-                                std::string shader_dir = "../../shader/base/")
+                                std::string shader_dir = "shader/base/")
             : gbuffer_view_id_(gbuffer_view_id),
               lighting_view_id_(lighting_view_id),
               collision_view_id_(collision_view_id),
@@ -171,7 +171,7 @@ namespace sinriv::ui::render {
         bgfx::ViewId collision_view_id_ = 1;
         bgfx::ViewId collision_fill_view_id_ = 2;
         bgfx::ViewId lighting_view_id_ = 3;
-        std::string shader_dir_ = "../../shader/base/";
+        std::string shader_dir_ = "shader/base/";
         uint16_t width_ = 1;
         uint16_t height_ = 1;
         uint16_t fb_width_ = 0;

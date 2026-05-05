@@ -122,3 +122,10 @@ target_link_libraries(kigstudio_ui
     imgui
     zlib
 )
+
+# 构建时将 shader 目录复制到可执行文件输出目录旁
+add_custom_command(TARGET kigstudio_ui POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/shader
+    $<TARGET_FILE_DIR:kigstudio_ui>/shader
+)

@@ -78,7 +78,7 @@ namespace sinriv::ui::render {
       public:
         inline explicit RenderMeshShader(bgfx::ViewId view_id = 0,
                             bgfx::ViewId overlay_view_id = 0,
-                            std::string shader_dir = "../../shader/base/")
+                            std::string shader_dir = "shader/base/")
             : view_id_(view_id),
               overlay_view_id_(overlay_view_id),
               shader_dir_(std::move(shader_dir)) {
@@ -183,7 +183,7 @@ namespace sinriv::ui::render {
 
         bgfx::ViewId view_id_ = 0;
         bgfx::ViewId overlay_view_id_ = 0;
-        std::string shader_dir_ = "../../shader/base/";
+        std::string shader_dir_ = "shader/base/";
         bgfx::ProgramHandle gbuffer_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle line_program_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_base_color_ = BGFX_INVALID_HANDLE;
