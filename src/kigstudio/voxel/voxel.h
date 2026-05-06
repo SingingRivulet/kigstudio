@@ -445,6 +445,101 @@ class VoxelGrid {
         return r;
     }
 
+    inline VoxelGrid dilate(int radius = 1, bool use_26_neighbors = true) const {
+        if (radius <= 0)
+            return *this;
+
+        VoxelGrid current = *this;
+        for (int step = 0; step < radius; ++step) {
+            VoxelGrid next;
+            next.global_position = global_position;
+            next.voxel_size = voxel_size;
+
+            for (const auto& voxel : current) {
+                next.insert(voxel);
+
+                for (int dz = -1; dz <= 1; ++dz) {
+                    for (int dy = -1; dy <= 1; ++dy) {
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            if (dx == 0 && dy == 0 && dz == 0)
+                                continue;
+                            if (!use_26_neighbors &&
+                                std::abs(dx) + std::abs(dy) + std::abs(dz) != 1)
+                                continue;
+
+                            next.insert(voxel.x + dx,
+                                        voxel.y + dy,
+                                        voxel.z + dz);
+                        }
+                    }
+                }
+            }
+
+            current = std::move(next);
+        }
+
+        return current;
+    }
+
+    inline VoxelGrid erode(int radius = 1, bool use_26_neighbors = true) const {
+        if (radius <= 0)
+            return *this;
+
+        VoxelGrid current = *this;
+        for (int step = 0; step < radius; ++step) {
+            VoxelGrid next;
+            next.global_position = global_position;
+            next.voxel_size = voxel_size;
+
+            for (const auto& voxel : current) {
+                bool keep = true;
+
+                for (int dz = -1; dz <= 1 && keep; ++dz) {
+                    for (int dy = -1; dy <= 1 && keep; ++dy) {
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            if (dx == 0 && dy == 0 && dz == 0)
+                                continue;
+                            if (!use_26_neighbors &&
+                                std::abs(dx) + std::abs(dy) + std::abs(dz) != 1)
+                                continue;
+
+                            if (!current.contains(voxel.x + dx,
+                                                  voxel.y + dy,
+                                                  voxel.z + dz)) {
+                                keep = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (keep)
+                    next.insert(voxel);
+            }
+
+            current = std::move(next);
+        }
+
+        return current;
+    }
+
+    inline VoxelGrid detectWeakVoxels(int radius = 1,
+                                      bool use_26_neighbors = true) const {
+        if (radius <= 0) {
+            VoxelGrid r;
+            r.global_position = global_position;
+            r.voxel_size = voxel_size;
+            return r;
+        }
+
+        const VoxelGrid opened =
+            erode(radius, use_26_neighbors).dilate(radius, use_26_neighbors);
+        VoxelGrid weak = difference_local(opened);
+        weak.global_position = global_position;
+        weak.voxel_size = voxel_size;
+        return weak;
+    }
+
     inline std::tuple<VoxelGrid, VoxelGrid> segment(
         const collision::CollisionGroup& other) const {
         VoxelGrid positive_side;
