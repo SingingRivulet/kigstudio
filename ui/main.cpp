@@ -326,11 +326,7 @@ int main() {
         io.DisplaySize = ImVec2((float)width, (float)height);
         render_items.update_mouse();
         ImGui::NewFrame();
-        render_items.mouse_world_pos.x = deferred_renderer.mouse_pos_[0];
-        render_items.mouse_world_pos.y = deferred_renderer.mouse_pos_[1];
-        render_items.mouse_world_pos.z = deferred_renderer.mouse_pos_[2];
-        render_items.mouse_world_pos_valid =
-            deferred_renderer.mouse_highlight_[0] > 0.5f;
+        render_items.update_mouse_pos(deferred_renderer);
         render_items.render_ui();
         ImGui::Render();
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&

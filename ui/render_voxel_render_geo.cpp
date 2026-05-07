@@ -34,12 +34,14 @@ RenderVoxelList::do_segment(int index) {
                     children_1[0] = it_items->second->children[0];
                     children_1[1] = it_items->second->children[1];
                     {
-                        std::lock_guard<std::mutex> lock(pending_deletion_mutex);
+                        std::lock_guard<std::mutex> lock(
+                            pending_deletion_mutex);
                         pending_deletion.push_back(std::move(it_items->second));
                     }
                     items.erase(it_items);
                     update_nav_node_status = true;
-                    if (items.find(children_1[0])!=items.end() || items.find(children_1[1])!=items.end()){
+                    if (items.find(children_1[0]) != items.end() ||
+                        items.find(children_1[1]) != items.end()) {
                         queue_do_segment(id_1);
                     }
                 }
@@ -53,12 +55,14 @@ RenderVoxelList::do_segment(int index) {
                     children_2[0] = it_items->second->children[0];
                     children_2[1] = it_items->second->children[1];
                     {
-                        std::lock_guard<std::mutex> lock(pending_deletion_mutex);
+                        std::lock_guard<std::mutex> lock(
+                            pending_deletion_mutex);
                         pending_deletion.push_back(std::move(it_items->second));
                     }
                     items.erase(it_items);
                     update_nav_node_status = true;
-                    if (items.find(children_2[0])!=items.end() || items.find(children_2[1])!=items.end()){
+                    if (items.find(children_2[0]) != items.end() ||
+                        items.find(children_2[1]) != items.end()) {
                         queue_do_segment(id_2);
                     }
                 }
@@ -118,9 +122,19 @@ void RenderVoxelList::load_stl(std::string filename,
     queue_progress = 0.05f;
     triangle_bvh<float> bvh;
     size_t tri_count = 0;
+    kdtree::pointVec kdtree_points;
     for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(filename)) {
         (void)n;
         bvh.insert(tri);
+        kdtree_points.push_back({static_cast<double>(std::get<0>(tri).x),
+                                 static_cast<double>(std::get<0>(tri).y),
+                                 static_cast<double>(std::get<0>(tri).z)});
+        kdtree_points.push_back({static_cast<double>(std::get<1>(tri).x),
+                                 static_cast<double>(std::get<1>(tri).y),
+                                 static_cast<double>(std::get<1>(tri).z)});
+        kdtree_points.push_back({static_cast<double>(std::get<2>(tri).x),
+                                 static_cast<double>(std::get<2>(tri).y),
+                                 static_cast<double>(std::get<2>(tri).z)});
         ++tri_count;
         if (tri_count % 1000 == 0) {
             queue_progress =
@@ -266,6 +280,7 @@ void RenderVoxelList::load_stl(std::string filename,
         item->thumbnail_dirty = true;
         item->stl_path = filename;
         item->stl_voxel_size = voxel_size;
+        item->mesh_kd_tree = kdtree::KDTree(kdtree_points);
         {
             std::lock_guard<std::mutex> lock(locker);
             items[item->id] = std::move(item);

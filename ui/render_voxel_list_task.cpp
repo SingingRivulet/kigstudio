@@ -67,26 +67,32 @@ void RenderVoxelList::queue_thread() {
             //     break;
             case TASK_LOAD_STL:
                 // 加载stl文件
-                append_queue_log("[Queue] Start: Load STL \"" + task.file_path + "\"");
+                append_queue_log("[Queue] Start: Load STL \"" + task.file_path +
+                                 "\"");
                 std::cout << "Load stl file: " << task.file_path << std::endl;
                 queue_running = true;
                 try {
                     load_stl(task.file_path, task.voxel_size);
-                    append_queue_log("[Queue] Done:  Load STL \"" + task.file_path + "\"");
+                    append_queue_log("[Queue] Done:  Load STL \"" +
+                                     task.file_path + "\"");
                 } catch (std::runtime_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Load STL \"") + task.file_path + "\" - " + e.what());
+                    append_queue_log(std::string("[Queue] Error: Load STL \"") +
+                                     task.file_path + "\" - " + e.what());
                     std::cerr << "Runtime error loading STL file: " << e.what()
                               << std::endl;
                 } catch (std::logic_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Load STL \"") + task.file_path + "\" - " + e.what());
+                    append_queue_log(std::string("[Queue] Error: Load STL \"") +
+                                     task.file_path + "\" - " + e.what());
                     std::cerr << "Logic error loading STL file: " << e.what()
                               << std::endl;
                 } catch (std::exception& e) {
-                    append_queue_log(std::string("[Queue] Error: Load STL \"") + task.file_path + "\" - " + e.what());
+                    append_queue_log(std::string("[Queue] Error: Load STL \"") +
+                                     task.file_path + "\" - " + e.what());
                     std::cerr << "Error loading STL file: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_log(std::string("[Queue] Error: Load STL \"") + task.file_path + "\" - Unknown error");
+                    append_queue_log(std::string("[Queue] Error: Load STL \"") +
+                                     task.file_path + "\" - Unknown error");
                     std::cerr << "Unknown error loading STL file. "
                               << std::endl;
                 }
@@ -95,28 +101,40 @@ void RenderVoxelList::queue_thread() {
                 break;
             case TASK_RELOAD_STL:
                 // 重新加载stl文件（更改体素大小）
-                append_queue_log("[Queue] Start: Reload STL item " + std::to_string(task.index) + " \"" + task.file_path + "\"");
+                append_queue_log("[Queue] Start: Reload STL item " +
+                                 std::to_string(task.index) + " \"" +
+                                 task.file_path + "\"");
                 std::cout << "Reload stl file: " << task.file_path
                           << " for item " << task.index << std::endl;
                 queue_running = true;
                 try {
                     load_stl(task.file_path, task.voxel_size, 0.5, true,
                              task.index);
-                    append_queue_log("[Queue] Done:  Reload STL item " + std::to_string(task.index));
+                    append_queue_log("[Queue] Done:  Reload STL item " +
+                                     std::to_string(task.index));
                 } catch (std::runtime_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Reload STL item ") + std::to_string(task.index) + " - " + e.what());
-                    std::cerr << "Runtime error reloading STL file: " << e.what()
-                              << std::endl;
+                    append_queue_log(
+                        std::string("[Queue] Error: Reload STL item ") +
+                        std::to_string(task.index) + " - " + e.what());
+                    std::cerr
+                        << "Runtime error reloading STL file: " << e.what()
+                        << std::endl;
                 } catch (std::logic_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Reload STL item ") + std::to_string(task.index) + " - " + e.what());
+                    append_queue_log(
+                        std::string("[Queue] Error: Reload STL item ") +
+                        std::to_string(task.index) + " - " + e.what());
                     std::cerr << "Logic error reloading STL file: " << e.what()
                               << std::endl;
                 } catch (std::exception& e) {
-                    append_queue_log(std::string("[Queue] Error: Reload STL item ") + std::to_string(task.index) + " - " + e.what());
+                    append_queue_log(
+                        std::string("[Queue] Error: Reload STL item ") +
+                        std::to_string(task.index) + " - " + e.what());
                     std::cerr << "Error reloading STL file: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_log(std::string("[Queue] Error: Reload STL item ") + std::to_string(task.index) + " - Unknown error");
+                    append_queue_log(
+                        std::string("[Queue] Error: Reload STL item ") +
+                        std::to_string(task.index) + " - Unknown error");
                     std::cerr << "Unknown error reloading STL file. "
                               << std::endl;
                 }
@@ -124,31 +142,43 @@ void RenderVoxelList::queue_thread() {
                 break;
             case TASK_SEGMENT:
                 // 分割
-                append_queue_log("[Queue] Start: Segment item " + std::to_string(task.index));
+                append_queue_log("[Queue] Start: Segment item " +
+                                 std::to_string(task.index));
                 queue_running = true;
                 try {
                     do_segment(task.index);
-                    append_queue_log("[Queue] Done:  Segment item " + std::to_string(task.index));
+                    append_queue_log("[Queue] Done:  Segment item " +
+                                     std::to_string(task.index));
                 } catch (std::runtime_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Segment item ") + std::to_string(task.index) + " - " + e.what());
+                    append_queue_log(
+                        std::string("[Queue] Error: Segment item ") +
+                        std::to_string(task.index) + " - " + e.what());
                     std::cerr << "Runtime error doing segment: " << e.what()
                               << std::endl;
                 } catch (std::logic_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Segment item ") + std::to_string(task.index) + " - " + e.what());
+                    append_queue_log(
+                        std::string("[Queue] Error: Segment item ") +
+                        std::to_string(task.index) + " - " + e.what());
                     std::cerr << "Logic error doing segment: " << e.what()
                               << std::endl;
                 } catch (std::exception& e) {
-                    append_queue_log(std::string("[Queue] Error: Segment item ") + std::to_string(task.index) + " - " + e.what());
+                    append_queue_log(
+                        std::string("[Queue] Error: Segment item ") +
+                        std::to_string(task.index) + " - " + e.what());
                     std::cerr << "Error doing segment: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_log(std::string("[Queue] Error: Segment item ") + std::to_string(task.index) + " - Unknown error");
+                    append_queue_log(
+                        std::string("[Queue] Error: Segment item ") +
+                        std::to_string(task.index) + " - Unknown error");
                     std::cerr << "Unknown error doing segment. " << std::endl;
                 }
                 queue_running = false;
                 break;
             case TASK_GENERATE_THUMBNAIL_MESH: {
-                append_queue_log("[Queue] Start: Generate thumbnail mesh for item " + std::to_string(task.index));
+                append_queue_log(
+                    "[Queue] Start: Generate thumbnail mesh for item " +
+                    std::to_string(task.index));
                 queue_running = true;
                 queue_status = "Generating thumbnail mesh...";
                 queue_progress = 0.0f;
@@ -207,23 +237,37 @@ void RenderVoxelList::queue_thread() {
                         thumbnail_mesh_results[task.index] = std::move(data);
                         thumbnail_mesh_pending.erase(task.index);
                     }
-                    append_queue_log("[Queue] Done:  Generate thumbnail mesh for item " + std::to_string(task.index));
+                    append_queue_log(
+                        "[Queue] Done:  Generate thumbnail mesh for item " +
+                        std::to_string(task.index));
 
                 } catch (std::runtime_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Generate thumbnail mesh for item ") + std::to_string(task.index) + " - " + e.what());
+                    append_queue_log(std::string("[Queue] Error: Generate "
+                                                 "thumbnail mesh for item ") +
+                                     std::to_string(task.index) + " - " +
+                                     e.what());
                     std::cerr << "Runtime error generating thumbnail mesh: "
                               << e.what() << std::endl;
                 } catch (std::logic_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Generate thumbnail mesh for item ") + std::to_string(task.index) + " - " + e.what());
+                    append_queue_log(std::string("[Queue] Error: Generate "
+                                                 "thumbnail mesh for item ") +
+                                     std::to_string(task.index) + " - " +
+                                     e.what());
                     std::cerr
                         << "Logic error generating thumbnail mesh: " << e.what()
                         << std::endl;
                 } catch (std::exception& e) {
-                    append_queue_log(std::string("[Queue] Error: Generate thumbnail mesh for item ") + std::to_string(task.index) + " - " + e.what());
+                    append_queue_log(std::string("[Queue] Error: Generate "
+                                                 "thumbnail mesh for item ") +
+                                     std::to_string(task.index) + " - " +
+                                     e.what());
                     std::cerr << "Error generating thumbnail mesh: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_log(std::string("[Queue] Error: Generate thumbnail mesh for item ") + std::to_string(task.index) + " - Unknown error");
+                    append_queue_log(std::string("[Queue] Error: Generate "
+                                                 "thumbnail mesh for item ") +
+                                     std::to_string(task.index) +
+                                     " - Unknown error");
                     std::cerr << "Unknown error generating thumbnail mesh. "
                               << std::endl;
                 }
@@ -236,4 +280,102 @@ void RenderVoxelList::queue_thread() {
         }
     }
 }
+
+void RenderVoxelList::start_thread() {
+    // 启动进程
+    queue_thread_ = std::thread(&RenderVoxelList::queue_thread, this);
+}
+
+void RenderVoxelList::stop_thread() {
+    if (queue_thread_.joinable()) {
+        std::cout << "Waiting for queue thread to stop" << std::endl;
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+            QueueTask task;
+            task.type = TASK_STOP;
+            queue.push(task);
+        }
+        queue_thread_.join();
+        std::cout << "Queue thread stopped" << std::endl;
+    }
+}
+
+size_t RenderVoxelList::get_num_items() {
+    std::lock_guard<std::mutex> lock(locker);
+    auto res = items.size();
+    return res;
+}
+
+void RenderVoxelList::queue_load_stl(const std::string& file_path,
+                                     float voxel_size) {
+    // 将加载任务加入队列
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_LOAD_STL;
+    task.file_path = file_path;
+    task.voxel_size = voxel_size;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
+}
+
+void RenderVoxelList::queue_reload_stl(int item_id,
+                                       float voxel_size,
+                                       const std::string& stl_path) {
+    if (stl_path.empty())
+        return;
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_RELOAD_STL;
+    task.index = item_id;
+    task.file_path = stl_path;
+    task.voxel_size = voxel_size;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
+}
+
+void RenderVoxelList::queue_do_segment(int index) {
+    // 将分割任务加入队列
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_SEGMENT;
+    task.index = index;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
+}
+
+void RenderVoxelList::queue_do_segment() {
+    std::lock_guard<std::mutex> lock(locker);
+    auto it = items.find(render_id);
+    if (it != items.end()) {
+        queue_do_segment(it->second->id);
+    }
+}
+
+void RenderVoxelList::queue_remove_item(int index) {
+    std::lock_guard<std::mutex> lock(locker);
+    auto it = items.find(index);
+    if (it != items.end()) {
+        it->second->ref_count--;
+    }
+}
+
+bool RenderVoxelList::isQueueRunning() {
+    return queue_running;
+}
+
+std::string RenderVoxelList::getQueueStatus() {
+    return queue_status;
+}
+
+float RenderVoxelList::getQueueProgress() {
+    return queue_progress;
+}
+
+void RenderVoxelList::release() {
+    stop_thread();
+    destroyThumbnailResources();
+    items.clear();
+    pending_deletion.clear();
+}
+
 }  // namespace sinriv::ui::render

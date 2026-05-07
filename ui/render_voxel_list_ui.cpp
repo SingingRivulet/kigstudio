@@ -1131,6 +1131,17 @@ void RenderVoxelList::render_collision_node_editor() {
                 }
             }
             RenderVoxelItem& item = *item_it->second;
+            
+            ImGui::SameLine();
+            if (mouse_world_pos_picked_auto_snapping){
+                if (ImGui::Button(get_locale_cstr("action.pick_pos_auto_snapping_stop"))) {
+                    mouse_world_pos_picked_auto_snapping = false;
+                }
+            }else{
+                if (ImGui::Button(get_locale_cstr("action.pick_pos_auto_snapping"))) {
+                    mouse_world_pos_picked_auto_snapping = true;
+                }
+            }
 
             ImGui::Text(get_locale_cstr("label.render_item"), item.id);
             ImGui::Separator();

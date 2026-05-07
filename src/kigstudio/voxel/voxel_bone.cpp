@@ -166,14 +166,14 @@ VoxelGrid VoxelGrid::extractSkeletonByMaximalBalls(int min_radius,
     if (air_surface.chunks.empty())
         return skeleton;
 
-    pointVec surface_points;
+    kdtree::pointVec surface_points;
     for (const auto& voxel : air_surface) {
         surface_points.push_back({static_cast<double>(voxel.x),
                                   static_cast<double>(voxel.y),
                                   static_cast<double>(voxel.z)});
     }
 
-    KDTree surface_tree(surface_points);
+    kdtree::KDTree surface_tree(surface_points);
     const double min_radius_clamped =
         static_cast<double>(min_radius < 1 ? 1 : min_radius);
 
@@ -199,7 +199,7 @@ VoxelGrid VoxelGrid::extractSkeletonByMaximalBalls(int min_radius,
             return true;
         return std::abs(dx) + std::abs(dy) + std::abs(dz) == 1;
     };
-    auto squaredDistance = [](const point_t& a, const Vec3i& b) {
+    auto squaredDistance = [](const kdtree::point_t& a, const Vec3i& b) {
         const double dx = a[0] - static_cast<double>(b.x);
         const double dy = a[1] - static_cast<double>(b.y);
         const double dz = a[2] - static_cast<double>(b.z);
@@ -207,7 +207,7 @@ VoxelGrid VoxelGrid::extractSkeletonByMaximalBalls(int min_radius,
     };
 
     for (const auto& voxel : *this) {
-        const point_t nearest = surface_tree.nearest_point(
+        const kdtree::point_t nearest = surface_tree.nearest_point(
             {static_cast<double>(voxel.x), static_cast<double>(voxel.y),
              static_cast<double>(voxel.z)});
         const double radius = std::sqrt(squaredDistance(nearest, voxel));

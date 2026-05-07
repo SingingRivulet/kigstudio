@@ -154,6 +154,10 @@ void init_locale_strings() {
                       {{"en", "Reload STL"}, {"zh", "重新加载 STL"}});
     add_locale_string("action.apply",
                       {{"en", "Apply"}, {"zh", "应用"}});
+    add_locale_string("action.pick_pos_auto_snapping",
+                      {{"en", "auto snapping"}, {"zh", "自动吸附"}});
+    add_locale_string("action.pick_pos_auto_snapping_stop",
+                      {{"en", "stop auto snapping"}, {"zh", "取消自动吸附"}});
 
     add_locale_string("label.show_mesh",
                       {{"en", "show mesh"}, {"zh", "显示网格"}});

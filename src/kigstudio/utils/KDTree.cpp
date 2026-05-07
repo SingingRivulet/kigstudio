@@ -21,6 +21,8 @@
 
 #include "KDTree.h"
 
+namespace kdtree{
+
 KDNode::KDNode() = default;
 
 KDNode::KDNode(const point_t &pt, const size_t &idx_, const KDNodePtr &left_,
@@ -321,4 +323,6 @@ indexArr KDTree::neighborhood_indices(  //
     std::transform(nbh.begin(), nbh.end(), nbhi.begin(),
                    [](pointIndex x) { return x.second; });
     return nbhi;
+}
+
 }
