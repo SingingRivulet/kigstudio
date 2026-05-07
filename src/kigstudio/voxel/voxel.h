@@ -9,6 +9,8 @@
 #include <bitset>
 #include <cmath>
 #include <cstdint>
+#include <limits>
+#include <queue>
 #include <stack>
 #include <unordered_map>
 #include <vector>
@@ -523,6 +525,69 @@ class VoxelGrid {
         return current;
     }
 
+    inline VoxelGrid getSurfaceVoxels(bool use_26_neighbors = true) const {
+        VoxelGrid surface;
+        surface.global_position = global_position;
+        surface.voxel_size = voxel_size;
+
+        for (const auto& voxel : *this) {
+            bool touches_outside = false;
+
+            for (int dz = -1; dz <= 1 && !touches_outside; ++dz) {
+                for (int dy = -1; dy <= 1 && !touches_outside; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (dx == 0 && dy == 0 && dz == 0)
+                            continue;
+                        if (!use_26_neighbors &&
+                            std::abs(dx) + std::abs(dy) + std::abs(dz) != 1)
+                            continue;
+
+                        if (!contains(voxel.x + dx,
+                                      voxel.y + dy,
+                                      voxel.z + dz)) {
+                            touches_outside = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (touches_outside)
+                surface.insert(voxel);
+        }
+
+        return surface;
+    }
+
+    inline VoxelGrid getOuterAirSurfaceVoxels(
+        bool use_26_neighbors = true) const {
+        VoxelGrid air;
+        air.global_position = global_position;
+        air.voxel_size = voxel_size;
+
+        for (const auto& voxel : *this) {
+            for (int dz = -1; dz <= 1; ++dz) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (dx == 0 && dy == 0 && dz == 0)
+                            continue;
+                        if (!use_26_neighbors &&
+                            std::abs(dx) + std::abs(dy) + std::abs(dz) != 1)
+                            continue;
+
+                        const Vec3i neighbor(voxel.x + dx,
+                                             voxel.y + dy,
+                                             voxel.z + dz);
+                        if (!contains(neighbor.x, neighbor.y, neighbor.z))
+                            air.insert(neighbor);
+                    }
+                }
+            }
+        }
+
+        return air;
+    }
+
     inline VoxelGrid detectWeakVoxels(int radius = 1,
                                       bool use_26_neighbors = true) const {
         if (radius <= 0) {
@@ -538,6 +603,165 @@ class VoxelGrid {
         weak.global_position = global_position;
         weak.voxel_size = voxel_size;
         return weak;
+    }
+
+    inline VoxelGrid extractSkeletonByMaximalBalls(
+        int min_radius = 1,
+        bool use_26_neighbors = true) const {
+        VoxelGrid skeleton;
+        skeleton.global_position = global_position;
+        skeleton.voxel_size = voxel_size;
+
+        if (chunks.empty())
+            return skeleton;
+
+        constexpr int CHAMFER_AXIS = 3;
+        constexpr int CHAMFER_EDGE = 4;
+        constexpr int CHAMFER_CORNER = 5;
+        const int min_radius_clamped =
+            (min_radius < 1 ? 1 : min_radius) * CHAMFER_AXIS;
+        constexpr int INF = std::numeric_limits<int>::max() / 4;
+        struct Vec3iHash {
+            inline std::size_t operator()(const Vec3i& p) const {
+                std::size_t h = 1469598103934665603ull;
+                auto mix = [&h](int32_t v) {
+                    h ^= static_cast<uint32_t>(v);
+                    h *= 1099511628211ull;
+                };
+                mix(p.x);
+                mix(p.y);
+                mix(p.z);
+                return h;
+            }
+        };
+
+        std::unordered_map<Vec3i, int, Vec3iHash> distance;
+        struct QueueNode {
+            Vec3i voxel;
+            int distance = 0;
+        };
+        struct QueueNodeGreater {
+            inline bool operator()(const QueueNode& a,
+                                   const QueueNode& b) const {
+                return a.distance > b.distance;
+            }
+        };
+        std::priority_queue<QueueNode,
+                            std::vector<QueueNode>,
+                            QueueNodeGreater>
+            queue;
+
+        auto isNeighborEnabled = [use_26_neighbors](int dx, int dy, int dz) {
+            if (dx == 0 && dy == 0 && dz == 0)
+                return false;
+            if (use_26_neighbors)
+                return true;
+            return std::abs(dx) + std::abs(dy) + std::abs(dz) == 1;
+        };
+        auto chamferWeight = [](int dx, int dy, int dz) {
+            const int axis_count =
+                (dx != 0 ? 1 : 0) + (dy != 0 ? 1 : 0) + (dz != 0 ? 1 : 0);
+            if (axis_count == 1)
+                return CHAMFER_AXIS;
+            if (axis_count == 2)
+                return CHAMFER_EDGE;
+            return CHAMFER_CORNER;
+        };
+
+        for (const auto& voxel : *this) {
+            distance[voxel] = INF;
+
+            int boundary_distance = INF;
+            for (int dz = -1; dz <= 1; ++dz) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (!isNeighborEnabled(dx, dy, dz))
+                            continue;
+
+                        if (!contains(voxel.x + dx,
+                                      voxel.y + dy,
+                                      voxel.z + dz)) {
+                            const int neighbor_distance =
+                                chamferWeight(dx, dy, dz);
+                            if (neighbor_distance < boundary_distance)
+                                boundary_distance = neighbor_distance;
+                        }
+                    }
+                }
+            }
+
+            if (boundary_distance != INF) {
+                distance[voxel] = boundary_distance;
+                queue.push({voxel, boundary_distance});
+            }
+        }
+
+        while (!queue.empty()) {
+            const QueueNode node = queue.top();
+            queue.pop();
+
+            const Vec3i voxel = node.voxel;
+            const int base_distance = distance[voxel];
+            if (node.distance != base_distance)
+                continue;
+
+            for (int dz = -1; dz <= 1; ++dz) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (!isNeighborEnabled(dx, dy, dz))
+                            continue;
+
+                        const Vec3i neighbor(voxel.x + dx,
+                                             voxel.y + dy,
+                                             voxel.z + dz);
+                        auto it = distance.find(neighbor);
+                        if (it == distance.end())
+                            continue;
+
+                        const int next_distance =
+                            base_distance + chamferWeight(dx, dy, dz);
+                        if (next_distance < it->second) {
+                            it->second = next_distance;
+                            queue.push({neighbor, next_distance});
+                        }
+                    }
+                }
+            }
+        }
+
+        for (const auto& voxel : *this) {
+            const int radius = distance[voxel];
+            if (radius < min_radius_clamped)
+                continue;
+
+            bool covered_by_larger_ball = false;
+            for (int dz = -1; dz <= 1 && !covered_by_larger_ball; ++dz) {
+                for (int dy = -1; dy <= 1 && !covered_by_larger_ball; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (!isNeighborEnabled(dx, dy, dz))
+                            continue;
+
+                        const Vec3i neighbor(voxel.x + dx,
+                                             voxel.y + dy,
+                                             voxel.z + dz);
+                        const auto it = distance.find(neighbor);
+                        if (it == distance.end())
+                            continue;
+
+                        const int step_distance = chamferWeight(dx, dy, dz);
+                        if (it->second >= radius + step_distance) {
+                            covered_by_larger_ball = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!covered_by_larger_ball)
+                skeleton.insert(voxel);
+        }
+
+        return skeleton;
     }
 
     inline std::tuple<VoxelGrid, VoxelGrid> segment(
