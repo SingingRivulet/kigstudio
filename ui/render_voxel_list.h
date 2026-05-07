@@ -94,6 +94,7 @@ class RenderVoxelList {
     class RenderVoxelItem {
        public:
         int id = -1;
+        int root_id = -1;
         int children[2] = {-1, -1};
         int nav_node_position[2] = {0, 0};  // 在分割演示图中的位置
         std::string err_info;

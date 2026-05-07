@@ -132,7 +132,8 @@ inline float layout_node(RenderVoxelList& mgr,
                          int depth,
                          LayoutContext& ctx,
                          std::unordered_map<int, int>& visit_state,
-                         bool& has_cycle) {
+                         bool& has_cycle,
+                         int root_id) {
     auto it = mgr.items.find(node_id);
 
     // 不存在 = 无效节点
@@ -155,9 +156,10 @@ inline float layout_node(RenderVoxelList& mgr,
     visit_state[node_id] = 1;
 
     auto& node = *it->second;
+    node.root_id = root_id;
 
     float left_x = layout_node(mgr, node.children[0], depth + 1, ctx,
-                               visit_state, has_cycle);
+                               visit_state, has_cycle, root_id);
 
     float my_x;
 
@@ -169,7 +171,7 @@ inline float layout_node(RenderVoxelList& mgr,
     }
 
     float right_x = layout_node(mgr, node.children[1], depth + 1, ctx,
-                                visit_state, has_cycle);
+                                visit_state, has_cycle, root_id);
 
     if (left_x >= 0 && right_x >= 0) {
         my_x = (left_x + right_x) * 0.5f;
@@ -193,7 +195,7 @@ inline void compute_layout(RenderVoxelList& mgr) {
     bool has_cycle = false;
 
     for (int root_id : roots) {
-        layout_node(mgr, root_id, 0, ctx, visit_state, has_cycle);
+        layout_node(mgr, root_id, 0, ctx, visit_state, has_cycle, root_id);
         ctx.next_x += ctx.x_spacing * 2;
     }
 

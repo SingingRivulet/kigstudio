@@ -105,8 +105,15 @@ void RenderVoxelList::update_mouse_pos(RenderDeferred& deferred_renderer) {
         deferred_renderer.mouse_highlight_[0] > 0.5f) {
         auto it = items.find(render_id);
         if (it != items.end()) {
-            if (!it->second->mesh_kd_tree.empty()) {
-                auto p = it->second->mesh_kd_tree.nearest_point(
+            auto kdtree_ptr = &it->second->mesh_kd_tree;
+            if (kdtree_ptr->empty()) {
+                auto pit = items.find(it->second->root_id);
+                if (pit != items.end()) {
+                    kdtree_ptr = &pit->second->mesh_kd_tree;
+                }
+            }
+            if (!kdtree_ptr->empty()) {
+                auto p = kdtree_ptr->nearest_point(
                     {deferred_renderer.mouse_pos_[0],
                      deferred_renderer.mouse_pos_[1],
                      deferred_renderer.mouse_pos_[2]});
