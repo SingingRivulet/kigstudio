@@ -362,6 +362,15 @@ class VoxelGrid {
         const concave::Base& other) const;
     std::tuple<VoxelGrid, VoxelGrid> segment(
         const HybridSegment& other) const;
+    bool rayOccluded(const vec3<float>& origin,
+                     const vec3<float>& target) const;
+    VoxelGrid extractLitVoxels(const vec3<float>& lightPos) const;
+    std::tuple<VoxelGrid, VoxelGrid> bfsSplit(
+        const std::vector<Vec3i>& seeds,
+        int max_distance,
+        bool use_26_neighbors = false) const;
+    std::vector<VoxelGrid> splitDisconnected(
+        bool use_26_neighbors = false) const;
 };
 }  // namespace voxel
 

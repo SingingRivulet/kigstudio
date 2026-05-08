@@ -1,7 +1,8 @@
 #include "voxel.h"
+
 namespace sinriv::kigstudio::voxel {
-VoxelGrid VoxelGrid::dilate(int radius,
-                            bool use_26_neighbors) const {
+
+VoxelGrid VoxelGrid::dilate(int radius, bool use_26_neighbors) const {
     if (radius <= 0)
         return *this;
 
@@ -108,8 +109,7 @@ VoxelGrid VoxelGrid::getSurfaceVoxels(bool use_26_neighbors) const {
     return surface;
 }
 
-VoxelGrid VoxelGrid::getOuterAirSurfaceVoxels(
-    bool use_26_neighbors) const {
+VoxelGrid VoxelGrid::getOuterAirSurfaceVoxels(bool use_26_neighbors) const {
     VoxelGrid air;
     air.global_position = global_position;
     air.voxel_size = voxel_size;
@@ -136,8 +136,7 @@ VoxelGrid VoxelGrid::getOuterAirSurfaceVoxels(
     return air;
 }
 
-VoxelGrid VoxelGrid::detectWeakVoxels(int radius,
-                                      bool use_26_neighbors) const {
+VoxelGrid VoxelGrid::detectWeakVoxels(int radius, bool use_26_neighbors) const {
     if (radius <= 0) {
         VoxelGrid r;
         r.global_position = global_position;
@@ -153,8 +152,9 @@ VoxelGrid VoxelGrid::detectWeakVoxels(int radius,
     return weak;
 }
 
-VoxelGrid VoxelGrid::extractSkeletonByMaximalBalls(int min_radius,
-                                        bool use_26_neighbors) const {
+VoxelGrid VoxelGrid::extractSkeletonByMaximalBalls(
+    int min_radius,
+    bool use_26_neighbors) const {
     VoxelGrid skeleton;
     skeleton.global_position = global_position;
     skeleton.voxel_size = voxel_size;
@@ -248,4 +248,75 @@ VoxelGrid VoxelGrid::extractSkeletonByMaximalBalls(int min_radius,
 
     return skeleton;
 }
+
+bool VoxelGrid::rayOccluded(const vec3<float>& origin,
+                            const vec3<float>& target) const {
+    using vec3f = vec3<float>;
+
+    vec3f dir = target - origin;
+
+    float len = dir.length();
+
+    if (len < 1e-6f)
+        return false;
+
+    dir /= len;
+
+    Vec3i voxel = this->worldToVoxel(origin);
+    Vec3i end = this->worldToVoxel(target);
+
+    int stepX = dir.x > 0 ? 1 : -1;
+    int stepY = dir.y > 0 ? 1 : -1;
+    int stepZ = dir.z > 0 ? 1 : -1;
+
+    auto intBound = [](float s, float ds) {
+        if (ds > 0)
+            return (std::ceil(s) - s) / ds;
+        else
+            return (s - std::floor(s)) / -ds;
+    };
+
+    vec3f pos = {(origin.x - this->global_position.x) / this->voxel_size.x,
+                 (origin.y - this->global_position.y) / this->voxel_size.y,
+                 (origin.z - this->global_position.z) / this->voxel_size.z};
+
+    float tMaxX = dir.x != 0 ? intBound(pos.x, dir.x) : INFINITY;
+
+    float tMaxY = dir.y != 0 ? intBound(pos.y, dir.y) : INFINITY;
+
+    float tMaxZ = dir.z != 0 ? intBound(pos.z, dir.z) : INFINITY;
+
+    float tDeltaX = dir.x != 0 ? std::abs(1.0f / dir.x) : INFINITY;
+
+    float tDeltaY = dir.y != 0 ? std::abs(1.0f / dir.y) : INFINITY;
+
+    float tDeltaZ = dir.z != 0 ? std::abs(1.0f / dir.z) : INFINITY;
+
+    while (voxel != end) {
+        if (voxel != end && this->contains(voxel.x, voxel.y, voxel.z)) {
+            return true;
+        }
+
+        if (tMaxX < tMaxY) {
+            if (tMaxX < tMaxZ) {
+                voxel.x += stepX;
+                tMaxX += tDeltaX;
+            } else {
+                voxel.z += stepZ;
+                tMaxZ += tDeltaZ;
+            }
+        } else {
+            if (tMaxY < tMaxZ) {
+                voxel.y += stepY;
+                tMaxY += tDeltaY;
+            } else {
+                voxel.z += stepZ;
+                tMaxZ += tDeltaZ;
+            }
+        }
+    }
+
+    return false;
+}
+
 }  // namespace sinriv::kigstudio::voxel
