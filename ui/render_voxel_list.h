@@ -162,7 +162,7 @@ class RenderVoxelList {
         }
 
         std::atomic<int> ref_count = 1;
-        std::atomic<int> write_count = 0; // TODO:禁止编辑write_count不为0的item
+        std::atomic<int> write_count = 0;
 
         bool queue_release = false;
 
@@ -171,7 +171,7 @@ class RenderVoxelList {
         bool showCollision = true;
         bool showCollisionBounds = false;
 
-        bool auto_segment_update = true; // TODO:关闭时，不会执行递归更新，并且手动更新需要二次确认
+        bool auto_segment_update = true;
 
         bgfx::TextureHandle thumbnail_tex = BGFX_INVALID_HANDLE;
         bool thumbnail_dirty = true;
@@ -276,6 +276,10 @@ class RenderVoxelList {
     bool show_save_dialog = false;
     bool show_save_as_dialog = false;
     bool show_load_dialog = false;
+
+    bool show_delete_confirm = false;
+    int pending_delete_item_id = -1;
+    bool show_manual_update_confirm = false;
 
     std::string project_path;
 

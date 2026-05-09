@@ -245,6 +245,10 @@ void init_locale_strings() {
                       {{"en", "render item: %d"}, {"zh", "渲染项目: %d"}});
     add_locale_string("label.segment_mode",
                       {{"en", "segment mode"}, {"zh", "分割模式"}});
+    add_locale_string("label.auto_segment_update",
+                      {{"en", "auto segment update"}, {"zh", "自动分割更新"}});
+    add_locale_string("label.updating",
+                      {{"en", "Updating..."}, {"zh", "更新中..."}});
     add_locale_string("label.node", {{"en", "Node %d"}, {"zh", "节点 %d"}});
     add_locale_string("label.node_updating",
                       {{"en", "Node %d (updating...)"},
@@ -296,6 +300,16 @@ void init_locale_strings() {
                        {"zh", "选择项目文件夹"}});
     add_locale_string("dialog.info",
                       {{"en", "Info"}, {"zh", "提示"}});
+    add_locale_string("dialog.confirm_delete_title",
+                      {{"en", "Confirm Delete"}, {"zh", "确认删除"}});
+    add_locale_string("dialog.confirm_delete",
+                      {{"en", "Are you sure you want to delete this node?"},
+                       {"zh", "确定要删除此节点吗？"}});
+    add_locale_string("dialog.confirm_manual_update_title",
+                      {{"en", "Confirm Update"}, {"zh", "确认更新"}});
+    add_locale_string("dialog.confirm_manual_update_message",
+                      {{"en", "Some child nodes have auto-update disabled. Proceed anyway?"},
+                       {"zh", "部分子节点已关闭自动更新，是否继续？"}});
 
     add_locale_string("error.three_points_collinear",
                       {{"en", "Three points are collinear."},

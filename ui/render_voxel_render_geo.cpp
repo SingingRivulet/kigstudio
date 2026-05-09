@@ -23,17 +23,18 @@ RenderVoxelList::do_segment(int index) {
 
     std::vector<int> new_ids;
     std::vector<std::vector<int>> new_children;
+    std::vector<bool> new_auto_segment_update;
     {
         std::lock_guard<std::mutex> lock(locker);
         it->second->ref_count--;
         it->second->write_count--;
-        // TODO: 递归执行时会导致子节点切割配置丢失，需要修复
         size_t num_results = grids.size();
         size_t num_existing = it->second->children.size();
 
         for (size_t i = 0; i < num_results; ++i) {
             int child_id;
             std::vector<int> child_children = {-1, -1};
+            bool child_auto_update = true;
             if (i < num_existing) {
                 auto it_child = items.find(it->second->children[i]);
                 if (it_child == items.end()) {
@@ -41,6 +42,7 @@ RenderVoxelList::do_segment(int index) {
                 } else {
                     child_id = it_child->second->id;
                     child_children = it_child->second->children;
+                    child_auto_update = it_child->second->auto_segment_update;
                     {
                         std::lock_guard<std::mutex> lock(
                             pending_deletion_mutex);
@@ -49,10 +51,12 @@ RenderVoxelList::do_segment(int index) {
                     }
                     items.erase(it_child);
                     update_nav_node_status = true;
-                    for (int gc : child_children) {
-                        if (items.find(gc) != items.end()) {
-                            queue_do_segment(child_id);
-                            break;
+                    if (child_auto_update) {
+                        for (int gc : child_children) {
+                            if (items.find(gc) != items.end()) {
+                                queue_do_segment(child_id);
+                                break;
+                            }
                         }
                     }
                 }
@@ -61,6 +65,7 @@ RenderVoxelList::do_segment(int index) {
             }
             new_ids.push_back(child_id);
             new_children.push_back(child_children);
+            new_auto_segment_update.push_back(child_auto_update);
         }
 
         // 标记多余的旧子节点释放
@@ -83,6 +88,7 @@ RenderVoxelList::do_segment(int index) {
         new_item->manager = this;
         new_item->id = new_ids[i];
         new_item->children = new_children[i];
+        new_item->auto_segment_update = new_auto_segment_update[i];
         new_item->voxel_grid_data = std::move(grids[i]);
         new_item->thumbnail_dirty = true;
         new_item->segment_mode = it->second->segment_mode;

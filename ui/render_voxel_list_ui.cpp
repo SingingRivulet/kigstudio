@@ -424,7 +424,30 @@ void RenderVoxelList::render_ui() {
         if (ImGui::Button(get_locale_cstr("action.update_collision"))) {
             std::cout << "update collision" << std::endl;
             // 应用碰撞体到两个结果体素
-            this->queue_do_segment();
+            bool need_confirm = false;
+            {
+                std::lock_guard<std::mutex> lock(locker);
+                auto it = items.find(render_id);
+                if (it != items.end()) {
+                    std::function<bool(int)> has_auto_update_off;
+                    has_auto_update_off = [&](int id) -> bool {
+                        auto node = items.find(id);
+                        if (node == items.end()) return false;
+                        if (!node->second->auto_segment_update) return true;
+                        for (int child_id : node->second->children) {
+                            if (child_id >= 0 && has_auto_update_off(child_id))
+                                return true;
+                        }
+                        return false;
+                    };
+                    need_confirm = has_auto_update_off(render_id);
+                }
+            }
+            if (need_confirm) {
+                show_manual_update_confirm = true;
+            } else {
+                this->queue_do_segment();
+            }
         }
         menu_height = static_cast<int>(
             ImGui::CalcWindowNextAutoFitSize(ImGui::GetCurrentWindow()).y);
@@ -477,6 +500,59 @@ void RenderVoxelList::render_ui() {
     render_load_dialog();
     render_history_window();
     render_log_window();
+
+    // Delete confirm modal
+    if (show_delete_confirm) {
+        ImGui::OpenPopup(get_locale_cstr("dialog.confirm_delete_title"));
+        show_delete_confirm = false;
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(get_locale_cstr("dialog.confirm_delete_title"),
+                               nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted(get_locale_cstr("dialog.confirm_delete"));
+        ImGui::Separator();
+        if (ImGui::Button(get_locale_cstr("action.delete"))) {
+            {
+                std::lock_guard<std::mutex> lock(locker);
+                auto it = items.find(pending_delete_item_id);
+                if (it != items.end()) {
+                    it->second->queue_release = true;
+                }
+            }
+            pending_delete_item_id = -1;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(get_locale_cstr("action.cancel"))) {
+            pending_delete_item_id = -1;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    // Manual update confirm modal
+    if (show_manual_update_confirm) {
+        ImGui::OpenPopup(get_locale_cstr("dialog.confirm_manual_update_title"));
+        show_manual_update_confirm = false;
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(get_locale_cstr("dialog.confirm_manual_update_title"),
+                               nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted(
+            get_locale_cstr("dialog.confirm_manual_update_message"));
+        ImGui::Separator();
+        if (ImGui::Button(get_locale_cstr("action.apply"))) {
+            this->queue_do_segment();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(get_locale_cstr("action.cancel"))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 
     this->setMeshAxisVisible(showMeshAxis);
     this->setVoxelAxisVisible(showVoxelAxis);
@@ -1104,15 +1180,24 @@ void RenderVoxelList::render_collision_node_editor() {
         if (item_it == items.end()) {
             ImGui::TextUnformatted(get_locale_cstr("label.no_active_item"));
         } else {
+            RenderVoxelItem& item = *item_it->second;
+            bool is_updating = item.write_count != 0;
+            if (is_updating) {
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "%s",
+                                   get_locale_cstr("label.updating"));
+            }
+            if (is_updating) ImGui::BeginDisabled();
+
             if (ImGui::Button(get_locale_cstr("action.delete"))) {
-                item_it->second->queue_release = true;
+                pending_delete_item_id = item.id;
+                show_delete_confirm = true;
             }
             ImGui::SameLine();
-            if (!item_it->second->stl_path.empty()) {
+            if (!item.stl_path.empty()) {
                 if (ImGui::Button(get_locale_cstr("action.reload_stl"))) {
                     show_reload_stl_dialog = true;
-                    reload_stl_item_id = item_it->second->id;
-                    reload_stl_voxel_size = item_it->second->stl_voxel_size;
+                    reload_stl_item_id = item.id;
+                    reload_stl_voxel_size = item.stl_voxel_size;
                 }
                 ImGui::SameLine();
             }
@@ -1130,14 +1215,13 @@ void RenderVoxelList::render_collision_node_editor() {
                     int numTriangles = 0;
                     for (auto triangles :
                          sinriv::kigstudio::voxel::generateMesh(
-                             item_it->second->voxel_grid_data, 0.5,
+                             item.voxel_grid_data, 0.5,
                              numTriangles, true)) {
                         mesh.push_back(triangles);
                     }
                     sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, file);
                 }
             }
-            RenderVoxelItem& item = *item_it->second;
             
             ImGui::SameLine();
             if (mouse_world_pos_picked_auto_snapping){
@@ -1169,6 +1253,9 @@ void RenderVoxelList::render_collision_node_editor() {
             if (redo_disabled) ImGui::EndDisabled();
             ImGui::Separator();
 
+            ImGui::Checkbox(get_locale_cstr("label.auto_segment_update"),
+                            &item.auto_segment_update);
+
             const char* segment_mode_names[] = {
                 get_locale_cstr("mode.collision"), get_locale_cstr("mode.plane"),
                 get_locale_cstr("mode.concave_cone"),
@@ -1192,6 +1279,8 @@ void RenderVoxelList::render_collision_node_editor() {
             } else if (item.segment_mode == RenderVoxelItem::CONCAVE_CONE) {
                 render_concave_cone_editor(item);
             }
+
+            if (is_updating) ImGui::EndDisabled();
         }
     }
     ImGui::End();

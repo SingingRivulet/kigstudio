@@ -40,6 +40,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddBoolToObject(obj, "show_collision", item.showCollision);
     cJSON_AddBoolToObject(obj, "show_collision_bounds",
                           item.showCollisionBounds);
+    cJSON_AddBoolToObject(obj, "auto_segment_update",
+                          item.auto_segment_update);
     cJSON_AddStringToObject(obj, "stl_path", item.stl_path.c_str());
     cJSON_AddStringToObject(obj, "voxel_path", item.voxel_path.c_str());
     cJSON_AddNumberToObject(obj, "stl_voxel_size", item.stl_voxel_size);
@@ -97,6 +99,11 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_collision"));
     item->showCollisionBounds =
         cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_collision_bounds"));
+    const cJSON* auto_update_json =
+        cJSON_GetObjectItem(obj, "auto_segment_update");
+    if (auto_update_json) {
+        item->auto_segment_update = cJSON_IsTrue(auto_update_json);
+    }
     item->stl_path = cJSON_GetObjectItem(obj, "stl_path")->valuestring;
     item->voxel_path = cJSON_GetObjectItem(obj, "voxel_path")->valuestring;
     const cJSON* stl_voxel_size_json =
