@@ -11,6 +11,8 @@ namespace sinriv::ui::render {
        public:
         using AxisHandle = RenderMesh::AxisHandle;
         using vec3f = RenderMesh::vec3f;
+        using VoxelGrid = sinriv::kigstudio::voxel::VoxelGrid;
+        using Triangle = sinriv::kigstudio::voxel::triangle_bvh<float>::triangle;
         inline explicit RenderVoxel(){
             mesh_renderer_.setBaseColor(0.72f, 0.80f, 0.95f, 1.0f);
         }
@@ -18,18 +20,30 @@ namespace sinriv::ui::render {
 
         inline void setViewportSize(int width, int height) {
             mesh_renderer_.setViewportSize(width, height);
+            for (auto& [key, mesh] : chunk_meshes_) {
+                mesh.setViewportSize(width, height);
+            }
         }
 
         inline void setViewProjection(const float* view, const float* proj) {
             mesh_renderer_.setViewProjection(view, proj);
+            for (auto& [key, mesh] : chunk_meshes_) {
+                mesh.setViewProjection(view, proj);
+            }
         }
 
         inline void setModelMatrix(const RenderMesh::mat4f& model_matrix) {
             mesh_renderer_.setModelMatrix(model_matrix);
+            for (auto& [key, mesh] : chunk_meshes_) {
+                mesh.setModelMatrix(model_matrix);
+            }
         }
 
         inline void setAxisLength(float value) {
             mesh_renderer_.setAxisLength(value);
+            for (auto& [key, mesh] : chunk_meshes_) {
+                mesh.setAxisLength(value);
+            }
         }
 
         inline AxisHandle getHoveredAxis() const { return mesh_renderer_.getHoveredAxis(); }
@@ -45,18 +59,32 @@ namespace sinriv::ui::render {
 
         inline void release() { 
             mesh_renderer_.release();
+            for (auto& [key, mesh] : chunk_meshes_) {
+                mesh.release();
+            }
             collision_bvh.reset();
         }
 
-        inline void clear() { mesh_renderer_.clear(); }
+        inline void clear() {
+            mesh_renderer_.clear();
+            chunk_meshes_.clear();
+        }
 
-        inline bool empty() const { return mesh_renderer_.empty(); }
+        inline bool empty() const {
+            if (!chunk_meshes_.empty()) {
+                for (const auto& [key, mesh] : chunk_meshes_) {
+                    if (!mesh.empty()) return false;
+                }
+                return true;
+            }
+            return mesh_renderer_.empty();
+        }
 
         inline RenderMesh& getMeshRenderer() { return mesh_renderer_; }
         inline const RenderMesh& getMeshRenderer() const { return mesh_renderer_; }
 
         inline void loadVoxelGrid(
-            sinriv::kigstudio::voxel::VoxelGrid voxel_data,
+            VoxelGrid voxel_data,
             double isolevel = 0.5,
             bool smooth_normals = true) {
             int num_triangles = 0;
@@ -71,14 +99,73 @@ namespace sinriv::ui::render {
             mesh_renderer_.loadGeometry(data.vertices, data.indices);
         }
 
+        // ============ Chunked mesh ============
+        inline void loadVoxelGridChunked(
+            VoxelGrid& voxel_data,
+            double isolevel = 0.5,
+            bool smooth_normals = true) {
+            chunk_meshes_.clear();
+            for (const auto& [key, chunk] : voxel_data.chunks) {
+                (void)chunk;
+                int num_triangles = 0;
+                auto generator = sinriv::kigstudio::voxel::generateMeshForChunk(
+                    voxel_data, key, isolevel, num_triangles, smooth_normals);
+                std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>> mesh;
+                for (auto [tri, n] : generator) {
+                    mesh.push_back({tri, n});
+                }
+                if (!mesh.empty()) {
+                    chunk_meshes_[key].loadGeometry(mesh);
+                }
+            }
+        }
+
+        inline void updateChunk(
+            VoxelGrid& voxel_data,
+            uint64_t chunk_key,
+            double isolevel = 0.5,
+            bool smooth_normals = true) {
+            int num_triangles = 0;
+            auto generator = sinriv::kigstudio::voxel::generateMeshForChunk(
+                voxel_data, chunk_key, isolevel, num_triangles, smooth_normals);
+            std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>> mesh;
+            for (auto [tri, n] : generator) {
+                mesh.push_back({tri, n});
+            }
+            auto it = chunk_meshes_.find(chunk_key);
+            if (mesh.empty()) {
+                if (it != chunk_meshes_.end()) {
+                    chunk_meshes_.erase(it);
+                }
+            } else {
+                chunk_meshes_[chunk_key].loadGeometry(mesh);
+            }
+        }
+
         inline void renderGBuffer(const float* transform, RenderMeshShader & shader) {
-            mesh_renderer_.showAxis = showAxis;
-            mesh_renderer_.renderGBuffer(transform, shader);
+            if (!chunk_meshes_.empty()) {
+                for (auto& [key, mesh] : chunk_meshes_) {
+                    (void)key;
+                    mesh.showAxis = showAxis;
+                    mesh.renderGBuffer(transform, shader);
+                }
+            } else {
+                mesh_renderer_.showAxis = showAxis;
+                mesh_renderer_.renderGBuffer(transform, shader);
+            }
         }
 
         inline void renderOverlay(RenderMeshShader & shader) {
-            mesh_renderer_.showAxis = showAxis;
-            mesh_renderer_.renderOverlay(shader);
+            if (!chunk_meshes_.empty()) {
+                for (auto& [key, mesh] : chunk_meshes_) {
+                    (void)key;
+                    mesh.showAxis = showAxis;
+                    mesh.renderOverlay(shader);
+                }
+            } else {
+                mesh_renderer_.showAxis = showAxis;
+                mesh_renderer_.renderOverlay(shader);
+            }
         }
 
         inline void render(const float* transform, RenderMeshShader & shader) {
@@ -110,5 +197,6 @@ namespace sinriv::ui::render {
 
        private:
         RenderMesh mesh_renderer_;
+        std::unordered_map<uint64_t, RenderMesh> chunk_meshes_;
     };
 }

@@ -185,6 +185,19 @@ class RenderVoxelList {
         std::vector<CollisionEditorSnapshot> redo_stack;
 
         bool dirty = false;
+
+        inline void markVoxelChunkDirty(int wx, int wy, int wz) {
+            using namespace sinriv::kigstudio::voxel;
+            int cx = wx >> 5, cy = wy >> 5, cz = wz >> 5;
+            int lx = wx & 31, ly = wy & 31, lz = wz & 31;
+            voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx, cy, cz));
+            if (lx == 0)  voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx - 1, cy, cz));
+            if (lx == 31) voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx + 1, cy, cz));
+            if (ly == 0)  voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx, cy - 1, cz));
+            if (ly == 31) voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx, cy + 1, cz));
+            if (lz == 0)  voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx, cy, cz - 1));
+            if (lz == 31) voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx, cy, cz + 1));
+        }
     };
     inline RenderVoxelList() {}
     inline ~RenderVoxelList() { release(); }

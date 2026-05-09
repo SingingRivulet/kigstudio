@@ -216,41 +216,9 @@ void RenderVoxelList::load_stl(std::string filename,
 
     queue_progress = 0.50f;
 
-    // Phase 3: Generate mesh
+    // Phase 3: Generate chunked mesh
     queue_status = "Generating mesh...";
-    int num_triangles = 0;
-    auto generator =
-        generateMesh(voxel_data, isolevel, num_triangles, smooth_normals);
-    MeshData data;
-    size_t processed_tris = 0;
-    size_t estimated_tris = voxel_data.num_chunk() * 200;
-    if (estimated_tris == 0)
-        estimated_tris = 1;
-
-    for (auto [tri, n] : generator) {
-        const uint32_t base = static_cast<uint32_t>(data.vertices.size());
-        data.vertices.push_back({std::get<0>(tri).x, std::get<0>(tri).y,
-                                 std::get<0>(tri).z, n.x, n.y, n.z});
-        data.vertices.push_back({std::get<1>(tri).x, std::get<1>(tri).y,
-                                 std::get<1>(tri).z, n.x, n.y, n.z});
-        data.vertices.push_back({std::get<2>(tri).x, std::get<2>(tri).y,
-                                 std::get<2>(tri).z, n.x, n.y, n.z});
-        data.indices.push_back(base);
-        data.indices.push_back(base + 1);
-        data.indices.push_back(base + 2);
-
-        ++processed_tris;
-        if (processed_tris % 1000 == 0) {
-            float p =
-                0.50f +
-                0.40f * std::min(1.0f, static_cast<float>(processed_tris) /
-                                           static_cast<float>(estimated_tris));
-            queue_progress = p;
-        }
-    }
-
-    queue_status = "Uploading...";
-    queue_progress = 0.95f;
+    queue_progress = 0.75f;
 
     if (target_item_id >= 0) {
         // 更新现有 item
@@ -263,7 +231,8 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.mesh_renderer.loadGeometry(
                     sinriv::kigstudio::voxel::readSTL(filename));
                 item.voxel_renderer.clear();
-                item.voxel_renderer.loadGeometry(data);
+                item.voxel_renderer.loadVoxelGridChunked(
+                    voxel_data, isolevel, smooth_normals);
                 item.voxel_grid_data = std::move(voxel_data);
                 item.stl_voxel_size = voxel_size;
                 item.thumbnail_dirty = true;
@@ -287,7 +256,8 @@ void RenderVoxelList::load_stl(std::string filename,
         item->id = current_id++;
         item->mesh_renderer.loadGeometry(
             sinriv::kigstudio::voxel::readSTL(filename));
-        item->voxel_renderer.loadGeometry(data);
+        item->voxel_renderer.loadVoxelGridChunked(
+            voxel_data, isolevel, smooth_normals);
         item->voxel_grid_data = std::move(voxel_data);
         item->thumbnail_dirty = true;
         item->stl_path = filename;
@@ -299,6 +269,9 @@ void RenderVoxelList::load_stl(std::string filename,
             update_nav_node_status = true;
         }
     }
+
+    queue_status = "Uploading...";
+    queue_progress = 0.95f;
 
     queue_status = "Done";
     queue_progress = 1.0f;
