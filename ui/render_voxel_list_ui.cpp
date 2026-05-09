@@ -417,6 +417,10 @@ void RenderVoxelList::render_ui() {
                                     &showCollisionBounds);
                     ImGui::EndMenu();
                 }
+                ImGui::Checkbox(get_locale_cstr("label.disable_camera_on_pick"),
+                                &disable_camera_on_pick);
+                ImGui::DragFloat(get_locale_cstr("label.mouse_highlight_range"),
+                                 &mouse_highlight_range, 0.1f, 0.0f, 20.0f, "%.1f");
                 ImGui::EndMenu();
             }
             ImGui::EndMenuBar();

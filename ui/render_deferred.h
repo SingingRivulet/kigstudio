@@ -216,6 +216,7 @@ namespace sinriv::ui::render {
         std::array<float, 4> light_dir_ = {0.3f, 0.5f, 0.8f, 0.0f};
         std::array<float, 4> mouse_pos_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 4> mouse_highlight_ = {0.f, 0.f, 0.f, 0.f};
+        float mouse_highlight_range_ = 3.0f;
         std::array<float, 4> mouse_ori_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 4> mouse_dir_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 2> screen_mouse_pos_ = {0.f, 0.f};

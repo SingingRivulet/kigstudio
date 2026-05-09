@@ -56,8 +56,9 @@ void main()
 
     if (u_mouseHighlight.x > 0.5) {
         vec3 mouse_world_pos = vec3(u_mousePos.x, u_mousePos.y, u_mousePos.z);
-        float dist = max(3.0 - length(mouse_world_pos - world_pos), 0.0);
-        float t = smoothstep(0.0, 3.0, dist);
+        float range = u_mouseHighlight.y;
+        float dist = max(range - length(mouse_world_pos - world_pos), 0.0);
+        float t = smoothstep(0.0, range, dist);
         color = mix(color, vec3(1.00, 0.0, 0.0), t);
     }
 

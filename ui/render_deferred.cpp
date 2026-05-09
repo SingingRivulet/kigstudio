@@ -298,7 +298,7 @@ void RenderDeferred::render() {
         bgfx::readTexture(readback_, readback_buffer);
         if (readback_buffer[3] > 0.5f) {
             mouse_highlight_[0] = 1.0;
-            mouse_highlight_[1] = 1.0;
+            mouse_highlight_[1] = mouse_highlight_range_;
             mouse_highlight_[2] = 1.0;
             mouse_highlight_[3] = 1.0;
 

@@ -335,6 +335,7 @@ int main() {
         render_items.update_mouse();
         ImGui::NewFrame();
         render_items.update_mouse_pos(deferred_renderer);
+        deferred_renderer.mouse_highlight_range_ = render_items.mouse_highlight_range;
         render_items.render_ui();
         ImGui::Render();
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
