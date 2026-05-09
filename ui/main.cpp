@@ -39,6 +39,8 @@ int main() {
     float cameraOffsetY = 0.0f;
     bool leftMouseDown = false;
     bool middleMouseDown = false;
+    bool leftMouseDownOnPick = false;
+    bool middleMouseDownOnPick = false;
     SDL_SetMainReady();
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;
@@ -168,9 +170,13 @@ int main() {
             if (e.type == SDL_MOUSEBUTTONDOWN) {
                 if (e.button.button == SDL_BUTTON_LEFT) {
                     leftMouseDown = true;
+                    leftMouseDownOnPick = render_items.disable_camera_on_pick &&
+                                          render_items.mouse_world_pos_valid;
                     io.MouseDown[0] = true;
                 } else if (e.button.button == SDL_BUTTON_MIDDLE) {
                     middleMouseDown = true;
+                    middleMouseDownOnPick = render_items.disable_camera_on_pick &&
+                                            render_items.mouse_world_pos_valid;
                     io.MouseDown[2] = true;
                 }
             }
@@ -178,9 +184,11 @@ int main() {
             if (e.type == SDL_MOUSEBUTTONUP) {
                 if (e.button.button == SDL_BUTTON_LEFT) {
                     leftMouseDown = false;
+                    leftMouseDownOnPick = false;
                     io.MouseDown[0] = false;
                 } else if (e.button.button == SDL_BUTTON_MIDDLE) {
                     middleMouseDown = false;
+                    middleMouseDownOnPick = false;
                     io.MouseDown[2] = false;
                 }
             }
@@ -196,11 +204,11 @@ int main() {
             }
 
             if (e.type == SDL_MOUSEMOTION) {
-                if (leftMouseDown && !io.WantCaptureMouse) {
+                if (leftMouseDown && !io.WantCaptureMouse && !leftMouseDownOnPick) {
                     yaw += e.motion.xrel * 0.3f;
                     pitch += e.motion.yrel * 0.3f;
                 }
-                if (middleMouseDown && !io.WantCaptureMouse) {
+                if (middleMouseDown && !io.WantCaptureMouse && !middleMouseDownOnPick) {
                     const float fovRadians = bx::toRad(60.0f);
                     const float viewportHeight = bx::max(1.0f, float(height));
                     const float worldUnitsPerPixel = 2.0f * distance *

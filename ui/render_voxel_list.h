@@ -255,6 +255,7 @@ class RenderVoxelList {
     bool mouse_world_pos_valid = false;
     bool mouse_world_pos_picked = false;
     bool mouse_world_pos_picked_auto_snapping = false;// 自动吸附
+    bool disable_camera_on_pick = false;
     void update_mouse_pos(RenderDeferred & renderer);
 
     void render_ui();
