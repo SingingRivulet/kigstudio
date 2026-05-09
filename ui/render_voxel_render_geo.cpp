@@ -24,6 +24,7 @@ RenderVoxelList::do_segment(int index) {
     std::vector<int> new_ids;
     std::vector<std::vector<int>> new_children;
     std::vector<bool> new_auto_segment_update;
+    std::vector<std::optional<CollisionEditorSnapshot>> child_snapshots;
     {
         std::lock_guard<std::mutex> lock(locker);
         it->second->ref_count--;
@@ -35,6 +36,7 @@ RenderVoxelList::do_segment(int index) {
             int child_id;
             std::vector<int> child_children = {-1, -1};
             bool child_auto_update = true;
+            std::optional<CollisionEditorSnapshot> snapshot;
             if (i < num_existing) {
                 auto it_child = items.find(it->second->children[i]);
                 if (it_child == items.end()) {
@@ -43,6 +45,7 @@ RenderVoxelList::do_segment(int index) {
                     child_id = it_child->second->id;
                     child_children = it_child->second->children;
                     child_auto_update = it_child->second->auto_segment_update;
+                    snapshot = this->capture_snapshot(*it_child->second);
                     {
                         std::lock_guard<std::mutex> lock(
                             pending_deletion_mutex);
@@ -66,6 +69,7 @@ RenderVoxelList::do_segment(int index) {
             new_ids.push_back(child_id);
             new_children.push_back(child_children);
             new_auto_segment_update.push_back(child_auto_update);
+            child_snapshots.push_back(snapshot);
         }
 
         // 标记多余的旧子节点释放
@@ -91,9 +95,13 @@ RenderVoxelList::do_segment(int index) {
         new_item->auto_segment_update = new_auto_segment_update[i];
         new_item->voxel_grid_data = std::move(grids[i]);
         new_item->thumbnail_dirty = true;
-        new_item->segment_mode = it->second->segment_mode;
-        if (it->second->segment_mode == RenderVoxelItem::CONCAVE_CONE) {
-            new_item->concave_cone.apex = it->second->concave_cone.apex;
+        if (child_snapshots[i].has_value()) {
+            this->apply_snapshot(*new_item, child_snapshots[i].value());
+        } else {
+            new_item->segment_mode = it->second->segment_mode;
+            if (it->second->segment_mode == RenderVoxelItem::CONCAVE_CONE) {
+                new_item->concave_cone.apex = it->second->concave_cone.apex;
+            }
         }
         auto ptr = new_item.get();
         result_ptrs.push_back(ptr);
