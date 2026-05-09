@@ -95,7 +95,7 @@ class RenderVoxelList {
        public:
         int id = -1;
         int root_id = -1;
-        int children[2] = {-1, -1};
+        std::vector<int> children = {-1, -1};
         int nav_node_position[2] = {0, 0};  // 在分割演示图中的位置
         std::string err_info;
         RenderVoxelList* manager = nullptr;
@@ -105,6 +105,7 @@ class RenderVoxelList {
                 bgfx::destroy(thumbnail_tex);
             }
         }
+        // TODO: 需要新增分离每个独立的mesh的功能(利用VoxelGrid::splitDisconnected)
         enum SegmentMode {
             COLLISION = 0,
             PLANE = 1,
@@ -134,6 +135,8 @@ class RenderVoxelList {
                                          sinriv::ui::render::RenderMeshShader& mesh_shader);
         void upload_collision(sinriv::ui::render::RenderDeferred& render);
 
+        // TODO: 需要新增复制碰撞到另一个item上的功能
+
         inline auto do_segment() {
             // 执行分割，并在manager中创建两个，然后返回
             if (segment_mode == COLLISION) {
@@ -148,7 +151,7 @@ class RenderVoxelList {
         }
 
         std::atomic<int> ref_count = 1;
-        std::atomic<int> write_count = 0;
+        std::atomic<int> write_count = 0; // TODO:禁止编辑write_count不为0的item
 
         bool queue_release = false;
 
@@ -156,6 +159,8 @@ class RenderVoxelList {
         bool showVoxel = true;
         bool showCollision = true;
         bool showCollisionBounds = false;
+
+        bool auto_segment_update = true; // TODO:关闭时，不会执行递归更新，并且手动更新需要二次确认
 
         bgfx::TextureHandle thumbnail_tex = BGFX_INVALID_HANDLE;
         bool thumbnail_dirty = true;

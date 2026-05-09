@@ -19,14 +19,12 @@ void RenderVoxelList::process_queue_result() {
         }
         if (ref_count == 0 && write_count == 0) {
             to_remove.push_back(it.first);
-            // 检查是否有子节点
-            auto child1 = items.find(it.second->children[0]);
-            auto child2 = items.find(it.second->children[1]);
-            if (child1 != items.end()) {
-                child1->second->queue_release = true;
-            }
-            if (child2 != items.end()) {
-                child2->second->queue_release = true;
+            // 级联标记子节点释放
+            for (int child_id : it.second->children) {
+                auto child_it = items.find(child_id);
+                if (child_it != items.end()) {
+                    child_it->second->queue_release = true;
+                }
             }
         }
     }

@@ -18,21 +18,21 @@ RenderVoxelList::do_segment(int index) {
         auto res = it->second->do_segment();
         queue_progress = 0.7f;
         int id_1, id_2;
-        int children_1[2] = {-1, -1};
-        int children_2[2] = {-1, -1};
+        std::vector<int> children_1 = {-1, -1};
+        std::vector<int> children_2 = {-1, -1};
         {
             std::lock_guard<std::mutex> lock(locker);
             it->second->ref_count--;
             it->second->write_count--;
             // 尝试复用已有的id
-            {
+            // TODO: 递归执行时会导致子节点切割配置丢失，需要修复
+            if (it->second->children.size() > 0) {
                 auto it_items = items.find(it->second->children[0]);
                 if (it_items == items.end()) {
                     id_1 = current_id++;
                 } else {
                     id_1 = it_items->second->id;
-                    children_1[0] = it_items->second->children[0];
-                    children_1[1] = it_items->second->children[1];
+                    children_1 = it_items->second->children;
                     {
                         std::lock_guard<std::mutex> lock(
                             pending_deletion_mutex);
@@ -40,20 +40,23 @@ RenderVoxelList::do_segment(int index) {
                     }
                     items.erase(it_items);
                     update_nav_node_status = true;
-                    if (items.find(children_1[0]) != items.end() ||
-                        items.find(children_1[1]) != items.end()) {
-                        queue_do_segment(id_1);
+                    for (int gc : children_1) {
+                        if (items.find(gc) != items.end()) {
+                            queue_do_segment(id_1);
+                            break;
+                        }
                     }
                 }
+            } else {
+                id_1 = current_id++;
             }
-            {
+            if (it->second->children.size() > 1) {
                 auto it_items = items.find(it->second->children[1]);
                 if (it_items == items.end()) {
                     id_2 = current_id++;
                 } else {
                     id_2 = it_items->second->id;
-                    children_2[0] = it_items->second->children[0];
-                    children_2[1] = it_items->second->children[1];
+                    children_2 = it_items->second->children;
                     {
                         std::lock_guard<std::mutex> lock(
                             pending_deletion_mutex);
@@ -61,14 +64,17 @@ RenderVoxelList::do_segment(int index) {
                     }
                     items.erase(it_items);
                     update_nav_node_status = true;
-                    if (items.find(children_2[0]) != items.end() ||
-                        items.find(children_2[1]) != items.end()) {
-                        queue_do_segment(id_2);
+                    for (int gc : children_2) {
+                        if (items.find(gc) != items.end()) {
+                            queue_do_segment(id_2);
+                            break;
+                        }
                     }
                 }
+            } else {
+                id_2 = current_id++;
             }
-            it->second->children[0] = id_1;
-            it->second->children[1] = id_2;
+            it->second->children = {id_1, id_2};
         }
         auto item1 = std::make_unique<RenderVoxelItem>();
         auto item2 = std::make_unique<RenderVoxelItem>();
@@ -76,10 +82,8 @@ RenderVoxelList::do_segment(int index) {
         item2->manager = this;
         item1->id = id_1;
         item2->id = id_2;
-        item1->children[0] = children_1[0];
-        item1->children[1] = children_1[1];
-        item2->children[0] = children_2[0];
-        item2->children[1] = children_2[1];
+        item1->children = children_1;
+        item2->children = children_2;
         item1->voxel_grid_data = std::get<0>(res);
         item2->voxel_grid_data = std::get<1>(res);
         item1->thumbnail_dirty = true;
@@ -264,7 +268,14 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.thumbnail_dirty = true;
                 item.dirty = true;
                 // 重新分割 children
-                if (item.children[0] >= 0 || item.children[1] >= 0) {
+                bool has_children = false;
+                for (int cid : item.children) {
+                    if (cid >= 0) {
+                        has_children = true;
+                        break;
+                    }
+                }
+                if (has_children) {
                     queue_do_segment(target_item_id);
                 }
             }

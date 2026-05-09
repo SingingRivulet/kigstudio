@@ -72,15 +72,12 @@ void RenderVoxelList::render_nav_map() {
         }
 
         // Output attributes (连向子节点)
-        ImNodes::BeginOutputAttribute(id * 10 + 2,
-                                      ImNodesPinShape_CircleFilled);
-        ImGui::Text("");
-        ImNodes::EndOutputAttribute();
-
-        ImNodes::BeginOutputAttribute(id * 10 + 3,
-                                      ImNodesPinShape_CircleFilled);
-        ImGui::Text("");
-        ImNodes::EndOutputAttribute();
+        for (size_t i = 0; i < item->children.size(); ++i) {
+            ImNodes::BeginOutputAttribute(
+                static_cast<int>(id * 10 + 2 + i), ImNodesPinShape_CircleFilled);
+            ImGui::Text("");
+            ImNodes::EndOutputAttribute();
+        }
 
         ImNodes::EndNode();
 
@@ -93,10 +90,10 @@ void RenderVoxelList::render_nav_map() {
 
     // 绘制连线：父节点的 output 连向子节点的 input
     for (auto& [id, item] : this->items) {
-        for (int i = 0; i < 2; ++i) {
+        for (size_t i = 0; i < item->children.size(); ++i) {
             int child_id = item->children[i];
             if (this->items.find(child_id) != this->items.end()) {
-                int parent_attr_id = id * 10 + (i == 0 ? 2 : 3);
+                int parent_attr_id = static_cast<int>(id * 10 + 2 + i);
                 int child_attr_id = child_id * 10 + 1;
                 ImNodes::Link(link_id++, parent_attr_id, child_attr_id);
             }
@@ -158,23 +155,22 @@ inline float layout_node(RenderVoxelList& mgr,
     auto& node = *it->second;
     node.root_id = root_id;
 
-    float left_x = layout_node(mgr, node.children[0], depth + 1, ctx,
-                               visit_state, has_cycle, root_id);
+    std::vector<float> child_xs;
+    for (int child_id : node.children) {
+        if (child_id < 0) continue;
+        float cx = layout_node(mgr, child_id, depth + 1, ctx, visit_state,
+                               has_cycle, root_id);
+        if (cx >= 0) child_xs.push_back(cx);
+    }
 
     float my_x;
-
-    if (left_x < 0) {
+    if (child_xs.empty()) {
         my_x = (float)ctx.next_x;
         ctx.next_x += ctx.x_spacing;
     } else {
-        my_x = left_x;
-    }
-
-    float right_x = layout_node(mgr, node.children[1], depth + 1, ctx,
-                                visit_state, has_cycle, root_id);
-
-    if (left_x >= 0 && right_x >= 0) {
-        my_x = (left_x + right_x) * 0.5f;
+        float sum = 0.0f;
+        for (float cx : child_xs) sum += cx;
+        my_x = sum / static_cast<float>(child_xs.size());
     }
 
     node.nav_node_position[0] = (int)my_x;
@@ -209,8 +205,7 @@ std::vector<int> RenderVoxelList::find_roots() {
     std::unordered_set<int> has_parent;
 
     for (auto& [id, item] : this->items) {
-        for (int i = 0; i < 2; ++i) {
-            int child = item->children[i];
+        for (int child : item->children) {
             if (this->items.find(child) != this->items.end()) {
                 has_parent.insert(child);
             }

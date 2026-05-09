@@ -6,8 +6,9 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddNumberToObject(obj, "id", item.id);
     cJSON* children = cJSON_CreateArray();
-    cJSON_AddItemToArray(children, cJSON_CreateNumber(item.children[0]));
-    cJSON_AddItemToArray(children, cJSON_CreateNumber(item.children[1]));
+    for (int child_id : item.children) {
+        cJSON_AddItemToArray(children, cJSON_CreateNumber(child_id));
+    }
     cJSON_AddItemToObject(obj, "children", children);
     cJSON* nav_pos = cJSON_CreateArray();
     cJSON_AddItemToArray(nav_pos,
@@ -55,8 +56,11 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
     item->manager = this;
     item->id = cJSON_GetObjectItem(obj, "id")->valueint;
     const cJSON* children = cJSON_GetObjectItem(obj, "children");
-    item->children[0] = cJSON_GetArrayItem(children, 0)->valueint;
-    item->children[1] = cJSON_GetArrayItem(children, 1)->valueint;
+    int children_count = cJSON_GetArraySize(children);
+    item->children.clear();
+    for (int i = 0; i < children_count; ++i) {
+        item->children.push_back(cJSON_GetArrayItem(children, i)->valueint);
+    }
     const cJSON* nav_pos = cJSON_GetObjectItem(obj, "nav_node_position");
     item->nav_node_position[0] = cJSON_GetArrayItem(nav_pos, 0)->valueint;
     item->nav_node_position[1] = cJSON_GetArrayItem(nav_pos, 1)->valueint;

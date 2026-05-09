@@ -344,7 +344,14 @@ void RenderVoxelList::render_ui() {
                         {
                             std::lock_guard<std::mutex> lock(locker);
                             for (auto& [id, item] : items) {
-                                if (item->children[0] < 0 && item->children[1] < 0) {
+                                bool is_leaf = true;
+                                for (int cid : item->children) {
+                                    if (cid >= 0) {
+                                        is_leaf = false;
+                                        break;
+                                    }
+                                }
+                                if (is_leaf) {
                                     try {
                                         std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
                                                                sinriv::kigstudio::voxel::vec3f>>
@@ -750,7 +757,7 @@ void RenderVoxelList::render_concave_cone_editor(RenderVoxelItem& item) {
                 edit_result.value_changed |= r.value_changed;
 
                 // --- delete ---
-                if (ImGui::Button(localize_id("action.delete", i).c_str())) {
+                if (ImGui::Button(localize_id("action.delete", i).c_str())) { // 需要增加二次确认
                     erase_index = i;
                 }
 
