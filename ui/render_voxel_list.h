@@ -136,7 +136,13 @@ class RenderVoxelList {
                                          sinriv::ui::render::RenderMeshShader& mesh_shader);
         void upload_collision(sinriv::ui::render::RenderDeferred& render);
 
-        // TODO: 需要新增复制碰撞到另一个item上的功能
+        inline void copy_segment_config_to(RenderVoxelItem& target) const {
+            target.segment_mode = segment_mode;
+            target.collision_group = collision_group;
+            target.plane = plane;
+            target.concave_cone = concave_cone;
+            target.concave_cone_expanded_vertices = concave_cone_expanded_vertices;
+        }
 
         inline std::vector<sinriv::kigstudio::voxel::VoxelGrid> do_segment() {
             if (segment_mode == COLLISION) {
