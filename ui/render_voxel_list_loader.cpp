@@ -30,6 +30,9 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
         case RenderVoxelItem::SPLIT_DISCONNECTED:
             mode_str = "split_disconnected";
             break;
+        case RenderVoxelItem::NEIGHBOR:
+            mode_str = "neighbor";
+            break;
         default:
             mode_str = "collision";
             break;
@@ -42,6 +45,13 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
                           item.showCollisionBounds);
     cJSON_AddBoolToObject(obj, "auto_segment_update",
                           item.auto_segment_update);
+    cJSON_AddBoolToObject(obj, "voxel_picking_enabled",
+                          item.voxel_picking_enabled);
+    cJSON_AddNumberToObject(obj, "voxel_pick_range", item.voxel_pick_range);
+    cJSON_AddNumberToObject(obj, "neighbor_max_distance",
+                            item.neighbor_max_distance);
+    cJSON_AddBoolToObject(obj, "has_marked_voxels",
+                          !item.marked_voxels.empty());
     cJSON_AddStringToObject(obj, "stl_path", item.stl_path.c_str());
     cJSON_AddStringToObject(obj, "voxel_path", item.voxel_path.c_str());
     cJSON_AddNumberToObject(obj, "stl_voxel_size", item.stl_voxel_size);
@@ -90,6 +100,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         item->segment_mode = RenderVoxelItem::CONCAVE_CONE;
     } else if (strcmp(mode_str, "split_disconnected") == 0) {
         item->segment_mode = RenderVoxelItem::SPLIT_DISCONNECTED;
+    } else if (strcmp(mode_str, "neighbor") == 0) {
+        item->segment_mode = RenderVoxelItem::NEIGHBOR;
     } else {
         item->segment_mode = RenderVoxelItem::COLLISION;
     }
@@ -132,6 +144,23 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
     item->voxel_grid_data.voxel_size =
         sinriv::kigstudio::vec3_from_json<sinriv::kigstudio::vec3<float>>(
             cJSON_GetObjectItem(obj, "voxel_size"));
+
+    const cJSON* voxel_picking_json =
+        cJSON_GetObjectItem(obj, "voxel_picking_enabled");
+    if (voxel_picking_json) {
+        item->voxel_picking_enabled = cJSON_IsTrue(voxel_picking_json);
+    }
+    const cJSON* pick_range_json =
+        cJSON_GetObjectItem(obj, "voxel_pick_range");
+    if (pick_range_json) {
+        item->voxel_pick_range =
+            static_cast<float>(pick_range_json->valuedouble);
+    }
+    const cJSON* neighbor_dist_json =
+        cJSON_GetObjectItem(obj, "neighbor_max_distance");
+    if (neighbor_dist_json) {
+        item->neighbor_max_distance = neighbor_dist_json->valueint;
+    }
     return item;
 }
 
@@ -148,6 +177,7 @@ bool RenderVoxelList::save_project(const std::string& folder) {
     std::filesystem::path dir = utf8_path(folder);
     try {
         std::filesystem::create_directories(dir / "voxels");
+        std::filesystem::create_directories(dir / "marked");
     } catch (const std::exception& e) {
         last_save_error = std::string("create_directories failed: ") + e.what();
         return false;
@@ -186,6 +216,19 @@ bool RenderVoxelList::save_project(const std::string& folder) {
                               " (" + voxel_error + ")";
             cJSON_Delete(root);
             return false;
+        }
+        if (!item->marked_voxels.empty()) {
+            std::filesystem::path marked_path =
+                dir / "marked" / (std::to_string(id) + ".vxgrid");
+            std::string marked_error;
+            if (!sinriv::kigstudio::save(marked_path, item->marked_voxels,
+                                         &marked_error)) {
+                last_save_error = "save marked failed: " +
+                                  path_to_utf8(marked_path) + " (" +
+                                  marked_error + ")";
+                cJSON_Delete(root);
+                return false;
+            }
         }
     }
     cJSON_AddItemToObject(root, "items", arr);
@@ -302,6 +345,23 @@ bool RenderVoxelList::load_project(const std::string& folder) {
                 } catch (const std::exception& e) {
                     std::cout << "Failed to load STL mesh for item " << id
                               << ": " << e.what() << std::endl;
+                }
+            }
+            const cJSON* has_marked =
+                cJSON_GetObjectItem(item_obj, "has_marked_voxels");
+            if (cJSON_IsTrue(has_marked)) {
+                std::filesystem::path marked_path =
+                    dir / "marked" / (std::to_string(id) + ".vxgrid");
+                if (std::filesystem::exists(marked_path)) {
+                    if (!sinriv::kigstudio::load(marked_path,
+                                                 item->marked_voxels)) {
+                        std::cout << "Failed to load marked voxels for item "
+                                  << id << std::endl;
+                    } else {
+                        item->marked_voxels.global_position = item->voxel_grid_data.global_position;
+                        item->marked_voxels.voxel_size = item->voxel_grid_data.voxel_size;
+                        item->marked_voxels_dirty = true;
+                    }
                 }
             }
             items[id] = std::move(item);

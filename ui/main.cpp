@@ -170,12 +170,30 @@ int main() {
             if (e.type == SDL_MOUSEBUTTONDOWN) {
                 if (e.button.button == SDL_BUTTON_LEFT) {
                     leftMouseDown = true;
-                    leftMouseDownOnPick = render_items.disable_camera_on_pick &&
+                    bool picking_active = false;
+                    {
+                        auto it = render_items.items.find(render_items.render_id);
+                        if (it != render_items.items.end() &&
+                            it->second->voxel_picking_enabled) {
+                            picking_active = true;
+                        }
+                    }
+                    leftMouseDownOnPick = (render_items.disable_camera_on_pick ||
+                                           picking_active) &&
                                           render_items.mouse_world_pos_valid;
                     io.MouseDown[0] = true;
                 } else if (e.button.button == SDL_BUTTON_MIDDLE) {
                     middleMouseDown = true;
-                    middleMouseDownOnPick = render_items.disable_camera_on_pick &&
+                    bool picking_active = false;
+                    {
+                        auto it = render_items.items.find(render_items.render_id);
+                        if (it != render_items.items.end() &&
+                            it->second->voxel_picking_enabled) {
+                            picking_active = true;
+                        }
+                    }
+                    middleMouseDownOnPick = (render_items.disable_camera_on_pick ||
+                                             picking_active) &&
                                             render_items.mouse_world_pos_valid;
                     io.MouseDown[2] = true;
                 }
@@ -216,6 +234,20 @@ int main() {
                                                      viewportHeight;
                     cameraOffsetX += e.motion.xrel * worldUnitsPerPixel;
                     cameraOffsetY -= e.motion.yrel * worldUnitsPerPixel;
+                }
+                // 体素刷选
+                if (leftMouseDown && leftMouseDownOnPick &&
+                    render_items.mouse_world_pos_valid) {
+                    bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+                    auto it = render_items.items.find(render_items.render_id);
+                    if (it != render_items.items.end()) {
+                        auto& item = *it->second;
+                        if (item.voxel_picking_enabled && item.surface_cache_ready) {
+                            render_items.brush_marked_voxels(
+                                render_items.mouse_world_pos,
+                                item.voxel_pick_range, shift);
+                        }
+                    }
                 }
                 io.MousePos = ImVec2((float)e.motion.x, (float)e.motion.y);
             }

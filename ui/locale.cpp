@@ -176,6 +176,20 @@ void init_locale_strings() {
     add_locale_string("label.disable_camera_on_pick",
                       {{"en", "disable camera on pick"},
                        {"zh", "拾取时禁用相机旋转"}});
+    add_locale_string("label.voxel_picking",
+                      {{"en", "Voxel Picking"}, {"zh", "体素选择"}});
+    add_locale_string("label.init_surface_cache",
+                      {{"en", "Init Surface Cache"}, {"zh", "初始化表面缓存"}});
+    add_locale_string("label.surface_cache_ready",
+                      {{"en", "Surface cache ready"}, {"zh", "表面缓存已就绪"}});
+    add_locale_string("label.pick_range",
+                      {{"en", "Pick Range"}, {"zh", "选择范围"}});
+    add_locale_string("label.neighbor_max_distance",
+                      {{"en", "Max Distance"}, {"zh", "最大距离"}});
+    add_locale_string("action.save_marked_voxels",
+                      {{"en", "Save Marked"}, {"zh", "保存标记"}});
+    add_locale_string("action.load_marked_voxels",
+                      {{"en", "Load Marked"}, {"zh", "加载标记"}});
     add_locale_string("label.mouse_highlight_range",
                       {{"en", "mouse highlight range"},
                        {"zh", "鼠标高亮范围"}});
@@ -289,6 +303,8 @@ void init_locale_strings() {
     add_locale_string("mode.split_disconnected",
                       {{"en", "Split Disconnected"},
                        {"zh", "分离不连通区域"}});
+    add_locale_string("mode.neighbor",
+                      {{"en", "Neighbor"}, {"zh", "临近分割"}});
 
     add_locale_string("dialog.open_stl_title",
                       {{"en", "Open STL"}, {"zh", "打开 STL"}});
@@ -316,6 +332,21 @@ void init_locale_strings() {
     add_locale_string("dialog.confirm_manual_update_message",
                       {{"en", "Some child nodes have auto-update disabled. Proceed anyway?"},
                        {"zh", "部分子节点已关闭自动更新，是否继续？"}});
+    add_locale_string("dialog.confirm_update_clears_mark",
+                      {{"en", "Update will clear marked voxels. Continue?"},
+                       {"zh", "更新将清除标记的体素，是否继续？"}});
+    add_locale_string("dialog.save_marked_voxels",
+                      {{"en", "Save Marked Voxels"}, {"zh", "保存标记体素"}});
+    add_locale_string("dialog.load_marked_voxels",
+                      {{"en", "Load Marked Voxels"}, {"zh", "加载标记体素"}});
+    add_locale_string("dialog.marked_voxels_file",
+                      {{"en", "Marked Voxel File"}, {"zh", "标记体素文件"}});
+    add_locale_string("error.save_marked_failed",
+                      {{"en", "Failed to save marked voxels."},
+                       {"zh", "保存标记体素失败。"}});
+    add_locale_string("error.load_marked_failed",
+                      {{"en", "Failed to load marked voxels."},
+                       {"zh", "加载标记体素失败。"}});
 
     add_locale_string("error.three_points_collinear",
                       {{"en", "Three points are collinear."},

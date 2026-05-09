@@ -110,7 +110,8 @@ class RenderVoxelList {
             COLLISION = 0,
             PLANE = 1,
             CONCAVE_CONE = 2,
-            SPLIT_DISCONNECTED = 3
+            SPLIT_DISCONNECTED = 3,
+            NEIGHBOR = 4
         } segment_mode = COLLISION;
 
         sinriv::ui::render::RenderMesh mesh_renderer;
@@ -156,6 +157,13 @@ class RenderVoxelList {
                 return {std::get<0>(std::move(res)), std::get<1>(std::move(res))};
             } else if (segment_mode == SPLIT_DISCONNECTED) {
                 return voxel_grid_data.splitDisconnected(true);
+            } else if (segment_mode == NEIGHBOR) {
+                std::vector<sinriv::kigstudio::voxel::Vec3i> seeds;
+                for (const auto& v : marked_voxels) {
+                    seeds.push_back(v);
+                }
+                auto res = voxel_grid_data.bfsSplit(seeds, neighbor_max_distance, true);
+                return {std::get<0>(std::move(res)), std::get<1>(std::move(res))};
             } else {
                 throw std::runtime_error("未知的分割模式");
             }
@@ -172,6 +180,18 @@ class RenderVoxelList {
         bool showCollisionBounds = false;
 
         bool auto_segment_update = true;
+
+        // 体素刷选相关
+        bool voxel_picking_enabled = false;
+        bool surface_cache_ready = false;
+        bool surface_cache_computing = false;
+        float surface_cache_progress = 0.0f;
+        float voxel_pick_range = 3.0f;
+        int neighbor_max_distance = 3;
+        sinriv::kigstudio::voxel::VoxelGrid surface_voxels;
+        sinriv::kigstudio::voxel::VoxelGrid marked_voxels;
+        sinriv::ui::render::RenderMesh marked_mesh_renderer;
+        bool marked_voxels_dirty = true;
 
         bgfx::TextureHandle thumbnail_tex = BGFX_INVALID_HANDLE;
         bool thumbnail_dirty = true;
@@ -376,6 +396,9 @@ class RenderVoxelList {
 
     void setRenderId(int id);
     void setRenderId_unsafe(int id);
+
+    void brush_marked_voxels(const sinriv::kigstudio::voxel::vec3f& world_pos,
+                             float range, bool remove);
 
     enum QueueTaskType {
         TASK_STOP = 1,

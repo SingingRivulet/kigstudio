@@ -100,6 +100,39 @@ void RenderVoxelList::setRenderId_unsafe(int id) {
     }
 }
 
+void RenderVoxelList::brush_marked_voxels(
+    const sinriv::kigstudio::voxel::vec3f& world_pos,
+    float range, bool remove) {
+    std::lock_guard<std::mutex> lock(locker);
+    auto it = items.find(render_id);
+    if (it == items.end()) return;
+    auto& item = *it->second;
+    if (!item.voxel_picking_enabled || !item.surface_cache_ready) return;
+
+    item.marked_voxels.global_position = item.voxel_grid_data.global_position;
+    item.marked_voxels.voxel_size = item.voxel_grid_data.voxel_size;
+
+    auto center = item.voxel_grid_data.worldToVoxel(world_pos);
+    float range_sq = range * range;
+    std::vector<sinriv::kigstudio::voxel::Vec3i> to_mark;
+    for (const auto& v : item.surface_voxels) {
+        float dx = float(v.x - center.x);
+        float dy = float(v.y - center.y);
+        float dz = float(v.z - center.z);
+        if (dx * dx + dy * dy + dz * dz <= range_sq) {
+            to_mark.push_back(v);
+        }
+    }
+    if (!to_mark.empty()) {
+        if (remove) {
+            item.marked_voxels.removeMany(to_mark);
+        } else {
+            item.marked_voxels.insertMany(to_mark);
+        }
+        item.marked_voxels_dirty = true;
+    }
+}
+
 void RenderVoxelList::update_mouse_pos(RenderDeferred& deferred_renderer) {
     if (mouse_world_pos_picked_auto_snapping &&
         deferred_renderer.mouse_highlight_[0] > 0.5f) {

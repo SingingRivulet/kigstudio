@@ -103,6 +103,9 @@ RenderVoxelList::do_segment(int index) {
                 new_item->concave_cone.apex = it->second->concave_cone.apex;
             }
         }
+        if (it->second->segment_mode == RenderVoxelItem::NEIGHBOR) {
+            new_item->neighbor_max_distance = it->second->neighbor_max_distance;
+        }
         auto ptr = new_item.get();
         result_ptrs.push_back(ptr);
         {

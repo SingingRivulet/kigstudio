@@ -167,7 +167,7 @@ class VoxelGrid {
 
     inline void insert(const Vec3i& p) { insert(p.x, p.y, p.z); }
 
-    inline void insert(const std::vector<Vec3i>& points) {
+    inline void insertMany(const std::vector<Vec3i>& points) {
         std::unordered_map<uint64_t, std::vector<Vec3i>> grouped;
         grouped.reserve(points.size() / 8 + 1);
         for (const auto& p : points) {
@@ -202,6 +202,7 @@ class VoxelGrid {
     inline bool find(const Vec3i& point) const {
         return contains(point.x, point.y, point.z);
     }
+    inline bool empty() const { return chunks.empty(); }
     inline int num_chunk() const { return static_cast<int>(chunks.size()); }
     inline vec3<float> voxelCenterToWorld(const Vec3i& voxel) const {
         return vec3<float>((voxel.x + 0.5f) * voxel_size.x + global_position.x,
@@ -246,7 +247,7 @@ class VoxelGrid {
             chunks.erase(it);
     }
 
-    inline void remove(const std::vector<Vec3i>& points) {
+    inline void removeMany(const std::vector<Vec3i>& points) {
         std::unordered_map<uint64_t, std::vector<Vec3i>> grouped;
         grouped.reserve(points.size() / 8 + 1);
         for (const auto& p : points) {

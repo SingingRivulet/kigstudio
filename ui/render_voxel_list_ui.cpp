@@ -444,7 +444,8 @@ void RenderVoxelList::render_ui() {
                         }
                         return false;
                     };
-                    need_confirm = has_auto_update_off(render_id);
+                    need_confirm = has_auto_update_off(render_id) ||
+                                   !it->second->marked_voxels.empty();
                 }
             }
             if (need_confirm) {
@@ -546,8 +547,19 @@ void RenderVoxelList::render_ui() {
                                nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted(
             get_locale_cstr("dialog.confirm_manual_update_message"));
+        ImGui::TextUnformatted(
+            get_locale_cstr("dialog.confirm_update_clears_mark"));
         ImGui::Separator();
         if (ImGui::Button(get_locale_cstr("action.apply"))) {
+            {
+                std::lock_guard<std::mutex> lock(locker);
+                auto it = items.find(render_id);
+                if (it != items.end()) {
+                    it->second->auto_segment_update = true;
+                    it->second->marked_voxels = sinriv::kigstudio::voxel::VoxelGrid();
+                    it->second->marked_voxels_dirty = true;
+                }
+            }
             this->queue_do_segment();
             ImGui::CloseCurrentPopup();
         }
@@ -1263,11 +1275,13 @@ void RenderVoxelList::render_collision_node_editor() {
             const char* segment_mode_names[] = {
                 get_locale_cstr("mode.collision"), get_locale_cstr("mode.plane"),
                 get_locale_cstr("mode.concave_cone"),
-                get_locale_cstr("mode.split_disconnected")};
+                get_locale_cstr("mode.split_disconnected"),
+                get_locale_cstr("mode.neighbor")};
             const enum RenderVoxelItem::SegmentMode segment_modes[] = {
                 RenderVoxelItem::COLLISION, RenderVoxelItem::PLANE,
                 RenderVoxelItem::CONCAVE_CONE,
-                RenderVoxelItem::SPLIT_DISCONNECTED};
+                RenderVoxelItem::SPLIT_DISCONNECTED,
+                RenderVoxelItem::NEIGHBOR};
             int current_segment_mode = segment_modes[(int)item.segment_mode];
             if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
                              &current_segment_mode,
@@ -1282,6 +1296,77 @@ void RenderVoxelList::render_collision_node_editor() {
                 render_collision_body_editor(item);
             } else if (item.segment_mode == RenderVoxelItem::CONCAVE_CONE) {
                 render_concave_cone_editor(item);
+            } else if (item.segment_mode == RenderVoxelItem::NEIGHBOR) {
+                ImGui::DragInt(get_locale_cstr("label.neighbor_max_distance"),
+                               &item.neighbor_max_distance, 1, 1, 100);
+            }
+
+            ImGui::Separator();
+
+            // 体素刷选
+            ImGui::Checkbox(get_locale_cstr("label.voxel_picking"),
+                            &item.voxel_picking_enabled);
+            if (item.voxel_picking_enabled) {
+                if (!item.surface_cache_ready) {
+                    if (item.surface_cache_computing) {
+                        ImGui::Text("Surface cache: %.0f%%",
+                                    item.surface_cache_progress * 100.0f);
+                    } else {
+                        if (ImGui::Button(get_locale_cstr("label.init_surface_cache"))) {
+                            item.surface_cache_computing = true;
+                            item.surface_cache_progress = 0.0f;
+                            // 在后台线程初始化表面缓存
+                            std::thread([this, id = item.id]() {
+                                auto it = this->items.find(id);
+                                if (it == this->items.end()) return;
+                                auto& target = *it->second;
+                                auto surface = target.voxel_grid_data.getSurfaceVoxels();
+                                target.surface_voxels = std::move(surface);
+                                target.surface_cache_ready = true;
+                                target.surface_cache_computing = false;
+                            }).detach();
+                        }
+                    }
+                } else {
+                    ImGui::TextUnformatted(get_locale_cstr("label.surface_cache_ready"));
+                    ImGui::DragFloat(get_locale_cstr("label.pick_range"),
+                                     &item.voxel_pick_range, 0.1f, 0.1f, 20.0f, "%.1f");
+                }
+                ImGui::Separator();
+                if (ImGui::Button(get_locale_cstr("action.save_marked_voxels"))) {
+                    const char* filters[] = {"*.vxgrid"};
+                    const char* file = tinyfd_saveFileDialog(
+                        get_locale_cstr("dialog.save_marked_voxels"),
+                        "marked.vxgrid", 1, filters,
+                        get_locale_cstr("dialog.marked_voxels_file"));
+                    if (file) {
+                        std::string error;
+                        if (!sinriv::kigstudio::save(file, item.marked_voxels, &error)) {
+                            tinyfd_messageBox("Error",
+                                utf8_to_ansi(error.c_str()).c_str(),
+                                "ok", "error", 1);
+                        }
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button(get_locale_cstr("action.load_marked_voxels"))) {
+                    const char* filters[] = {"*.vxgrid"};
+                    const char* file = tinyfd_openFileDialog(
+                        get_locale_cstr("dialog.load_marked_voxels"),
+                        "", 1, filters,
+                        get_locale_cstr("dialog.marked_voxels_file"), 0);
+                    if (file) {
+                        if (!sinriv::kigstudio::load(file, item.marked_voxels)) {
+                            tinyfd_messageBox("Error",
+                                utf8_to_ansi(get_locale_cstr("error.load_marked_failed")).c_str(),
+                                "ok", "error", 1);
+                        } else {
+                            item.marked_voxels.global_position = item.voxel_grid_data.global_position;
+                            item.marked_voxels.voxel_size = item.voxel_grid_data.voxel_size;
+                            item.marked_voxels_dirty = true;
+                        }
+                    }
+                }
             }
 
             if (is_updating) ImGui::EndDisabled();

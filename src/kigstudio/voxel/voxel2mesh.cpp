@@ -65,9 +65,11 @@ namespace sinriv::kigstudio::voxel {
         sinriv::kigstudio::voxel::VoxelGrid& voxelData,
         double isolevel,
         int& numTriangles,
-        bool computeNormals)
+        bool computeNormals,
+        float expand)
     {
         using Chunk = sinriv::kigstudio::voxel::Chunk;
+        (void)isolevel;
 
         numTriangles = 0;
         vec3f vertlist[12];
@@ -129,6 +131,8 @@ namespace sinriv::kigstudio::voxel {
                 float fy = float(wy);
                 float fz = float(wz);
 
+                vec3f cell_center{fx + 0.5f, fy + 0.5f, fz + 0.5f};
+
                 // ===== 插值（简化：中点）=====
                 if (edgeTable[cubeindex] & 1)
                     vertlist[0] = {fx+.5f, fy, fz};
@@ -156,6 +160,19 @@ namespace sinriv::kigstudio::voxel {
                     vertlist[10] = {fx+1, fy+1, fz+.5f};
                 if (edgeTable[cubeindex] & 2048)
                     vertlist[11] = {fx, fy+1, fz+.5f};
+
+                // 沿 cell 中心向外偏移
+                if (expand > 0.0f) {
+                    for (int vi = 0; vi < 12; ++vi) {
+                        if (edgeTable[cubeindex] & (1 << vi)) {
+                            vec3f dir = vertlist[vi] - cell_center;
+                            float len = dir.length();
+                            if (len > 0.0001f) {
+                                vertlist[vi] = cell_center + dir.normalize() * (len + expand);
+                            }
+                        }
+                    }
+                }
 
                 // ===== triangles =====
                 for (int i = 0; triTable[cubeindex][i] != -1; i += 3) {

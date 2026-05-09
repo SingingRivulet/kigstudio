@@ -27,6 +27,7 @@ void RenderVoxelList::begin_edit(int item_id) {
     auto it = items.find(item_id);
     if (it != items.end()) {
         pending_undo = PendingUndo{item_id, capture_snapshot(*it->second)};
+        it->second->auto_segment_update = false;
     }
 }
 
@@ -59,6 +60,7 @@ void RenderVoxelList::push_undo_now(
     it->second->undo_stack.back().description = desc;
     it->second->redo_stack.clear();
     it->second->dirty = true;
+    it->second->auto_segment_update = false;
     if (it->second->undo_stack.size() > kMaxUndoSize) {
         it->second->undo_stack.erase(it->second->undo_stack.begin());
     }
@@ -75,6 +77,7 @@ bool RenderVoxelList::undo(int item_id) {
     apply_snapshot(*it->second, it->second->undo_stack.back());
     it->second->undo_stack.pop_back();
     it->second->dirty = true;
+    it->second->auto_segment_update = false;
     return true;
 }
 
@@ -88,6 +91,7 @@ bool RenderVoxelList::redo(int item_id) {
     apply_snapshot(*it->second, it->second->redo_stack.back());
     it->second->redo_stack.pop_back();
     it->second->dirty = true;
+    it->second->auto_segment_update = false;
     return true;
 }
 
