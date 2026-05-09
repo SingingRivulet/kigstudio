@@ -161,19 +161,6 @@ namespace sinriv::kigstudio::voxel {
                 if (edgeTable[cubeindex] & 2048)
                     vertlist[11] = {fx, fy+1, fz+.5f};
 
-                // 沿 cell 中心向外偏移
-                if (expand > 0.0f) {
-                    for (int vi = 0; vi < 12; ++vi) {
-                        if (edgeTable[cubeindex] & (1 << vi)) {
-                            vec3f dir = vertlist[vi] - cell_center;
-                            float len = dir.length();
-                            if (len > 0.0001f) {
-                                vertlist[vi] = cell_center + dir.normalize() * (len + expand);
-                            }
-                        }
-                    }
-                }
-
                 // ===== triangles =====
                 for (int i = 0; triTable[cubeindex][i] != -1; i += 3) {
 
@@ -183,9 +170,15 @@ namespace sinriv::kigstudio::voxel {
 
                     vec3f normal{0,0,0};
 
-                    if (computeNormals) {
+                    if (computeNormals || expand > 0.0f) {
                         normal = (v2 - v1).cross(v3 - v1).normalize();
                         normal = -normal;
+                    }
+
+                    if (expand > 0.0f) {
+                        v1 += normal * expand;
+                        v2 += normal * expand;
+                        v3 += normal * expand;
                     }
 
                     co_yield {
@@ -298,19 +291,6 @@ namespace sinriv::kigstudio::voxel {
             if (edgeTable[cubeindex] & 2048)
                 vertlist[11] = {fx, fy+1, fz+.5f};
 
-            // 沿 cell 中心向外偏移
-            if (expand > 0.0f) {
-                for (int vi = 0; vi < 12; ++vi) {
-                    if (edgeTable[cubeindex] & (1 << vi)) {
-                        vec3f dir = vertlist[vi] - cell_center;
-                        float len = dir.length();
-                        if (len > 0.0001f) {
-                            vertlist[vi] = cell_center + dir.normalize() * (len + expand);
-                        }
-                    }
-                }
-            }
-
             for (int i = 0; triTable[cubeindex][i] != -1; i += 3) {
                 vec3f v1 = vertlist[triTable[cubeindex][i]];
                 vec3f v2 = vertlist[triTable[cubeindex][i+1]];
@@ -318,9 +298,15 @@ namespace sinriv::kigstudio::voxel {
 
                 vec3f normal{0,0,0};
 
-                if (computeNormals) {
+                if (computeNormals || expand > 0.0f) {
                     normal = (v2 - v1).cross(v3 - v1).normalize();
                     normal = -normal;
+                }
+
+                if (expand > 0.0f) {
+                    v1 += normal * expand;
+                    v2 += normal * expand;
+                    v3 += normal * expand;
                 }
 
                 co_yield {
