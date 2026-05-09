@@ -23,6 +23,7 @@
 #include "kigstudio/utils/plane.h"
 #include "kigstudio/utils/vec3.h"
 #include "kigstudio/utils/KDTree.h"
+#include "kigstudio/voxel/voxel.h"
 #include "kigstudio/voxel/voxelizer_svo.h"
 #include "kigstudio/voxel/concave.h"
 
@@ -95,7 +96,7 @@ class RenderVoxelList {
        public:
         int id = -1;
         int root_id = -1;
-        std::vector<int> children = {-1, -1};
+        std::vector<int> children;
         int nav_node_position[2] = {0, 0};  // 在分割演示图中的位置
         std::string err_info;
         RenderVoxelList* manager = nullptr;
@@ -105,11 +106,11 @@ class RenderVoxelList {
                 bgfx::destroy(thumbnail_tex);
             }
         }
-        // TODO: 需要新增分离每个独立的mesh的功能(利用VoxelGrid::splitDisconnected)
         enum SegmentMode {
             COLLISION = 0,
             PLANE = 1,
-            CONCAVE_CONE = 2
+            CONCAVE_CONE = 2,
+            SPLIT_DISCONNECTED = 3
         } segment_mode = COLLISION;
 
         sinriv::ui::render::RenderMesh mesh_renderer;
@@ -137,14 +138,18 @@ class RenderVoxelList {
 
         // TODO: 需要新增复制碰撞到另一个item上的功能
 
-        inline auto do_segment() {
-            // 执行分割，并在manager中创建两个，然后返回
+        inline std::vector<sinriv::kigstudio::voxel::VoxelGrid> do_segment() {
             if (segment_mode == COLLISION) {
-                return std::move(voxel_grid_data.segment(collision_group));
+                auto res = voxel_grid_data.segment(collision_group);
+                return {std::get<0>(std::move(res)), std::get<1>(std::move(res))};
             } else if (segment_mode == PLANE) {
-                return std::move(voxel_grid_data.segment(plane));
+                auto res = voxel_grid_data.segment(plane);
+                return {std::get<0>(std::move(res)), std::get<1>(std::move(res))};
             } else if (segment_mode == CONCAVE_CONE) {
-                return std::move(voxel_grid_data.segment(concave_cone));
+                auto res = voxel_grid_data.segment(concave_cone);
+                return {std::get<0>(std::move(res)), std::get<1>(std::move(res))};
+            } else if (segment_mode == SPLIT_DISCONNECTED) {
+                return voxel_grid_data.splitDisconnected(true);
             } else {
                 throw std::runtime_error("未知的分割模式");
             }
@@ -329,7 +334,7 @@ class RenderVoxelList {
     // 交互
     RenderVoxelItem* create_item();
 
-    std::tuple<RenderVoxelItem*, RenderVoxelItem*> do_segment(int index);
+    std::vector<RenderVoxelItem*> do_segment(int index);
 
     void load_stl(std::string filename,
                   float voxel_size = 0.5f,

@@ -1,116 +1,103 @@
 #include "render_voxel_list.h"
 namespace sinriv::ui::render {
-std::tuple<RenderVoxelList::RenderVoxelItem*, RenderVoxelList::RenderVoxelItem*>
+std::vector<RenderVoxelList::RenderVoxelItem*>
 RenderVoxelList::do_segment(int index) {
-    // 执行分割，并在manager中创建两个，然后返回
     locker.lock();
     auto it = items.find(index);
-    if (it != items.end()) {
-        if (it->second->write_count != 0) {
-            locker.unlock();
-            return std::make_tuple(nullptr, nullptr);
-        }
-        it->second->ref_count++;
-        it->second->write_count++;
+    if (it == items.end()) {
         locker.unlock();
-        queue_status = "Segmenting...";
-        queue_progress = 0.0f;
-        auto res = it->second->do_segment();
-        queue_progress = 0.7f;
-        int id_1, id_2;
-        std::vector<int> children_1 = {-1, -1};
-        std::vector<int> children_2 = {-1, -1};
-        {
-            std::lock_guard<std::mutex> lock(locker);
-            it->second->ref_count--;
-            it->second->write_count--;
-            // 尝试复用已有的id
-            // TODO: 递归执行时会导致子节点切割配置丢失，需要修复
-            if (it->second->children.size() > 0) {
-                auto it_items = items.find(it->second->children[0]);
-                if (it_items == items.end()) {
-                    id_1 = current_id++;
+        return {};
+    }
+    if (it->second->write_count != 0) {
+        locker.unlock();
+        return {};
+    }
+    it->second->ref_count++;
+    it->second->write_count++;
+    locker.unlock();
+
+    queue_status = "Segmenting...";
+    queue_progress = 0.0f;
+    auto grids = it->second->do_segment();
+    queue_progress = 0.7f;
+
+    std::vector<int> new_ids;
+    std::vector<std::vector<int>> new_children;
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        it->second->ref_count--;
+        it->second->write_count--;
+        // TODO: 递归执行时会导致子节点切割配置丢失，需要修复
+        size_t num_results = grids.size();
+        size_t num_existing = it->second->children.size();
+
+        for (size_t i = 0; i < num_results; ++i) {
+            int child_id;
+            std::vector<int> child_children = {-1, -1};
+            if (i < num_existing) {
+                auto it_child = items.find(it->second->children[i]);
+                if (it_child == items.end()) {
+                    child_id = current_id++;
                 } else {
-                    id_1 = it_items->second->id;
-                    children_1 = it_items->second->children;
+                    child_id = it_child->second->id;
+                    child_children = it_child->second->children;
                     {
                         std::lock_guard<std::mutex> lock(
                             pending_deletion_mutex);
-                        pending_deletion.push_back(std::move(it_items->second));
+                        pending_deletion.push_back(
+                            std::move(it_child->second));
                     }
-                    items.erase(it_items);
+                    items.erase(it_child);
                     update_nav_node_status = true;
-                    for (int gc : children_1) {
+                    for (int gc : child_children) {
                         if (items.find(gc) != items.end()) {
-                            queue_do_segment(id_1);
+                            queue_do_segment(child_id);
                             break;
                         }
                     }
                 }
             } else {
-                id_1 = current_id++;
+                child_id = current_id++;
             }
-            if (it->second->children.size() > 1) {
-                auto it_items = items.find(it->second->children[1]);
-                if (it_items == items.end()) {
-                    id_2 = current_id++;
-                } else {
-                    id_2 = it_items->second->id;
-                    children_2 = it_items->second->children;
-                    {
-                        std::lock_guard<std::mutex> lock(
-                            pending_deletion_mutex);
-                        pending_deletion.push_back(std::move(it_items->second));
-                    }
-                    items.erase(it_items);
-                    update_nav_node_status = true;
-                    for (int gc : children_2) {
-                        if (items.find(gc) != items.end()) {
-                            queue_do_segment(id_2);
-                            break;
-                        }
-                    }
-                }
-            } else {
-                id_2 = current_id++;
-            }
-            it->second->children = {id_1, id_2};
+            new_ids.push_back(child_id);
+            new_children.push_back(child_children);
         }
-        auto item1 = std::make_unique<RenderVoxelItem>();
-        auto item2 = std::make_unique<RenderVoxelItem>();
-        item1->manager = this;
-        item2->manager = this;
-        item1->id = id_1;
-        item2->id = id_2;
-        item1->children = children_1;
-        item2->children = children_2;
-        item1->voxel_grid_data = std::get<0>(res);
-        item2->voxel_grid_data = std::get<1>(res);
-        item1->thumbnail_dirty = true;
-        item2->thumbnail_dirty = true;
 
-        // 继承父节点的 segment_mode
-        item1->segment_mode = it->second->segment_mode;
-        item2->segment_mode = it->second->segment_mode;
+        // 标记多余的旧子节点释放
+        for (size_t i = num_results; i < num_existing; ++i) {
+            auto it_child = items.find(it->second->children[i]);
+            if (it_child != items.end()) {
+                it_child->second->queue_release = true;
+            }
+        }
 
-        // 如果是凹锥，继承父节点的 apex 坐标
+        it->second->children.clear();
+        for (int id : new_ids) {
+            it->second->children.push_back(id);
+        }
+    }
+
+    std::vector<RenderVoxelItem*> result_ptrs;
+    for (size_t i = 0; i < grids.size(); ++i) {
+        auto new_item = std::make_unique<RenderVoxelItem>();
+        new_item->manager = this;
+        new_item->id = new_ids[i];
+        new_item->children = new_children[i];
+        new_item->voxel_grid_data = std::move(grids[i]);
+        new_item->thumbnail_dirty = true;
+        new_item->segment_mode = it->second->segment_mode;
         if (it->second->segment_mode == RenderVoxelItem::CONCAVE_CONE) {
-            item1->concave_cone.apex = it->second->concave_cone.apex;
-            item2->concave_cone.apex = it->second->concave_cone.apex;
+            new_item->concave_cone.apex = it->second->concave_cone.apex;
         }
-        auto item1_ptr = item1.get();
-        auto item2_ptr = item2.get();
+        auto ptr = new_item.get();
+        result_ptrs.push_back(ptr);
         {
             std::lock_guard<std::mutex> lock(locker);
-            items[item1->id] = std::move(item1);
-            items[item2->id] = std::move(item2);
+            items[new_item->id] = std::move(new_item);
             update_nav_node_status = true;
         }
-        return std::make_tuple(item1_ptr, item2_ptr);
-    } else {
-        locker.unlock();
     }
-    return std::make_tuple(nullptr, nullptr);
+    return result_ptrs;
 }
 
 void RenderVoxelList::load_stl(std::string filename,

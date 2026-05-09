@@ -276,6 +276,9 @@ void init_locale_strings() {
     add_locale_string("mode.plane", {{"en", "Plane"}, {"zh", "平面"}});
     add_locale_string("mode.concave_cone",
                       {{"en", "Concave Cone"}, {"zh", "凹锥"}});
+    add_locale_string("mode.split_disconnected",
+                      {{"en", "Split Disconnected"},
+                       {"zh", "分离不连通区域"}});
 
     add_locale_string("dialog.open_stl_title",
                       {{"en", "Open STL"}, {"zh", "打开 STL"}});

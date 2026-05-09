@@ -16,11 +16,25 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddItemToArray(nav_pos,
                          cJSON_CreateNumber(item.nav_node_position[1]));
     cJSON_AddItemToObject(obj, "nav_node_position", nav_pos);
-    cJSON_AddStringToObject(
-        obj, "segment_mode",
-        item.segment_mode == RenderVoxelItem::COLLISION ? "collision"
-        : item.segment_mode == RenderVoxelItem::PLANE   ? "plane"
-                                                        : "concave_cone");
+    const char* mode_str;
+    switch (item.segment_mode) {
+        case RenderVoxelItem::COLLISION:
+            mode_str = "collision";
+            break;
+        case RenderVoxelItem::PLANE:
+            mode_str = "plane";
+            break;
+        case RenderVoxelItem::CONCAVE_CONE:
+            mode_str = "concave_cone";
+            break;
+        case RenderVoxelItem::SPLIT_DISCONNECTED:
+            mode_str = "split_disconnected";
+            break;
+        default:
+            mode_str = "collision";
+            break;
+    }
+    cJSON_AddStringToObject(obj, "segment_mode", mode_str);
     cJSON_AddBoolToObject(obj, "show_mesh", item.showMesh);
     cJSON_AddBoolToObject(obj, "show_voxel", item.showVoxel);
     cJSON_AddBoolToObject(obj, "show_collision", item.showCollision);
@@ -70,8 +84,12 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         item->segment_mode = RenderVoxelItem::COLLISION;
     } else if (strcmp(mode_str, "plane") == 0) {
         item->segment_mode = RenderVoxelItem::PLANE;
-    } else {
+    } else if (strcmp(mode_str, "concave_cone") == 0) {
         item->segment_mode = RenderVoxelItem::CONCAVE_CONE;
+    } else if (strcmp(mode_str, "split_disconnected") == 0) {
+        item->segment_mode = RenderVoxelItem::SPLIT_DISCONNECTED;
+    } else {
+        item->segment_mode = RenderVoxelItem::COLLISION;
     }
     item->showMesh = cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_mesh"));
     item->showVoxel = cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_voxel"));

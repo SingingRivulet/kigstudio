@@ -1171,10 +1171,12 @@ void RenderVoxelList::render_collision_node_editor() {
 
             const char* segment_mode_names[] = {
                 get_locale_cstr("mode.collision"), get_locale_cstr("mode.plane"),
-                get_locale_cstr("mode.concave_cone")};
+                get_locale_cstr("mode.concave_cone"),
+                get_locale_cstr("mode.split_disconnected")};
             const enum RenderVoxelItem::SegmentMode segment_modes[] = {
                 RenderVoxelItem::COLLISION, RenderVoxelItem::PLANE,
-                RenderVoxelItem::CONCAVE_CONE};
+                RenderVoxelItem::CONCAVE_CONE,
+                RenderVoxelItem::SPLIT_DISCONNECTED};
             int current_segment_mode = segment_modes[(int)item.segment_mode];
             if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
                              &current_segment_mode,

@@ -90,7 +90,7 @@ RenderVoxelList::RenderVoxelItem* RenderVoxelList::create_item() {
 
 void RenderVoxelList::setRenderId(int id) {
     std::lock_guard<std::mutex> lock(locker);
-    this->setRenderId(id);
+    this->setRenderId_unsafe(id);
 }
 
 void RenderVoxelList::setRenderId_unsafe(int id) {
