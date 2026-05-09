@@ -167,6 +167,21 @@ class VoxelGrid {
 
     inline void insert(const Vec3i& p) { insert(p.x, p.y, p.z); }
 
+    inline void insert(const std::vector<Vec3i>& points) {
+        std::unordered_map<uint64_t, std::vector<Vec3i>> grouped;
+        grouped.reserve(points.size() / 8 + 1);
+        for (const auto& p : points) {
+            int cx = p.x >> 5, cy = p.y >> 5, cz = p.z >> 5;
+            grouped[packChunkKey(cx, cy, cz)].push_back(p);
+        }
+        for (auto& [key, pts] : grouped) {
+            auto& chunk = chunks[key];
+            for (const auto& p : pts) {
+                chunk.set(p.x & 31, p.y & 31, p.z & 31);
+            }
+        }
+    }
+
     // ============ 查询 ============
     inline bool contains(int x, int y, int z) const {
         int cx = x >> 5;
@@ -208,6 +223,9 @@ class VoxelGrid {
     }
 
     // ============ 删除 ============
+    inline void remove(const Vec3i& point) {
+        remove(point.x, point.y, point.z);
+    }
     inline void remove(int x, int y, int z) {
         int cx = x >> 5;
         int cy = y >> 5;
@@ -226,6 +244,25 @@ class VoxelGrid {
 
         if (it->second.empty())
             chunks.erase(it);
+    }
+
+    inline void remove(const std::vector<Vec3i>& points) {
+        std::unordered_map<uint64_t, std::vector<Vec3i>> grouped;
+        grouped.reserve(points.size() / 8 + 1);
+        for (const auto& p : points) {
+            int cx = p.x >> 5, cy = p.y >> 5, cz = p.z >> 5;
+            grouped[packChunkKey(cx, cy, cz)].push_back(p);
+        }
+        for (auto& [key, pts] : grouped) {
+            auto it = chunks.find(key);
+            if (it == chunks.end()) continue;
+            for (const auto& p : pts) {
+                it->second.clear(p.x & 31, p.y & 31, p.z & 31);
+            }
+            if (it->second.empty()) {
+                chunks.erase(it);
+            }
+        }
     }
 
     // ================= ITERATOR =================

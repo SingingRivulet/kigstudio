@@ -636,7 +636,7 @@ namespace sinriv::ui::render {
                         for (int j = start_y; j <= end_y; ++j) {
                             for (int k = start_z; k <= end_z; ++k) {
                                 if (i >= 0 && j >= 0 && k >= 0) {
-                                    voxel_data.insert({i, j, k});
+                                    voxel_data.insert(i, j, k);
                                 }
                             }
                         }

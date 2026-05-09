@@ -13,12 +13,12 @@ namespace sinriv::kigstudio::voxel {
         float precision,
         float solidization) {
         for (auto point : draw_triangle(triangle, voxelsizex, voxelsizey, voxelsizez, precision)) {
-            voxelData.insert({ (int)point.x, (int)point.y, (int)point.z });
+            voxelData.insert((int)point.x, (int)point.y, (int)point.z);
             if (solidization > 0) {
                 //solidization
                 for (auto p : draw_line(point, point + normal * solidization)) {
                     try{
-                        voxelData.insert({ (int)p.x, (int)p.y, (int)p.z });
+                        voxelData.insert((int)p.x, (int)p.y, (int)p.z);
                     } catch (std::exception& e) {
                         // std::cout << e.what() << std::endl;
                     }
@@ -33,7 +33,7 @@ namespace sinriv::kigstudio::voxel {
         const vec3f& end
     ) {
         for (auto point : draw_line(start, end)) {
-            voxelData.insert({ (int)point.x, (int)point.y, (int)point.z });
+            voxelData.insert((int)point.x, (int)point.y, (int)point.z);
         }
     }
 
