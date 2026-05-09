@@ -123,10 +123,14 @@ void RenderVoxelList::update_mouse_pos(RenderDeferred& deferred_renderer) {
             }
         }
     }
-    mouse_world_pos.x = deferred_renderer.mouse_pos_[0];
-    mouse_world_pos.y = deferred_renderer.mouse_pos_[1];
-    mouse_world_pos.z = deferred_renderer.mouse_pos_[2];
     mouse_world_pos_valid = deferred_renderer.mouse_highlight_[0] > 0.5f;
+    if (mouse_world_pos_valid) {
+        mouse_world_pos.x = deferred_renderer.mouse_pos_[0];
+        mouse_world_pos.y = deferred_renderer.mouse_pos_[1];
+        mouse_world_pos.z = deferred_renderer.mouse_pos_[2];
+    } else {
+        mouse_world_pos = {0, 0, 0};
+    }
 }
 
 }  // namespace sinriv::ui::render
