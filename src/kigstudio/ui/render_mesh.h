@@ -117,11 +117,18 @@ namespace sinriv::ui::render {
                 u_base_color_ = BGFX_INVALID_HANDLE;
                 std::cout << "RenderMeshShader uniform destroyed" << std::endl;
             }
+            if (bgfx::isValid(u_depth_bias_)) {
+                bgfx::destroy(u_depth_bias_);
+                u_depth_bias_ = BGFX_INVALID_HANDLE;
+            }
         }
 
         inline void ensureUniforms() {
             if (!bgfx::isValid(u_base_color_)) {
                 u_base_color_ = bgfx::createUniform("u_baseColor", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_depth_bias_)) {
+                u_depth_bias_ = bgfx::createUniform("u_depthBias", bgfx::UniformType::Vec4);
             }
         }
 
@@ -187,6 +194,7 @@ namespace sinriv::ui::render {
         bgfx::ProgramHandle gbuffer_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle line_program_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_base_color_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_depth_bias_ = BGFX_INVALID_HANDLE;
         float identity_mtx_[16]{};
     };
 
@@ -207,6 +215,10 @@ namespace sinriv::ui::render {
 
         inline void setBaseColor(float r, float g, float b, float a = 1.0f) {
             base_color_ = {r, g, b, a};
+        }
+
+        inline void setDepthBias(float bias) {
+            depth_bias_ = bias;
         }
 
         inline void setViewportSize(int width, int height) {
@@ -362,6 +374,8 @@ namespace sinriv::ui::render {
             bgfx::setIndexBuffer(mesh_.ibh);
             shader.ensureUniforms();
             bgfx::setUniform(shader.u_base_color_, base_color_.data());
+            float depth_bias_vec[4] = {depth_bias_, 0.0f, 0.0f, 0.0f};
+            bgfx::setUniform(shader.u_depth_bias_, depth_bias_vec);
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
                            BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA);
@@ -489,6 +503,7 @@ namespace sinriv::ui::render {
         vec3f local_bound_min_{};
         vec3f local_bound_max_{};
         std::array<float, 4> base_color_ = {0.82f, 0.82f, 0.82f, 1.0f};
+        float depth_bias_ = 0.0f;
         float identity_mtx_[16]{};
     };
 
