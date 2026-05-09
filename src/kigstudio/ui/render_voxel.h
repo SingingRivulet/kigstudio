@@ -103,13 +103,14 @@ namespace sinriv::ui::render {
         inline void loadVoxelGridChunked(
             VoxelGrid& voxel_data,
             double isolevel = 0.5,
-            bool smooth_normals = true) {
+            bool smooth_normals = true,
+            float expand = 0.0f) {
             chunk_meshes_.clear();
             for (const auto& [key, chunk] : voxel_data.chunks) {
                 (void)chunk;
                 int num_triangles = 0;
                 auto generator = sinriv::kigstudio::voxel::generateMeshForChunk(
-                    voxel_data, key, isolevel, num_triangles, smooth_normals);
+                    voxel_data, key, isolevel, num_triangles, smooth_normals, expand);
                 std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>> mesh;
                 for (auto [tri, n] : generator) {
                     mesh.push_back({tri, n});
@@ -124,10 +125,11 @@ namespace sinriv::ui::render {
             VoxelGrid& voxel_data,
             uint64_t chunk_key,
             double isolevel = 0.5,
-            bool smooth_normals = true) {
+            bool smooth_normals = true,
+            float expand = 0.0f) {
             int num_triangles = 0;
             auto generator = sinriv::kigstudio::voxel::generateMeshForChunk(
-                voxel_data, chunk_key, isolevel, num_triangles, smooth_normals);
+                voxel_data, chunk_key, isolevel, num_triangles, smooth_normals, expand);
             std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>> mesh;
             for (auto [tri, n] : generator) {
                 mesh.push_back({tri, n});
