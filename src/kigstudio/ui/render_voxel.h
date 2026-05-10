@@ -83,6 +83,49 @@ namespace sinriv::ui::render {
         inline RenderMesh& getMeshRenderer() { return mesh_renderer_; }
         inline const RenderMesh& getMeshRenderer() const { return mesh_renderer_; }
 
+        inline std::pair<vec3f, vec3f> getLocalBounds() const {
+            vec3f min_b = {std::numeric_limits<float>::max(),
+                           std::numeric_limits<float>::max(),
+                           std::numeric_limits<float>::max()};
+            vec3f max_b = {std::numeric_limits<float>::lowest(),
+                           std::numeric_limits<float>::lowest(),
+                           std::numeric_limits<float>::lowest()};
+            bool has_bounds = false;
+
+            auto [mmin, mmax] = mesh_renderer_.getLocalBounds();
+            if (mmin.x != 0.0f || mmin.y != 0.0f || mmin.z != 0.0f ||
+                mmax.x != 0.0f || mmax.y != 0.0f || mmax.z != 0.0f) {
+                min_b = mmin;
+                max_b = mmax;
+                has_bounds = true;
+            }
+
+            for (const auto& [key, mesh] : chunk_meshes_) {
+                auto [cmin, cmax] = mesh.getLocalBounds();
+                if (cmin.x == 0.0f && cmin.y == 0.0f && cmin.z == 0.0f &&
+                    cmax.x == 0.0f && cmax.y == 0.0f && cmax.z == 0.0f) {
+                    continue;
+                }
+                if (!has_bounds) {
+                    min_b = cmin;
+                    max_b = cmax;
+                    has_bounds = true;
+                } else {
+                    min_b.x = std::min(min_b.x, cmin.x);
+                    min_b.y = std::min(min_b.y, cmin.y);
+                    min_b.z = std::min(min_b.z, cmin.z);
+                    max_b.x = std::max(max_b.x, cmax.x);
+                    max_b.y = std::max(max_b.y, cmax.y);
+                    max_b.z = std::max(max_b.z, cmax.z);
+                }
+            }
+
+            if (!has_bounds) {
+                return {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}};
+            }
+            return {min_b, max_b};
+        }
+
         inline void loadVoxelGrid(
             VoxelGrid voxel_data,
             double isolevel = 0.5,

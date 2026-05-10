@@ -126,8 +126,7 @@ void RenderVoxelList::processThumbnails() {
                 return;
             }
 
-            auto& mesh = item->voxel_renderer.getMeshRenderer();
-            auto [min_b, max_b] = mesh.getLocalBounds();
+            auto [min_b, max_b] = item->voxel_renderer.getLocalBounds();
             bx::Vec3 center((min_b.x + max_b.x) * 0.5f,
                             (min_b.y + max_b.y) * 0.5f,
                             (min_b.z + max_b.z) * 0.5f);
@@ -162,7 +161,7 @@ void RenderVoxelList::processThumbnails() {
 
             float identity[16];
             bx::mtxIdentity(identity);
-            mesh.renderGBuffer(identity, *thumb_shader_);
+            item->voxel_renderer.renderGBuffer(identity, *thumb_shader_);
             bgfx::touch(kThumbView);
 
             // blit 到 item 的持久纹理
