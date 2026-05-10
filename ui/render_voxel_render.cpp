@@ -202,6 +202,10 @@ void RenderVoxelList::RenderVoxelItem::upload_collision(
         } else if (segment_mode == CONCAVE_CONE) {
             render.setConcaveCone(concave_cone);
             render.setSpaceDivVisible(false);
+        } else {
+            // SPLIT_DISCONNECTED / NEIGHBOR: no collision overlay
+            render.clearCollisionTint();
+            render.setSpaceDivVisible(false);
         }
     } else {
         render.clearCollisionTint();

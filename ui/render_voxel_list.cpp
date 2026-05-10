@@ -1,4 +1,5 @@
 #include "render_voxel_list.h"
+#include <cstring>
 namespace sinriv::ui::render {
 
 void RenderVoxelList::setViewportSize(int width, int height) {
@@ -164,6 +165,105 @@ void RenderVoxelList::update_mouse_pos(RenderDeferred& deferred_renderer) {
     } else {
         mouse_world_pos = {0, 0, 0};
     }
+}
+
+void RenderVoxelList::begin_marked_edit(int item_id) {
+    if (pending_marked_undo.has_value() && pending_marked_undo->item_id == item_id) {
+        return;
+    }
+    pending_marked_undo.reset();
+    auto it = items.find(item_id);
+    if (it != items.end()) {
+        pending_marked_undo = PendingMarkedUndo{
+            item_id, MarkedVoxelsSnapshot{it->second->marked_voxels, ""}};
+    }
+}
+
+void RenderVoxelList::end_marked_edit(int item_id, const std::string& desc) {
+    if (!pending_marked_undo.has_value() || pending_marked_undo->item_id != item_id) {
+        return;
+    }
+    auto it = items.find(item_id);
+    if (it != items.end()) {
+        // Only push if state actually changed
+        const auto& before = pending_marked_undo->snapshot.marked_voxels;
+        const auto& after = it->second->marked_voxels;
+        bool changed = (before.chunks.size() != after.chunks.size());
+        if (!changed) {
+            for (const auto& [key, chunk] : before.chunks) {
+                auto ait = after.chunks.find(key);
+                if (ait == after.chunks.end()) {
+                    changed = true;
+                    break;
+                }
+                if (memcmp(chunk.data, ait->second.data, sizeof(chunk.data)) != 0) {
+                    changed = true;
+                    break;
+                }
+            }
+            if (!changed) {
+                for (const auto& [key, chunk] : after.chunks) {
+                    if (before.chunks.find(key) == before.chunks.end()) {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (changed) {
+            it->second->marked_undo_stack.push_back(
+                MarkedVoxelsSnapshot{before, desc});
+            it->second->marked_redo_stack.clear();
+            if (it->second->marked_undo_stack.size() > kMaxUndoSize) {
+                it->second->marked_undo_stack.erase(
+                    it->second->marked_undo_stack.begin());
+            }
+        }
+    }
+    pending_marked_undo.reset();
+}
+
+void RenderVoxelList::push_marked_undo_now(int item_id, const std::string& desc) {
+    auto it = items.find(item_id);
+    if (it == items.end()) return;
+    it->second->marked_undo_stack.push_back(
+        MarkedVoxelsSnapshot{it->second->marked_voxels, desc});
+    it->second->marked_redo_stack.clear();
+    if (it->second->marked_undo_stack.size() > kMaxUndoSize) {
+        it->second->marked_undo_stack.erase(
+            it->second->marked_undo_stack.begin());
+    }
+    pending_marked_undo.reset();
+}
+
+void RenderVoxelList::undo_marked(int item_id) {
+    auto it = items.find(item_id);
+    if (it == items.end() || it->second->marked_undo_stack.empty()) return;
+    it->second->marked_redo_stack.push_back(
+        MarkedVoxelsSnapshot{it->second->marked_voxels, ""});
+    it->second->marked_voxels = it->second->marked_undo_stack.back().marked_voxels;
+    it->second->marked_undo_stack.pop_back();
+    it->second->marked_voxels_dirty = true;
+}
+
+void RenderVoxelList::redo_marked(int item_id) {
+    auto it = items.find(item_id);
+    if (it == items.end() || it->second->marked_redo_stack.empty()) return;
+    it->second->marked_undo_stack.push_back(
+        MarkedVoxelsSnapshot{it->second->marked_voxels, ""});
+    it->second->marked_voxels = it->second->marked_redo_stack.back().marked_voxels;
+    it->second->marked_redo_stack.pop_back();
+    it->second->marked_voxels_dirty = true;
+}
+
+bool RenderVoxelList::can_undo_marked(int item_id) const {
+    auto it = items.find(item_id);
+    return it != items.end() && !it->second->marked_undo_stack.empty();
+}
+
+bool RenderVoxelList::can_redo_marked(int item_id) const {
+    auto it = items.find(item_id);
+    return it != items.end() && !it->second->marked_redo_stack.empty();
 }
 
 }  // namespace sinriv::ui::render

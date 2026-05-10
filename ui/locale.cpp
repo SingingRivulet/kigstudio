@@ -190,6 +190,12 @@ void init_locale_strings() {
                       {{"en", "Save Marked"}, {"zh", "保存标记"}});
     add_locale_string("action.load_marked_voxels",
                       {{"en", "Load Marked"}, {"zh", "加载标记"}});
+    add_locale_string("action.undo_marked",
+                      {{"en", "Undo"}, {"zh", "撤销"}});
+    add_locale_string("action.redo_marked",
+                      {{"en", "Redo"}, {"zh", "重做"}});
+    add_locale_string("label.history_marked_title",
+                      {{"en", "Marked Voxels History"}, {"zh", "标记体素历史"}});
     add_locale_string("label.mouse_highlight_range",
                       {{"en", "mouse highlight range"},
                        {"zh", "鼠标高亮范围"}});

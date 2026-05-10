@@ -181,6 +181,9 @@ int main() {
                     leftMouseDownOnPick = (render_items.disable_camera_on_pick ||
                                            picking_active) &&
                                           render_items.mouse_world_pos_valid;
+                    if (leftMouseDownOnPick) {
+                        render_items.begin_marked_edit(render_items.render_id);
+                    }
                     io.MouseDown[0] = true;
                 } else if (e.button.button == SDL_BUTTON_MIDDLE) {
                     middleMouseDown = true;
@@ -201,6 +204,12 @@ int main() {
 
             if (e.type == SDL_MOUSEBUTTONUP) {
                 if (e.button.button == SDL_BUTTON_LEFT) {
+                    if (leftMouseDownOnPick) {
+                        bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+                        render_items.end_marked_edit(
+                            render_items.render_id,
+                            shift ? "Erase" : "Brush");
+                    }
                     leftMouseDown = false;
                     leftMouseDownOnPick = false;
                     io.MouseDown[0] = false;
@@ -273,9 +282,21 @@ int main() {
                 } else if (e.key.keysym.sym == SDLK_o && ctrl) {
                     render_items.show_load_dialog = true;
                 } else if (e.key.keysym.sym == SDLK_z && ctrl) {
-                    render_items.undo(render_items.render_id);
+                    auto it = render_items.items.find(render_items.render_id);
+                    if (it != render_items.items.end() &&
+                        it->second->voxel_picking_enabled) {
+                        render_items.undo_marked(render_items.render_id);
+                    } else {
+                        render_items.undo(render_items.render_id);
+                    }
                 } else if (e.key.keysym.sym == SDLK_y && ctrl) {
-                    render_items.redo(render_items.render_id);
+                    auto it = render_items.items.find(render_items.render_id);
+                    if (it != render_items.items.end() &&
+                        it->second->voxel_picking_enabled) {
+                        render_items.redo_marked(render_items.render_id);
+                    } else {
+                        render_items.redo(render_items.render_id);
+                    }
                 }
             }
 

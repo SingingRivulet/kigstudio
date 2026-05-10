@@ -75,6 +75,11 @@ struct CollisionEditorSnapshot {
     std::string description;
 };
 
+struct MarkedVoxelsSnapshot {
+    sinriv::kigstudio::voxel::VoxelGrid marked_voxels;
+    std::string description;
+};
+
 class RenderVoxelList {
     // 用于显示一系列窗口
     // 每个子对象由以下部分构成：
@@ -203,6 +208,10 @@ class RenderVoxelList {
         // undo/redo stacks for collision editor
         std::vector<CollisionEditorSnapshot> undo_stack;
         std::vector<CollisionEditorSnapshot> redo_stack;
+
+        // undo/redo stacks for marked voxels
+        std::vector<MarkedVoxelsSnapshot> marked_undo_stack;
+        std::vector<MarkedVoxelsSnapshot> marked_redo_stack;
 
         bool dirty = false;
 
@@ -338,6 +347,20 @@ class RenderVoxelList {
     bool redo(int item_id);
     bool can_undo(int item_id) const;
     bool can_redo(int item_id) const;
+
+    // marked voxels undo/redo
+    struct PendingMarkedUndo {
+        int item_id;
+        MarkedVoxelsSnapshot snapshot;
+    };
+    std::optional<PendingMarkedUndo> pending_marked_undo;
+    void begin_marked_edit(int item_id);
+    void end_marked_edit(int item_id, const std::string& desc = "Brush");
+    void push_marked_undo_now(int item_id, const std::string& desc);
+    void undo_marked(int item_id);
+    void redo_marked(int item_id);
+    bool can_undo_marked(int item_id) const;
+    bool can_redo_marked(int item_id) const;
     bool has_dirty_items() const;
     void clear_all_dirty();
 

@@ -339,6 +339,10 @@ bool RenderVoxelList::load_project(const std::string& folder) {
                 cJSON_Delete(root);
                 return false;
             }
+            if (item->voxel_grid_data.num_chunk() > 0) {
+                item->voxel_renderer.loadVoxelGridChunked(item->voxel_grid_data,
+                                                           0.5, true);
+            }
             if (!item->stl_path.empty()) {
                 try {
                     item->mesh_renderer.loadSTL(item->stl_path);

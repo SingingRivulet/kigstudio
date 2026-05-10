@@ -554,6 +554,7 @@ void RenderVoxelList::render_ui() {
                 std::lock_guard<std::mutex> lock(locker);
                 auto it = items.find(render_id);
                 if (it != items.end()) {
+                    this->push_marked_undo_now(render_id, "Clear marks");
                     it->second->auto_segment_update = true;
                     it->second->marked_voxels = sinriv::kigstudio::voxel::VoxelGrid();
                     it->second->marked_voxels_dirty = true;
@@ -1329,6 +1330,14 @@ void RenderVoxelList::render_collision_node_editor() {
                                      &item.voxel_pick_range, 0.1f, 0.1f, 20.0f, "%.1f");
                 }
                 ImGui::Separator();
+                if (ImGui::Button(get_locale_cstr("action.undo_marked"))) {
+                    this->undo_marked(item.id);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button(get_locale_cstr("action.redo_marked"))) {
+                    this->redo_marked(item.id);
+                }
+                ImGui::Separator();
                 if (ImGui::Button(get_locale_cstr("action.save_marked_voxels"))) {
                     const char* filters[] = {"*.vxgrid"};
                     const char* file = tinyfd_saveFileDialog(
@@ -1352,6 +1361,7 @@ void RenderVoxelList::render_collision_node_editor() {
                         "", 1, filters,
                         get_locale_cstr("dialog.marked_voxels_file"), 0);
                     if (file) {
+                        this->push_marked_undo_now(item.id, "Load marked");
                         if (!sinriv::kigstudio::load(file, item.marked_voxels)) {
                             tinyfd_messageBox("Error",
                                 utf8_to_ansi(get_locale_cstr("error.load_marked_failed")).c_str(),
@@ -1515,6 +1525,82 @@ void RenderVoxelList::render_history_window() {
         }
 
         if (undo_count == 0 && redo_count == 0) {
+            ImGui::TextDisabled("%s", get_locale_cstr("label.history_empty"));
+        }
+
+        // === Marked Voxels History ===
+        ImGui::Separator();
+        ImGui::TextDisabled("%s", get_locale_cstr("label.history_marked_title"));
+        ImGui::Separator();
+
+        const size_t marked_undo_count = item.marked_undo_stack.size();
+        const size_t marked_redo_count = item.marked_redo_stack.size();
+        const int marked_total = static_cast<int>(marked_undo_count + marked_redo_count + 1);
+        const int marked_current_idx = static_cast<int>(marked_undo_count);
+
+        ImGui::Text("%s: %d", get_locale_cstr("label.history_total"), marked_total);
+        ImGui::Separator();
+
+        std::vector<std::string> marked_undo_descs;
+        marked_undo_descs.reserve(marked_undo_count);
+        for (size_t i = 0; i < marked_undo_count; ++i) {
+            marked_undo_descs.push_back(item.marked_undo_stack[i].description.empty() ? "State" : item.marked_undo_stack[i].description);
+        }
+        std::vector<std::string> marked_redo_descs;
+        marked_redo_descs.reserve(marked_redo_count);
+        for (size_t i = 0; i < marked_redo_count; ++i) {
+            marked_redo_descs.push_back(item.marked_redo_stack[marked_redo_count - 1 - i].description.empty() ? "State" : item.marked_redo_stack[marked_redo_count - 1 - i].description);
+        }
+
+        if (marked_undo_count > 0) {
+            ImGui::TextDisabled("%s", get_locale_cstr("label.history_undo"));
+            ImGui::PushID("marked_undo");
+            for (size_t i = 0; i < marked_undo_count; ++i) {
+                char label[128];
+                snprintf(label, sizeof(label), "[%zu] %s", i, marked_undo_descs[i].c_str());
+                ImGui::PushID(static_cast<int>(i));
+                if (i == marked_undo_count - 1) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+                }
+                if (ImGui::Selectable(label, i == marked_undo_count - 1)) {
+                    size_t steps = marked_undo_count - 1 - i;
+                    for (size_t s = 0; s < steps; ++s) {
+                        undo_marked(item.id);
+                    }
+                }
+                if (i == marked_undo_count - 1) {
+                    ImGui::PopStyleColor();
+                }
+                ImGui::PopID();
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 1.0f, 0.4f, 1.0f));
+        ImGui::PushID("marked_current");
+        ImGui::Selectable(get_locale_cstr("label.history_current"), true, ImGuiSelectableFlags_Disabled);
+        ImGui::PopID();
+        ImGui::PopStyleColor();
+
+        if (marked_redo_count > 0) {
+            ImGui::TextDisabled("%s", get_locale_cstr("label.history_redo"));
+            ImGui::PushID("marked_redo");
+            for (size_t i = 0; i < marked_redo_count; ++i) {
+                char label[128];
+                snprintf(label, sizeof(label), "[%zu] %s", i, marked_redo_descs[i].c_str());
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::Selectable(label, false)) {
+                    size_t steps = i + 1;
+                    for (size_t s = 0; s < steps; ++s) {
+                        redo_marked(item.id);
+                    }
+                }
+                ImGui::PopID();
+            }
+            ImGui::PopID();
+        }
+
+        if (marked_undo_count == 0 && marked_redo_count == 0) {
             ImGui::TextDisabled("%s", get_locale_cstr("label.history_empty"));
         }
     }
