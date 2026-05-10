@@ -282,17 +282,13 @@ int main() {
                 } else if (e.key.keysym.sym == SDLK_o && ctrl) {
                     render_items.show_load_dialog = true;
                 } else if (e.key.keysym.sym == SDLK_z && ctrl) {
-                    auto it = render_items.items.find(render_items.render_id);
-                    if (it != render_items.items.end() &&
-                        it->second->voxel_picking_enabled) {
+                    if (render_items.object_editor_tab == 1) {
                         render_items.undo_marked(render_items.render_id);
                     } else {
                         render_items.undo(render_items.render_id);
                     }
                 } else if (e.key.keysym.sym == SDLK_y && ctrl) {
-                    auto it = render_items.items.find(render_items.render_id);
-                    if (it != render_items.items.end() &&
-                        it->second->voxel_picking_enabled) {
+                    if (render_items.object_editor_tab == 1) {
                         render_items.redo_marked(render_items.render_id);
                     } else {
                         render_items.redo(render_items.render_id);

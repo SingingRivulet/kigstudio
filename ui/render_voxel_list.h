@@ -302,7 +302,8 @@ class RenderVoxelList {
     void update_mouse_pos(RenderDeferred & renderer);
 
     void render_ui();
-    void render_collision_node_editor();
+    int object_editor_tab = 0;
+    void render_object_editor();
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_concave_cone_editor(RenderVoxelItem& item);

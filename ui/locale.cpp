@@ -77,8 +77,12 @@ void init_locale_strings() {
                       {{"en", "async voxel loader"}, {"zh", "异步体素加载"}});
     add_locale_string("window.load_stl_file",
                       {{"en", "Load STL File"}, {"zh", "加载 STL 文件"}});
-    add_locale_string("window.collision_editor",
-                      {{"en", "collision editor"}, {"zh", "碰撞编辑器"}});
+    add_locale_string("window.object_editor",
+                      {{"en", "Object Editor"}, {"zh", "物体编辑器"}});
+    add_locale_string("tab.collision_edit",
+                      {{"en", "Collision Edit"}, {"zh", "碰撞编辑"}});
+    add_locale_string("tab.voxel_picking",
+                      {{"en", "Voxel Picking"}, {"zh", "体素选择"}});
     add_locale_string("window.edit_segment_plane",
                       {{"en", "Edit Segment Plane"}, {"zh", "编辑分割平面"}});
     add_locale_string("window.nav_node_map",
