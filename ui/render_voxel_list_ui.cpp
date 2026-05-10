@@ -433,19 +433,20 @@ void RenderVoxelList::render_ui() {
                 std::lock_guard<std::mutex> lock(locker);
                 auto it = items.find(render_id);
                 if (it != items.end()) {
-                    std::function<bool(int)> has_auto_update_off;
-                    has_auto_update_off = [&](int id) -> bool {
+                    std::function<bool(int)> has_child_auto_update_off;
+                    has_child_auto_update_off = [&](int id) -> bool {
                         auto node = items.find(id);
                         if (node == items.end()) return false;
-                        if (!node->second->auto_segment_update) return true;
                         for (int child_id : node->second->children) {
-                            if (child_id >= 0 && has_auto_update_off(child_id))
-                                return true;
+                            if (child_id < 0) continue;
+                            auto child = items.find(child_id);
+                            if (child == items.end()) continue;
+                            if (!child->second->auto_segment_update) return true;
+                            if (has_child_auto_update_off(child_id)) return true;
                         }
                         return false;
                     };
-                    need_confirm = has_auto_update_off(render_id) ||
-                                   !it->second->marked_voxels.empty();
+                    need_confirm = has_child_auto_update_off(render_id);
                 }
             }
             if (need_confirm) {
@@ -547,8 +548,6 @@ void RenderVoxelList::render_ui() {
                                nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted(
             get_locale_cstr("dialog.confirm_manual_update_message"));
-        ImGui::TextUnformatted(
-            get_locale_cstr("dialog.confirm_update_clears_mark"));
         ImGui::Separator();
         if (ImGui::Button(get_locale_cstr("action.apply"))) {
             {
@@ -1307,27 +1306,24 @@ void RenderVoxelList::render_collision_node_editor() {
             ImGui::Checkbox(get_locale_cstr("label.voxel_picking"),
                             &item.voxel_picking_enabled);
             if (item.voxel_picking_enabled) {
-                if (!item.surface_cache_ready) {
-                    if (item.surface_cache_computing) {
-                        ImGui::Text("Surface cache: %.0f%%",
-                                    item.surface_cache_progress * 100.0f);
-                    } else {
-                        if (ImGui::Button(get_locale_cstr("label.init_surface_cache"))) {
-                            item.surface_cache_computing = true;
-                            item.surface_cache_progress = 0.0f;
-                            // 在后台线程初始化表面缓存
-                            std::thread([this, id = item.id]() {
-                                auto it = this->items.find(id);
-                                if (it == this->items.end()) return;
-                                auto& target = *it->second;
-                                auto surface = target.voxel_grid_data.getSurfaceVoxels();
-                                target.surface_voxels = std::move(surface);
-                                target.surface_cache_ready = true;
-                                target.surface_cache_computing = false;
-                            }).detach();
-                        }
-                    }
-                } else {
+                if (!item.surface_cache_ready && !item.surface_cache_computing) {
+                    item.surface_cache_computing = true;
+                    item.surface_cache_progress = 0.0f;
+                    // 在后台线程初始化表面缓存
+                    std::thread([this, id = item.id]() {
+                        auto it = this->items.find(id);
+                        if (it == this->items.end()) return;
+                        auto& target = *it->second;
+                        auto surface = target.voxel_grid_data.getSurfaceVoxels();
+                        target.surface_voxels = std::move(surface);
+                        target.surface_cache_ready = true;
+                        target.surface_cache_computing = false;
+                    }).detach();
+                }
+                if (item.surface_cache_computing) {
+                    ImGui::Text("Surface cache: %.0f%%",
+                                item.surface_cache_progress * 100.0f);
+                } else if (item.surface_cache_ready) {
                     ImGui::TextUnformatted(get_locale_cstr("label.surface_cache_ready"));
                     ImGui::DragFloat(get_locale_cstr("label.pick_range"),
                                      &item.voxel_pick_range, 0.1f, 0.1f, 20.0f, "%.1f");
