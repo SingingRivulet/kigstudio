@@ -79,6 +79,9 @@ namespace sinriv::kigstudio::voxel {
             return voxelData.contains(wx, wy, wz);
         };
 
+        // 记录已处理的 cell，避免相邻 chunk 在边界处重复生成三角形
+        std::set<std::tuple<int, int, int>> processed_cells;
+
         // ===== 遍历所有 chunk =====
         for (const auto& [key, chunk] : voxelData.chunks) {
 
@@ -90,7 +93,7 @@ namespace sinriv::kigstudio::voxel {
             int baseY = cy << 5;
             int baseZ = cz << 5;
 
-            // ❗关键：遍历 cell（范围扩大一圈）
+            // ❗关键：遍历 cell（范围扩大一圈），用 processed 集合避免跨 chunk 重复
             for (int z = -1; z < 32; z++)
             for (int y = -1; y < 32; y++)
             for (int x = -1; x < 32; x++) {
@@ -98,6 +101,10 @@ namespace sinriv::kigstudio::voxel {
                 int wx = baseX + x;
                 int wy = baseY + y;
                 int wz = baseZ + z;
+
+                // 如果该 cell 已被其他 chunk 处理过，则跳过
+                if (!processed_cells.insert({wx, wy, wz}).second)
+                    continue;
 
                 // ===== 8 corner =====
                 bool v000 = getVoxel(wx,   wy,   wz);

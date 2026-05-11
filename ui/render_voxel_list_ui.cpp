@@ -369,6 +369,7 @@ void RenderVoxelList::render_ui() {
                                                  numTriangles, true)) {
                                             mesh.push_back(triangles);
                                         }
+                                        mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
                                         std::string filename = "node_" + std::to_string(id) + ".stl";
                                         std::filesystem::path filepath = export_dir / filename;
                                         sinriv::kigstudio::voxel::saveMeshToASCIISTL(
@@ -1238,6 +1239,7 @@ void RenderVoxelList::render_object_editor() {
                              numTriangles, true)) {
                         mesh.push_back(triangles);
                     }
+                    mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
                     sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, file);
                 }
             }
