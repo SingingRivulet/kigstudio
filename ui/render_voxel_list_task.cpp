@@ -58,7 +58,7 @@ void RenderVoxelList::queue_thread() {
 
         switch (task.type) {
             case TASK_STOP:
-                append_queue_log("[Queue] Stop");
+                append_queue_logf("log.queue.stop");
                 std::cout << "Stop queue" << std::endl;
                 return;
             // case TASK_REMOVE_ITEM:
@@ -66,32 +66,34 @@ void RenderVoxelList::queue_thread() {
             //     break;
             case TASK_LOAD_STL:
                 // 加载stl文件
-                append_queue_log("[Queue] Start: Load STL \"" + task.file_path +
-                                 "\"");
+                append_queue_logf("log.queue.start_load_stl",
+                                  task.file_path.c_str());
                 std::cout << "Load stl file: " << task.file_path << std::endl;
                 queue_running = true;
                 try {
                     load_stl(task.file_path, task.voxel_size);
-                    append_queue_log("[Queue] Done:  Load STL \"" +
-                                     task.file_path + "\"");
+                    append_queue_logf("log.queue.done_load_stl",
+                                      task.file_path.c_str());
                 } catch (std::runtime_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Load STL \"") +
-                                     task.file_path + "\" - " + e.what());
+                    append_queue_logf("log.queue.error_load_stl",
+                                      task.file_path.c_str(), e.what());
                     std::cerr << "Runtime error loading STL file: " << e.what()
                               << std::endl;
                 } catch (std::logic_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Load STL \"") +
-                                     task.file_path + "\" - " + e.what());
+                    append_queue_logf("log.queue.error_load_stl",
+                                      task.file_path.c_str(), e.what());
                     std::cerr << "Logic error loading STL file: " << e.what()
                               << std::endl;
                 } catch (std::exception& e) {
-                    append_queue_log(std::string("[Queue] Error: Load STL \"") +
-                                     task.file_path + "\" - " + e.what());
+                    append_queue_logf("log.queue.error_load_stl",
+                                      task.file_path.c_str(), e.what());
                     std::cerr << "Error loading STL file: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_log(std::string("[Queue] Error: Load STL \"") +
-                                     task.file_path + "\" - Unknown error");
+                    append_queue_logf("log.queue.error_load_stl",
+                                      task.file_path.c_str(),
+                                      get_locale_string("log.queue.unknown_error")
+                                          .c_str());
                     std::cerr << "Unknown error loading STL file. "
                               << std::endl;
                 }
@@ -100,40 +102,35 @@ void RenderVoxelList::queue_thread() {
                 break;
             case TASK_RELOAD_STL:
                 // 重新加载stl文件（更改体素大小）
-                append_queue_log("[Queue] Start: Reload STL item " +
-                                 std::to_string(task.index) + " \"" +
-                                 task.file_path + "\"");
+                append_queue_logf("log.queue.start_reload_stl", task.index,
+                                  task.file_path.c_str());
                 std::cout << "Reload stl file: " << task.file_path
                           << " for item " << task.index << std::endl;
                 queue_running = true;
                 try {
                     load_stl(task.file_path, task.voxel_size, 0.5, true,
                              task.index);
-                    append_queue_log("[Queue] Done:  Reload STL item " +
-                                     std::to_string(task.index));
+                    append_queue_logf("log.queue.done_reload_stl", task.index);
                 } catch (std::runtime_error& e) {
-                    append_queue_log(
-                        std::string("[Queue] Error: Reload STL item ") +
-                        std::to_string(task.index) + " - " + e.what());
+                    append_queue_logf("log.queue.error_reload_stl", task.index,
+                                      e.what());
                     std::cerr
                         << "Runtime error reloading STL file: " << e.what()
                         << std::endl;
                 } catch (std::logic_error& e) {
-                    append_queue_log(
-                        std::string("[Queue] Error: Reload STL item ") +
-                        std::to_string(task.index) + " - " + e.what());
+                    append_queue_logf("log.queue.error_reload_stl", task.index,
+                                      e.what());
                     std::cerr << "Logic error reloading STL file: " << e.what()
                               << std::endl;
                 } catch (std::exception& e) {
-                    append_queue_log(
-                        std::string("[Queue] Error: Reload STL item ") +
-                        std::to_string(task.index) + " - " + e.what());
+                    append_queue_logf("log.queue.error_reload_stl", task.index,
+                                      e.what());
                     std::cerr << "Error reloading STL file: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_log(
-                        std::string("[Queue] Error: Reload STL item ") +
-                        std::to_string(task.index) + " - Unknown error");
+                    append_queue_logf("log.queue.error_reload_stl", task.index,
+                                      get_locale_string("log.queue.unknown_error")
+                                          .c_str());
                     std::cerr << "Unknown error reloading STL file. "
                               << std::endl;
                 }
@@ -141,44 +138,38 @@ void RenderVoxelList::queue_thread() {
                 break;
             case TASK_SEGMENT:
                 // 分割
-                append_queue_log("[Queue] Start: Segment item " +
-                                 std::to_string(task.index));
+                append_queue_logf("log.queue.start_segment", task.index);
                 queue_running = true;
                 try {
                     do_segment(task.index);
-                    append_queue_log("[Queue] Done:  Segment item " +
-                                     std::to_string(task.index));
+                    append_queue_logf("log.queue.done_segment", task.index);
                 } catch (std::runtime_error& e) {
-                    append_queue_log(
-                        std::string("[Queue] Error: Segment item ") +
-                        std::to_string(task.index) + " - " + e.what());
+                    append_queue_logf("log.queue.error_segment", task.index,
+                                      e.what());
                     std::cerr << "Runtime error doing segment: " << e.what()
                               << std::endl;
                 } catch (std::logic_error& e) {
-                    append_queue_log(
-                        std::string("[Queue] Error: Segment item ") +
-                        std::to_string(task.index) + " - " + e.what());
+                    append_queue_logf("log.queue.error_segment", task.index,
+                                      e.what());
                     std::cerr << "Logic error doing segment: " << e.what()
                               << std::endl;
                 } catch (std::exception& e) {
-                    append_queue_log(
-                        std::string("[Queue] Error: Segment item ") +
-                        std::to_string(task.index) + " - " + e.what());
+                    append_queue_logf("log.queue.error_segment", task.index,
+                                      e.what());
                     std::cerr << "Error doing segment: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_log(
-                        std::string("[Queue] Error: Segment item ") +
-                        std::to_string(task.index) + " - Unknown error");
+                    append_queue_logf("log.queue.error_segment", task.index,
+                                      get_locale_string("log.queue.unknown_error")
+                                          .c_str());
                     std::cerr << "Unknown error doing segment. " << std::endl;
                 }
                 queue_running = false;
                 break;
             case TASK_CHECK_NON_MANIFOLD: {
-                append_queue_log("[Queue] Start: Check non-manifold edges for item " +
-                                 std::to_string(task.index));
+                append_queue_logf("log.queue.start_check_manifold", task.index);
                 queue_running = true;
-                queue_status = "Checking non-manifold edges...";
+                queue_status = get_locale_string("status.checking_manifold");
                 queue_progress = 0.0f;
                 try {
                     // 锁定 item
@@ -186,8 +177,7 @@ void RenderVoxelList::queue_thread() {
                     auto it = items.find(task.index);
                     if (it == items.end() || it->second->write_count != 0) {
                         locker.unlock();
-                        append_queue_log("[Queue] Skip: Item " + std::to_string(task.index) +
-                                         " is busy or not found");
+                        append_queue_logf("log.queue.skip_item_busy", task.index);
                         break;
                     }
                     it->second->write_count++;
@@ -210,19 +200,15 @@ void RenderVoxelList::queue_thread() {
 
                     // 输出结果到日志
                     if (edges.empty()) {
-                        append_queue_log("[Queue] Done:  No non-manifold edges found in item " +
-                                         std::to_string(task.index));
+                        append_queue_logf("log.queue.done_no_manifold", task.index);
                     } else {
-                        append_queue_log("[Queue] Found " + std::to_string(edges.size()) +
-                                         " non-manifold edge(s) in item " +
-                                         std::to_string(task.index) + ":");
+                        append_queue_logf("log.queue.found_manifold", task.index,
+                                          static_cast<int>(edges.size()));
                         for (const auto& edge : edges) {
-                            std::ostringstream oss;
-                            oss << "  Edge: (" << edge.v0.x << ", " << edge.v0.y << ", "
-                                << edge.v0.z << ") -> (" << edge.v1.x << ", " << edge.v1.y
-                                << ", " << edge.v1.z << ") [" << edge.triangle_count
-                                << " triangles]";
-                            append_queue_log(oss.str());
+                            append_queue_logf("log.queue.manifold_edge",
+                                              edge.v0.x, edge.v0.y, edge.v0.z,
+                                              edge.v1.x, edge.v1.y, edge.v1.z,
+                                              edge.triangle_count);
                         }
                     }
 
@@ -236,8 +222,8 @@ void RenderVoxelList::queue_thread() {
 
                     queue_progress = 1.0f;
                 } catch (std::exception& e) {
-                    append_queue_log(std::string("[Queue] Error: Check non-manifold item ") +
-                                     std::to_string(task.index) + " - " + e.what());
+                    append_queue_logf("log.queue.error_check_manifold", task.index,
+                                      e.what());
                     locker.lock();
                     auto it = items.find(task.index);
                     if (it != items.end()) {
@@ -249,11 +235,9 @@ void RenderVoxelList::queue_thread() {
                 break;
             }
             case TASK_GENERATE_THUMBNAIL_MESH: {
-                append_queue_log(
-                    "[Queue] Start: Generate thumbnail mesh for item " +
-                    std::to_string(task.index));
+                append_queue_logf("log.queue.start_thumbnail", task.index);
                 queue_running = true;
-                queue_status = "Generating thumbnail mesh...";
+                queue_status = get_locale_string("status.generating_thumbnail");
                 queue_progress = 0.0f;
 
                 try {
@@ -310,37 +294,28 @@ void RenderVoxelList::queue_thread() {
                         thumbnail_mesh_results[task.index] = std::move(data);
                         thumbnail_mesh_pending.erase(task.index);
                     }
-                    append_queue_log(
-                        "[Queue] Done:  Generate thumbnail mesh for item " +
-                        std::to_string(task.index));
+                    append_queue_logf("log.queue.done_thumbnail", task.index);
 
                 } catch (std::runtime_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Generate "
-                                                 "thumbnail mesh for item ") +
-                                     std::to_string(task.index) + " - " +
-                                     e.what());
+                    append_queue_logf("log.queue.error_thumbnail", task.index,
+                                      e.what());
                     std::cerr << "Runtime error generating thumbnail mesh: "
                               << e.what() << std::endl;
                 } catch (std::logic_error& e) {
-                    append_queue_log(std::string("[Queue] Error: Generate "
-                                                 "thumbnail mesh for item ") +
-                                     std::to_string(task.index) + " - " +
-                                     e.what());
+                    append_queue_logf("log.queue.error_thumbnail", task.index,
+                                      e.what());
                     std::cerr
                         << "Logic error generating thumbnail mesh: " << e.what()
                         << std::endl;
                 } catch (std::exception& e) {
-                    append_queue_log(std::string("[Queue] Error: Generate "
-                                                 "thumbnail mesh for item ") +
-                                     std::to_string(task.index) + " - " +
-                                     e.what());
+                    append_queue_logf("log.queue.error_thumbnail", task.index,
+                                      e.what());
                     std::cerr << "Error generating thumbnail mesh: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_log(std::string("[Queue] Error: Generate "
-                                                 "thumbnail mesh for item ") +
-                                     std::to_string(task.index) +
-                                     " - Unknown error");
+                    append_queue_logf("log.queue.error_thumbnail", task.index,
+                                      get_locale_string("log.queue.unknown_error")
+                                          .c_str());
                     std::cerr << "Unknown error generating thumbnail mesh. "
                               << std::endl;
                 }

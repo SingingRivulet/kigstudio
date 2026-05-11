@@ -436,7 +436,7 @@ void RenderVoxelList::render_ui() {
                     if (it != items.end() && it->second->write_count == 0) {
                         queue_check_non_manifold(render_id);
                     } else {
-                        append_queue_log("[Queue] Skip: Cannot check non-manifold edges - item busy or not found");
+                        append_queue_logf("log.queue.skip_check_busy");
                     }
                 }
                 ImGui::EndMenu();
@@ -1750,26 +1750,27 @@ void RenderVoxelList::render_history_window() {
 void RenderVoxelList::render_log_window() {
     if (!show_log_window) return;
 
-    std::vector<std::string> log_copy;
+    std::string log_text_copy;
     {
         std::lock_guard<std::mutex> lock(queue_log_mutex);
-        log_copy = queue_log;
+        log_text_copy = queue_log_text;
     }
 
     ImGui::SetNextWindowSize(ImVec2(500, 300), ImGuiCond_Once);
     if (ImGui::Begin(get_locale_cstr("window.log"), &show_log_window)) {
-        if (log_copy.empty()) {
-            ImGui::TextDisabled("No log entries.");
+        if (log_text_copy.empty()) {
+            ImGui::TextDisabled(get_locale_cstr("label.no_log_entries"));
         } else {
-            ImGui::BeginChild("log_scrolling", ImVec2(0, 0), false,
-                              ImGuiWindowFlags_HorizontalScrollbar);
-            for (const auto& entry : log_copy) {
-                ImGui::TextUnformatted(entry.c_str());
+            if (log_text_copy.size() + 1 > queue_log_buffer.size()) {
+                queue_log_buffer.resize(log_text_copy.size() + 1);
             }
-            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 5.0f) {
-                ImGui::SetScrollHereY(1.0f);
-            }
-            ImGui::EndChild();
+            std::copy(log_text_copy.begin(), log_text_copy.end(),
+                      queue_log_buffer.begin());
+            queue_log_buffer[log_text_copy.size()] = '\0';
+            ImGui::InputTextMultiline(
+                "##log", queue_log_buffer.data(), queue_log_buffer.size(),
+                ImVec2(-FLT_MIN, -FLT_MIN),
+                ImGuiInputTextFlags_ReadOnly);
         }
     }
     ImGui::End();

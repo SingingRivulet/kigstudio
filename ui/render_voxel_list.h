@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <cJSON.h>
+#include <cstdarg>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -26,6 +27,7 @@
 #include "kigstudio/voxel/voxel.h"
 #include "kigstudio/voxel/voxelizer_svo.h"
 #include "kigstudio/voxel/concave.h"
+#include "ui/locale.h"
 
 namespace sinriv::ui::render {
 
@@ -375,13 +377,31 @@ class RenderVoxelList {
     void render_log_window();
 
     std::vector<std::string> queue_log;
+    std::string queue_log_text;
+    std::vector<char> queue_log_buffer;
     std::mutex queue_log_mutex;
     inline void append_queue_log(const std::string& msg) {
         std::lock_guard<std::mutex> lock(queue_log_mutex);
         queue_log.push_back(msg);
+        if (!queue_log_text.empty()) queue_log_text += '\n';
+        queue_log_text += msg;
         if (queue_log.size() > 1000) {
             queue_log.erase(queue_log.begin(), queue_log.begin() + (queue_log.size() - 1000));
+            queue_log_text.clear();
+            for (size_t i = 0; i < queue_log.size(); ++i) {
+                if (i > 0) queue_log_text += '\n';
+                queue_log_text += queue_log[i];
+            }
         }
+    }
+    inline void append_queue_logf(const char* key, ...) {
+        std::string fmt = get_locale_string(key);
+        char buf[1024];
+        va_list args;
+        va_start(args, key);
+        vsnprintf(buf, sizeof(buf), fmt.c_str(), args);
+        va_end(args);
+        append_queue_log(buf);
     }
 
     std::vector<std::tuple<sinriv::kigstudio::voxel::collision::vec3f,

@@ -112,6 +112,61 @@ void init_locale_strings() {
     add_locale_string("menu.log",
                       {{"en", "Log"},
                        {"zh", "项目处理日志"}});
+
+    // Queue log messages
+    add_locale_string("log.queue.stop",
+                      {{"en", "[Queue] Stop"}, {"zh", "[队列] 停止"}});
+    add_locale_string("log.queue.start_load_stl",
+                      {{"en", "[Queue] Start: Load STL \"%s\""}, {"zh", "[队列] 开始: 加载 STL \"%s\""}});
+    add_locale_string("log.queue.done_load_stl",
+                      {{"en", "[Queue] Done:  Load STL \"%s\""}, {"zh", "[队列] 完成: 加载 STL \"%s\""}});
+    add_locale_string("log.queue.error_load_stl",
+                      {{"en", "[Queue] Error: Load STL \"%s\" - %s"}, {"zh", "[队列] 错误: 加载 STL \"%s\" - %s"}});
+    add_locale_string("log.queue.start_reload_stl",
+                      {{"en", "[Queue] Start: Reload STL item %d \"%s\""}, {"zh", "[队列] 开始: 重新加载 STL 项目 %d \"%s\""}});
+    add_locale_string("log.queue.done_reload_stl",
+                      {{"en", "[Queue] Done:  Reload STL item %d"}, {"zh", "[队列] 完成: 重新加载 STL 项目 %d"}});
+    add_locale_string("log.queue.error_reload_stl",
+                      {{"en", "[Queue] Error: Reload STL item %d - %s"}, {"zh", "[队列] 错误: 重新加载 STL 项目 %d - %s"}});
+    add_locale_string("log.queue.start_segment",
+                      {{"en", "[Queue] Start: Segment item %d"}, {"zh", "[队列] 开始: 分割项目 %d"}});
+    add_locale_string("log.queue.done_segment",
+                      {{"en", "[Queue] Done:  Segment item %d"}, {"zh", "[队列] 完成: 分割项目 %d"}});
+    add_locale_string("log.queue.error_segment",
+                      {{"en", "[Queue] Error: Segment item %d - %s"}, {"zh", "[队列] 错误: 分割项目 %d - %s"}});
+    add_locale_string("log.queue.start_check_manifold",
+                      {{"en", "[Queue] Start: Check non-manifold edges for item %d"}, {"zh", "[队列] 开始: 检查项目 %d 的非流形边"}});
+    add_locale_string("log.queue.skip_item_busy",
+                      {{"en", "[Queue] Skip: Item %d is busy or not found"}, {"zh", "[队列] 跳过: 项目 %d 正忙或不存在"}});
+    add_locale_string("log.queue.done_no_manifold",
+                      {{"en", "[Queue] Done:  No non-manifold edges found in item %d"}, {"zh", "[队列] 完成: 项目 %d 中未找到非流形边"}});
+    add_locale_string("log.queue.found_manifold",
+                      {{"en", "[Queue] Found %d non-manifold edge(s) in item %d:"}, {"zh", "[队列] 在项目 %d 中找到 %d 条非流形边:"}});
+    add_locale_string("log.queue.manifold_edge",
+                      {{"en", "  Edge: (%.6f, %.6f, %.6f) -> (%.6f, %.6f, %.6f) [%d triangles]"}, {"zh", "  边: (%.6f, %.6f, %.6f) -> (%.6f, %.6f, %.6f) [%d 个三角形]"}});
+    add_locale_string("log.queue.error_check_manifold",
+                      {{"en", "[Queue] Error: Check non-manifold item %d - %s"}, {"zh", "[队列] 错误: 检查项目 %d 的非流形边 - %s"}});
+    add_locale_string("log.queue.start_thumbnail",
+                      {{"en", "[Queue] Start: Generate thumbnail mesh for item %d"}, {"zh", "[队列] 开始: 为项目 %d 生成缩略图网格"}});
+    add_locale_string("log.queue.done_thumbnail",
+                      {{"en", "[Queue] Done:  Generate thumbnail mesh for item %d"}, {"zh", "[队列] 完成: 为项目 %d 生成缩略图网格"}});
+    add_locale_string("log.queue.error_thumbnail",
+                      {{"en", "[Queue] Error: Generate thumbnail mesh for item %d - %s"}, {"zh", "[队列] 错误: 为项目 %d 生成缩略图网格 - %s"}});
+    add_locale_string("log.queue.skip_check_busy",
+                      {{"en", "[Queue] Skip: Cannot check non-manifold edges - item busy or not found"}, {"zh", "[队列] 跳过: 无法检查非流形边 - 项目正忙或不存在"}});
+    add_locale_string("log.queue.unknown_error",
+                      {{"en", "Unknown error"}, {"zh", "未知错误"}});
+
+    // Status messages
+    add_locale_string("status.checking_manifold",
+                      {{"en", "Checking non-manifold edges..."}, {"zh", "正在检查非流形边..."}});
+    add_locale_string("status.generating_thumbnail",
+                      {{"en", "Generating thumbnail mesh..."}, {"zh", "正在生成缩略图网格..."}});
+
+    // Labels
+    add_locale_string("label.no_log_entries",
+                      {{"en", "No log entries."}, {"zh", "暂无日志记录。"}});
+
     add_locale_string("menu.export_stl_all",
                       {{"en", "Export All STL"}, {"zh", "全部导出stl"}});
     add_locale_string("tooltip.export_stl_all_no_project",
