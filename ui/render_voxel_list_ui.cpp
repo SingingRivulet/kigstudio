@@ -1254,8 +1254,16 @@ void RenderVoxelList::render_object_editor() {
             ImGui::Separator();
 
             if (ImGui::BeginTabBar("ObjectEditorTabs", ImGuiTabBarFlags_None)) {
+                ImGuiTabItemFlags flags_collision = 0;
+                ImGuiTabItemFlags flags_voxel = 0;
+                if (last_object_editor_tab != object_editor_tab) {
+                    if (object_editor_tab == 0) flags_collision = ImGuiTabItemFlags_SetSelected;
+                    else flags_voxel = ImGuiTabItemFlags_SetSelected;
+                    last_object_editor_tab = object_editor_tab;
+                }
+
                 // ===== Tab: Collision Edit =====
-                if (ImGui::BeginTabItem(get_locale_cstr("tab.collision_edit"))) {
+                if (ImGui::BeginTabItem(get_locale_cstr("tab.collision_edit"), nullptr, flags_collision)) {
                     object_editor_tab = 0;
 
                     // Undo / Redo buttons (collision)
@@ -1310,7 +1318,7 @@ void RenderVoxelList::render_object_editor() {
                 }
 
                 // ===== Tab: Voxel Picking =====
-                if (ImGui::BeginTabItem(get_locale_cstr("tab.voxel_picking"))) {
+                if (ImGui::BeginTabItem(get_locale_cstr("tab.voxel_picking"), nullptr, flags_voxel)) {
                     object_editor_tab = 1;
 
                     ImGui::Checkbox(get_locale_cstr("label.voxel_picking"),

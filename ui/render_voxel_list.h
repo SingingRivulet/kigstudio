@@ -303,6 +303,7 @@ class RenderVoxelList {
 
     void render_ui();
     int object_editor_tab = 0;
+    int last_object_editor_tab = -1;
     void render_object_editor();
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);

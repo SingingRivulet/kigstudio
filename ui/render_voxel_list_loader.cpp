@@ -379,6 +379,7 @@ bool RenderVoxelList::load_project(const std::string& folder) {
     project_path = folder;
     update_nav_node_status = true;
     clear_all_dirty();
+    object_editor_tab = 0;
     return true;
 }
 
