@@ -308,8 +308,14 @@ void RenderVoxelList::render_ui() {
                          ImGuiWindowFlags_NoBringToFrontOnFocus)) {
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu(get_locale_cstr("menu.file"))) {
-                if (ImGui::MenuItem(get_locale_cstr("menu.open_stl"))) {
-                    show_file_loader = true;
+                if (ImGui::BeginMenu(get_locale_cstr("menu.open_stl"))) {
+                    if (ImGui::MenuItem(get_locale_cstr("menu.open_stl"))) {
+                        show_file_loader = true;
+                    }
+                    if (ImGui::MenuItem(get_locale_cstr("menu.import_vxgrid"))) {
+                        show_import_vxgrid_dialog = true;
+                    }
+                    ImGui::EndMenu();
                 }
                 if (ImGui::MenuItem(get_locale_cstr("menu.save_project"))) {
                     if (!project_path.empty()) {
@@ -417,10 +423,6 @@ void RenderVoxelList::render_ui() {
                                     &showCollisionBounds);
                     ImGui::EndMenu();
                 }
-                ImGui::Checkbox(get_locale_cstr("label.disable_camera_on_pick"),
-                                &disable_camera_on_pick);
-                ImGui::DragFloat(get_locale_cstr("label.mouse_highlight_range"),
-                                 &mouse_highlight_range, 0.1f, 0.0f, 20.0f, "%.1f");
                 ImGui::EndMenu();
             }
             ImGui::EndMenuBar();
@@ -504,6 +506,7 @@ void RenderVoxelList::render_ui() {
     render_reload_stl_dialog();
     render_save_dialog();
     render_load_dialog();
+    render_import_vxgrid_dialog();
     render_history_window();
     render_log_window();
 
@@ -1400,7 +1403,10 @@ void RenderVoxelList::render_object_editor() {
                             }
                         }
                     }
-
+                    ImGui::Checkbox(get_locale_cstr("label.disable_camera_on_pick"),
+                                    &disable_camera_on_pick);
+                    ImGui::DragFloat(get_locale_cstr("label.mouse_highlight_range"),
+                                    &mouse_highlight_range, 0.1f, 0.0f, 20.0f, "%.1f");
                     ImGui::EndTabItem();
                 }
 
@@ -1456,6 +1462,91 @@ void RenderVoxelList::render_load_dialog() {
         }
         show_load_dialog = false;
     }
+}
+
+void RenderVoxelList::render_import_vxgrid_dialog() {
+    static std::string vxgrid_file_path;
+    static float voxel_size = 1.0f;
+    if (!show_import_vxgrid_dialog) return;
+
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImVec2 center = vp->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Once, ImVec2(0.5f, 0.5f));
+    if (ImGui::Begin(get_locale_cstr("menu.import_vxgrid"),
+                     &show_import_vxgrid_dialog,
+                     ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (ImGui::Button(get_locale_cstr("action.open_file_dialog"))) {
+            const char* filters[] = {"*.vxgrid"};
+            const char* file = tinyfd_openFileDialog(
+                utf8_to_ansi(get_locale_cstr("menu.import_vxgrid")).c_str(),
+                "", 1, filters,
+                utf8_to_ansi(get_locale_cstr("dialog.vxgrid_files")).c_str(),
+                0);
+            if (file) {
+                vxgrid_file_path = tinyfd_path_to_utf8(file);
+            }
+        }
+        if (!vxgrid_file_path.empty()) {
+            ImGui::Text(get_locale_cstr("label.selected_file"),
+                        vxgrid_file_path.c_str());
+        } else {
+            ImGui::TextUnformatted(get_locale_cstr("label.no_file_selected"));
+        }
+
+        const float button_size = ImGui::GetFrameHeight();
+        ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
+        ImGui::SameLine();
+        if (ImGui::Button("-", ImVec2(button_size, 0))) {
+            auto voxel_size_tmp = voxel_size / 2.0f;
+            if (voxel_size_tmp >= 0.0001f) {
+                voxel_size = voxel_size_tmp;
+            }
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.0f);
+        ImGui::BeginDisabled(true);
+        ImGui::DragFloat("##Voxel Size", &voxel_size, 0.1f, 0.0f, 0.0f,
+                         "%.4f");
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("+", ImVec2(button_size, 0))) {
+            voxel_size = voxel_size * 2.0f;
+            if (voxel_size > 1000.0f) {
+                voxel_size = 1000.0f;
+            }
+        }
+
+        ImGui::BeginDisabled(vxgrid_file_path.empty());
+        if (ImGui::Button(get_locale_cstr("action.open"))) {
+            auto item = create_item();
+            if (sinriv::kigstudio::load(utf8_path(vxgrid_file_path),
+                                        item->voxel_grid_data)) {
+                item->voxel_grid_data.voxel_size = {
+                    voxel_size, voxel_size, voxel_size};
+                if (item->voxel_grid_data.num_chunk() > 0) {
+                    item->voxel_renderer.loadVoxelGridChunked(
+                        item->voxel_grid_data, 0.5, true);
+                }
+                item->thumbnail_dirty = true;
+                item->dirty = true;
+                setRenderId(item->id);
+                show_import_vxgrid_dialog = false;
+            } else {
+                {
+                    std::lock_guard<std::mutex> lock(locker);
+                    auto it = items.find(item->id);
+                    if (it != items.end()) {
+                        it->second->queue_release = true;
+                    }
+                }
+                tinyfd_messageBox("Error",
+                    utf8_to_ansi(get_locale_cstr("error.load_failed")).c_str(),
+                    "ok", "error", 1);
+            }
+        }
+        ImGui::EndDisabled();
+    }
+    ImGui::End();
 }
 
 void RenderVoxelList::render_history_window() {

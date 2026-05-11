@@ -174,12 +174,12 @@ int main() {
                     {
                         auto it = render_items.items.find(render_items.render_id);
                         if (it != render_items.items.end() &&
+                            render_items.object_editor_tab == 1 &&
                             it->second->voxel_picking_enabled) {
                             picking_active = true;
                         }
                     }
-                    leftMouseDownOnPick = (render_items.disable_camera_on_pick ||
-                                           picking_active) &&
+                    leftMouseDownOnPick = picking_active &&
                                           render_items.mouse_world_pos_valid;
                     if (leftMouseDownOnPick) {
                         render_items.begin_marked_edit(render_items.render_id);
@@ -191,12 +191,12 @@ int main() {
                     {
                         auto it = render_items.items.find(render_items.render_id);
                         if (it != render_items.items.end() &&
+                            render_items.object_editor_tab == 1 &&
                             it->second->voxel_picking_enabled) {
                             picking_active = true;
                         }
                     }
-                    middleMouseDownOnPick = (render_items.disable_camera_on_pick ||
-                                             picking_active) &&
+                    middleMouseDownOnPick = picking_active &&
                                             render_items.mouse_world_pos_valid;
                     io.MouseDown[2] = true;
                 }

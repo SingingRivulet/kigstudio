@@ -313,9 +313,11 @@ class RenderVoxelList {
     void render_reload_stl_dialog();
     void render_save_dialog();
     void render_load_dialog();
+    void render_import_vxgrid_dialog();
 
     bool show_edit_segment_plane = false;
     bool show_file_loader = false;
+    bool show_import_vxgrid_dialog = false;
     bool show_reload_stl_dialog = false;
     int reload_stl_item_id = -1;
     float reload_stl_voxel_size = 1.0f;

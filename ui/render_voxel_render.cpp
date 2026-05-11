@@ -46,7 +46,7 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
             marked_voxels.global_position = voxel_grid_data.global_position;
             marked_voxels.voxel_size = voxel_grid_data.voxel_size;
             marked_mesh_renderer.setBaseColor(1.0f, 0.5f, 0.5f, 1.0f);
-            marked_mesh_renderer.setDepthBias(0.01f);
+            marked_mesh_renderer.setDepthBias(0.07f);
             int num_triangles = 0;
             auto generator = sinriv::kigstudio::voxel::generateMesh(
                 marked_voxels, 0.5, num_triangles, true);

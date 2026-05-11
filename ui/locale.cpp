@@ -96,6 +96,10 @@ void init_locale_strings() {
     add_locale_string("menu.history", {{"en", "History"}, {"zh", "历史记录"}});
     add_locale_string("menu.open_stl",
                       {{"en", "Open STL (O)"}, {"zh", "打开 STL (O)"}});
+    add_locale_string("menu.import_vxgrid",
+                      {{"en", "Import VXGrid"}, {"zh", "导入 VXGrid"}});
+    add_locale_string("dialog.vxgrid_files",
+                      {{"en", "VXGrid Files"}, {"zh", "VXGrid 文件"}});
     add_locale_string("menu.save_project",
                       {{"en", "Save (Ctrl+S)"}, {"zh", "保存 (Ctrl+S)"}});
     add_locale_string("menu.save_project_as",
