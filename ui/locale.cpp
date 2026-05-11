@@ -186,6 +186,8 @@ void init_locale_strings() {
     
                        add_locale_string("action.update_collision",
                       {{"en", "update collision"}, {"zh", "更新碰撞"}});
+    add_locale_string("action.extract_skeleton",
+                      {{"en", "extract skeleton"}, {"zh", "提取骨架"}});
     add_locale_string("action.undo",
                       {{"en", "Undo (Ctrl+Z)"}, {"zh", "撤销 (Ctrl+Z)"}});
     add_locale_string("action.redo",
@@ -388,6 +390,8 @@ void init_locale_strings() {
                       {{"en", "Neighbor"}, {"zh", "临近分割"}});
     add_locale_string("mode.fill_interior",
                       {{"en", "Fill Interior"}, {"zh", "填充内部"}});
+    add_locale_string("mode.chain",
+                      {{"en", "Chain (Skeleton)"}, {"zh", "链条（骨架）"}});
 
     add_locale_string("tooltip.mode.collision",
                       {{"en", "Use collision shapes to split the model. Voxels inside the shapes are separated from those outside."},
@@ -407,6 +411,11 @@ void init_locale_strings() {
     add_locale_string("tooltip.mode.fill_interior",
                       {{"en", "Fill all enclosed hollow cavities inside the model with solid voxels. Produces a single child node."},
                        {"zh", "用实体体素填满模型内部所有封闭的中空腔体。产生一个子节点。"}});
+    add_locale_string("tooltip.mode.chain",
+                      {{"en", "Extract the voxel skeleton using maximal balls. Result is displayed as 3D line segments without generating collision bodies or child nodes."},
+                       {"zh", "使用最大球算法提取体素骨架。结果显示为 3D 线段，不生成碰撞体或子节点。"}});
+    add_locale_string("label.chain_min_radius",
+                      {{"en", "min radius"}, {"zh", "最小半径"}});
 
     add_locale_string("dialog.open_stl_title",
                       {{"en", "Open STL"}, {"zh", "打开 STL"}});

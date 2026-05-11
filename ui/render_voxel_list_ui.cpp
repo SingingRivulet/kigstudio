@@ -443,7 +443,16 @@ void RenderVoxelList::render_ui() {
             }
             ImGui::EndMenuBar();
         }
-        if (ImGui::Button(get_locale_cstr("action.update_collision"))) {
+        const char* update_button_key = "action.update_collision";
+        {
+            std::lock_guard<std::mutex> lock(locker);
+            auto it = items.find(render_id);
+            if (it != items.end() &&
+                it->second->segment_mode == RenderVoxelItem::CHAIN) {
+                update_button_key = "action.extract_skeleton";
+            }
+        }
+        if (ImGui::Button(get_locale_cstr(update_button_key))) {
             std::cout << "update collision" << std::endl;
             // 应用碰撞体到两个结果体素
             bool need_confirm = false;
@@ -1310,13 +1319,15 @@ void RenderVoxelList::render_object_editor() {
                         get_locale_cstr("mode.concave_cone"),
                         get_locale_cstr("mode.split_disconnected"),
                         get_locale_cstr("mode.neighbor"),
-                        get_locale_cstr("mode.fill_interior")};
+                        get_locale_cstr("mode.fill_interior"),
+                        get_locale_cstr("mode.chain")};
                     const enum RenderVoxelItem::SegmentMode segment_modes[] = {
                         RenderVoxelItem::COLLISION, RenderVoxelItem::PLANE,
                         RenderVoxelItem::CONCAVE_CONE,
                         RenderVoxelItem::SPLIT_DISCONNECTED,
                         RenderVoxelItem::NEIGHBOR,
-                        RenderVoxelItem::FILL_INTERIOR};
+                        RenderVoxelItem::FILL_INTERIOR,
+                        RenderVoxelItem::CHAIN};
                     int current_segment_mode = segment_modes[(int)item.segment_mode];
                     if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
                                      &current_segment_mode,
@@ -1348,6 +1359,9 @@ void RenderVoxelList::render_object_editor() {
                             case RenderVoxelItem::FILL_INTERIOR:
                                 tooltip_key = "tooltip.mode.fill_interior";
                                 break;
+                            case RenderVoxelItem::CHAIN:
+                                tooltip_key = "tooltip.mode.chain";
+                                break;
                         }
                         if (tooltip_key) {
                             ImGui::BeginTooltip();
@@ -1369,6 +1383,10 @@ void RenderVoxelList::render_object_editor() {
                                        &item.neighbor_max_distance, 1, 1, 100);
                     } else if (item.segment_mode == RenderVoxelItem::FILL_INTERIOR) {
                         ImGui::TextUnformatted(get_locale_cstr("tooltip.mode.fill_interior"));
+                    } else if (item.segment_mode == RenderVoxelItem::CHAIN) {
+                        ImGui::DragInt(get_locale_cstr("label.chain_min_radius"),
+                                       &item.chain_min_radius, 1, 1, 20);
+                        ImGui::TextUnformatted(get_locale_cstr("tooltip.mode.chain"));
                     }
 
                     ImGui::EndTabItem();

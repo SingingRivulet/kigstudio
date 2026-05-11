@@ -18,8 +18,49 @@ RenderVoxelList::do_segment(int index) {
 
     queue_status = "Segmenting...";
     queue_progress = 0.0f;
-    auto grids = it->second->do_segment();
-    queue_progress = 0.7f;
+    std::vector<sinriv::kigstudio::voxel::VoxelGrid> grids;
+    std::vector<std::pair<sinriv::kigstudio::voxel::vec3f,
+                          sinriv::kigstudio::voxel::vec3f>> chain_lines;
+    std::cout << "[do_segment] start item=" << index
+              << " mode=" << it->second->segment_mode
+              << " write_count=" << it->second->write_count << std::endl;
+    try {
+        grids = it->second->do_segment();
+        queue_progress = 0.7f;
+
+        // CHAIN 模式：提取骨架并生成线段
+        if (it->second->segment_mode == RenderVoxelItem::CHAIN) {
+            std::cout << "[do_segment] extracting skeleton..." << std::endl;
+            auto skeleton = it->second->voxel_grid_data.extractSkeletonByMaximalBalls(
+                it->second->chain_min_radius, true);
+            std::cout << "[do_segment] skeleton voxels=" << skeleton.num_chunk() * 64
+                      << std::endl;
+            const int dirs[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+            for (const auto& voxel : skeleton) {
+                auto world_a = skeleton.voxelCenterToWorld(voxel);
+                for (int d = 0; d < 3; ++d) {
+                    sinriv::kigstudio::voxel::Vec3i neighbor = {
+                        voxel.x + dirs[d][0], voxel.y + dirs[d][1],
+                        voxel.z + dirs[d][2]};
+                    if (skeleton.find(neighbor)) {
+                        auto world_b = skeleton.voxelCenterToWorld(neighbor);
+                        chain_lines.push_back({world_a, world_b});
+                    }
+                }
+            }
+            std::cout << "[do_segment] skeleton lines=" << chain_lines.size()
+                      << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[do_segment] exception: " << e.what() << std::endl;
+        {
+            std::lock_guard<std::mutex> lock(locker);
+            it->second->ref_count--;
+            it->second->write_count--;
+        }
+        throw;
+    }
+    std::cout << "[do_segment] done item=" << index << std::endl;
 
     std::vector<int> new_ids;
     std::vector<std::vector<int>> new_children;
@@ -29,6 +70,11 @@ RenderVoxelList::do_segment(int index) {
         std::lock_guard<std::mutex> lock(locker);
         it->second->ref_count--;
         it->second->write_count--;
+        std::cout << "[do_segment] write_count decremented to="
+                  << it->second->write_count << std::endl;
+        if (it->second->segment_mode == RenderVoxelItem::CHAIN) {
+            it->second->skeleton_lines = std::move(chain_lines);
+        }
         size_t num_results = grids.size();
         size_t num_existing = it->second->children.size();
 

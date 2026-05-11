@@ -86,6 +86,40 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
         render_concave_cone_overlay(model_transform,
                                     mesh_shader);
     }
+    if (segment_mode == CHAIN && !skeleton_lines.empty()) {
+        if (mesh_shader.ensureLineProgram()) {
+            bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+            const uint32_t line_color = pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);
+            std::vector<mesh_detail::ColorLineVertex> vertices;
+            vertices.reserve(skeleton_lines.size() * 2);
+            for (const auto& line : skeleton_lines) {
+                const auto& a = line.first;
+                const auto& b = line.second;
+                vertices.push_back({a.x, a.y, a.z, line_color});
+                vertices.push_back({b.x, b.y, b.z, line_color});
+            }
+            if (!vertices.empty() &&
+                bgfx::getAvailTransientVertexBuffer(
+                    static_cast<uint32_t>(vertices.size()),
+                    layout) >= vertices.size()) {
+                bgfx::TransientVertexBuffer tvb;
+                bgfx::allocTransientVertexBuffer(
+                    &tvb, static_cast<uint32_t>(vertices.size()),
+                    layout);
+                std::memcpy(tvb.data, vertices.data(),
+                            vertices.size() *
+                                sizeof(mesh_detail::ColorLineVertex));
+                bgfx::setTransform(model_transform_2);
+                bgfx::setVertexBuffer(0, &tvb);
+                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                               BGFX_STATE_WRITE_Z |
+                               BGFX_STATE_DEPTH_TEST_LESS |
+                               BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+                bgfx::submit(mesh_shader.overlay_view_id_,
+                             mesh_shader.line_program_);
+            }
+        }
+    }
 }
 
 void RenderVoxelList::RenderVoxelItem::render_concave_cone_overlay(

@@ -119,7 +119,8 @@ class RenderVoxelList {
             CONCAVE_CONE = 2,
             SPLIT_DISCONNECTED = 3,
             NEIGHBOR = 4,
-            FILL_INTERIOR = 5
+            FILL_INTERIOR = 5,
+            CHAIN = 6
         } segment_mode = COLLISION;
 
         sinriv::ui::render::RenderMesh mesh_renderer;
@@ -131,6 +132,9 @@ class RenderVoxelList {
         kigstudio::Plane<float> plane;
         kigstudio::voxel::concave::Cone concave_cone;
         std::vector<int> concave_cone_expanded_vertices;
+
+        int chain_min_radius = 1;
+        std::vector<std::pair<sinriv::kigstudio::voxel::vec3f, sinriv::kigstudio::voxel::vec3f>> skeleton_lines;
 
         void render_gbuffer(const float* transform,
                             sinriv::ui::render::RenderMeshShader& mesh_shader);
@@ -151,6 +155,7 @@ class RenderVoxelList {
             target.plane = plane;
             target.concave_cone = concave_cone;
             target.concave_cone_expanded_vertices = concave_cone_expanded_vertices;
+            target.chain_min_radius = chain_min_radius;
         }
 
         inline std::vector<sinriv::kigstudio::voxel::VoxelGrid> do_segment() {
@@ -175,6 +180,8 @@ class RenderVoxelList {
             } else if (segment_mode == FILL_INTERIOR) {
                 auto filled = voxel_grid_data.fillInterior(true);
                 return {std::move(filled)};
+            } else if (segment_mode == CHAIN) {
+                return {};
             } else {
                 throw std::runtime_error("未知的处理模式");
             }

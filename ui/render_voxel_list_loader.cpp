@@ -36,6 +36,9 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
         case RenderVoxelItem::FILL_INTERIOR:
             mode_str = "fill_interior";
             break;
+        case RenderVoxelItem::CHAIN:
+            mode_str = "chain";
+            break;
         default:
             mode_str = "collision";
             break;
@@ -53,6 +56,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddNumberToObject(obj, "voxel_pick_range", item.voxel_pick_range);
     cJSON_AddNumberToObject(obj, "neighbor_max_distance",
                             item.neighbor_max_distance);
+    cJSON_AddNumberToObject(obj, "chain_min_radius",
+                            item.chain_min_radius);
     cJSON_AddBoolToObject(obj, "has_marked_voxels",
                           !item.marked_voxels.empty());
     cJSON_AddStringToObject(obj, "stl_path", item.stl_path.c_str());
@@ -107,6 +112,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         item->segment_mode = RenderVoxelItem::NEIGHBOR;
     } else if (strcmp(mode_str, "fill_interior") == 0) {
         item->segment_mode = RenderVoxelItem::FILL_INTERIOR;
+    } else if (strcmp(mode_str, "chain") == 0) {
+        item->segment_mode = RenderVoxelItem::CHAIN;
     } else {
         item->segment_mode = RenderVoxelItem::COLLISION;
     }
@@ -165,6 +172,11 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         cJSON_GetObjectItem(obj, "neighbor_max_distance");
     if (neighbor_dist_json) {
         item->neighbor_max_distance = neighbor_dist_json->valueint;
+    }
+    const cJSON* chain_min_radius_json =
+        cJSON_GetObjectItem(obj, "chain_min_radius");
+    if (chain_min_radius_json) {
+        item->chain_min_radius = chain_min_radius_json->valueint;
     }
     return item;
 }
