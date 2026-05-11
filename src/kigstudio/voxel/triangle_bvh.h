@@ -302,8 +302,16 @@ struct triangle_bvh {
                   [](const auto& a, const auto& b) {
                       return std::get<1>(a) < std::get<1>(b);
                   });
+        // 去重非常接近的碰撞点（边界共享导致重复）
+        auto last = std::unique(
+            coll_pos_list.begin(), coll_pos_list.end(),
+            [](const auto& a, const auto& b) {
+                return std::abs(std::get<1>(a) - std::get<1>(b)) <
+                       static_cast<number_t>(1e-4);
+            });
+        coll_pos_list.erase(last, coll_pos_list.end());
         // 相邻两个配对
-        for (size_t i = 0; i < coll_pos_list.size() - 1; i += 2) {
+        for (size_t i = 0; i + 1 < coll_pos_list.size(); i += 2) {
             callback(std::get<0>(coll_pos_list[i]),
                      std::get<0>(coll_pos_list[i + 1]));
         }
@@ -355,11 +363,11 @@ struct triangle_bvh {
         colltest_max.z = ceil(colltest_max.z / voxelsizez) * voxelsizez;
 
         int num_block_x = static_cast<int>(
-            ceil((colltest_max.x - colltest_min.x) / voxelsizex));
+            floor((colltest_max.x - colltest_min.x) / voxelsizex)) + 1;
         int num_block_y = static_cast<int>(
-            ceil((colltest_max.y - colltest_min.y) / voxelsizey));
+            floor((colltest_max.y - colltest_min.y) / voxelsizey)) + 1;
         int num_block_z = static_cast<int>(
-            ceil((colltest_max.z - colltest_min.z) / voxelsizez));
+            floor((colltest_max.z - colltest_min.z) / voxelsizez)) + 1;
 
         vec3 half_voxel_size(voxelsizex / 2, voxelsizey / 2, voxelsizez / 2);
 
