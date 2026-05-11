@@ -426,6 +426,21 @@ void RenderVoxelList::render_ui() {
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu(get_locale_cstr("menu.tools"))) {
+                if (ImGui::MenuItem(get_locale_cstr("menu.check_non_manifold"))) {
+                    // 自动显示日志窗口
+                    show_log_window = true;
+                    // 对当前选中的 item 执行检测
+                    std::lock_guard<std::mutex> lock(locker);
+                    auto it = items.find(render_id);
+                    if (it != items.end() && it->second->write_count == 0) {
+                        queue_check_non_manifold(render_id);
+                    } else {
+                        append_queue_log("[Queue] Skip: Cannot check non-manifold edges - item busy or not found");
+                    }
+                }
+                ImGui::EndMenu();
+            }
             ImGui::EndMenuBar();
         }
         if (ImGui::Button(get_locale_cstr("action.update_collision"))) {

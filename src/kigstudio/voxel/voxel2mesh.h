@@ -38,6 +38,92 @@ namespace sinriv::kigstudio::voxel {
         return (b - a).cross(c - a).normalize();
     }
 
+    struct NonManifoldEdge {
+        vec3f v0, v1;  // 边两端点坐标
+        int triangle_count;  // 共享该边的三角形数量
+    };
+
+    // 检查非流形边（被超过2个三角形共享的边）
+    inline std::vector<NonManifoldEdge> checkNonManifoldEdges(
+        const std::vector<std::tuple<Triangle, vec3f>>& input) {
+        // 1. 过滤退化三角形
+        std::vector<std::tuple<Triangle, vec3f>> filtered;
+        filtered.reserve(input.size());
+        for (const auto& [tri, n] : input) {
+            auto v1 = std::get<0>(tri);
+            auto v2 = std::get<1>(tri);
+            auto v3 = std::get<2>(tri);
+            if ((v2 - v1).cross(v3 - v1).length() < 1e-6f) continue;
+            filtered.push_back({tri, n});
+        }
+
+        // 2. 顶点焊接（1e-6 精度）
+        std::vector<vec3f> welded_vertices;
+        std::map<std::tuple<int, int, int>, int> vertex_map;
+        auto weld = [&](const vec3f& v) -> int {
+            int qx = static_cast<int>(std::round(v.x * 1e6f));
+            int qy = static_cast<int>(std::round(v.y * 1e6f));
+            int qz = static_cast<int>(std::round(v.z * 1e6f));
+            auto key = std::make_tuple(qx, qy, qz);
+            auto it = vertex_map.find(key);
+            if (it != vertex_map.end()) return it->second;
+            int idx = static_cast<int>(welded_vertices.size());
+            welded_vertices.push_back(v);
+            vertex_map[key] = idx;
+            return idx;
+        };
+
+        struct IdxTri { int v[3]; vec3f n; };
+        std::vector<IdxTri> idx_tris;
+        idx_tris.reserve(filtered.size());
+        for (const auto& [tri, n] : filtered) {
+            IdxTri t{ { weld(std::get<0>(tri)), weld(std::get<1>(tri)), weld(std::get<2>(tri)) }, n };
+            idx_tris.push_back(t);
+        }
+
+        // 3. 去除完全重复的三角形（规范化顶点顺序后比较）
+        std::set<std::tuple<int, int, int>> seen_tris;
+        std::vector<IdxTri> unique_tris;
+        unique_tris.reserve(idx_tris.size());
+        for (const auto& t : idx_tris) {
+            int a = t.v[0], b = t.v[1], c = t.v[2];
+            if (a <= b && a <= c) {
+                // a 最小，保持 a-b-c
+            } else if (b <= a && b <= c) {
+                int tmp = a; a = b; b = c; c = tmp;
+            } else {
+                int tmp = a; a = c; c = b; b = tmp;
+            }
+            auto key = std::make_tuple(a, b, c);
+            if (seen_tris.insert(key).second) {
+                unique_tris.push_back(t);
+            }
+        }
+
+        // 4. 建立边 -> 三角形索引列表映射
+        std::map<std::pair<int, int>, std::vector<int>> edge_to_tris;
+        for (int i = 0; i < static_cast<int>(unique_tris.size()); ++i) {
+            for (int e = 0; e < 3; ++e) {
+                int a = unique_tris[i].v[e];
+                int b = unique_tris[i].v[(e + 1) % 3];
+                if (a > b) std::swap(a, b);
+                edge_to_tris[{a, b}].push_back(i);
+            }
+        }
+
+        // 5. 收集非流形边
+        std::vector<NonManifoldEdge> result;
+        for (const auto& [edge, tri_list] : edge_to_tris) {
+            if (tri_list.size() <= 2) continue;
+            result.push_back({
+                welded_vertices[edge.first],
+                welded_vertices[edge.second],
+                static_cast<int>(tri_list.size())
+            });
+        }
+        return result;
+    }
+
     // 网格清理：去除退化/重复三角形，并修复非流形边（被超过2个三角形共享的边）
     inline std::vector<std::tuple<Triangle, vec3f>> cleanMesh(
         const std::vector<std::tuple<Triangle, vec3f>>& input) {

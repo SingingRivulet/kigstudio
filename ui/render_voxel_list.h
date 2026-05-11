@@ -434,6 +434,7 @@ class RenderVoxelList {
         TASK_SEGMENT = 4,
         TASK_GENERATE_THUMBNAIL_MESH = 5,
         TASK_RELOAD_STL = 6,
+        TASK_CHECK_NON_MANIFOLD = 7,
     };
     struct QueueTask {
         QueueTaskType type;
@@ -462,6 +463,7 @@ class RenderVoxelList {
     void queue_do_segment(int index);
     void queue_do_segment();
     void queue_remove_item(int index);
+    void queue_check_non_manifold(int index);
     bool isQueueRunning();
     std::string getQueueStatus();
     float getQueueProgress();

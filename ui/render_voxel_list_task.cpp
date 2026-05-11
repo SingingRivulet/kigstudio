@@ -1,4 +1,5 @@
 
+#include <sstream>
 #include "render_voxel_list.h"
 namespace sinriv::ui::render {
 
@@ -173,6 +174,80 @@ void RenderVoxelList::queue_thread() {
                 }
                 queue_running = false;
                 break;
+            case TASK_CHECK_NON_MANIFOLD: {
+                append_queue_log("[Queue] Start: Check non-manifold edges for item " +
+                                 std::to_string(task.index));
+                queue_running = true;
+                queue_status = "Checking non-manifold edges...";
+                queue_progress = 0.0f;
+                try {
+                    // 锁定 item
+                    locker.lock();
+                    auto it = items.find(task.index);
+                    if (it == items.end() || it->second->write_count != 0) {
+                        locker.unlock();
+                        append_queue_log("[Queue] Skip: Item " + std::to_string(task.index) +
+                                         " is busy or not found");
+                        break;
+                    }
+                    it->second->write_count++;
+                    auto item_ptr = it->second.get();
+                    locker.unlock();
+
+                    // 生成网格
+                    std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
+                                           sinriv::kigstudio::voxel::vec3f>> mesh;
+                    int numTriangles = 0;
+                    for (auto tri : sinriv::kigstudio::voxel::generateMesh(
+                             item_ptr->voxel_grid_data, 0.5, numTriangles, true)) {
+                        mesh.push_back(tri);
+                    }
+
+                    // 执行检测
+                    queue_progress = 0.3f;
+                    auto edges = sinriv::kigstudio::voxel::checkNonManifoldEdges(mesh);
+                    queue_progress = 0.9f;
+
+                    // 输出结果到日志
+                    if (edges.empty()) {
+                        append_queue_log("[Queue] Done:  No non-manifold edges found in item " +
+                                         std::to_string(task.index));
+                    } else {
+                        append_queue_log("[Queue] Found " + std::to_string(edges.size()) +
+                                         " non-manifold edge(s) in item " +
+                                         std::to_string(task.index) + ":");
+                        for (const auto& edge : edges) {
+                            std::ostringstream oss;
+                            oss << "  Edge: (" << edge.v0.x << ", " << edge.v0.y << ", "
+                                << edge.v0.z << ") -> (" << edge.v1.x << ", " << edge.v1.y
+                                << ", " << edge.v1.z << ") [" << edge.triangle_count
+                                << " triangles]";
+                            append_queue_log(oss.str());
+                        }
+                    }
+
+                    // 解锁
+                    locker.lock();
+                    it = items.find(task.index);
+                    if (it != items.end()) {
+                        it->second->write_count--;
+                    }
+                    locker.unlock();
+
+                    queue_progress = 1.0f;
+                } catch (std::exception& e) {
+                    append_queue_log(std::string("[Queue] Error: Check non-manifold item ") +
+                                     std::to_string(task.index) + " - " + e.what());
+                    locker.lock();
+                    auto it = items.find(task.index);
+                    if (it != items.end()) {
+                        it->second->write_count--;
+                    }
+                    locker.unlock();
+                }
+                queue_running = false;
+                break;
+            }
             case TASK_GENERATE_THUMBNAIL_MESH: {
                 append_queue_log(
                     "[Queue] Start: Generate thumbnail mesh for item " +
@@ -347,6 +422,15 @@ void RenderVoxelList::queue_do_segment() {
     if (it != items.end()) {
         queue_do_segment(it->second->id);
     }
+}
+
+void RenderVoxelList::queue_check_non_manifold(int index) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_CHECK_NON_MANIFOLD;
+    task.index = index;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
 }
 
 void RenderVoxelList::queue_remove_item(int index) {

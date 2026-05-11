@@ -90,6 +90,9 @@ void init_locale_strings() {
 
     add_locale_string("menu.file", {{"en", "File"}, {"zh", "文件"}});
     add_locale_string("menu.view", {{"en", "View"}, {"zh", "视图"}});
+    add_locale_string("menu.tools", {{"en", "Tools"}, {"zh", "工具"}});
+    add_locale_string("menu.check_non_manifold",
+                      {{"en", "Check Non-Manifold Edges"}, {"zh", "检查非流形边"}});
     add_locale_string("menu.body", {{"en", "Body"}, {"zh", "主体"}});
     add_locale_string("menu.axis", {{"en", "Axis"}, {"zh", "坐标轴"}});
     add_locale_string("menu.bound", {{"en", "Bound"}, {"zh", "边界"}});
