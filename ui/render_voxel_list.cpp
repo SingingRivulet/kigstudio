@@ -80,6 +80,9 @@ RenderVoxelList::RenderVoxelItem* RenderVoxelList::create_item() {
     auto item = std::make_unique<RenderVoxelItem>();
     item->manager = this;
     item->id = current_id++;
+    std::cout << "[create_item] id=" << item->id
+              << " write_count=" << item->write_count.load()
+              << " ref_count=" << item->ref_count.load() << std::endl;
     auto item_ptr = item.get();
     {
         std::lock_guard<std::mutex> lock(locker);

@@ -107,7 +107,7 @@ class RenderVoxelList {
         int nav_node_position[2] = {0, 0};  // 在分割演示图中的位置
         std::string err_info;
         RenderVoxelList* manager = nullptr;
-        RenderVoxelItem() = default;
+        RenderVoxelItem() : ref_count(1), write_count(0) {}
         ~RenderVoxelItem() {
             if (bgfx::isValid(thumbnail_tex)) {
                 bgfx::destroy(thumbnail_tex);

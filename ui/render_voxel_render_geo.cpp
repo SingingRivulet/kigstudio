@@ -312,6 +312,9 @@ void RenderVoxelList::load_stl(std::string filename,
         auto item = std::make_unique<RenderVoxelItem>();
         item->manager = this;
         item->id = current_id++;
+        std::cout << "[load_stl] new item id=" << item->id
+                  << " write_count=" << item->write_count.load()
+                  << " ref_count=" << item->ref_count.load() << std::endl;
         item->mesh_renderer.loadGeometry(
             sinriv::kigstudio::voxel::readSTL(filename));
         item->voxel_renderer.loadVoxelGridChunked(
