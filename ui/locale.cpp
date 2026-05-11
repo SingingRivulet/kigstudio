@@ -152,6 +152,12 @@ void init_locale_strings() {
                       {{"en", "[Queue] Done:  Generate thumbnail mesh for item %d"}, {"zh", "[队列] 完成: 为项目 %d 生成缩略图网格"}});
     add_locale_string("log.queue.error_thumbnail",
                       {{"en", "[Queue] Error: Generate thumbnail mesh for item %d - %s"}, {"zh", "[队列] 错误: 为项目 %d 生成缩略图网格 - %s"}});
+    add_locale_string("log.queue.start_fill_interior",
+                      {{"en", "[Queue] Start: Fill interior for item %d"}, {"zh", "[队列] 开始: 填充项目 %d 的内部"}});
+    add_locale_string("log.queue.done_fill_interior",
+                      {{"en", "[Queue] Done:  Filled interior for item %d"}, {"zh", "[队列] 完成: 项目 %d 的内部已填充"}});
+    add_locale_string("log.queue.error_fill_interior",
+                      {{"en", "[Queue] Error: Fill interior for item %d - %s"}, {"zh", "[队列] 错误: 填充项目 %d 的内部 - %s"}});
     add_locale_string("log.queue.skip_check_busy",
                       {{"en", "[Queue] Skip: Cannot check non-manifold edges - item busy or not found"}, {"zh", "[队列] 跳过: 无法检查非流形边 - 项目正忙或不存在"}});
     add_locale_string("log.queue.unknown_error",
@@ -162,6 +168,8 @@ void init_locale_strings() {
                       {{"en", "Checking non-manifold edges..."}, {"zh", "正在检查非流形边..."}});
     add_locale_string("status.generating_thumbnail",
                       {{"en", "Generating thumbnail mesh..."}, {"zh", "正在生成缩略图网格..."}});
+    add_locale_string("status.filling_interior",
+                      {{"en", "Filling interior..."}, {"zh", "正在填充内部..."}});
 
     // Labels
     add_locale_string("label.no_log_entries",
@@ -224,6 +232,7 @@ void init_locale_strings() {
                       {{"en", "auto snapping"}, {"zh", "自动吸附"}});
     add_locale_string("action.pick_pos_auto_snapping_stop",
                       {{"en", "stop auto snapping"}, {"zh", "取消自动吸附"}});
+
 
     add_locale_string("label.show_mesh",
                       {{"en", "show mesh"}, {"zh", "显示网格"}});
@@ -336,7 +345,7 @@ void init_locale_strings() {
     add_locale_string("label.render_item",
                       {{"en", "render item: %d"}, {"zh", "渲染项目: %d"}});
     add_locale_string("label.segment_mode",
-                      {{"en", "segment mode"}, {"zh", "分割模式"}});
+                      {{"en", "process mode"}, {"zh", "处理模式"}});
     add_locale_string("label.auto_segment_update",
                       {{"en", "auto segment update"}, {"zh", "自动分割更新"}});
     add_locale_string("label.updating",
@@ -377,6 +386,27 @@ void init_locale_strings() {
                        {"zh", "分离不连通区域"}});
     add_locale_string("mode.neighbor",
                       {{"en", "Neighbor"}, {"zh", "临近分割"}});
+    add_locale_string("mode.fill_interior",
+                      {{"en", "Fill Interior"}, {"zh", "填充内部"}});
+
+    add_locale_string("tooltip.mode.collision",
+                      {{"en", "Use collision shapes to split the model. Voxels inside the shapes are separated from those outside."},
+                       {"zh", "使用碰撞体形状分割模型。形状内部的体素与外部的体素被分离开。"}});
+    add_locale_string("tooltip.mode.plane",
+                      {{"en", "Use an infinite plane to split the model into two halves."},
+                       {"zh", "使用无限平面将模型分割成两半。"}});
+    add_locale_string("tooltip.mode.concave_cone",
+                      {{"en", "Use a concave cone to carve out a region from the model."},
+                       {"zh", "使用凹锥从模型中挖出一个区域。"}});
+    add_locale_string("tooltip.mode.split_disconnected",
+                      {{"en", "Automatically split disconnected voxel regions into separate items."},
+                       {"zh", "自动将不连通的体素区域分割成独立的项目。"}});
+    add_locale_string("tooltip.mode.neighbor",
+                      {{"en", "Split voxels based on BFS distance from marked seed voxels."},
+                       {"zh", "基于与标记种子体素的 BFS 距离来分割体素。"}});
+    add_locale_string("tooltip.mode.fill_interior",
+                      {{"en", "Fill all enclosed hollow cavities inside the model with solid voxels. Produces a single child node."},
+                       {"zh", "用实体体素填满模型内部所有封闭的中空腔体。产生一个子节点。"}});
 
     add_locale_string("dialog.open_stl_title",
                       {{"en", "Open STL"}, {"zh", "打开 STL"}});

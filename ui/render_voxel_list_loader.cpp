@@ -33,6 +33,9 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
         case RenderVoxelItem::NEIGHBOR:
             mode_str = "neighbor";
             break;
+        case RenderVoxelItem::FILL_INTERIOR:
+            mode_str = "fill_interior";
+            break;
         default:
             mode_str = "collision";
             break;
@@ -102,6 +105,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         item->segment_mode = RenderVoxelItem::SPLIT_DISCONNECTED;
     } else if (strcmp(mode_str, "neighbor") == 0) {
         item->segment_mode = RenderVoxelItem::NEIGHBOR;
+    } else if (strcmp(mode_str, "fill_interior") == 0) {
+        item->segment_mode = RenderVoxelItem::FILL_INTERIOR;
     } else {
         item->segment_mode = RenderVoxelItem::COLLISION;
     }

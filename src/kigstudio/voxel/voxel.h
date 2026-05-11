@@ -409,6 +409,9 @@ class VoxelGrid {
         bool use_26_neighbors = false) const;
     std::vector<VoxelGrid> splitDisconnected(
         bool use_26_neighbors = false) const;
+
+    // ================= 填充内部空洞 =================
+    VoxelGrid fillInterior(bool use_6_neighbors = true) const;
 };
 }  // namespace voxel
 

@@ -1309,12 +1309,14 @@ void RenderVoxelList::render_object_editor() {
                         get_locale_cstr("mode.collision"), get_locale_cstr("mode.plane"),
                         get_locale_cstr("mode.concave_cone"),
                         get_locale_cstr("mode.split_disconnected"),
-                        get_locale_cstr("mode.neighbor")};
+                        get_locale_cstr("mode.neighbor"),
+                        get_locale_cstr("mode.fill_interior")};
                     const enum RenderVoxelItem::SegmentMode segment_modes[] = {
                         RenderVoxelItem::COLLISION, RenderVoxelItem::PLANE,
                         RenderVoxelItem::CONCAVE_CONE,
                         RenderVoxelItem::SPLIT_DISCONNECTED,
-                        RenderVoxelItem::NEIGHBOR};
+                        RenderVoxelItem::NEIGHBOR,
+                        RenderVoxelItem::FILL_INTERIOR};
                     int current_segment_mode = segment_modes[(int)item.segment_mode];
                     if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
                                      &current_segment_mode,
@@ -1323,6 +1325,39 @@ void RenderVoxelList::render_object_editor() {
                         push_undo_now(item.id, std::nullopt, get_locale_string("label.segment_mode"));
                         item.segment_mode = segment_modes[current_segment_mode];
                     }
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(?)");
+                    if (ImGui::IsItemHovered()) {
+                        const char* tooltip_key = nullptr;
+                        switch (item.segment_mode) {
+                            case RenderVoxelItem::COLLISION:
+                                tooltip_key = "tooltip.mode.collision";
+                                break;
+                            case RenderVoxelItem::PLANE:
+                                tooltip_key = "tooltip.mode.plane";
+                                break;
+                            case RenderVoxelItem::CONCAVE_CONE:
+                                tooltip_key = "tooltip.mode.concave_cone";
+                                break;
+                            case RenderVoxelItem::SPLIT_DISCONNECTED:
+                                tooltip_key = "tooltip.mode.split_disconnected";
+                                break;
+                            case RenderVoxelItem::NEIGHBOR:
+                                tooltip_key = "tooltip.mode.neighbor";
+                                break;
+                            case RenderVoxelItem::FILL_INTERIOR:
+                                tooltip_key = "tooltip.mode.fill_interior";
+                                break;
+                        }
+                        if (tooltip_key) {
+                            ImGui::BeginTooltip();
+                            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+                            ImGui::TextUnformatted(get_locale_cstr(tooltip_key));
+                            ImGui::PopTextWrapPos();
+                            ImGui::EndTooltip();
+                        }
+                    }
+
                     if (item.segment_mode == RenderVoxelItem::PLANE) {
                         render_plane_editor(item);
                     } else if (item.segment_mode == RenderVoxelItem::COLLISION) {
@@ -1332,6 +1367,8 @@ void RenderVoxelList::render_object_editor() {
                     } else if (item.segment_mode == RenderVoxelItem::NEIGHBOR) {
                         ImGui::DragInt(get_locale_cstr("label.neighbor_max_distance"),
                                        &item.neighbor_max_distance, 1, 1, 100);
+                    } else if (item.segment_mode == RenderVoxelItem::FILL_INTERIOR) {
+                        ImGui::TextUnformatted(get_locale_cstr("tooltip.mode.fill_interior"));
                     }
 
                     ImGui::EndTabItem();

@@ -118,7 +118,8 @@ class RenderVoxelList {
             PLANE = 1,
             CONCAVE_CONE = 2,
             SPLIT_DISCONNECTED = 3,
-            NEIGHBOR = 4
+            NEIGHBOR = 4,
+            FILL_INTERIOR = 5
         } segment_mode = COLLISION;
 
         sinriv::ui::render::RenderMesh mesh_renderer;
@@ -171,8 +172,11 @@ class RenderVoxelList {
                 }
                 auto res = voxel_grid_data.bfsSplit(seeds, neighbor_max_distance, true);
                 return {std::get<0>(std::move(res)), std::get<1>(std::move(res))};
+            } else if (segment_mode == FILL_INTERIOR) {
+                auto filled = voxel_grid_data.fillInterior(true);
+                return {std::move(filled)};
             } else {
-                throw std::runtime_error("未知的分割模式");
+                throw std::runtime_error("未知的处理模式");
             }
         }
 
