@@ -234,6 +234,38 @@ void RenderVoxelList::queue_thread() {
                 queue_running = false;
                 break;
             }
+            case TASK_EXTRACT_SKELETON: {
+                append_queue_logf("log.queue.start_extract_skeleton", task.index);
+                queue_running = true;
+                queue_status = get_locale_string("status.extracting_skeleton");
+                queue_progress = 0.0f;
+                try {
+                    extract_skeleton(task.index);
+                    append_queue_logf("log.queue.done_extract_skeleton", task.index);
+                } catch (std::runtime_error& e) {
+                    append_queue_logf("log.queue.error_extract_skeleton", task.index,
+                                      e.what());
+                    std::cerr << "Runtime error extracting skeleton: " << e.what()
+                              << std::endl;
+                } catch (std::logic_error& e) {
+                    append_queue_logf("log.queue.error_extract_skeleton", task.index,
+                                      e.what());
+                    std::cerr << "Logic error extracting skeleton: " << e.what()
+                              << std::endl;
+                } catch (std::exception& e) {
+                    append_queue_logf("log.queue.error_extract_skeleton", task.index,
+                                      e.what());
+                    std::cerr << "Error extracting skeleton: " << e.what()
+                              << std::endl;
+                } catch (...) {
+                    append_queue_logf("log.queue.error_extract_skeleton", task.index,
+                                      get_locale_string("log.queue.unknown_error")
+                                          .c_str());
+                    std::cerr << "Unknown error extracting skeleton. " << std::endl;
+                }
+                queue_running = false;
+                break;
+            }
             case TASK_GENERATE_THUMBNAIL_MESH: {
                 append_queue_logf("log.queue.start_thumbnail", task.index);
                 queue_running = true;
@@ -403,6 +435,15 @@ void RenderVoxelList::queue_check_non_manifold(int index) {
     std::lock_guard<std::mutex> lock(queue_mutex);
     QueueTask task;
     task.type = TASK_CHECK_NON_MANIFOLD;
+    task.index = index;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
+}
+
+void RenderVoxelList::queue_extract_skeleton(int index) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_EXTRACT_SKELETON;
     task.index = index;
     queue.push(task);
     this->queue_num = static_cast<int>(queue.size());

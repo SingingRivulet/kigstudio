@@ -146,6 +146,12 @@ void init_locale_strings() {
                       {{"en", "  Edge: (%.6f, %.6f, %.6f) -> (%.6f, %.6f, %.6f) [%d triangles]"}, {"zh", "  边: (%.6f, %.6f, %.6f) -> (%.6f, %.6f, %.6f) [%d 个三角形]"}});
     add_locale_string("log.queue.error_check_manifold",
                       {{"en", "[Queue] Error: Check non-manifold item %d - %s"}, {"zh", "[队列] 错误: 检查项目 %d 的非流形边 - %s"}});
+    add_locale_string("log.queue.start_extract_skeleton",
+                      {{"en", "[Queue] Start: Extract skeleton for item %d"}, {"zh", "[队列] 开始: 提取项目 %d 的骨架"}});
+    add_locale_string("log.queue.done_extract_skeleton",
+                      {{"en", "[Queue] Done: Extract skeleton for item %d"}, {"zh", "[队列] 完成: 提取项目 %d 的骨架"}});
+    add_locale_string("log.queue.error_extract_skeleton",
+                      {{"en", "[Queue] Error: Extract skeleton item %d - %s"}, {"zh", "[队列] 错误: 提取项目 %d 的骨架 - %s"}});
     add_locale_string("log.queue.start_thumbnail",
                       {{"en", "[Queue] Start: Generate thumbnail mesh for item %d"}, {"zh", "[队列] 开始: 为项目 %d 生成缩略图网格"}});
     add_locale_string("log.queue.done_thumbnail",
@@ -166,6 +172,8 @@ void init_locale_strings() {
     // Status messages
     add_locale_string("status.checking_manifold",
                       {{"en", "Checking non-manifold edges..."}, {"zh", "正在检查非流形边..."}});
+    add_locale_string("status.extracting_skeleton",
+                      {{"en", "Extracting skeleton..."}, {"zh", "正在提取骨架..."}});
     add_locale_string("status.generating_thumbnail",
                       {{"en", "Generating thumbnail mesh..."}, {"zh", "正在生成缩略图网格..."}});
     add_locale_string("status.filling_interior",

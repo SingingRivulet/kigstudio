@@ -444,14 +444,7 @@ void RenderVoxelList::render_ui() {
             ImGui::EndMenuBar();
         }
         const char* update_button_key = "action.update_collision";
-        {
-            std::lock_guard<std::mutex> lock(locker);
-            auto it = items.find(render_id);
-            if (it != items.end() &&
-                it->second->segment_mode == RenderVoxelItem::CHAIN) {
-                update_button_key = "action.extract_skeleton";
-            }
-        }
+        
         if (ImGui::Button(get_locale_cstr(update_button_key))) {
             std::cout << "update collision" << std::endl;
             // 应用碰撞体到两个结果体素
@@ -1387,6 +1380,9 @@ void RenderVoxelList::render_object_editor() {
                         ImGui::DragInt(get_locale_cstr("label.chain_min_radius"),
                                        &item.chain_min_radius, 1, 1, 20);
                         ImGui::TextUnformatted(get_locale_cstr("tooltip.mode.chain"));
+                        if (ImGui::Button(get_locale_cstr("action.extract_skeleton"))) {
+                            queue_extract_skeleton(item.id);
+                        }
                     }
 
                     ImGui::EndTabItem();

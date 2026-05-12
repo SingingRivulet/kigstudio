@@ -181,7 +181,7 @@ class RenderVoxelList {
                 auto filled = voxel_grid_data.fillInterior(true);
                 return {std::move(filled)};
             } else if (segment_mode == CHAIN) {
-                return {};
+                return {voxel_grid_data};
             } else {
                 throw std::runtime_error("未知的处理模式");
             }
@@ -438,6 +438,7 @@ class RenderVoxelList {
     RenderVoxelItem* create_item();
 
     std::vector<RenderVoxelItem*> do_segment(int index);
+    void extract_skeleton(int index);
 
     void load_stl(std::string filename,
                   float voxel_size = 0.5f,
@@ -466,6 +467,7 @@ class RenderVoxelList {
         TASK_GENERATE_THUMBNAIL_MESH = 5,
         TASK_RELOAD_STL = 6,
         TASK_CHECK_NON_MANIFOLD = 7,
+        TASK_EXTRACT_SKELETON = 8,
     };
     struct QueueTask {
         QueueTaskType type;
@@ -495,6 +497,7 @@ class RenderVoxelList {
     void queue_do_segment();
     void queue_remove_item(int index);
     void queue_check_non_manifold(int index);
+    void queue_extract_skeleton(int index);
     bool isQueueRunning();
     std::string getQueueStatus();
     float getQueueProgress();
