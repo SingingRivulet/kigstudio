@@ -425,6 +425,9 @@ void RenderVoxelList::queue_do_segment(int index) {
 
 void RenderVoxelList::queue_do_segment() {
     std::lock_guard<std::mutex> lock(locker);
+    queue_do_segment_unsafe();
+}
+void RenderVoxelList::queue_do_segment_unsafe() {
     auto it = items.find(render_id);
     if (it != items.end()) {
         queue_do_segment(it->second->id);

@@ -495,6 +495,7 @@ class RenderVoxelList {
                            const std::string& stl_path);
     void queue_do_segment(int index);
     void queue_do_segment();
+    void queue_do_segment_unsafe();
     void queue_remove_item(int index);
     void queue_check_non_manifold(int index);
     void queue_extract_skeleton(int index);

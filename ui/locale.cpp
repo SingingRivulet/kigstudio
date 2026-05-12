@@ -192,7 +192,7 @@ void init_locale_strings() {
                       {{"en", "No leaf nodes found to export."},
                        {"zh", "没有找到可导出的叶子节点。"}});
     
-                       add_locale_string("action.update_collision",
+    add_locale_string("action.update_collision",
                       {{"en", "update collision"}, {"zh", "更新碰撞"}});
     add_locale_string("action.extract_skeleton",
                       {{"en", "extract skeleton"}, {"zh", "提取骨架"}});
@@ -201,7 +201,7 @@ void init_locale_strings() {
     add_locale_string("action.redo",
                       {{"en", "Redo (Ctrl+Y)"}, {"zh", "重做 (Ctrl+Y)"}});
     add_locale_string("action.open_file_dialog",
-                      {{"en", "Open File Dialog"}, {"zh", "打开文件对话框"}});
+                      {{"en", "Open File Dialog"}, {"zh", "选择文件"}});
     add_locale_string("action.open", {{"en", "Open"}, {"zh", "打开"}});
     add_locale_string("action.cancel", {{"en", "Cancel"}, {"zh", "取消"}});
     add_locale_string("action.add_shape",
@@ -422,6 +422,18 @@ void init_locale_strings() {
     add_locale_string("tooltip.mode.chain",
                       {{"en", "Extract the voxel skeleton using maximal balls. Result is displayed as 3D line segments without generating collision bodies or child nodes."},
                        {"zh", "使用最大球算法提取体素骨架。结果显示为 3D 线段，不生成碰撞体或子节点。"}});
+    add_locale_string("tooltip.update_collision",
+                      {{"en", "Update collision shapes. This will clear all marked voxels. Proceed?"},
+                       {"zh", "在当前节点上执行设置好的碰撞编辑器。"}});
+    add_locale_string("tooltip.pick_pos_auto_snapping",
+                      {{"en", "Pick position with auto-snapping to nearest voxel vertex"}, 
+                      {"zh", "鼠标会尝试吸附到附近的顶点上"}});
+    add_locale_string("tooltip.collision_edit",
+                      {{"en", "Edit collision shapes"}, 
+                      {"zh", "编辑当前项目的分割规则"}});
+    add_locale_string("tooltip.voxel_picking",
+                      {{"en", "Pick voxels"}, 
+                      {"zh", "从模型中选择体素"}});
     add_locale_string("label.chain_min_radius",
                       {{"en", "min radius"}, {"zh", "最小半径"}});
 
