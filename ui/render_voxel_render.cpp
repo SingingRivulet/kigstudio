@@ -95,8 +95,8 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
             for (const auto& line : skeleton_lines) {
                 const auto& a = line.first;
                 const auto& b = line.second;
-                vertices.push_back({a.x, a.y, a.z, line_color});
-                vertices.push_back({b.x, b.y, b.z, line_color});
+                vertices.push_back({a.x, -a.y, a.z, line_color});
+                vertices.push_back({b.x, -b.y, b.z, line_color});
             }
             if (!vertices.empty() &&
                 bgfx::getAvailTransientVertexBuffer(
@@ -109,7 +109,7 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 std::memcpy(tvb.data, vertices.data(),
                             vertices.size() *
                                 sizeof(mesh_detail::ColorLineVertex));
-                bgfx::setTransform(model_transform_2);
+                bgfx::setTransform(model_transform);
                 bgfx::setVertexBuffer(0, &tvb);
                 bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                                BGFX_STATE_WRITE_Z |
