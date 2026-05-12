@@ -1,22 +1,22 @@
 #pragma once
+#include "kigstudio/utils/KDTree.h"
 #include "kigstudio/utils/plane.h"
 #include "kigstudio/utils/vec3.h"
-#include "kigstudio/utils/KDTree.h"
 #include "kigstudio/voxel/collision.h"
 #include "kigstudio/voxel/concave.h"
 
+#include <cJSON.h>
 #include <bit>
 #include <bitset>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <stack>
 #include <unordered_map>
 #include <vector>
-#include <filesystem>
-#include <fstream>
-#include <cstdio>
-#include <cstring>
-#include <cJSON.h>
 
 namespace sinriv::kigstudio {
 namespace voxel {
@@ -145,7 +145,6 @@ struct HybridSegment {
 };
 
 // ================= Grid =================
-
 class VoxelGrid {
    public:
     std::unordered_map<uint64_t, Chunk> chunks;
@@ -256,7 +255,8 @@ class VoxelGrid {
         }
         for (auto& [key, pts] : grouped) {
             auto it = chunks.find(key);
-            if (it == chunks.end()) continue;
+            if (it == chunks.end())
+                continue;
             for (const auto& p : pts) {
                 it->second.clear(p.x & 31, p.y & 31, p.z & 31);
             }
@@ -375,8 +375,7 @@ class VoxelGrid {
     VoxelGrid difference_local(const VoxelGrid& other) const;
     VoxelGrid unionWith(const VoxelGrid& other) const;
     VoxelGrid intersection(const VoxelGrid& other) const;
-    VoxelGrid intersection(
-        const collision::CollisionGroup& other) const;
+    VoxelGrid intersection(const collision::CollisionGroup& other) const;
     VoxelGrid difference(const VoxelGrid& other) const;
     VoxelGrid difference(const collision::CollisionGroup& other) const;
 
@@ -384,22 +383,17 @@ class VoxelGrid {
     VoxelGrid dilate(int radius = 1, bool use_26_neighbors = true) const;
     VoxelGrid erode(int radius = 1, bool use_26_neighbors = true) const;
     VoxelGrid getSurfaceVoxels(bool use_26_neighbors = true) const;
-    VoxelGrid getOuterAirSurfaceVoxels(
-        bool use_26_neighbors = true) const;
+    VoxelGrid getOuterAirSurfaceVoxels(bool use_26_neighbors = true) const;
     VoxelGrid detectWeakVoxels(int radius = 1,
-                                      bool use_26_neighbors = true) const;
-    VoxelGrid extractSkeletonByMaximalBalls(
-        int min_radius = 1,
-        bool use_26_neighbors = true) const;
+                               bool use_26_neighbors = true) const;
+    VoxelGrid extractSkeletonByMaximalBalls(int min_radius = 1,
+                                            bool use_26_neighbors = true) const;
 
-    std::tuple<VoxelGrid, VoxelGrid> segment(
-        const Plane<float>& other) const;
+    std::tuple<VoxelGrid, VoxelGrid> segment(const Plane<float>& other) const;
     std::tuple<VoxelGrid, VoxelGrid> segment(
         const collision::CollisionGroup& other) const;
-    std::tuple<VoxelGrid, VoxelGrid> segment(
-        const concave::Base& other) const;
-    std::tuple<VoxelGrid, VoxelGrid> segment(
-        const HybridSegment& other) const;
+    std::tuple<VoxelGrid, VoxelGrid> segment(const concave::Base& other) const;
+    std::tuple<VoxelGrid, VoxelGrid> segment(const HybridSegment& other) const;
     bool rayOccluded(const vec3<float>& origin,
                      const vec3<float>& target) const;
     VoxelGrid extractLitVoxels(const vec3<float>& lightPos) const;
@@ -415,7 +409,9 @@ class VoxelGrid {
 };
 }  // namespace voxel
 
-bool save(const std::filesystem::path& path, const voxel::VoxelGrid& grid, std::string* error = nullptr);
+bool save(const std::filesystem::path& path,
+          const voxel::VoxelGrid& grid,
+          std::string* error = nullptr);
 bool load(const std::filesystem::path& path, voxel::VoxelGrid& grid);
 
 }  // namespace sinriv::kigstudio
