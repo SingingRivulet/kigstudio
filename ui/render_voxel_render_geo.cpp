@@ -1,5 +1,217 @@
 #include "render_voxel_list.h"
+#include <cmath>
+#include <cstdint>
+#include <unordered_map>
+#include <unordered_set>
+
 namespace sinriv::ui::render {
+namespace {
+using SkeletonPoint = sinriv::kigstudio::voxel::vec3f;
+using SkeletonLine = std::pair<SkeletonPoint, SkeletonPoint>;
+
+struct SkeletonPointKey {
+    int64_t x = 0;
+    int64_t y = 0;
+    int64_t z = 0;
+
+    bool operator==(const SkeletonPointKey& other) const {
+        return x == other.x && y == other.y && z == other.z;
+    }
+};
+
+struct SkeletonPointKeyHash {
+    std::size_t operator()(const SkeletonPointKey& key) const {
+        std::size_t h = 1469598103934665603ull;
+        auto mix = [&h](int64_t v) {
+            h ^= static_cast<std::size_t>(v);
+            h *= 1099511628211ull;
+        };
+        mix(key.x);
+        mix(key.y);
+        mix(key.z);
+        return h;
+    }
+};
+
+SkeletonPointKey makeSkeletonPointKey(const SkeletonPoint& p) {
+    constexpr double kScale = 10000.0;
+    return {static_cast<int64_t>(std::llround(static_cast<double>(p.x) * kScale)),
+            static_cast<int64_t>(std::llround(static_cast<double>(p.y) * kScale)),
+            static_cast<int64_t>(std::llround(static_cast<double>(p.z) * kScale))};
+}
+
+uint64_t makeSkeletonEdgeKey(size_t a, size_t b) {
+    if (a > b)
+        std::swap(a, b);
+    return (static_cast<uint64_t>(a) << 32) ^ static_cast<uint64_t>(b);
+}
+
+std::vector<SkeletonPoint> chaikinSmooth(const std::vector<SkeletonPoint>& points,
+                                         bool closed,
+                                         int iterations) {
+    if (points.size() < 3 || iterations <= 0)
+        return points;
+
+    std::vector<SkeletonPoint> current = points;
+    for (int iter = 0; iter < iterations; ++iter) {
+        std::vector<SkeletonPoint> next;
+        next.reserve(current.size() * 2 + 2);
+
+        if (!closed)
+            next.push_back(current.front());
+
+        const size_t segment_count = closed ? current.size() : current.size() - 1;
+        for (size_t i = 0; i < segment_count; ++i) {
+            const auto& a = current[i];
+            const auto& b = current[(i + 1) % current.size()];
+            next.emplace_back(a * 0.75f + b * 0.25f);
+            next.emplace_back(a * 0.25f + b * 0.75f);
+        }
+
+        if (!closed)
+            next.push_back(current.back());
+
+        current = std::move(next);
+    }
+
+    return current;
+}
+
+void appendSmoothedChain(const std::vector<size_t>& chain,
+                         bool closed,
+                         const std::vector<SkeletonPoint>& nodes,
+                         std::vector<SkeletonLine>& result) {
+    if (chain.size() < 2)
+        return;
+
+    std::vector<SkeletonPoint> points;
+    points.reserve(chain.size());
+    for (size_t index : chain) {
+        points.push_back(nodes[index]);
+    }
+
+    constexpr int kSkeletonSmoothIterations = 3;
+    points = chaikinSmooth(points, closed, kSkeletonSmoothIterations);
+
+    for (size_t i = 0; i + 1 < points.size(); ++i) {
+        result.push_back({points[i], points[i + 1]});
+    }
+    if (closed && points.size() > 2) {
+        result.push_back({points.back(), points.front()});
+    }
+}
+
+std::vector<SkeletonLine> smoothSkeletonLines(const std::vector<SkeletonLine>& lines) {
+    if (lines.size() < 3)
+        return lines;
+
+    std::vector<SkeletonPoint> nodes;
+    std::unordered_map<SkeletonPointKey, size_t, SkeletonPointKeyHash> node_ids;
+    std::vector<std::vector<size_t>> adjacency;
+
+    auto getNode = [&](const SkeletonPoint& p) {
+        const SkeletonPointKey key = makeSkeletonPointKey(p);
+        const auto found = node_ids.find(key);
+        if (found != node_ids.end())
+            return found->second;
+
+        const size_t index = nodes.size();
+        node_ids[key] = index;
+        nodes.push_back(p);
+        adjacency.emplace_back();
+        return index;
+    };
+
+    for (const auto& line : lines) {
+        const size_t a = getNode(line.first);
+        const size_t b = getNode(line.second);
+        if (a == b)
+            continue;
+
+        adjacency[a].push_back(b);
+        adjacency[b].push_back(a);
+    }
+
+    std::unordered_set<uint64_t> visited_edges;
+    std::vector<SkeletonLine> result;
+    result.reserve(lines.size() * 4);
+
+    auto edgeVisited = [&](size_t a, size_t b) {
+        return visited_edges.find(makeSkeletonEdgeKey(a, b)) != visited_edges.end();
+    };
+    auto markEdge = [&](size_t a, size_t b) {
+        visited_edges.insert(makeSkeletonEdgeKey(a, b));
+    };
+
+    auto walkOpenChain = [&](size_t start, size_t next) {
+        std::vector<size_t> chain = {start, next};
+        markEdge(start, next);
+
+        size_t prev = start;
+        size_t cur = next;
+        while (adjacency[cur].size() == 2) {
+            size_t candidate = adjacency[cur][0] == prev ? adjacency[cur][1]
+                                                         : adjacency[cur][0];
+            if (edgeVisited(cur, candidate))
+                break;
+
+            markEdge(cur, candidate);
+            chain.push_back(candidate);
+            prev = cur;
+            cur = candidate;
+        }
+
+        appendSmoothedChain(chain, false, nodes, result);
+    };
+
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        if (adjacency[i].size() == 2)
+            continue;
+
+        for (size_t next : adjacency[i]) {
+            if (!edgeVisited(i, next))
+                walkOpenChain(i, next);
+        }
+    }
+
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        for (size_t next : adjacency[i]) {
+            if (edgeVisited(i, next))
+                continue;
+
+            std::vector<size_t> chain = {i, next};
+            markEdge(i, next);
+
+            size_t start = i;
+            size_t prev = i;
+            size_t cur = next;
+            bool closed = false;
+
+            while (adjacency[cur].size() == 2) {
+                size_t candidate = adjacency[cur][0] == prev ? adjacency[cur][1]
+                                                             : adjacency[cur][0];
+                if (candidate == start) {
+                    markEdge(cur, candidate);
+                    closed = true;
+                    break;
+                }
+                if (edgeVisited(cur, candidate))
+                    break;
+
+                markEdge(cur, candidate);
+                chain.push_back(candidate);
+                prev = cur;
+                cur = candidate;
+            }
+
+            appendSmoothedChain(chain, closed, nodes, result);
+        }
+    }
+
+    return result.empty() ? lines : result;
+}
+}  // namespace
+
 std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
     int index) {
     locker.lock();
@@ -196,6 +408,7 @@ void RenderVoxelList::extract_skeleton(int index) {
                 {sinriv::kigstudio::voxel::vec3f(a.x, a.y, a.z),
                  sinriv::kigstudio::voxel::vec3f(b.x, b.y, b.z)});
         }
+        chain_lines = smoothSkeletonLines(chain_lines);
 
     } catch (const std::exception& e) {
         std::cerr << "[extract_skeleton] exception: " << e.what() << std::endl;
