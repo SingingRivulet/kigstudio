@@ -183,34 +183,21 @@ void RenderVoxelList::extract_skeleton(int index) {
         append_queue_logf(res_buf);
         std::cout << res_buf << std::endl;
 
+        const auto& voxel_grid = it->second->voxel_grid_data;
+        auto to_world = [&voxel_grid](const kigstudio::voxel::Vec3i& voxel) {
+            return voxel_grid.voxelCenterToWorld(voxel);
+        };
+
         if (!centerline.empty()) {
             for (size_t i = 0; i < centerline.size() - 1; i++) {
+                const auto a = to_world(centerline[i]);
+                const auto b = to_world(centerline[i + 1]);
                 chain_lines.push_back(
-                    {sinriv::kigstudio::voxel::vec3f(
-                         centerline[i].x, centerline[i].y, centerline[i].z),
-                     sinriv::kigstudio::voxel::vec3f(centerline[i + 1].x,
-                                                     centerline[i + 1].y,
-                                                     centerline[i + 1].z)});
+                    {sinriv::kigstudio::voxel::vec3f(a.x, a.y, a.z),
+                     sinriv::kigstudio::voxel::vec3f(b.x, b.y, b.z)});
             }
         }
 
-        // auto skeleton =
-        // it->second->voxel_grid_data.extractSkeletonByMaximalBalls(
-        //     it->second->chain_min_radius, true);
-        // queue_progress = 0.5f;
-        // const int dirs[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
-        // for (const auto& voxel : skeleton) {
-        //     auto world_a = skeleton.voxelCenterToWorld(voxel);
-        //     for (int d = 0; d < 3; ++d) {
-        //         sinriv::kigstudio::voxel::Vec3i neighbor = {
-        //             voxel.x + dirs[d][0], voxel.y + dirs[d][1],
-        //             voxel.z + dirs[d][2]};
-        //         if (skeleton.find(neighbor)) {
-        //             auto world_b = skeleton.voxelCenterToWorld(neighbor);
-        //             chain_lines.push_back({world_a, world_b});
-        //         }
-        //     }
-        // }
     } catch (const std::exception& e) {
         std::cerr << "[extract_skeleton] exception: " << e.what() << std::endl;
         {
