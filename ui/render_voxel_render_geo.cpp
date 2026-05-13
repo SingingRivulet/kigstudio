@@ -175,11 +175,12 @@ void RenderVoxelList::extract_skeleton(int index) {
         queue_progress = 0.75f;
         queue_status =
             get_locale_cstr("progress.extract_skeleton.extractCenterline");
-        auto centerline = kigstudio::voxel::extractWeightedCenterline(dense);
+        auto skeleton_lines =
+            kigstudio::voxel::extractGradientFlowSkeletonLines(dense);
         queue_progress = 1.0f;
         snprintf(res_buf, sizeof(res_buf),
                  get_locale_cstr("log.extract_skeleton.result"),
-                 centerline.size());
+                 skeleton_lines.size() * 2);
         append_queue_logf(res_buf);
         std::cout << res_buf << std::endl;
 
@@ -188,14 +189,12 @@ void RenderVoxelList::extract_skeleton(int index) {
             return voxel_grid.voxelCenterToWorld(voxel);
         };
 
-        if (!centerline.empty()) {
-            for (size_t i = 0; i < centerline.size() - 1; i++) {
-                const auto a = to_world(centerline[i]);
-                const auto b = to_world(centerline[i + 1]);
-                chain_lines.push_back(
-                    {sinriv::kigstudio::voxel::vec3f(a.x, a.y, a.z),
-                     sinriv::kigstudio::voxel::vec3f(b.x, b.y, b.z)});
-            }
+        for (const auto& line : skeleton_lines) {
+            const auto a = to_world(line.first);
+            const auto b = to_world(line.second);
+            chain_lines.push_back(
+                {sinriv::kigstudio::voxel::vec3f(a.x, a.y, a.z),
+                 sinriv::kigstudio::voxel::vec3f(b.x, b.y, b.z)});
         }
 
     } catch (const std::exception& e) {

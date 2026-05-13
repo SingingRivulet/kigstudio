@@ -1,6 +1,9 @@
 #include "voxel_EDT.h"
+#include <algorithm>
 #include <queue>
 #include <iostream>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace sinriv::kigstudio::voxel {
 
@@ -454,6 +457,362 @@ std::vector<Vec3i> extractWeightedCenterline(const DenseGrid& dense) {
     SkeletonGraph graph = buildWeightedSkeleton(dense);
 
     return extractMainPath(graph);
+}
+
+namespace {
+struct LocalRouteNode {
+    int index = -1;
+    float cost = 0.f;
+
+    bool operator<(const LocalRouteNode& r) const { return cost > r.cost; }
+};
+
+int localIndex(const DenseGrid& dense, const Vec3i& p) {
+    return dense.index(p.x, p.y, p.z);
+}
+
+bool isSurfaceVoxel(const DenseGrid& dense, int x, int y, int z) {
+    if (!dense.getSolid(x, y, z))
+        return false;
+
+    static const Vec3i dirs6[6] = {
+        {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1},
+    };
+
+    for (const auto& d : dirs6) {
+        const int nx = x + d.x;
+        const int ny = y + d.y;
+        const int nz = z + d.z;
+        if (!dense.inBounds(nx, ny, nz) || !dense.getSolid(nx, ny, nz))
+            return true;
+    }
+
+    return false;
+}
+
+Vec3i traceGradientToCenter(const DenseGrid& dense, Vec3i p) {
+    const int max_steps = dense.sx + dense.sy + dense.sz + 32;
+
+    for (int step = 0; step < max_steps; ++step) {
+        Vec3i best = p;
+        float best_dist = dense.getDist2(p.x, p.y, p.z);
+
+        for (const auto& d : kDirs26) {
+            const Vec3i n = p + d;
+            if (!dense.inBounds(n.x, n.y, n.z) || !dense.getSolid(n.x, n.y, n.z))
+                continue;
+
+            const float nd = dense.getDist2(n.x, n.y, n.z);
+            if (nd > best_dist + 1e-4f) {
+                best_dist = nd;
+                best = n;
+            }
+        }
+
+        if (best == p)
+            break;
+
+        p = best;
+    }
+
+    return p;
+}
+
+std::vector<Vec3i> extractFlowCenters(const DenseGrid& dense) {
+    std::unordered_map<int, int> endpoint_count;
+
+    for (int z = 0; z < dense.sz; ++z) {
+        for (int y = 0; y < dense.sy; ++y) {
+            for (int x = 0; x < dense.sx; ++x) {
+                if (!isSurfaceVoxel(dense, x, y, z))
+                    continue;
+
+                const Vec3i endpoint = traceGradientToCenter(dense, {x, y, z});
+                endpoint_count[localIndex(dense, endpoint)]++;
+            }
+        }
+    }
+
+    int max_count = 0;
+    for (const auto& [index, count] : endpoint_count) {
+        (void)index;
+        max_count = std::max(max_count, count);
+    }
+
+    const int min_count = max_count >= 8 ? 2 : 1;
+    std::vector<Vec3i> centers;
+    centers.reserve(endpoint_count.size());
+
+    for (const auto& [index, count] : endpoint_count) {
+        if (count < min_count)
+            continue;
+
+        const int x = index % dense.sx;
+        const int y = (index / dense.sx) % dense.sy;
+        const int z = index / (dense.sx * dense.sy);
+        centers.emplace_back(x, y, z);
+    }
+
+    std::sort(centers.begin(), centers.end(), [](const Vec3i& a, const Vec3i& b) {
+        if (a.z != b.z)
+            return a.z < b.z;
+        if (a.y != b.y)
+            return a.y < b.y;
+        return a.x < b.x;
+    });
+
+    return centers;
+}
+
+float localDistance(const Vec3i& a, const Vec3i& b) {
+    const float dx = static_cast<float>(a.x - b.x);
+    const float dy = static_cast<float>(a.y - b.y);
+    const float dz = static_cast<float>(a.z - b.z);
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+std::vector<Vec3i> findMaxDistanceRoute(const DenseGrid& dense,
+                                        const Vec3i& start,
+                                        const Vec3i& target) {
+    if (start == target)
+        return {start};
+
+    const float direct_distance = localDistance(start, target);
+    const int margin = std::max(4, static_cast<int>(std::ceil(direct_distance)));
+    const Vec3i min_bound(std::max(0, std::min(start.x, target.x) - margin),
+                          std::max(0, std::min(start.y, target.y) - margin),
+                          std::max(0, std::min(start.z, target.z) - margin));
+    const Vec3i max_bound(std::min(dense.sx - 1, std::max(start.x, target.x) + margin),
+                          std::min(dense.sy - 1, std::max(start.y, target.y) + margin),
+                          std::min(dense.sz - 1, std::max(start.z, target.z) + margin));
+
+    const int total = dense.sx * dense.sy * dense.sz;
+    std::vector<float> costs(total, DenseGrid::INF);
+    std::vector<int> prev(total, -1);
+    std::priority_queue<LocalRouteNode> pq;
+
+    const int start_index = localIndex(dense, start);
+    const int target_index = localIndex(dense, target);
+    costs[start_index] = 0.f;
+    pq.push({start_index, 0.f});
+
+    auto inSearchBounds = [&](const Vec3i& p) {
+        return p.x >= min_bound.x && p.y >= min_bound.y && p.z >= min_bound.z &&
+               p.x <= max_bound.x && p.y <= max_bound.y && p.z <= max_bound.z;
+    };
+
+    while (!pq.empty()) {
+        const LocalRouteNode cur = pq.top();
+        pq.pop();
+
+        if (cur.cost != costs[cur.index])
+            continue;
+        if (cur.index == target_index)
+            break;
+
+        const int x = cur.index % dense.sx;
+        const int y = (cur.index / dense.sx) % dense.sy;
+        const int z = cur.index / (dense.sx * dense.sy);
+        const Vec3i p(x, y, z);
+
+        for (const auto& d : kDirs26) {
+            const Vec3i n = p + d;
+            if (!dense.inBounds(n.x, n.y, n.z) || !inSearchBounds(n) ||
+                !dense.getSolid(n.x, n.y, n.z)) {
+                continue;
+            }
+
+            const float step_len =
+                std::sqrt(static_cast<float>(d.x * d.x + d.y * d.y + d.z * d.z));
+            const float field = std::max(0.25f, dense.getDist2(n.x, n.y, n.z));
+            const float next_cost = cur.cost + step_len / field;
+            const int next_index = localIndex(dense, n);
+
+            if (next_cost >= costs[next_index])
+                continue;
+
+            costs[next_index] = next_cost;
+            prev[next_index] = cur.index;
+            pq.push({next_index, next_cost});
+        }
+    }
+
+    if (prev[target_index] < 0)
+        return {start, target};
+
+    std::vector<Vec3i> route;
+    for (int cur = target_index; cur >= 0; cur = prev[cur]) {
+        const int x = cur % dense.sx;
+        const int y = (cur / dense.sx) % dense.sy;
+        const int z = cur / (dense.sx * dense.sy);
+        route.emplace_back(x, y, z);
+        if (cur == start_index)
+            break;
+    }
+
+    std::reverse(route.begin(), route.end());
+    return route;
+}
+
+void addRouteLines(const DenseGrid& dense,
+                   const std::vector<Vec3i>& route,
+                   std::vector<std::pair<Vec3i, Vec3i>>& lines,
+                   std::unordered_set<uint64_t>& line_keys) {
+    if (route.size() < 2)
+        return;
+
+    for (size_t i = 0; i + 1 < route.size(); ++i) {
+        const Vec3i a = dense.denseToWorldVoxel(route[i].x, route[i].y,
+                                                route[i].z);
+        const Vec3i b = dense.denseToWorldVoxel(route[i + 1].x,
+                                                route[i + 1].y,
+                                                route[i + 1].z);
+        if (a == b)
+            continue;
+
+        uint64_t ia = static_cast<uint64_t>(localIndex(dense, route[i]));
+        uint64_t ib = static_cast<uint64_t>(localIndex(dense, route[i + 1]));
+        if (ia > ib)
+            std::swap(ia, ib);
+        const uint64_t key = (ia << 32) ^ ib;
+        if (!line_keys.insert(key).second)
+            continue;
+
+        lines.push_back({a, b});
+    }
+}
+}  // namespace
+
+std::vector<std::pair<Vec3i, Vec3i>> extractGradientFlowSkeletonLines(
+    const DenseGrid& dense) {
+    std::vector<std::pair<Vec3i, Vec3i>> lines;
+
+    if (dense.sx <= 0 || dense.sy <= 0 || dense.sz <= 0)
+        return lines;
+
+    const std::vector<Vec3i> centers = extractFlowCenters(dense);
+    if (centers.size() < 2)
+        return lines;
+
+    std::unordered_set<uint64_t> center_edges;
+    std::unordered_set<uint64_t> line_keys;
+    std::vector<size_t> parent(centers.size());
+    for (size_t i = 0; i < parent.size(); ++i) {
+        parent[i] = i;
+    }
+
+    auto findRoot = [&](size_t value) {
+        size_t root = value;
+        while (parent[root] != root) {
+            root = parent[root];
+        }
+        while (parent[value] != value) {
+            const size_t next = parent[value];
+            parent[value] = root;
+            value = next;
+        }
+        return root;
+    };
+
+    auto uniteCenters = [&](size_t a, size_t b) {
+        const size_t ra = findRoot(a);
+        const size_t rb = findRoot(b);
+        if (ra != rb) {
+            parent[rb] = ra;
+        }
+    };
+
+    std::unordered_map<int, size_t> center_lookup;
+    center_lookup.reserve(centers.size() * 2);
+    for (size_t i = 0; i < centers.size(); ++i) {
+        center_lookup[localIndex(dense, centers[i])] = i;
+    }
+
+    std::vector<int> degree(centers.size(), 0);
+    auto connectCenters = [&](size_t i, size_t j, bool search_route) {
+        if (i == j)
+            return;
+
+        uint64_t a = static_cast<uint64_t>(std::min(i, j));
+        uint64_t b = static_cast<uint64_t>(std::max(i, j));
+        const uint64_t edge_key = (a << 32) ^ b;
+        if (!center_edges.insert(edge_key).second)
+            return;
+
+        degree[i]++;
+        degree[j]++;
+        uniteCenters(i, j);
+
+        if (search_route) {
+            const auto route = findMaxDistanceRoute(dense, centers[i], centers[j]);
+            addRouteLines(dense, route, lines, line_keys);
+        } else {
+            addRouteLines(dense, {centers[i], centers[j]}, lines, line_keys);
+        }
+    };
+
+    for (size_t i = 0; i < centers.size(); ++i) {
+        for (const auto& d : kDirs26) {
+            const Vec3i n = centers[i] + d;
+            if (!dense.inBounds(n.x, n.y, n.z))
+                continue;
+
+            const auto found = center_lookup.find(localIndex(dense, n));
+            if (found == center_lookup.end())
+                continue;
+
+            connectCenters(i, found->second, false);
+        }
+    }
+
+    for (size_t i = 0; i < centers.size(); ++i) {
+        if (degree[i] > 0)
+            continue;
+
+        float best_dist = DenseGrid::INF;
+        size_t best = i;
+        for (size_t j = 0; j < centers.size(); ++j) {
+            if (i == j)
+                continue;
+
+            const float dist = localDistance(centers[i], centers[j]);
+            if (dist < best_dist) {
+                best_dist = dist;
+                best = j;
+            }
+        }
+
+        if (best != i)
+            connectCenters(i, best, true);
+    }
+
+    while (true) {
+        float best_dist = DenseGrid::INF;
+        size_t best_a = centers.size();
+        size_t best_b = centers.size();
+
+        for (size_t i = 0; i < centers.size(); ++i) {
+            const size_t root_i = findRoot(i);
+            for (size_t j = i + 1; j < centers.size(); ++j) {
+                if (root_i == findRoot(j))
+                    continue;
+
+                const float dist = localDistance(centers[i], centers[j]);
+                if (dist < best_dist) {
+                    best_dist = dist;
+                    best_a = i;
+                    best_b = j;
+                }
+            }
+        }
+
+        if (best_a == centers.size() || best_b == centers.size())
+            break;
+
+        connectCenters(best_a, best_b, true);
+    }
+
+    return lines;
 }
 
 // ============================================================
