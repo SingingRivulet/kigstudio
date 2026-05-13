@@ -5,6 +5,8 @@
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
 #include <bx/math.h>
+#include <cmath>
+#include <cstring>
 #include <iostream>
 #include "locale.h"
 #include "render.hpp"
@@ -34,6 +36,10 @@ int main() {
 #endif
     float yaw = 0;
     float pitch = 0;
+    float rotation_middle_1[16];
+    float rotation_middle_2[16];
+    bx::mtxIdentity(rotation_middle_1);
+    bx::mtxIdentity(rotation_middle_2);
     float distance = 200;
     float cameraOffsetX = 0.0f;
     float cameraOffsetY = 0.0f;
@@ -209,6 +215,25 @@ int main() {
                         render_items.end_marked_edit(
                             render_items.render_id,
                             shift ? "Erase" : "Brush");
+                    } else if (leftMouseDown &&
+                               (std::abs(pitch) > 1e-6f ||
+                                std::abs(yaw) > 1e-6f)) {
+                        float drag_rotation_1[16];
+                        float drag_rotation_2[16];
+                        float next_middle_1[16];
+                        float next_middle_2[16];
+                        bx::mtxRotateXY(drag_rotation_1, bx::toRad(-pitch),
+                                        bx::toRad(yaw));
+                        bx::mtxRotateXY(drag_rotation_2, bx::toRad(pitch),
+                                        bx::toRad(yaw));
+                        bx::mtxMul(next_middle_1, rotation_middle_1, drag_rotation_1);
+                        bx::mtxMul(next_middle_2, rotation_middle_2, drag_rotation_2);
+                        std::memcpy(rotation_middle_1, next_middle_1,
+                                    sizeof(rotation_middle_1));
+                        std::memcpy(rotation_middle_2, next_middle_2,
+                                    sizeof(rotation_middle_2));
+                        pitch = 0.0f;
+                        yaw = 0.0f;
                     }
                     leftMouseDown = false;
                     leftMouseDownOnPick = false;
@@ -351,21 +376,16 @@ int main() {
 
         float mtx_1[16];
         float mtx_2[16];
-        bx::mtxRotateXY(mtx_1, bx::toRad(-pitch), bx::toRad(yaw));
-        bx::mtxRotateXY(mtx_2, bx::toRad(pitch), bx::toRad(yaw));
+        float drag_rotation_1[16];
+        float drag_rotation_2[16];
+        bx::mtxRotateXY(drag_rotation_1, bx::toRad(-pitch), bx::toRad(yaw));
+        bx::mtxRotateXY(drag_rotation_2, bx::toRad(pitch), bx::toRad(yaw));
+        bx::mtxMul(mtx_1, rotation_middle_1, drag_rotation_1);
+        bx::mtxMul(mtx_2, rotation_middle_2, drag_rotation_2);
         deferred_renderer.setSceneModelTransform(mtx_2);
         sinriv::kigstudio::mat::matrix<float> cpu_model_matrix(mtx_1);
         cpu_model_matrix.transpose();
         render_items.setModelMatrix(cpu_model_matrix);
-
-        if (debugPrintRotation) {
-            sinriv::kigstudio::mat::matrix<float> gpu_raw_matrix(mtx_1);
-            std::cout << "yaw=" << yaw << " pitch=" << pitch << std::endl;
-            sinriv::kigstudio::ui::printMatrixAxes("gpu_raw", gpu_raw_matrix);
-            sinriv::kigstudio::ui::printMatrixAxes("cpu_model",
-                                                   cpu_model_matrix);
-            debugPrintRotation = false;
-        }
 
         render_items.upload_collision(deferred_renderer);
         render_items.render_gbuffer(mtx_2, mesh_render_shader);
