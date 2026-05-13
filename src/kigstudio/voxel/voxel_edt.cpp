@@ -1,5 +1,6 @@
-#include "voxel_edt.h"
+#include "voxel_EDT.h"
 #include <queue>
+#include <iostream>
 
 namespace sinriv::kigstudio::voxel {
 

@@ -59,8 +59,6 @@ cmake ..
 cmake --build . --config Debug
 ```
 
-> **Windows 注意**：`std::ofstream`/`std::ifstream` 的 `const char*` 构造函数使用 ANSI 编码，项目中已使用宽字符路径修复 UTF-8 支持。确保 `zd.dll` (zlib Debug) 在可执行文件同级目录。
-
 ## 快捷键
 
 | 快捷键 | 功能 |

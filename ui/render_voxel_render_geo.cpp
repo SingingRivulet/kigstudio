@@ -1,7 +1,7 @@
 #include "render_voxel_list.h"
 namespace sinriv::ui::render {
-std::vector<RenderVoxelList::RenderVoxelItem*>
-RenderVoxelList::do_segment(int index) {
+std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
+    int index) {
     locker.lock();
     auto it = items.find(index);
     if (it == items.end()) {
@@ -66,8 +66,7 @@ RenderVoxelList::do_segment(int index) {
                     {
                         std::lock_guard<std::mutex> lock(
                             pending_deletion_mutex);
-                        pending_deletion.push_back(
-                            std::move(it_child->second));
+                        pending_deletion.push_back(std::move(it_child->second));
                     }
                     items.erase(it_child);
                     update_nav_node_status = true;
@@ -152,25 +151,66 @@ void RenderVoxelList::extract_skeleton(int index) {
     queue_status = "Extracting skeleton...";
     queue_progress = 0.0f;
     std::vector<std::pair<sinriv::kigstudio::voxel::vec3f,
-                          sinriv::kigstudio::voxel::vec3f>> chain_lines;
+                          sinriv::kigstudio::voxel::vec3f>>
+        chain_lines;
     try {
-        auto skeleton = it->second->voxel_grid_data.extractSkeletonByMaximalBalls(
-            it->second->chain_min_radius, true);
+        char res_buf[512];
+        queue_status =
+            get_locale_cstr("progress.extract_skeleton.buildDenseGrid");
+        kigstudio::voxel::DenseGrid dense =
+            kigstudio::voxel::buildDenseGrid(it->second->voxel_grid_data);
+        snprintf(res_buf, sizeof(res_buf),
+                 get_locale_cstr("log.extract_skeleton.buildDenseGrid.result"),
+                 dense.min_bound.x, dense.min_bound.y, dense.min_bound.z,
+                 dense.max_bound.x, dense.max_bound.y, dense.max_bound.z,
+                 it->second->voxel_grid_data.num_chunk());
+        append_queue_logf(res_buf);
+        std::cout << res_buf << std::endl;
+        queue_progress = 0.25f;
+        queue_status = get_locale_cstr("progress.extract_skeleton.computeEDT");
+        kigstudio::voxel::computeEDT(dense);
         queue_progress = 0.5f;
-        const int dirs[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
-        for (const auto& voxel : skeleton) {
-            auto world_a = skeleton.voxelCenterToWorld(voxel);
-            for (int d = 0; d < 3; ++d) {
-                sinriv::kigstudio::voxel::Vec3i neighbor = {
-                    voxel.x + dirs[d][0], voxel.y + dirs[d][1],
-                    voxel.z + dirs[d][2]};
-                if (skeleton.find(neighbor)) {
-                    auto world_b = skeleton.voxelCenterToWorld(neighbor);
-                    chain_lines.push_back({world_a, world_b});
-                }
+        queue_status = get_locale_cstr("progress.extract_skeleton.finalizeEDT");
+        kigstudio::voxel::finalizeEDT(dense);
+        queue_progress = 0.75f;
+        queue_status =
+            get_locale_cstr("progress.extract_skeleton.extractCenterline");
+        auto centerline = kigstudio::voxel::extractWeightedCenterline(dense);
+        queue_progress = 1.0f;
+        snprintf(res_buf, sizeof(res_buf),
+                 get_locale_cstr("log.extract_skeleton.result"),
+                 centerline.size());
+        append_queue_logf(res_buf);
+        std::cout << res_buf << std::endl;
+
+        if (!centerline.empty()) {
+            for (size_t i = 0; i < centerline.size() - 1; i++) {
+                chain_lines.push_back(
+                    {sinriv::kigstudio::voxel::vec3f(
+                         centerline[i].x, centerline[i].y, centerline[i].z),
+                     sinriv::kigstudio::voxel::vec3f(centerline[i + 1].x,
+                                                     centerline[i + 1].y,
+                                                     centerline[i + 1].z)});
             }
         }
-        queue_progress = 1.0f;
+
+        // auto skeleton =
+        // it->second->voxel_grid_data.extractSkeletonByMaximalBalls(
+        //     it->second->chain_min_radius, true);
+        // queue_progress = 0.5f;
+        // const int dirs[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+        // for (const auto& voxel : skeleton) {
+        //     auto world_a = skeleton.voxelCenterToWorld(voxel);
+        //     for (int d = 0; d < 3; ++d) {
+        //         sinriv::kigstudio::voxel::Vec3i neighbor = {
+        //             voxel.x + dirs[d][0], voxel.y + dirs[d][1],
+        //             voxel.z + dirs[d][2]};
+        //         if (skeleton.find(neighbor)) {
+        //             auto world_b = skeleton.voxelCenterToWorld(neighbor);
+        //             chain_lines.push_back({world_a, world_b});
+        //         }
+        //     }
+        // }
     } catch (const std::exception& e) {
         std::cerr << "[extract_skeleton] exception: " << e.what() << std::endl;
         {
@@ -244,9 +284,9 @@ void RenderVoxelList::load_stl(std::string filename,
     int num_block_x = static_cast<int>(floor((maxx - minx) / voxel_size)) + 1;
     int num_block_y = static_cast<int>(floor((maxy - miny) / voxel_size)) + 1;
     int num_block_z = static_cast<int>(floor((maxz - minz) / voxel_size)) + 1;
-    size_t total_rays = static_cast<size_t>(num_block_y) * num_block_z
-                      + static_cast<size_t>(num_block_x) * num_block_z
-                      + static_cast<size_t>(num_block_x) * num_block_y;
+    size_t total_rays = static_cast<size_t>(num_block_y) * num_block_z +
+                        static_cast<size_t>(num_block_x) * num_block_z +
+                        static_cast<size_t>(num_block_x) * num_block_y;
     if (total_rays == 0)
         total_rays = 1;
 
@@ -254,18 +294,18 @@ void RenderVoxelList::load_stl(std::string filename,
     std::atomic<size_t> callback_count{0};
 
     auto voxel_callback = [&](auto start, auto end) {
-        int start_x = static_cast<int>(std::round(
-            (start.x - voxel_data.global_position.x) / voxel_size));
-        int start_y = static_cast<int>(std::round(
-            (start.y - voxel_data.global_position.y) / voxel_size));
-        int start_z = static_cast<int>(std::round(
-            (start.z - voxel_data.global_position.z) / voxel_size));
-        int end_x = static_cast<int>(std::round(
-            (end.x - voxel_data.global_position.x) / voxel_size));
-        int end_y = static_cast<int>(std::round(
-            (end.y - voxel_data.global_position.y) / voxel_size));
-        int end_z = static_cast<int>(std::round(
-            (end.z - voxel_data.global_position.z) / voxel_size));
+        int start_x = static_cast<int>(
+            std::round((start.x - voxel_data.global_position.x) / voxel_size));
+        int start_y = static_cast<int>(
+            std::round((start.y - voxel_data.global_position.y) / voxel_size));
+        int start_z = static_cast<int>(
+            std::round((start.z - voxel_data.global_position.z) / voxel_size));
+        int end_x = static_cast<int>(
+            std::round((end.x - voxel_data.global_position.x) / voxel_size));
+        int end_y = static_cast<int>(
+            std::round((end.y - voxel_data.global_position.y) / voxel_size));
+        int end_z = static_cast<int>(
+            std::round((end.z - voxel_data.global_position.z) / voxel_size));
 
         bvh_locker.lock();
         for (int i = start_x; i <= end_x; ++i) {
@@ -279,23 +319,21 @@ void RenderVoxelList::load_stl(std::string filename,
         }
         bvh_locker.unlock();
 
-        size_t cnt =
-            callback_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        size_t cnt = callback_count.fetch_add(1, std::memory_order_relaxed) + 1;
         if (cnt % 100 == 0) {
             float p =
-                0.15f + 0.35f * std::min(1.0f, static_cast<float>(cnt) /
-                                                   static_cast<float>(
-                                                       total_rays * 2));
+                0.15f +
+                0.35f * std::min(1.0f, static_cast<float>(cnt) /
+                                           static_cast<float>(total_rays * 2));
             queue_progress = p;
         }
     };
 
-    for (auto face : {triangle_bvh<float>::voxel_face_X,
-                      triangle_bvh<float>::voxel_face_Y,
-                      triangle_bvh<float>::voxel_face_Z}) {
-        bvh.getSolidByFace(
-            voxel_size, voxel_size, voxel_size, face,
-            voxel_callback);
+    for (auto face :
+         {triangle_bvh<float>::voxel_face_X, triangle_bvh<float>::voxel_face_Y,
+          triangle_bvh<float>::voxel_face_Z}) {
+        bvh.getSolidByFace(voxel_size, voxel_size, voxel_size, face,
+                           voxel_callback);
     }
 
     queue_progress = 0.50f;
@@ -315,8 +353,8 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.mesh_renderer.loadGeometry(
                     sinriv::kigstudio::voxel::readSTL(filename));
                 item.voxel_renderer.clear();
-                item.voxel_renderer.loadVoxelGridChunked(
-                    voxel_data, isolevel, smooth_normals);
+                item.voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
+                                                         smooth_normals);
                 item.voxel_grid_data = std::move(voxel_data);
                 item.stl_voxel_size = voxel_size;
                 item.thumbnail_dirty = true;
@@ -343,8 +381,8 @@ void RenderVoxelList::load_stl(std::string filename,
                   << " ref_count=" << item->ref_count.load() << std::endl;
         item->mesh_renderer.loadGeometry(
             sinriv::kigstudio::voxel::readSTL(filename));
-        item->voxel_renderer.loadVoxelGridChunked(
-            voxel_data, isolevel, smooth_normals);
+        item->voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
+                                                  smooth_normals);
         item->voxel_grid_data = std::move(voxel_data);
         item->thumbnail_dirty = true;
         item->stl_path = filename;

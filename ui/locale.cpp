@@ -168,6 +168,11 @@ void init_locale_strings() {
                       {{"en", "[Queue] Skip: Cannot check non-manifold edges - item busy or not found"}, {"zh", "[队列] 跳过: 无法检查非流形边 - 项目正忙或不存在"}});
     add_locale_string("log.queue.unknown_error",
                       {{"en", "Unknown error"}, {"zh", "未知错误"}});
+    add_locale_string("log.extract_skeleton.result",
+                      {{"en", "[Extract Skeleton] Result: %d vertices"}, {"zh", "[骨架提取]处理成功，共%d个顶点"}});
+    add_locale_string("log.extract_skeleton.buildDenseGrid.result",
+                      {{"en", "[Extract Skeleton] Dense grid size: (%d, %d, %d)->(%d, %d, %d) voxel_grid_data size: %d"}, 
+                       {"zh", "[骨架提取]体素覆盖范围: (%d, %d, %d)->(%d, %d, %d) 体素区块数量: %d"}});
 
     // Status messages
     add_locale_string("status.checking_manifold",
@@ -488,6 +493,19 @@ void init_locale_strings() {
     add_locale_string("error.load_failed",
                       {{"en", "Failed to load project."},
                        {"zh", "加载项目失败。"}});
+                       
+    add_locale_string("progress.extract_skeleton.buildDenseGrid",
+                      {{"en", "build dense grid"},
+                       {"zh", "构建稠密体素网格"}});
+    add_locale_string("progress.extract_skeleton.computeEDT",
+                      {{"en", "compute EDT"},
+                       {"zh", "构建EDT"}});
+    add_locale_string("progress.extract_skeleton.finalizeEDT",
+                      {{"en", "finalize EDT"},
+                       {"zh", "EDT后处理"}});
+    add_locale_string("progress.extract_skeleton.extractCenterline",
+                      {{"en", "extract center line"},
+                       {"zh", "计算中心线"}});
 }
 
 const std::string& get_locale_string_ref(const std::string& key) {

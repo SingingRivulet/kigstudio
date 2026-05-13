@@ -1,6 +1,6 @@
 #pragma once
-#include <atomic>
 #include <cJSON.h>
+#include <atomic>
 #include <cstdarg>
 #include <filesystem>
 #include <fstream>
@@ -17,35 +17,42 @@
 #include <windows.h>
 #endif
 
-#include "ui/render_deferred.h"
 #include "kigstudio/ui/render_collision.h"
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/ui/render_voxel.h"
+#include "kigstudio/utils/KDTree.h"
 #include "kigstudio/utils/plane.h"
 #include "kigstudio/utils/vec3.h"
-#include "kigstudio/utils/KDTree.h"
-#include "kigstudio/voxel/voxel.h"
-#include "kigstudio/voxel/voxelizer_svo.h"
 #include "kigstudio/voxel/concave.h"
+#include "kigstudio/voxel/voxel.h"
+#include "kigstudio/voxel/voxel_EDT.h"
+#include "kigstudio/voxel/voxelizer_svo.h"
 #include "ui/locale.h"
+#include "ui/render_deferred.h"
 
 namespace sinriv::ui::render {
 
 #ifdef _WIN32
 inline std::wstring utf8_to_wstring(const std::string& utf8) {
-    if (utf8.empty()) return {};
+    if (utf8.empty())
+        return {};
     int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
-    if (len <= 1) return {};
+    if (len <= 1)
+        return {};
     std::wstring w(len - 1, 0);
     MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &w[0], len);
     return w;
 }
 inline std::string wstring_to_utf8(const std::wstring& w) {
-    if (w.empty()) return {};
-    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (len <= 1) return {};
+    if (w.empty())
+        return {};
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0,
+                                  nullptr, nullptr);
+    if (len <= 1)
+        return {};
     std::string s(len - 1, 0);
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], len, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], len, nullptr,
+                        nullptr);
     return s;
 }
 inline std::filesystem::path utf8_path(const std::string& utf8) {
@@ -126,7 +133,7 @@ class RenderVoxelList {
         sinriv::ui::render::RenderMesh mesh_renderer;
         sinriv::ui::render::RenderVoxel voxel_renderer;
         sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
-        kdtree::KDTree mesh_kd_tree; // 三角形顶点的kd树，用于实现自动吸附
+        kdtree::KDTree mesh_kd_tree;  // 三角形顶点的kd树，用于实现自动吸附
 
         sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
         kigstudio::Plane<float> plane;
@@ -134,7 +141,9 @@ class RenderVoxelList {
         std::vector<int> concave_cone_expanded_vertices;
 
         int chain_min_radius = 1;
-        std::vector<std::pair<sinriv::kigstudio::voxel::vec3f, sinriv::kigstudio::voxel::vec3f>> skeleton_lines;
+        std::vector<std::pair<sinriv::kigstudio::voxel::vec3f,
+                              sinriv::kigstudio::voxel::vec3f>>
+            skeleton_lines;
 
         void render_gbuffer(const float* transform,
                             sinriv::ui::render::RenderMeshShader& mesh_shader);
@@ -145,8 +154,9 @@ class RenderVoxelList {
             sinriv::ui::render::RenderCollisionShader& collision_shader,
             sinriv::ui::render::RenderMeshShader& mesh_shader,
             const mat4f* cpu_model_matrix = nullptr);
-        void render_concave_cone_overlay(const float* model_transform,
-                                         sinriv::ui::render::RenderMeshShader& mesh_shader);
+        void render_concave_cone_overlay(
+            const float* model_transform,
+            sinriv::ui::render::RenderMeshShader& mesh_shader);
         void upload_collision(sinriv::ui::render::RenderDeferred& render);
 
         inline void copy_segment_config_to(RenderVoxelItem& target) const {
@@ -154,20 +164,24 @@ class RenderVoxelList {
             target.collision_group = collision_group;
             target.plane = plane;
             target.concave_cone = concave_cone;
-            target.concave_cone_expanded_vertices = concave_cone_expanded_vertices;
+            target.concave_cone_expanded_vertices =
+                concave_cone_expanded_vertices;
             target.chain_min_radius = chain_min_radius;
         }
 
         inline std::vector<sinriv::kigstudio::voxel::VoxelGrid> do_segment() {
             if (segment_mode == COLLISION) {
                 auto res = voxel_grid_data.segment(collision_group);
-                return {std::get<0>(std::move(res)), std::get<1>(std::move(res))};
+                return {std::get<0>(std::move(res)),
+                        std::get<1>(std::move(res))};
             } else if (segment_mode == PLANE) {
                 auto res = voxel_grid_data.segment(plane);
-                return {std::get<0>(std::move(res)), std::get<1>(std::move(res))};
+                return {std::get<0>(std::move(res)),
+                        std::get<1>(std::move(res))};
             } else if (segment_mode == CONCAVE_CONE) {
                 auto res = voxel_grid_data.segment(concave_cone);
-                return {std::get<0>(std::move(res)), std::get<1>(std::move(res))};
+                return {std::get<0>(std::move(res)),
+                        std::get<1>(std::move(res))};
             } else if (segment_mode == SPLIT_DISCONNECTED) {
                 return voxel_grid_data.splitDisconnected(true);
             } else if (segment_mode == NEIGHBOR) {
@@ -175,8 +189,10 @@ class RenderVoxelList {
                 for (const auto& v : marked_voxels) {
                     seeds.push_back(v);
                 }
-                auto res = voxel_grid_data.bfsSplit(seeds, neighbor_max_distance, true);
-                return {std::get<0>(std::move(res)), std::get<1>(std::move(res))};
+                auto res = voxel_grid_data.bfsSplit(
+                    seeds, neighbor_max_distance, true);
+                return {std::get<0>(std::move(res)),
+                        std::get<1>(std::move(res))};
             } else if (segment_mode == FILL_INTERIOR) {
                 auto filled = voxel_grid_data.fillInterior(true);
                 return {std::move(filled)};
@@ -213,7 +229,7 @@ class RenderVoxelList {
 
         bgfx::TextureHandle thumbnail_tex = BGFX_INVALID_HANDLE;
         bool thumbnail_dirty = true;
-        
+
         std::string stl_path;
         std::string voxel_path;
         float stl_voxel_size = 1.0f;
@@ -228,17 +244,39 @@ class RenderVoxelList {
 
         bool dirty = false;
 
-        inline void markVoxelChunkDirty(int wx, int wy, int wz, float expand = 0.0f) {
+        inline void markVoxelChunkDirty(int wx,
+                                        int wy,
+                                        int wz,
+                                        float expand = 0.0f) {
             using namespace sinriv::kigstudio::voxel;
             int cx = wx >> 5, cy = wy >> 5, cz = wz >> 5;
             int lx = wx & 31, ly = wy & 31, lz = wz & 31;
-            voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx, cy, cz), 0.5, true, expand);
-            if (lx == 0)  voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx - 1, cy, cz), 0.5, true, expand);
-            if (lx == 31) voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx + 1, cy, cz), 0.5, true, expand);
-            if (ly == 0)  voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx, cy - 1, cz), 0.5, true, expand);
-            if (ly == 31) voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx, cy + 1, cz), 0.5, true, expand);
-            if (lz == 0)  voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx, cy, cz - 1), 0.5, true, expand);
-            if (lz == 31) voxel_renderer.updateChunk(voxel_grid_data, packChunkKey(cx, cy, cz + 1), 0.5, true, expand);
+            voxel_renderer.updateChunk(
+                voxel_grid_data, packChunkKey(cx, cy, cz), 0.5, true, expand);
+            if (lx == 0)
+                voxel_renderer.updateChunk(voxel_grid_data,
+                                           packChunkKey(cx - 1, cy, cz), 0.5,
+                                           true, expand);
+            if (lx == 31)
+                voxel_renderer.updateChunk(voxel_grid_data,
+                                           packChunkKey(cx + 1, cy, cz), 0.5,
+                                           true, expand);
+            if (ly == 0)
+                voxel_renderer.updateChunk(voxel_grid_data,
+                                           packChunkKey(cx, cy - 1, cz), 0.5,
+                                           true, expand);
+            if (ly == 31)
+                voxel_renderer.updateChunk(voxel_grid_data,
+                                           packChunkKey(cx, cy + 1, cz), 0.5,
+                                           true, expand);
+            if (lz == 0)
+                voxel_renderer.updateChunk(voxel_grid_data,
+                                           packChunkKey(cx, cy, cz - 1), 0.5,
+                                           true, expand);
+            if (lz == 31)
+                voxel_renderer.updateChunk(voxel_grid_data,
+                                           packChunkKey(cx, cy, cz + 1), 0.5,
+                                           true, expand);
         }
     };
     inline RenderVoxelList() {}
@@ -309,10 +347,10 @@ class RenderVoxelList {
     sinriv::kigstudio::voxel::collision::vec3f mouse_world_pos = {0, 0, 0};
     bool mouse_world_pos_valid = false;
     bool mouse_world_pos_picked = false;
-    bool mouse_world_pos_picked_auto_snapping = false;// 自动吸附
+    bool mouse_world_pos_picked_auto_snapping = false;  // 自动吸附
     bool disable_camera_on_pick = false;
     float mouse_highlight_range = 3.0f;
-    void update_mouse_pos(RenderDeferred & renderer);
+    void update_mouse_pos(RenderDeferred& renderer);
 
     void render_ui();
     int object_editor_tab = 0;
@@ -356,10 +394,14 @@ class RenderVoxelList {
     static constexpr size_t kMaxUndoSize = 50;
 
     CollisionEditorSnapshot capture_snapshot(const RenderVoxelItem& item) const;
-    void apply_snapshot(RenderVoxelItem& item, const CollisionEditorSnapshot& snapshot);
+    void apply_snapshot(RenderVoxelItem& item,
+                        const CollisionEditorSnapshot& snapshot);
     void begin_edit(int item_id);
     void end_edit(int item_id, const std::string& desc = "Edit");
-    void push_undo_now(int item_id, const std::optional<CollisionEditorSnapshot>& before = std::nullopt, const std::string& desc = "");
+    void push_undo_now(
+        int item_id,
+        const std::optional<CollisionEditorSnapshot>& before = std::nullopt,
+        const std::string& desc = "");
     bool undo(int item_id);
     bool redo(int item_id);
     bool can_undo(int item_id) const;
@@ -394,13 +436,16 @@ class RenderVoxelList {
     inline void append_queue_log(const std::string& msg) {
         std::lock_guard<std::mutex> lock(queue_log_mutex);
         queue_log.push_back(msg);
-        if (!queue_log_text.empty()) queue_log_text += '\n';
+        if (!queue_log_text.empty())
+            queue_log_text += '\n';
         queue_log_text += msg;
         if (queue_log.size() > 1000) {
-            queue_log.erase(queue_log.begin(), queue_log.begin() + (queue_log.size() - 1000));
+            queue_log.erase(queue_log.begin(),
+                            queue_log.begin() + (queue_log.size() - 1000));
             queue_log_text.clear();
             for (size_t i = 0; i < queue_log.size(); ++i) {
-                if (i > 0) queue_log_text += '\n';
+                if (i > 0)
+                    queue_log_text += '\n';
                 queue_log_text += queue_log[i];
             }
         }
@@ -457,7 +502,8 @@ class RenderVoxelList {
     void setRenderId_unsafe(int id);
 
     void brush_marked_voxels(const sinriv::kigstudio::voxel::vec3f& world_pos,
-                             float range, bool remove);
+                             float range,
+                             bool remove);
 
     enum QueueTaskType {
         TASK_STOP = 1,
@@ -491,8 +537,9 @@ class RenderVoxelList {
 
     size_t get_num_items();
     void queue_load_stl(const std::string& file_path, float voxel_size);
-    void queue_reload_stl(int item_id, float voxel_size,
-                           const std::string& stl_path);
+    void queue_reload_stl(int item_id,
+                          float voxel_size,
+                          const std::string& stl_path);
     void queue_do_segment(int index);
     void queue_do_segment();
     void queue_do_segment_unsafe();
