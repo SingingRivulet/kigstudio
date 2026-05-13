@@ -187,12 +187,11 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
     const float pick_range = std::max(mouse_highlight_range, item.voxel_pick_range);
     const float pick_range_sq = pick_range * pick_range;
     float best_dist_sq = std::numeric_limits<float>::max();
-    const sinriv::kigstudio::voxel::vec3f* best_skeleton = nullptr;
+    const RenderVoxelItem::SkeletonPointPick* best_skeleton = nullptr;
 
-    for (const auto& [surface_voxel, skeleton_pos] :
-         item.surface_skeleton_cache) {
+    for (const auto& entry : item.surface_skeleton_cache) {
         const auto surface_world =
-            item.voxel_grid_data.voxelCenterToWorld(surface_voxel);
+            item.voxel_grid_data.voxelCenterToWorld(entry.surface_voxel);
         const float dx = surface_world.x - mouse_world_pos.x;
         const float dy = surface_world.y - mouse_world_pos.y;
         const float dz = surface_world.z - mouse_world_pos.z;
@@ -201,13 +200,14 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
             continue;
 
         best_dist_sq = dist_sq;
-        best_skeleton = &skeleton_pos;
+        best_skeleton = &entry.skeleton;
     }
 
     if (best_skeleton == nullptr)
         return;
 
     item.picked_skeleton_points.push_back(*best_skeleton);
+    item.sort_picked_skeleton_points();
 }
 
 void RenderVoxelList::begin_marked_edit(int item_id) {

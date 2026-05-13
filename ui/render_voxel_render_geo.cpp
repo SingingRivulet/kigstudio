@@ -210,6 +210,139 @@ std::vector<SkeletonLine> smoothSkeletonLines(const std::vector<SkeletonLine>& l
 
     return result.empty() ? lines : result;
 }
+
+struct VoxelKey {
+    int x = 0;
+    int y = 0;
+    int z = 0;
+
+    bool operator==(const VoxelKey& other) const {
+        return x == other.x && y == other.y && z == other.z;
+    }
+};
+
+struct VoxelKeyHash {
+    std::size_t operator()(const VoxelKey& key) const {
+        std::size_t h = 1469598103934665603ull;
+        auto mix = [&h](int v) {
+            h ^= static_cast<uint32_t>(v);
+            h *= 1099511628211ull;
+        };
+        mix(key.x);
+        mix(key.y);
+        mix(key.z);
+        return h;
+    }
+};
+
+VoxelKey makeVoxelKey(const sinriv::kigstudio::voxel::Vec3i& p) {
+    return {p.x, p.y, p.z};
+}
+
+bool voxelLess(const sinriv::kigstudio::voxel::Vec3i& a,
+               const sinriv::kigstudio::voxel::Vec3i& b) {
+    if (a.x != b.x)
+        return a.x < b.x;
+    if (a.y != b.y)
+        return a.y < b.y;
+    return a.z < b.z;
+}
+
+std::vector<RenderVoxelList::RenderVoxelItem::SkeletonPointPick>
+buildSkeletonOrderCache(
+    const std::vector<std::pair<sinriv::kigstudio::voxel::Vec3i,
+                                sinriv::kigstudio::voxel::Vec3i>>& lines,
+    const sinriv::kigstudio::voxel::VoxelGrid& voxel_grid,
+    std::unordered_map<VoxelKey, int, VoxelKeyHash>& order_by_voxel) {
+    using Vec3i = sinriv::kigstudio::voxel::Vec3i;
+    using Pick = RenderVoxelList::RenderVoxelItem::SkeletonPointPick;
+
+    std::vector<Vec3i> nodes;
+    std::unordered_map<VoxelKey, size_t, VoxelKeyHash> node_ids;
+    std::vector<std::vector<size_t>> adjacency;
+
+    auto getNode = [&](const Vec3i& p) {
+        const VoxelKey key = makeVoxelKey(p);
+        const auto found = node_ids.find(key);
+        if (found != node_ids.end())
+            return found->second;
+
+        const size_t index = nodes.size();
+        node_ids[key] = index;
+        nodes.push_back(p);
+        adjacency.emplace_back();
+        return index;
+    };
+
+    for (const auto& line : lines) {
+        const size_t a = getNode(line.first);
+        const size_t b = getNode(line.second);
+        if (a == b)
+            continue;
+
+        adjacency[a].push_back(b);
+        adjacency[b].push_back(a);
+    }
+
+    if (nodes.empty())
+        return {};
+
+    for (auto& neighbors : adjacency) {
+        std::sort(neighbors.begin(), neighbors.end(),
+                  [&](size_t a, size_t b) {
+                      return voxelLess(nodes[a], nodes[b]);
+                  });
+        neighbors.erase(std::unique(neighbors.begin(), neighbors.end()),
+                        neighbors.end());
+    }
+
+    size_t start = 0;
+    bool has_endpoint = false;
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        const bool is_endpoint = adjacency[i].size() <= 1;
+        if ((is_endpoint && !has_endpoint) ||
+            (is_endpoint == has_endpoint && voxelLess(nodes[i], nodes[start]))) {
+            start = i;
+            has_endpoint = is_endpoint;
+        }
+    }
+
+    std::vector<Pick> ordered;
+    ordered.reserve(nodes.size());
+    std::vector<uint8_t> visited(nodes.size(), 0);
+    std::vector<size_t> stack = {start};
+
+    auto pushNode = [&](size_t index) {
+        visited[index] = 1;
+        const auto world = voxel_grid.voxelCenterToWorld(nodes[index]);
+        const int order = static_cast<int>(ordered.size());
+        order_by_voxel[makeVoxelKey(nodes[index])] = order;
+        ordered.push_back({sinriv::kigstudio::voxel::vec3f(
+                               world.x, world.y, world.z),
+                           order});
+    };
+
+    while (!stack.empty()) {
+        const size_t cur = stack.back();
+        stack.pop_back();
+        if (visited[cur])
+            continue;
+
+        pushNode(cur);
+        for (auto it = adjacency[cur].rbegin(); it != adjacency[cur].rend();
+             ++it) {
+            if (!visited[*it])
+                stack.push_back(*it);
+        }
+    }
+
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        if (!visited[i])
+            pushNode(i);
+    }
+
+    return ordered;
+}
 }  // namespace
 
 std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
@@ -365,9 +498,9 @@ void RenderVoxelList::extract_skeleton(int index) {
     std::vector<std::pair<sinriv::kigstudio::voxel::vec3f,
                           sinriv::kigstudio::voxel::vec3f>>
         chain_lines;
-    std::vector<std::pair<sinriv::kigstudio::voxel::Vec3i,
-                          sinriv::kigstudio::voxel::vec3f>>
+    std::vector<RenderVoxelItem::SurfaceSkeletonCacheEntry>
         surface_skeleton_world_cache;
+    std::vector<RenderVoxelItem::SkeletonPointPick> skeleton_order_cache;
     try {
         char res_buf[512];
         queue_status =
@@ -402,6 +535,10 @@ void RenderVoxelList::extract_skeleton(int index) {
         std::cout << res_buf << std::endl;
 
         const auto& voxel_grid = it->second->voxel_grid_data;
+        std::unordered_map<VoxelKey, int, VoxelKeyHash> order_by_voxel;
+        skeleton_order_cache =
+            buildSkeletonOrderCache(skeleton_lines, voxel_grid, order_by_voxel);
+
         auto to_world = [&voxel_grid](const kigstudio::voxel::Vec3i& voxel) {
             return voxel_grid.voxelCenterToWorld(voxel);
         };
@@ -417,10 +554,16 @@ void RenderVoxelList::extract_skeleton(int index) {
         surface_skeleton_world_cache.reserve(surface_skeleton_cache.size());
         for (const auto& entry : surface_skeleton_cache) {
             const auto skeleton_world = to_world(entry.second);
+            int order = 0;
+            const auto order_it = order_by_voxel.find(makeVoxelKey(entry.second));
+            if (order_it != order_by_voxel.end()) {
+                order = order_it->second;
+            }
             surface_skeleton_world_cache.push_back(
                 {entry.first,
-                 sinriv::kigstudio::voxel::vec3f(
-                     skeleton_world.x, skeleton_world.y, skeleton_world.z)});
+                 {sinriv::kigstudio::voxel::vec3f(
+                      skeleton_world.x, skeleton_world.y, skeleton_world.z),
+                  order}});
         }
 
     } catch (const std::exception& e) {
@@ -440,6 +583,8 @@ void RenderVoxelList::extract_skeleton(int index) {
         it->second->skeleton_lines = std::move(chain_lines);
         it->second->surface_skeleton_cache =
             std::move(surface_skeleton_world_cache);
+        it->second->skeleton_order_cache = std::move(skeleton_order_cache);
+        it->second->sort_picked_skeleton_points();
     }
 }
 

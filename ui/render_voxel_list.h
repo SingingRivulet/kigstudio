@@ -12,6 +12,7 @@
 #include <thread>
 #include <tuple>
 #include <unordered_map>
+#include <algorithm>
 #include <vector>
 
 #ifdef _WIN32
@@ -142,13 +143,51 @@ class RenderVoxelList {
         std::vector<int> concave_cone_expanded_vertices;
 
         int chain_min_radius = 1;
+        struct SkeletonPointPick {
+            sinriv::kigstudio::voxel::vec3f position;
+            int order = 0;
+        };
+        struct SurfaceSkeletonCacheEntry {
+            sinriv::kigstudio::voxel::Vec3i surface_voxel;
+            SkeletonPointPick skeleton;
+        };
         std::vector<std::pair<sinriv::kigstudio::voxel::vec3f,
                               sinriv::kigstudio::voxel::vec3f>>
             skeleton_lines;
-        std::vector<std::pair<sinriv::kigstudio::voxel::Vec3i,
-                              sinriv::kigstudio::voxel::vec3f>>
-            surface_skeleton_cache;
-        std::vector<sinriv::kigstudio::voxel::vec3f> picked_skeleton_points;
+        std::vector<SurfaceSkeletonCacheEntry> surface_skeleton_cache;
+        std::vector<SkeletonPointPick> picked_skeleton_points;
+        std::vector<SkeletonPointPick> skeleton_order_cache;
+
+        inline void sort_picked_skeleton_points() {
+            std::sort(picked_skeleton_points.begin(),
+                      picked_skeleton_points.end(),
+                      [](const SkeletonPointPick& a,
+                         const SkeletonPointPick& b) {
+                          if (a.order != b.order)
+                              return a.order < b.order;
+                          if (a.position.x != b.position.x)
+                              return a.position.x < b.position.x;
+                          if (a.position.y != b.position.y)
+                              return a.position.y < b.position.y;
+                          return a.position.z < b.position.z;
+                      });
+        }
+
+        inline void move_picked_skeleton_point(size_t index, int delta) {
+            if (index >= picked_skeleton_points.size() ||
+                skeleton_order_cache.empty()) {
+                return;
+            }
+
+            int next_order = picked_skeleton_points[index].order + delta;
+            next_order =
+                std::max(0, std::min(next_order,
+                                     static_cast<int>(
+                                         skeleton_order_cache.size()) -
+                                         1));
+            picked_skeleton_points[index] = skeleton_order_cache[next_order];
+            sort_picked_skeleton_points();
+        }
 
         void render_gbuffer(const float* transform,
                             sinriv::ui::render::RenderMeshShader& mesh_shader);

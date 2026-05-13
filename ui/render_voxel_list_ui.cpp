@@ -1521,11 +1521,41 @@ void RenderVoxelList::render_object_editor() {
                         if (ImGui::Button("Clear##PickedSkeletonPoints")) {
                             item.picked_skeleton_points.clear();
                         }
+                        int erase_picked_skeleton_index = -1;
+                        bool moved_picked_skeleton_point = false;
                         for (size_t i = 0;
                              i < item.picked_skeleton_points.size(); ++i) {
-                            const auto& p = item.picked_skeleton_points[i];
-                            ImGui::Text("#%d: %.3f, %.3f, %.3f",
-                                        static_cast<int>(i), p.x, p.y, p.z);
+                            const auto& picked =
+                                item.picked_skeleton_points[i];
+                            const auto& p = picked.position;
+                            ImGui::PushID(static_cast<int>(i));
+                            if (ImGui::Button("<")) {
+                                item.move_picked_skeleton_point(i, -1);
+                                moved_picked_skeleton_point = true;
+                            }
+                            ImGui::SameLine();
+                            if (ImGui::Button(">")) {
+                                item.move_picked_skeleton_point(i, 1);
+                                moved_picked_skeleton_point = true;
+                            }
+                            ImGui::SameLine();
+                            if (ImGui::Button("X")) {
+                                erase_picked_skeleton_index =
+                                    static_cast<int>(i);
+                            }
+                            ImGui::SameLine();
+                            ImGui::Text("#%d order=%d: %.3f, %.3f, %.3f",
+                                        static_cast<int>(i), picked.order, p.x,
+                                        p.y, p.z);
+                            ImGui::PopID();
+                            if (moved_picked_skeleton_point)
+                                break;
+                        }
+                        if (erase_picked_skeleton_index >= 0) {
+                            item.picked_skeleton_points.erase(
+                                item.picked_skeleton_points.begin() +
+                                erase_picked_skeleton_index);
+                            item.sort_picked_skeleton_points();
                         }
                     }
 

@@ -153,7 +153,8 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 2.0f;
             std::vector<mesh_detail::ColorLineVertex> vertices;
             vertices.reserve(picked_skeleton_points.size() * 48 * 6);
-            for (const auto& p : picked_skeleton_points) {
+            for (const auto& picked : picked_skeleton_points) {
+                const auto& p = picked.position;
                 append_marker_circle(vertices, p, {1.0f, 0.0f, 0.0f},
                                      {0.0f, 1.0f, 0.0f}, radius,
                                      marker_color);
