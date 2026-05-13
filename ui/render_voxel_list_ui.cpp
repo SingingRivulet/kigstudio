@@ -1305,25 +1305,63 @@ void RenderVoxelList::render_object_editor() {
                 }
                 ImGui::SameLine();
             }
-            if (ImGui::Button(get_locale_cstr("action.save_as_stl"))) {
+            auto export_item_as_stl = [&](bool smooth_sdf) {
                 const char* filters[] = {"*.stl"};
                 const char* file = tinyfd_saveFileDialog(
                     get_locale_cstr("dialog.save_voxel_as_stl"),
                     "node_voxel.stl", 1, filters,
                     get_locale_cstr("dialog.stl_files"));
-                if (file) {
-                    std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
-                                           sinriv::kigstudio::voxel::vec3f>>
-                        mesh;
-                    int numTriangles = 0;
+                if (!file)
+                    return;
+
+                std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
+                                       sinriv::kigstudio::voxel::vec3f>>
+                    mesh;
+                int numTriangles = 0;
+                if (smooth_sdf) {
+                    for (auto triangles :
+                         sinriv::kigstudio::voxel::generateSmoothMeshFromSDF(
+                             item.voxel_grid_data, numTriangles, true)) {
+                        mesh.push_back(triangles);
+                    }
+                } else {
                     for (auto triangles :
                          sinriv::kigstudio::voxel::generateMesh(
                              item.voxel_grid_data, 0.5, numTriangles, true)) {
                         mesh.push_back(triangles);
                     }
-                    mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
-                    sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, file);
                 }
+                mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
+                sinriv::kigstudio::voxel::saveMeshToASCIISTL(
+                    mesh, tinyfd_path_to_utf8(file));
+            };
+
+            const std::string export_popup_title =
+                localize_id("dialog.choose_export_method", item.id);
+            if (ImGui::Button(get_locale_cstr("action.save_as_stl"))) {
+                ImGui::OpenPopup(export_popup_title.c_str());
+            }
+            if (ImGui::BeginPopupModal(
+                    export_popup_title.c_str(), nullptr,
+                    ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::TextUnformatted(
+                    get_locale_cstr("dialog.choose_export_method"));
+                if (ImGui::Button(
+                        get_locale_cstr("action.export_standard_stl"))) {
+                    ImGui::CloseCurrentPopup();
+                    export_item_as_stl(false);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button(
+                        get_locale_cstr("action.export_smooth_sdf_stl"))) {
+                    ImGui::CloseCurrentPopup();
+                    export_item_as_stl(true);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button(get_locale_cstr("action.cancel"))) {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
             }
 
             ImGui::SameLine();

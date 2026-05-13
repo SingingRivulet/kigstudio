@@ -16,6 +16,10 @@ namespace sinriv::kigstudio::voxel {
     using Triangle = triangle_bvh<float>::triangle;
 
     Generator<std::tuple<Triangle,vec3f>> generateMesh(sinriv::kigstudio::voxel::VoxelGrid& voxelData, double isolevel, int& numTriangles, bool computeNormals = false, float expand = 0.0f);
+    Generator<std::tuple<Triangle, vec3f>> generateSmoothMeshFromSDF(
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
+        int& numTriangles,
+        bool computeNormals = false);
     Generator<std::tuple<Triangle, vec3f>> generateMesh(sinriv::kigstudio::octree::Octree& voxelData, double isolevel, int& numTriangles, bool computeNormals = false);
     Generator<std::tuple<Triangle, vec3f>> generateMeshForChunk(sinriv::kigstudio::voxel::VoxelGrid& voxelData, uint64_t chunkKey, double isolevel, int& numTriangles, bool computeNormals = false, float expand = 0.0f);
 

@@ -237,6 +237,10 @@ void init_locale_strings() {
     add_locale_string("action.close", {{"en", "Close"}, {"zh", "关闭"}});
     add_locale_string("action.save_as_stl",
                       {{"en", "Save as STL"}, {"zh", "另存为 STL"}});
+    add_locale_string("action.export_standard_stl",
+                      {{"en", "Standard"}, {"zh", "标准"}});
+    add_locale_string("action.export_smooth_sdf_stl",
+                      {{"en", "Smooth SDF"}, {"zh", "SDF 平滑"}});
     add_locale_string("action.reload",
                       {{"en", "Reload"}, {"zh", "重新加载"}});
     add_locale_string("action.reload_stl",
@@ -448,6 +452,9 @@ void init_locale_strings() {
                       {{"en", "STL file"}, {"zh", "STL 文件"}});
     add_locale_string("dialog.save_voxel_as_stl",
                       {{"en", "Save Voxel as STL"}, {"zh", "保存体素为 STL"}});
+    add_locale_string("dialog.choose_export_method",
+                      {{"en", "Choose STL export method"},
+                       {"zh", "选择 STL 导出方式"}});
     add_locale_string("dialog.stl_files",
                       {{"en", "STL files"}, {"zh", "STL 文件"}});
     add_locale_string("dialog.save_project_title",

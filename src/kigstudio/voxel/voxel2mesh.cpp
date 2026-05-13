@@ -1,5 +1,7 @@
 #include "kigstudio/voxel/voxel2mesh.h"
 #include "kigstudio/voxel/lut.h"
+#include "kigstudio/voxel/voxel_EDT.h"
+#include <algorithm>
 #include <set>
 #include <iostream>
 #include <fstream>
@@ -199,6 +201,135 @@ namespace sinriv::kigstudio::voxel {
 
                     numTriangles++;
                 }
+            }
+        }
+    }
+
+    Generator<std::tuple<Triangle, vec3f>>
+    generateSmoothMeshFromSDF(
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
+        int& numTriangles,
+        bool computeNormals)
+    {
+        numTriangles = 0;
+
+        DenseGrid dense = buildDenseGrid(voxelData, 2);
+        if (dense.sx <= 1 || dense.sy <= 1 || dense.sz <= 1) {
+            co_return;
+        }
+
+        SDFGrid sdf = buildSDF(dense);
+        vec3f vertlist[12];
+
+        auto sample = [&](int x, int y, int z) -> float {
+            return sdf.get(x, y, z);
+        };
+
+        auto samplePosition = [&](int x, int y, int z) -> vec3f {
+            const Vec3i voxel = sdf.denseToWorldVoxel(x, y, z);
+            return {static_cast<float>(voxel.x) + 0.5f,
+                    static_cast<float>(voxel.y) + 0.5f,
+                    static_cast<float>(voxel.z) + 0.5f};
+        };
+
+        auto interpolate = [](const vec3f& p1,
+                              const vec3f& p2,
+                              float v1,
+                              float v2) -> vec3f {
+            const float denom = v1 - v2;
+            if (std::abs(denom) < 1e-6f) {
+                return (p1 + p2) * 0.5f;
+            }
+
+            float t = v1 / denom;
+            t = std::max(0.0f, std::min(1.0f, t));
+            return p1 + (p2 - p1) * t;
+        };
+
+        for (int z = 0; z < sdf.sz - 1; ++z)
+        for (int y = 0; y < sdf.sy - 1; ++y)
+        for (int x = 0; x < sdf.sx - 1; ++x) {
+            float val[8] = {
+                sample(x,     y,     z),
+                sample(x + 1, y,     z),
+                sample(x + 1, y + 1, z),
+                sample(x,     y + 1, z),
+                sample(x,     y,     z + 1),
+                sample(x + 1, y,     z + 1),
+                sample(x + 1, y + 1, z + 1),
+                sample(x,     y + 1, z + 1),
+            };
+
+            int cubeindex = 0;
+            cubeindex |= (val[0] < 0.0f) << 0;
+            cubeindex |= (val[1] < 0.0f) << 1;
+            cubeindex |= (val[2] < 0.0f) << 2;
+            cubeindex |= (val[3] < 0.0f) << 3;
+            cubeindex |= (val[4] < 0.0f) << 4;
+            cubeindex |= (val[5] < 0.0f) << 5;
+            cubeindex |= (val[6] < 0.0f) << 6;
+            cubeindex |= (val[7] < 0.0f) << 7;
+
+            if (cubeindex == 0 || cubeindex == 255 || edgeTable[cubeindex] == 0)
+                continue;
+
+            vec3f p[8] = {
+                samplePosition(x,     y,     z),
+                samplePosition(x + 1, y,     z),
+                samplePosition(x + 1, y + 1, z),
+                samplePosition(x,     y + 1, z),
+                samplePosition(x,     y,     z + 1),
+                samplePosition(x + 1, y,     z + 1),
+                samplePosition(x + 1, y + 1, z + 1),
+                samplePosition(x,     y + 1, z + 1),
+            };
+
+            if (edgeTable[cubeindex] & 1)
+                vertlist[0] = interpolate(p[0], p[1], val[0], val[1]);
+            if (edgeTable[cubeindex] & 2)
+                vertlist[1] = interpolate(p[1], p[2], val[1], val[2]);
+            if (edgeTable[cubeindex] & 4)
+                vertlist[2] = interpolate(p[2], p[3], val[2], val[3]);
+            if (edgeTable[cubeindex] & 8)
+                vertlist[3] = interpolate(p[3], p[0], val[3], val[0]);
+
+            if (edgeTable[cubeindex] & 16)
+                vertlist[4] = interpolate(p[4], p[5], val[4], val[5]);
+            if (edgeTable[cubeindex] & 32)
+                vertlist[5] = interpolate(p[5], p[6], val[5], val[6]);
+            if (edgeTable[cubeindex] & 64)
+                vertlist[6] = interpolate(p[6], p[7], val[6], val[7]);
+            if (edgeTable[cubeindex] & 128)
+                vertlist[7] = interpolate(p[7], p[4], val[7], val[4]);
+
+            if (edgeTable[cubeindex] & 256)
+                vertlist[8] = interpolate(p[0], p[4], val[0], val[4]);
+            if (edgeTable[cubeindex] & 512)
+                vertlist[9] = interpolate(p[1], p[5], val[1], val[5]);
+            if (edgeTable[cubeindex] & 1024)
+                vertlist[10] = interpolate(p[2], p[6], val[2], val[6]);
+            if (edgeTable[cubeindex] & 2048)
+                vertlist[11] = interpolate(p[3], p[7], val[3], val[7]);
+
+            for (int i = 0; triTable[cubeindex][i] != -1; i += 3) {
+                vec3f v1 = vertlist[triTable[cubeindex][i]];
+                vec3f v2 = vertlist[triTable[cubeindex][i + 1]];
+                vec3f v3 = vertlist[triTable[cubeindex][i + 2]];
+
+                vec3f normal{0, 0, 0};
+                if (computeNormals) {
+                    normal = -((v2 - v1).cross(v3 - v1).normalize());
+                }
+
+                co_yield {
+                    Triangle(
+                        v1 * voxelData.voxel_size + voxelData.global_position,
+                        v3 * voxelData.voxel_size + voxelData.global_position,
+                        v2 * voxelData.voxel_size + voxelData.global_position),
+                    normal
+                };
+
+                numTriangles++;
             }
         }
     }
