@@ -365,6 +365,9 @@ void RenderVoxelList::extract_skeleton(int index) {
     std::vector<std::pair<sinriv::kigstudio::voxel::vec3f,
                           sinriv::kigstudio::voxel::vec3f>>
         chain_lines;
+    std::vector<std::pair<sinriv::kigstudio::voxel::Vec3i,
+                          sinriv::kigstudio::voxel::vec3f>>
+        surface_skeleton_world_cache;
     try {
         char res_buf[512];
         queue_status =
@@ -389,6 +392,8 @@ void RenderVoxelList::extract_skeleton(int index) {
             get_locale_cstr("progress.extract_skeleton.extractCenterline");
         auto skeleton_lines =
             kigstudio::voxel::extractGradientFlowSkeletonLines(dense);
+        auto surface_skeleton_cache =
+            kigstudio::voxel::mapSurfaceVoxelsToSkeleton(dense, skeleton_lines);
         queue_progress = 1.0f;
         snprintf(res_buf, sizeof(res_buf),
                  get_locale_cstr("log.extract_skeleton.result"),
@@ -409,6 +414,14 @@ void RenderVoxelList::extract_skeleton(int index) {
                  sinriv::kigstudio::voxel::vec3f(b.x, b.y, b.z)});
         }
         chain_lines = smoothSkeletonLines(chain_lines);
+        surface_skeleton_world_cache.reserve(surface_skeleton_cache.size());
+        for (const auto& entry : surface_skeleton_cache) {
+            const auto skeleton_world = to_world(entry.second);
+            surface_skeleton_world_cache.push_back(
+                {entry.first,
+                 sinriv::kigstudio::voxel::vec3f(
+                     skeleton_world.x, skeleton_world.y, skeleton_world.z)});
+        }
 
     } catch (const std::exception& e) {
         std::cerr << "[extract_skeleton] exception: " << e.what() << std::endl;
@@ -425,6 +438,8 @@ void RenderVoxelList::extract_skeleton(int index) {
         it->second->ref_count--;
         it->second->write_count--;
         it->second->skeleton_lines = std::move(chain_lines);
+        it->second->surface_skeleton_cache =
+            std::move(surface_skeleton_world_cache);
     }
 }
 

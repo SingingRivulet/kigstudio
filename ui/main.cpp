@@ -410,6 +410,7 @@ int main() {
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
             !io.WantCaptureMouse) {
             render_items.mouse_world_pos_picked = true;
+            render_items.pick_skeleton_point_from_mouse();
         } else {
             render_items.mouse_world_pos_picked = false;
         }

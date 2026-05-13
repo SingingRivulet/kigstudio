@@ -28,6 +28,28 @@ bgfx::VertexLayout& concave_cone_overlay_layout() {
     }
     return layout;
 }
+
+void append_marker_circle(std::vector<mesh_detail::ColorLineVertex>& vertices,
+                          const sinriv::kigstudio::voxel::vec3f& center,
+                          const sinriv::kigstudio::voxel::vec3f& axis_u,
+                          const sinriv::kigstudio::voxel::vec3f& axis_v,
+                          float radius,
+                          uint32_t color) {
+    constexpr int kSegments = 48;
+    constexpr float kPi = 3.14159265358979323846f;
+    for (int i = 0; i < kSegments; ++i) {
+        const float a0 = 2.0f * kPi * static_cast<float>(i) /
+                         static_cast<float>(kSegments);
+        const float a1 = 2.0f * kPi * static_cast<float>(i + 1) /
+                         static_cast<float>(kSegments);
+        const auto p0 = center + axis_u * (std::cos(a0) * radius) +
+                        axis_v * (std::sin(a0) * radius);
+        const auto p1 = center + axis_u * (std::cos(a1) * radius) +
+                        axis_v * (std::sin(a1) * radius);
+        vertices.push_back({p0.x, -p0.y, p0.z, color});
+        vertices.push_back({p1.x, -p1.y, p1.z, color});
+    }
+}
 }  // namespace
 
 void RenderVoxelList::RenderVoxelItem::render_gbuffer(
@@ -97,6 +119,50 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 const auto& b = line.second;
                 vertices.push_back({a.x, -a.y, a.z, line_color});
                 vertices.push_back({b.x, -b.y, b.z, line_color});
+            }
+            if (!vertices.empty() &&
+                bgfx::getAvailTransientVertexBuffer(
+                    static_cast<uint32_t>(vertices.size()),
+                    layout) >= vertices.size()) {
+                bgfx::TransientVertexBuffer tvb;
+                bgfx::allocTransientVertexBuffer(
+                    &tvb, static_cast<uint32_t>(vertices.size()),
+                    layout);
+                std::memcpy(tvb.data, vertices.data(),
+                            vertices.size() *
+                                sizeof(mesh_detail::ColorLineVertex));
+                bgfx::setTransform(model_transform);
+                bgfx::setVertexBuffer(0, &tvb);
+                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                               BGFX_STATE_WRITE_Z |
+                               BGFX_STATE_DEPTH_TEST_LESS |
+                               BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+                bgfx::submit(mesh_shader.overlay_view_id_,
+                             mesh_shader.line_program_);
+            }
+        }
+    }
+    if (!picked_skeleton_points.empty()) {
+        if (mesh_shader.ensureLineProgram()) {
+            bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+            const uint32_t marker_color = pack_abgr(1.0f, 0.18f, 0.08f, 1.0f);
+            const float radius =
+                std::max({voxel_grid_data.voxel_size.x,
+                          voxel_grid_data.voxel_size.y,
+                          voxel_grid_data.voxel_size.z}) *
+                2.0f;
+            std::vector<mesh_detail::ColorLineVertex> vertices;
+            vertices.reserve(picked_skeleton_points.size() * 48 * 6);
+            for (const auto& p : picked_skeleton_points) {
+                append_marker_circle(vertices, p, {1.0f, 0.0f, 0.0f},
+                                     {0.0f, 1.0f, 0.0f}, radius,
+                                     marker_color);
+                append_marker_circle(vertices, p, {1.0f, 0.0f, 0.0f},
+                                     {0.0f, 0.0f, 1.0f}, radius,
+                                     marker_color);
+                append_marker_circle(vertices, p, {0.0f, 1.0f, 0.0f},
+                                     {0.0f, 0.0f, 1.0f}, radius,
+                                     marker_color);
             }
             if (!vertices.empty() &&
                 bgfx::getAvailTransientVertexBuffer(

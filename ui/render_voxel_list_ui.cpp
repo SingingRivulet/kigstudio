@@ -1513,6 +1513,20 @@ void RenderVoxelList::render_object_editor() {
                                 get_locale_cstr("action.extract_skeleton"))) {
                             queue_extract_skeleton(item.id);
                         }
+                        ImGui::Separator();
+                        ImGui::Text("Picked skeleton points: %d",
+                                    static_cast<int>(
+                                        item.picked_skeleton_points.size()));
+                        ImGui::SameLine();
+                        if (ImGui::Button("Clear##PickedSkeletonPoints")) {
+                            item.picked_skeleton_points.clear();
+                        }
+                        for (size_t i = 0;
+                             i < item.picked_skeleton_points.size(); ++i) {
+                            const auto& p = item.picked_skeleton_points[i];
+                            ImGui::Text("#%d: %.3f, %.3f, %.3f",
+                                        static_cast<int>(i), p.x, p.y, p.z);
+                        }
                     }
 
                     ImGui::EndTabItem();

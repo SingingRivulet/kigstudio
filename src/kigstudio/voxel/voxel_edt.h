@@ -131,6 +131,9 @@ std::vector<Vec3i> extractMainPath(const SkeletonGraph& graph);
 std::vector<Vec3i> extractWeightedCenterline(const DenseGrid& dense);
 std::vector<std::pair<Vec3i, Vec3i>> extractGradientFlowSkeletonLines(
     const DenseGrid& dense);
+std::vector<std::pair<Vec3i, Vec3i>> mapSurfaceVoxelsToSkeleton(
+    const DenseGrid& dense,
+    const std::vector<std::pair<Vec3i, Vec3i>>& skeleton_lines);
 DenseGrid buildInsideEDTField(const DenseGrid& src);
 DenseGrid buildOutsideEDTField(const DenseGrid& src);
 SDFGrid buildSDF(const DenseGrid& src);

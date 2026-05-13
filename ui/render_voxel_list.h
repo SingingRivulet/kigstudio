@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #ifdef _WIN32
@@ -144,6 +145,10 @@ class RenderVoxelList {
         std::vector<std::pair<sinriv::kigstudio::voxel::vec3f,
                               sinriv::kigstudio::voxel::vec3f>>
             skeleton_lines;
+        std::vector<std::pair<sinriv::kigstudio::voxel::Vec3i,
+                              sinriv::kigstudio::voxel::vec3f>>
+            surface_skeleton_cache;
+        std::vector<sinriv::kigstudio::voxel::vec3f> picked_skeleton_points;
 
         void render_gbuffer(const float* transform,
                             sinriv::ui::render::RenderMeshShader& mesh_shader);
@@ -351,6 +356,7 @@ class RenderVoxelList {
     bool disable_camera_on_pick = false;
     float mouse_highlight_range = 3.0f;
     void update_mouse_pos(RenderDeferred& renderer);
+    void pick_skeleton_point_from_mouse();
 
     void render_ui();
     int object_editor_tab = 0;

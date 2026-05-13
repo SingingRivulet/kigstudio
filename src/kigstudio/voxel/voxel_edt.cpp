@@ -815,6 +815,102 @@ std::vector<std::pair<Vec3i, Vec3i>> extractGradientFlowSkeletonLines(
     return lines;
 }
 
+std::vector<std::pair<Vec3i, Vec3i>> mapSurfaceVoxelsToSkeleton(
+    const DenseGrid& dense,
+    const std::vector<std::pair<Vec3i, Vec3i>>& skeleton_lines) {
+    std::vector<std::pair<Vec3i, Vec3i>> mapping;
+    if (dense.sx <= 0 || dense.sy <= 0 || dense.sz <= 0 ||
+        skeleton_lines.empty()) {
+        return mapping;
+    }
+
+    std::unordered_set<int> skeleton_set;
+    std::vector<Vec3i> skeleton_points;
+    skeleton_set.reserve(skeleton_lines.size() * 2);
+    skeleton_points.reserve(skeleton_lines.size() * 2);
+
+    auto addSkeletonPoint = [&](const Vec3i& world_voxel) {
+        const Vec3i dense_voxel = dense.worldVoxelToDense(world_voxel);
+        if (!dense.inBounds(dense_voxel.x, dense_voxel.y, dense_voxel.z))
+            return;
+
+        const int index = localIndex(dense, dense_voxel);
+        if (skeleton_set.insert(index).second) {
+            skeleton_points.push_back(dense_voxel);
+        }
+    };
+
+    for (const auto& line : skeleton_lines) {
+        addSkeletonPoint(line.first);
+        addSkeletonPoint(line.second);
+    }
+
+    if (skeleton_points.empty())
+        return mapping;
+
+    auto nearestSkeletonPoint = [&](const Vec3i& p) {
+        float best_dist = DenseGrid::INF;
+        Vec3i best = skeleton_points.front();
+        for (const Vec3i& candidate : skeleton_points) {
+            const float dist = localDistance(p, candidate);
+            if (dist < best_dist) {
+                best_dist = dist;
+                best = candidate;
+            }
+        }
+        return best;
+    };
+
+    const int max_steps = dense.sx + dense.sy + dense.sz + 32;
+    for (int z = 0; z < dense.sz; ++z) {
+        for (int y = 0; y < dense.sy; ++y) {
+            for (int x = 0; x < dense.sx; ++x) {
+                if (!isSurfaceVoxel(dense, x, y, z))
+                    continue;
+
+                Vec3i p(x, y, z);
+                Vec3i hit = nearestSkeletonPoint(p);
+
+                for (int step = 0; step < max_steps; ++step) {
+                    const int current_index = localIndex(dense, p);
+                    if (skeleton_set.find(current_index) != skeleton_set.end()) {
+                        hit = p;
+                        break;
+                    }
+
+                    Vec3i best = p;
+                    float best_dist = dense.getDist2(p.x, p.y, p.z);
+                    for (const auto& d : kDirs26) {
+                        const Vec3i n = p + d;
+                        if (!dense.inBounds(n.x, n.y, n.z) ||
+                            !dense.getSolid(n.x, n.y, n.z)) {
+                            continue;
+                        }
+
+                        const float nd = dense.getDist2(n.x, n.y, n.z);
+                        if (nd > best_dist + 1e-4f) {
+                            best_dist = nd;
+                            best = n;
+                        }
+                    }
+
+                    if (best == p) {
+                        hit = nearestSkeletonPoint(p);
+                        break;
+                    }
+                    p = best;
+                }
+
+                mapping.push_back(
+                    {dense.denseToWorldVoxel(x, y, z),
+                     dense.denseToWorldVoxel(hit.x, hit.y, hit.z)});
+            }
+        }
+    }
+
+    return mapping;
+}
+
 // ============================================================
 // Build EDT Init Field
 // ============================================================
