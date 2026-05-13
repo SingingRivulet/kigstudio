@@ -56,6 +56,36 @@ struct DenseGrid {
                         p.z - min_bound.z);
     }
 };
+struct SDFGrid {
+    Vec3i min_bound;
+    Vec3i max_bound;
+
+    int sx = 0;
+    int sy = 0;
+    int sz = 0;
+
+    std::vector<float> sdf;
+
+    inline int index(int x, int y, int z) const {
+        return (z * sy + y) * sx + x;
+    }
+
+    inline bool inBounds(int x, int y, int z) const {
+        return x >= 0 && y >= 0 && z >= 0 && x < sx && y < sy && z < sz;
+    }
+
+    inline float get(int x, int y, int z) const { return sdf[index(x, y, z)]; }
+
+    inline void set(int x, int y, int z, float v) { sdf[index(x, y, z)] = v; }
+
+    inline Vec3i denseToWorldVoxel(int x, int y, int z) const {
+        return Vec3i(x + min_bound.x, y + min_bound.y, z + min_bound.z);
+    }
+
+    inline Vec3i worldVoxelToDense(const Vec3i& p) const {
+        return Vec3i(p.x - min_bound.x, p.y - min_bound.y, p.z - min_bound.z);
+    }
+};
 struct SkeletonNode {
     Vec3i pos;
     float radius = 0.f;
@@ -98,11 +128,16 @@ float edgeCost(const SkeletonNode& a, const SkeletonNode& b);
 DijkstraResult runDijkstra(const SkeletonGraph& graph, int start);
 std::vector<Vec3i> extractMainPath(const SkeletonGraph& graph);
 std::vector<Vec3i> extractWeightedCenterline(const DenseGrid& dense);
+DenseGrid buildInsideEDTField(const DenseGrid& src);
+DenseGrid buildOutsideEDTField(const DenseGrid& src);
+SDFGrid buildSDF(const DenseGrid& src);
 
 // DenseGrid dense = buildDenseGrid(grid);
 // computeEDT(dense);
 // finalizeEDT(dense);
-// std::vector<Vec3i> centerline =
-//     extractWeightedCenterline(dense);
+// std::vector<Vec3i> centerline = extractWeightedCenterline(dense);
+
+// DenseGrid dense = buildDenseGrid(grid, 16);
+// SDFGrid sdf = buildSDF(dense);
 
 }  // namespace sinriv::kigstudio::voxel

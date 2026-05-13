@@ -3,7 +3,7 @@
 
 namespace sinriv::kigstudio::voxel {
 
-static inline const Vec3i kDirs26[26] = {
+static const Vec3i kDirs26[26] = {
     {-1, -1, -1}, {0, -1, -1}, {1, -1, -1}, {-1, 0, -1}, {0, 0, -1},
     {1, 0, -1},   {-1, 1, -1}, {0, 1, -1},  {1, 1, -1},
 
@@ -453,6 +453,116 @@ std::vector<Vec3i> extractWeightedCenterline(const DenseGrid& dense) {
     SkeletonGraph graph = buildWeightedSkeleton(dense);
 
     return extractMainPath(graph);
+}
+
+// ============================================================
+// Build EDT Init Field
+// ============================================================
+
+DenseGrid buildInsideEDTField(const DenseGrid& src) {
+    DenseGrid g = src;
+
+    for (int z = 0; z < g.sz; z++) {
+        for (int y = 0; y < g.sy; y++) {
+            for (int x = 0; x < g.sx; x++) {
+                if (g.getSolid(x, y, z)) {
+                    g.setDist2(x, y, z, DenseGrid::INF);
+                } else {
+                    g.setDist2(x, y, z, 0.f);
+                }
+            }
+        }
+    }
+
+    return g;
+}
+
+// ============================================================
+// Build Outside EDT Field
+// ============================================================
+
+DenseGrid buildOutsideEDTField(const DenseGrid& src) {
+    DenseGrid g = src;
+
+    for (int z = 0; z < g.sz; z++) {
+        for (int y = 0; y < g.sy; y++) {
+            for (int x = 0; x < g.sx; x++) {
+                if (g.getSolid(x, y, z)) {
+                    g.setDist2(x, y, z, 0.f);
+                } else {
+                    g.setDist2(x, y, z, DenseGrid::INF);
+                }
+            }
+        }
+    }
+
+    return g;
+}
+
+// ============================================================
+// Build Signed Distance Field
+// ============================================================
+
+SDFGrid buildSDF(const DenseGrid& src) {
+    // ========================================================
+    // Build inside EDT
+    // ========================================================
+
+    DenseGrid inside = buildInsideEDTField(src);
+
+    computeEDT(inside);
+
+    // ========================================================
+    // Build outside EDT
+    // ========================================================
+
+    DenseGrid outside = buildOutsideEDTField(src);
+
+    computeEDT(outside);
+
+    // ========================================================
+    // Combine
+    // ========================================================
+
+    SDFGrid sdf;
+
+    sdf.min_bound = src.min_bound;
+    sdf.max_bound = src.max_bound;
+
+    sdf.sx = src.sx;
+    sdf.sy = src.sy;
+    sdf.sz = src.sz;
+
+    sdf.sdf.resize(sdf.sx * sdf.sy * sdf.sz);
+
+    for (int z = 0; z < sdf.sz; z++) {
+        for (int y = 0; y < sdf.sy; y++) {
+            for (int x = 0; x < sdf.sx; x++) {
+                const float din = std::sqrt(inside.getDist2(x, y, z));
+
+                const float dout = std::sqrt(outside.getDist2(x, y, z));
+
+                float value;
+
+                // ============================================
+                // Standard sign convention:
+                //
+                // inside  = negative
+                // outside = positive
+                // ============================================
+
+                if (src.getSolid(x, y, z)) {
+                    value = -din;
+                } else {
+                    value = dout;
+                }
+
+                sdf.set(x, y, z, value);
+            }
+        }
+    }
+
+    return sdf;
 }
 
 }  // namespace sinriv::kigstudio::voxel
