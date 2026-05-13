@@ -209,9 +209,11 @@ namespace sinriv::kigstudio::voxel {
     generateSmoothMeshFromSDF(
         sinriv::kigstudio::voxel::VoxelGrid& voxelData,
         int& numTriangles,
-        bool computeNormals)
+        bool computeNormals,
+        int subdivisions)
     {
         numTriangles = 0;
+        subdivisions = std::max(1, subdivisions);
 
         DenseGrid dense = buildDenseGrid(voxelData, 2);
         if (dense.sx <= 1 || dense.sy <= 1 || dense.sz <= 1) {
@@ -221,15 +223,39 @@ namespace sinriv::kigstudio::voxel {
         SDFGrid sdf = buildSDF(dense);
         vec3f vertlist[12];
 
-        auto sample = [&](int x, int y, int z) -> float {
-            return sdf.get(x, y, z);
+        auto sample = [&](float x, float y, float z) -> float {
+            x = std::max(0.0f, std::min(x, static_cast<float>(sdf.sx - 1)));
+            y = std::max(0.0f, std::min(y, static_cast<float>(sdf.sy - 1)));
+            z = std::max(0.0f, std::min(z, static_cast<float>(sdf.sz - 1)));
+
+            const int x0 = static_cast<int>(std::floor(x));
+            const int y0 = static_cast<int>(std::floor(y));
+            const int z0 = static_cast<int>(std::floor(z));
+            const int x1 = std::min(x0 + 1, sdf.sx - 1);
+            const int y1 = std::min(y0 + 1, sdf.sy - 1);
+            const int z1 = std::min(z0 + 1, sdf.sz - 1);
+
+            const float tx = x - static_cast<float>(x0);
+            const float ty = y - static_cast<float>(y0);
+            const float tz = z - static_cast<float>(z0);
+
+            auto lerp = [](float a, float b, float t) {
+                return a + (b - a) * t;
+            };
+
+            const float c00 = lerp(sdf.get(x0, y0, z0), sdf.get(x1, y0, z0), tx);
+            const float c10 = lerp(sdf.get(x0, y1, z0), sdf.get(x1, y1, z0), tx);
+            const float c01 = lerp(sdf.get(x0, y0, z1), sdf.get(x1, y0, z1), tx);
+            const float c11 = lerp(sdf.get(x0, y1, z1), sdf.get(x1, y1, z1), tx);
+            const float c0 = lerp(c00, c10, ty);
+            const float c1 = lerp(c01, c11, ty);
+            return lerp(c0, c1, tz);
         };
 
-        auto samplePosition = [&](int x, int y, int z) -> vec3f {
-            const Vec3i voxel = sdf.denseToWorldVoxel(x, y, z);
-            return {static_cast<float>(voxel.x) + 0.5f,
-                    static_cast<float>(voxel.y) + 0.5f,
-                    static_cast<float>(voxel.z) + 0.5f};
+        auto samplePosition = [&](float x, float y, float z) -> vec3f {
+            return {static_cast<float>(sdf.min_bound.x) + x + 0.5f,
+                    static_cast<float>(sdf.min_bound.y) + y + 0.5f,
+                    static_cast<float>(sdf.min_bound.z) + z + 0.5f};
         };
 
         auto interpolate = [](const vec3f& p1,
@@ -246,18 +272,30 @@ namespace sinriv::kigstudio::voxel {
             return p1 + (p2 - p1) * t;
         };
 
-        for (int z = 0; z < sdf.sz - 1; ++z)
-        for (int y = 0; y < sdf.sy - 1; ++y)
-        for (int x = 0; x < sdf.sx - 1; ++x) {
+        const int hsx = (sdf.sx - 1) * subdivisions;
+        const int hsy = (sdf.sy - 1) * subdivisions;
+        const int hsz = (sdf.sz - 1) * subdivisions;
+        const float inv_subdiv = 1.0f / static_cast<float>(subdivisions);
+
+        for (int z = 0; z < hsz; ++z)
+        for (int y = 0; y < hsy; ++y)
+        for (int x = 0; x < hsx; ++x) {
+            const float x0 = static_cast<float>(x) * inv_subdiv;
+            const float y0 = static_cast<float>(y) * inv_subdiv;
+            const float z0 = static_cast<float>(z) * inv_subdiv;
+            const float x1 = static_cast<float>(x + 1) * inv_subdiv;
+            const float y1 = static_cast<float>(y + 1) * inv_subdiv;
+            const float z1 = static_cast<float>(z + 1) * inv_subdiv;
+
             float val[8] = {
-                sample(x,     y,     z),
-                sample(x + 1, y,     z),
-                sample(x + 1, y + 1, z),
-                sample(x,     y + 1, z),
-                sample(x,     y,     z + 1),
-                sample(x + 1, y,     z + 1),
-                sample(x + 1, y + 1, z + 1),
-                sample(x,     y + 1, z + 1),
+                sample(x0, y0, z0),
+                sample(x1, y0, z0),
+                sample(x1, y1, z0),
+                sample(x0, y1, z0),
+                sample(x0, y0, z1),
+                sample(x1, y0, z1),
+                sample(x1, y1, z1),
+                sample(x0, y1, z1),
             };
 
             int cubeindex = 0;
@@ -274,14 +312,14 @@ namespace sinriv::kigstudio::voxel {
                 continue;
 
             vec3f p[8] = {
-                samplePosition(x,     y,     z),
-                samplePosition(x + 1, y,     z),
-                samplePosition(x + 1, y + 1, z),
-                samplePosition(x,     y + 1, z),
-                samplePosition(x,     y,     z + 1),
-                samplePosition(x + 1, y,     z + 1),
-                samplePosition(x + 1, y + 1, z + 1),
-                samplePosition(x,     y + 1, z + 1),
+                samplePosition(x0, y0, z0),
+                samplePosition(x1, y0, z0),
+                samplePosition(x1, y1, z0),
+                samplePosition(x0, y1, z0),
+                samplePosition(x0, y0, z1),
+                samplePosition(x1, y0, z1),
+                samplePosition(x1, y1, z1),
+                samplePosition(x0, y1, z1),
             };
 
             if (edgeTable[cubeindex] & 1)
