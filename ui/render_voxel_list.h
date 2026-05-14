@@ -243,7 +243,7 @@ class RenderVoxelList {
             } else if (segment_mode == CHAIN) {
                 return {voxel_grid_data};
             } else {
-                throw std::runtime_error("未知的处理模式");
+                throw std::runtime_error("Unknow method");
             }
         }
 
@@ -429,6 +429,10 @@ class RenderVoxelList {
 
     std::string last_save_error;
     std::string last_load_error;
+
+    size_t memory_current = 0;
+    size_t memory_peak = 0;
+    float fps = 0;
 
     // undo/redo
     struct PendingUndo {

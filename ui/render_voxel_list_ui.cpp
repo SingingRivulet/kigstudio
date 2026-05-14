@@ -528,14 +528,18 @@ void RenderVoxelList::render_ui() {
         ImGui::SameLine();
         ImGui::Text(get_locale_cstr("label.mouse_world_pos"), mouse_world_pos.x,
                     mouse_world_pos.y, mouse_world_pos.z);
+        ImGui::SameLine();
+        ImGui::Text(get_locale_cstr("label.current_memory_status"),
+                    memory_current / 1024.0f / 1024.0f,
+                    memory_peak / 1024.0f / 1024.0f);
+        ImGui::SameLine();
+        ImGui::Text(get_locale_cstr("label.current_fps"), fps);
 
         item_status_height =
             ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
 
         ImGui::SetWindowSize(
             ImVec2((float)window_width, (float)item_status_height));
-        
-        // TODO：显示当前渲染的三角形数量和内存占用（需要跨平台支持）
     }
     ImGui::End();
 
@@ -1343,9 +1347,8 @@ void RenderVoxelList::render_object_editor() {
             if (ImGui::Button(get_locale_cstr("action.save_as_stl"))) {
                 ImGui::OpenPopup(export_popup_title.c_str());
             }
-            if (ImGui::BeginPopupModal(
-                    export_popup_title.c_str(), nullptr,
-                    ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (ImGui::BeginPopupModal(export_popup_title.c_str(), nullptr,
+                                       ImGuiWindowFlags_AlwaysAutoResize)) {
                 ImGui::TextUnformatted(
                     get_locale_cstr("dialog.choose_export_method"));
                 if (ImGui::Button(
@@ -1527,8 +1530,7 @@ void RenderVoxelList::render_object_editor() {
                         bool moved_picked_skeleton_point = false;
                         for (size_t i = 0;
                              i < item.picked_skeleton_points.size(); ++i) {
-                            const auto& picked =
-                                item.picked_skeleton_points[i];
+                            const auto& picked = item.picked_skeleton_points[i];
                             const auto& p = picked.position;
                             ImGui::PushID(static_cast<int>(i));
                             if (ImGui::Button("<")) {
@@ -1552,7 +1554,7 @@ void RenderVoxelList::render_object_editor() {
                             ImGui::PopID();
                             if (moved_picked_skeleton_point)
                                 break;
-                            /* 
+                             /*
                             * TODO:
                             *   链条关节结构及参数：
                             *      中心线：
@@ -1605,6 +1607,10 @@ void RenderVoxelList::render_object_editor() {
                                 erase_picked_skeleton_index);
                             item.sort_picked_skeleton_points();
                         }
+                        if (mouse_world_pos_picked) {
+                            pick_skeleton_point_from_mouse(); // TODO：需要提供两种拾取方式，一种是通过距离场，一种是直接利用kd树寻找最近的骨架上的点
+                            // TODO : 切换为其他碰撞模式后应该隐藏拾取到的点
+                        }
                     }
 
                     ImGui::EndTabItem();
@@ -1615,6 +1621,8 @@ void RenderVoxelList::render_object_editor() {
                 }
 
                 // ===== Tab: Voxel Picking =====
+                // TODO：绘制时性能消耗很大，fps从60降到5，需要查明原因
+                // TODO: 需要加入计时机制，统计更新表面时每一步的耗时
                 if (ImGui::BeginTabItem(get_locale_cstr("tab.voxel_picking"),
                                         nullptr, flags_voxel)) {
                     object_editor_tab = 1;

@@ -317,6 +317,11 @@ void init_locale_strings() {
     add_locale_string("label.mouse_world_pos",
                       {{"en", "mouse world pos:(%.2f,%.2f,%.2f)"},
                        {"zh", "鼠标世界坐标:(%.2f,%.2f,%.2f)"}});
+    add_locale_string("label.current_memory_status",
+                      {{"en", "Memory: Current:%.2fMB Peak:%.2fMB"},
+                       {"zh", "内存: 当前:%.2fMB 峰值:%.2fMB"}});
+    add_locale_string("label.current_fps",
+                      {{"en", "FPS: %.2f"}, {"zh", "FPS: %.2f"}});
     add_locale_string("label.load_stl_hint",
                       {{"en", "Click the button below to load an STL file."},
                        {"zh", "点击下方按钮加载 STL 文件。"}});

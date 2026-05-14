@@ -29,6 +29,7 @@
 #include "tinyfiledialogs.h"
 #include "ui/render_deferred.h"
 #include "ui/render_voxel_list.h"
+#include "ui/utils.h"
 
 int main() {
 #ifdef _WIN32
@@ -155,7 +156,18 @@ int main() {
         }
     }
 
+    int64_t current_time = sinriv::getUnixTimeSeconds();
+    int frame_in_second = 0;
     while (running) {
+        ++frame_in_second;
+        int64_t current_time_tmp = sinriv::getUnixTimeSeconds();
+        if (current_time != current_time_tmp) {
+            render_items.memory_current = sinriv::getCurrentRSS();
+            render_items.memory_peak = sinriv::getPeakRSS();
+            render_items.fps = frame_in_second;
+            current_time = current_time_tmp;
+            frame_in_second = 0;
+        }
         SDL_Event e;
         ImGuiIO& io = ImGui::GetIO();
         while (SDL_PollEvent(&e)) {
@@ -410,7 +422,6 @@ int main() {
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
             !io.WantCaptureMouse) {
             render_items.mouse_world_pos_picked = true;
-            render_items.pick_skeleton_point_from_mouse();
         } else {
             render_items.mouse_world_pos_picked = false;
         }

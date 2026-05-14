@@ -175,7 +175,7 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
     if (!mouse_world_pos_picked || !mouse_world_pos_valid)
         return;
 
-    std::lock_guard<std::mutex> lock(locker);
+    // std::lock_guard<std::mutex> lock(locker);
     auto it = items.find(render_id);
     if (it == items.end())
         return;
