@@ -1598,7 +1598,8 @@ void RenderVoxelList::render_object_editor() {
                             *       2. 构造正mesh
                             *           公连接柱
                             *           两个切割圆锥分别与各自实体圆锥之间构成的区域
-                            *       3. 利用射线追踪算法对体素执行布尔，先执行负mesh，再执行正mesh，被切掉的部分直接丢弃，不需要返回新的item
+                            *       3.1. 利用射线追踪算法对体素执行布尔，先执行负mesh，再执行正mesh，被切掉的部分直接丢弃，不需要返回新的item
+                            *       3.2. 可以尝试使用sinriv::kigstudio::sdf::joint进行切割，但是3.1的mesh要保留，用于可视化
                             */
                         }
                         if (erase_picked_skeleton_index >= 0) {

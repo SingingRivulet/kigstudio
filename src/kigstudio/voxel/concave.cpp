@@ -5,19 +5,6 @@ struct vec2 {
     float x, y;
 };
 
-inline float dot(const vec3f& a, const vec3f& b) {
-    return a.dot(b);
-}
-inline vec3f cross(const vec3f& a, const vec3f& b) {
-    return a.cross(b);
-}
-inline float length(const vec3f& v) {
-    return v.length();
-}
-inline vec3f normalize(const vec3f& v) {
-    return v.normalize();
-}
-
 inline std::vector<vec3f> computeDirections(const vec3f& vertex,
                                             const std::vector<vec3f>& base) {
     std::vector<vec3f> dirs;
