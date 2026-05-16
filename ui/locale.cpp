@@ -91,6 +91,9 @@ void init_locale_strings() {
     add_locale_string("menu.file", {{"en", "File"}, {"zh", "文件"}});
     add_locale_string("menu.view", {{"en", "View"}, {"zh", "视图"}});
     add_locale_string("menu.tools", {{"en", "Tools"}, {"zh", "工具"}});
+    add_locale_string("menu.debug", {{"en", "Debug"}, {"zh", "调试"}});
+    add_locale_string("menu.debug_voxel_picking",
+                      {{"en", "Voxel Picking"}, {"zh", "体素拾取"}});
     add_locale_string("menu.check_non_manifold",
                       {{"en", "Check Non-Manifold Edges"}, {"zh", "检查非流形边"}});
     add_locale_string("menu.body", {{"en", "Body"}, {"zh", "主体"}});
@@ -297,6 +300,18 @@ void init_locale_strings() {
                       {{"en", "History"}, {"zh", "历史记录"}});
     add_locale_string("window.log",
                       {{"en", "Log"}, {"zh", "日志"}});
+    add_locale_string("window.debug_voxel_picking",
+                      {{"en", "Voxel Picking Debug"}, {"zh", "体素拾取调试"}});
+    add_locale_string("label.debug_step_world_to_voxel",
+                      {{"en", "World to Voxel"}, {"zh", "世界坐标转体素"}});
+    add_locale_string("label.debug_step_iterate_surface",
+                      {{"en", "Iterate Surface"}, {"zh", "遍历表面体素"}});
+    add_locale_string("label.debug_step_mark_voxels",
+                      {{"en", "Mark Voxels"}, {"zh", "标记体素"}});
+    add_locale_string("label.debug_step_total",
+                      {{"en", "Total"}, {"zh", "总计"}});
+    add_locale_string("label.debug_voxel_pick_timings",
+                      {{"en", "Timings (ms)"}, {"zh", "耗时统计 (ms)"}});
     add_locale_string("window.reload_stl",
                       {{"en", "Reload STL"}, {"zh", "重新加载 STL"}});
     add_locale_string("label.reload_stl_hint",

@@ -478,6 +478,19 @@ class RenderVoxelList {
     bool show_log_window = false;
     void render_log_window();
 
+    struct Debug {
+        struct VoxelPickTiming {
+            double world_to_voxel_ms = 0.0;
+            double iterate_surface_ms = 0.0;
+            double mark_voxels_ms = 0.0;
+            double total_ms = 0.0;
+        };
+        bool show_voxel_pick_debug = false;
+        std::vector<VoxelPickTiming> voxel_pick_timings;
+        size_t max_voxel_pick_timings = 100;
+    } debug;
+    void render_debug_voxel_pick_window();
+
     std::vector<std::string> queue_log;
     std::string queue_log_text;
     std::vector<char> queue_log_buffer;

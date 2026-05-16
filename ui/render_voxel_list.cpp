@@ -1,4 +1,5 @@
 #include "render_voxel_list.h"
+#include <chrono>
 #include <cstring>
 #include <limits>
 namespace sinriv::ui::render {
@@ -114,10 +115,21 @@ void RenderVoxelList::brush_marked_voxels(
     auto& item = *it->second;
     if (!item.voxel_picking_enabled || !item.surface_cache_ready) return;
 
+    using clock = std::chrono::high_resolution_clock;
+    using ms = std::chrono::duration<double, std::milli>;
+    clock::time_point t0, t1, t2, t3;
+    if (debug.show_voxel_pick_debug) {
+        t0 = clock::now();
+    }
+
     item.marked_voxels.global_position = item.voxel_grid_data.global_position;
     item.marked_voxels.voxel_size = item.voxel_grid_data.voxel_size;
 
     auto center = item.voxel_grid_data.worldToVoxel(world_pos);
+    if (debug.show_voxel_pick_debug) {
+        t1 = clock::now();
+    }
+
     float range_sq = range * range;
     std::vector<sinriv::kigstudio::voxel::Vec3i> to_mark;
     for (const auto& v : item.surface_voxels) {
@@ -128,6 +140,10 @@ void RenderVoxelList::brush_marked_voxels(
             to_mark.push_back(v);
         }
     }
+    if (debug.show_voxel_pick_debug) {
+        t2 = clock::now();
+    }
+
     if (!to_mark.empty()) {
         if (remove) {
             item.marked_voxels.removeMany(to_mark);
@@ -135,6 +151,18 @@ void RenderVoxelList::brush_marked_voxels(
             item.marked_voxels.insertMany(to_mark);
         }
         item.marked_voxels_dirty = true;
+    }
+    if (debug.show_voxel_pick_debug) {
+        t3 = clock::now();
+        Debug::VoxelPickTiming timing;
+        timing.world_to_voxel_ms = ms(t1 - t0).count();
+        timing.iterate_surface_ms = ms(t2 - t1).count();
+        timing.mark_voxels_ms = ms(t3 - t2).count();
+        timing.total_ms = ms(t3 - t0).count();
+        debug.voxel_pick_timings.push_back(timing);
+        if (debug.voxel_pick_timings.size() > debug.max_voxel_pick_timings) {
+            debug.voxel_pick_timings.erase(debug.voxel_pick_timings.begin());
+        }
     }
 }
 
@@ -175,16 +203,43 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
     if (!mouse_world_pos_picked || !mouse_world_pos_valid)
         return;
 
-    // std::lock_guard<std::mutex> lock(locker);
     auto it = items.find(render_id);
     if (it == items.end())
         return;
 
     auto& item = *it->second;
+    const float pick_range = std::max(mouse_highlight_range, item.voxel_pick_range);
+
+    // 优先使用 skeleton_order_cache + kd树 查询最近的骨架点
+    if (!item.skeleton_order_cache.empty()) {
+        kdtree::pointVec points;
+        points.reserve(item.skeleton_order_cache.size());
+        for (const auto& sp : item.skeleton_order_cache) {
+            points.push_back({static_cast<double>(sp.position.x),
+                              static_cast<double>(sp.position.y),
+                              static_cast<double>(sp.position.z)});
+        }
+        kdtree::KDTree tree(points);
+        auto nearest = tree.nearest_pointIndex(
+            {static_cast<double>(mouse_world_pos.x),
+             static_cast<double>(mouse_world_pos.y),
+             static_cast<double>(mouse_world_pos.z)});
+        const double dx = nearest.first[0] - mouse_world_pos.x;
+        const double dy = nearest.first[1] - mouse_world_pos.y;
+        const double dz = nearest.first[2] - mouse_world_pos.z;
+        const double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist <= static_cast<double>(pick_range)) {
+            item.picked_skeleton_points.push_back(
+                item.skeleton_order_cache[nearest.second]);
+            item.sort_picked_skeleton_points();
+        }
+        return;
+    }
+
+    // 回退：基于 surface_skeleton_cache 遍历查找
     if (item.surface_skeleton_cache.empty())
         return;
 
-    const float pick_range = std::max(mouse_highlight_range, item.voxel_pick_range);
     const float pick_range_sq = pick_range * pick_range;
     float best_dist_sq = std::numeric_limits<float>::max();
     const RenderVoxelItem::SkeletonPointPick* best_skeleton = nullptr;

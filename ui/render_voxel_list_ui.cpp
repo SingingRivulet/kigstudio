@@ -465,6 +465,14 @@ void RenderVoxelList::render_ui() {
                         append_queue_logf("log.queue.skip_check_busy");
                     }
                 }
+                if (ImGui::BeginMenu(get_locale_cstr("menu.debug"))) {
+                    if (ImGui::MenuItem(
+                            get_locale_cstr("menu.debug_voxel_picking"))) {
+                        debug.show_voxel_pick_debug =
+                            !debug.show_voxel_pick_debug;
+                    }
+                    ImGui::EndMenu();
+                }
                 ImGui::EndMenu();
             }
             ImGui::EndMenuBar();
@@ -569,6 +577,7 @@ void RenderVoxelList::render_ui() {
     render_import_vxgrid_dialog();
     render_history_window();
     render_log_window();
+    render_debug_voxel_pick_window();
 
     // Delete confirm modal
     if (show_delete_confirm) {
@@ -1554,53 +1563,61 @@ void RenderVoxelList::render_object_editor() {
                             ImGui::PopID();
                             if (moved_picked_skeleton_point)
                                 break;
-                             /*
-                            * TODO:
-                            *   链条关节结构及参数：
-                            *      中心线：
-                            *           起点（一定位于skeleton point上）
-                            *           终点（一定位于skeleton point上）
-                            *           起点和终点构成一根直线
-                            *      关节窝：
-                            *           切割圆锥 用于切割出关节窝的圆锥，需要三个参数定义：
-                            *               距离中心线起点的距离
-                            *               圆锥张开的角度
-                            *               底面半径
-                            *               *圆锥开口方向一定指向终点，所以无需定义*
-                            *           实体圆锥 将关节窝后面填充一定范围，以增加强度：
-                            *               距离关节窝切割圆锥顶点的距离（实体圆锥顶点位于切割圆锥顶点与中心线起点之间）
-                            *               底面半径
-                            *               *实体圆锥表面与切割圆锥平行，所以其他参数无需定义*
-                            *           连接柱（公） 一个圆柱，与圆锥底面平行，轴穿过中心线，两边在与切割圆锥相交处终止（所以底面不是正圆），需要三个参数定义：
-                            *               距离关节窝切割圆锥顶点的距离（连接柱顶点位于切割圆锥顶点与中心线起点之间）
-                            *               圆柱底面半径
-                            *               旋转角度关节连接柱的旋转角度（一个向量，从中心线上一点往这个方向作射线，圆柱的轴位于该射线与中心线围成的平面上）
-                            *      关节头：
-                            *           切割圆锥 用于切割出关节头的圆锥，需要两个参数定义：
-                            *               距离关节窝切割圆锥的距离
-                            *               底面半径
-                            *               *张开的角度一定等于关节窝切割圆锥的角度，所以无需定义*
-                            *               *圆锥开口方向一定指向终点，所以无需定义*
-                            *           实体圆锥 将关节头后面填充一定范围，以增加强度：
-                            *               距离关节头切割圆锥顶点的距离（实体圆锥顶点位于切割圆锥顶点后方）
-                            *               底面半径
-                            *               *实体圆锥表面与切割圆锥平行，所以其他参数无需定义*
-                            *           连接柱（母） 切割一个圆柱，离公连接柱有一定距离，使其能活动
-                            *               半径（通过与公连接柱的差值来定义）
-                            *               *轴和角度无需定义（和公连接柱共用轴）*
-                            *      连接槽：
-                            *           在关节头和关节窝的切割圆锥之间进行切割一个带厚度的锥形，便于活动
-                            *           没有可设置的参数，形状取决于关节头的切割圆锥和关节窝的切割圆锥
-                            *   构造链条流程：
-                            *       1. 构造负mesh
-                            *           母连接柱
-                            *           两个切割圆锥之间的区域
-                            *       2. 构造正mesh
-                            *           公连接柱
-                            *           两个切割圆锥分别与各自实体圆锥之间构成的区域
-                            *       3.1. 利用射线追踪算法对体素执行布尔，先执行负mesh，再执行正mesh，被切掉的部分直接丢弃，不需要返回新的item
-                            *       3.2. 可以尝试使用sinriv::kigstudio::sdf::joint进行切割，但是3.1的mesh要保留，用于可视化
-                            */
+                            /*
+                             * TODO:
+                             *   链条关节结构及参数：
+                             *      中心线：
+                             *           起点（一定位于skeleton point上）
+                             *           终点（一定位于skeleton point上）
+                             *           起点和终点构成一根直线
+                             *      关节窝：
+                             *           切割圆锥
+                             * 用于切割出关节窝的圆锥，需要三个参数定义：
+                             *               距离中心线起点的距离
+                             *               圆锥张开的角度
+                             *               底面半径
+                             *               *圆锥开口方向一定指向终点，所以无需定义*
+                             *           实体圆锥
+                             * 将关节窝后面填充一定范围，以增加强度：
+                             *               距离关节窝切割圆锥顶点的距离（实体圆锥顶点位于切割圆锥顶点与中心线起点之间）
+                             *               底面半径
+                             *               *实体圆锥表面与切割圆锥平行，所以其他参数无需定义*
+                             *           连接柱（公）
+                             * 一个圆柱，与圆锥底面平行，轴穿过中心线，两边在与切割圆锥相交处终止（所以底面不是正圆），需要三个参数定义：
+                             *               距离关节窝切割圆锥顶点的距离（连接柱顶点位于切割圆锥顶点与中心线起点之间）
+                             *               圆柱底面半径
+                             *               旋转角度关节连接柱的旋转角度（一个向量，从中心线上一点往这个方向作射线，圆柱的轴位于该射线与中心线围成的平面上）
+                             *      关节头：
+                             *           切割圆锥
+                             * 用于切割出关节头的圆锥，需要两个参数定义：
+                             *               距离关节窝切割圆锥的距离
+                             *               底面半径
+                             *               *张开的角度一定等于关节窝切割圆锥的角度，所以无需定义*
+                             *               *圆锥开口方向一定指向终点，所以无需定义*
+                             *           实体圆锥
+                             * 将关节头后面填充一定范围，以增加强度：
+                             *               距离关节头切割圆锥顶点的距离（实体圆锥顶点位于切割圆锥顶点后方）
+                             *               底面半径
+                             *               *实体圆锥表面与切割圆锥平行，所以其他参数无需定义*
+                             *           连接柱（母）
+                             * 切割一个圆柱，离公连接柱有一定距离，使其能活动
+                             *               半径（通过与公连接柱的差值来定义）
+                             *               *轴和角度无需定义（和公连接柱共用轴）*
+                             *      连接槽：
+                             *           在关节头和关节窝的切割圆锥之间进行切割一个带厚度的锥形，便于活动
+                             *           没有可设置的参数，形状取决于关节头的切割圆锥和关节窝的切割圆锥
+                             *   构造链条流程：
+                             *       1. 构造负mesh
+                             *           母连接柱
+                             *           两个切割圆锥之间的区域
+                             *       2. 构造正mesh
+                             *           公连接柱
+                             *           两个切割圆锥分别与各自实体圆锥之间构成的区域
+                             *       3.1.
+                             * 利用射线追踪算法对体素执行布尔，先执行负mesh，再执行正mesh，被切掉的部分直接丢弃，不需要返回新的item
+                             *       3.2.
+                             * 可以尝试使用sinriv::kigstudio::sdf::joint进行切割，但是3.1的mesh要保留，用于可视化
+                             */
                         }
                         if (erase_picked_skeleton_index >= 0) {
                             item.picked_skeleton_points.erase(
@@ -1609,8 +1626,7 @@ void RenderVoxelList::render_object_editor() {
                             item.sort_picked_skeleton_points();
                         }
                         if (mouse_world_pos_picked) {
-                            pick_skeleton_point_from_mouse(); // TODO：需要提供两种拾取方式，一种是通过距离场，一种是直接利用kd树寻找最近的骨架上的点
-                            // TODO : 切换为其他碰撞模式后应该隐藏拾取到的点
+                            pick_skeleton_point_from_mouse();
                         }
                     }
 
@@ -2111,6 +2127,67 @@ void RenderVoxelList::render_log_window() {
             ImGui::InputTextMultiline(
                 "##log", queue_log_buffer.data(), queue_log_buffer.size(),
                 ImVec2(-FLT_MIN, -FLT_MIN), ImGuiInputTextFlags_ReadOnly);
+        }
+    }
+    ImGui::End();
+}
+
+void RenderVoxelList::render_debug_voxel_pick_window() {
+    if (!debug.show_voxel_pick_debug)
+        return;
+
+    ImGui::SetNextWindowSize(ImVec2(450, 350), ImGuiCond_Once);
+    if (ImGui::Begin(get_locale_cstr("window.debug_voxel_picking"),
+                     &debug.show_voxel_pick_debug)) {
+        ImGui::TextUnformatted(
+            get_locale_cstr("label.debug_voxel_pick_timings"));
+        ImGui::Separator();
+
+        if (debug.voxel_pick_timings.empty()) {
+            ImGui::TextDisabled(
+                "No data yet. Pick some voxels to see timings.");
+        } else {
+            if (ImGui::BeginTable("##VoxelPickTimings", 5,
+                                  ImGuiTableFlags_Borders |
+                                      ImGuiTableFlags_RowBg |
+                                      ImGuiTableFlags_ScrollY |
+                                      ImGuiTableFlags_SizingStretchProp)) {
+                ImGui::TableSetupScrollFreeze(0, 1);
+                ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed,
+                                        40.0f);
+                ImGui::TableSetupColumn(
+                    get_locale_cstr("label.debug_step_world_to_voxel"));
+                ImGui::TableSetupColumn(
+                    get_locale_cstr("label.debug_step_iterate_surface"));
+                ImGui::TableSetupColumn(
+                    get_locale_cstr("label.debug_step_mark_voxels"));
+                ImGui::TableSetupColumn(
+                    get_locale_cstr("label.debug_step_total"));
+                ImGui::TableHeadersRow();
+
+                int idx = 1;
+                for (const auto& t : debug.voxel_pick_timings) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::Text("%d", idx++);
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::Text("%.3f", t.world_to_voxel_ms);
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text("%.3f", t.iterate_surface_ms);
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::Text("%.3f", t.mark_voxels_ms);
+                    ImGui::TableSetColumnIndex(4);
+                    ImGui::Text("%.3f", t.total_ms);
+                }
+                ImGui::EndTable();
+            }
+
+            if (ImGui::Button("Clear")) {
+                debug.voxel_pick_timings.clear();
+            }
+            ImGui::SameLine();
+            ImGui::Text("Count: %zu / %zu", debug.voxel_pick_timings.size(),
+                        debug.max_voxel_pick_timings);
         }
     }
     ImGui::End();

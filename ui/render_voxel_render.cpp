@@ -142,7 +142,7 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
             }
         }
     }
-    if (!picked_skeleton_points.empty()) {
+    if (segment_mode == CHAIN && !picked_skeleton_points.empty()) {
         if (mesh_shader.ensureLineProgram()) {
             bgfx::VertexLayout& layout = concave_cone_overlay_layout();
             const uint32_t marker_color = pack_abgr(1.0f, 0.18f, 0.08f, 1.0f);
