@@ -1534,6 +1534,7 @@ void RenderVoxelList::render_object_editor() {
                         ImGui::SameLine();
                         if (ImGui::Button("Clear##PickedSkeletonPoints")) {
                             item.picked_skeleton_points.clear();
+                            item.joint_wireframe_dirty = true;
                         }
                         int erase_picked_skeleton_index = -1;
                         bool moved_picked_skeleton_point = false;
@@ -1555,14 +1556,17 @@ void RenderVoxelList::render_object_editor() {
                             if (ImGui::Button("X")) {
                                 erase_picked_skeleton_index =
                                     static_cast<int>(i);
+                                item.joint_wireframe_dirty = true;
                             }
                             ImGui::SameLine();
                             ImGui::Text("#%d order=%d: %.3f, %.3f, %.3f",
                                         static_cast<int>(i), picked.order, p.x,
                                         p.y, p.z);
                             ImGui::PopID();
-                            if (moved_picked_skeleton_point)
+                            if (moved_picked_skeleton_point) {
+                                item.joint_wireframe_dirty = true;
                                 break;
+                            }
                             /*
                              * TODO:
                              *   链条关节结构及参数：
@@ -1624,9 +1628,11 @@ void RenderVoxelList::render_object_editor() {
                                 item.picked_skeleton_points.begin() +
                                 erase_picked_skeleton_index);
                             item.sort_picked_skeleton_points();
+                            item.joint_wireframe_dirty = true;
                         }
                         if (mouse_world_pos_picked) {
                             pick_skeleton_point_from_mouse();
+                            item.joint_wireframe_dirty = true;
                         }
                     }
 

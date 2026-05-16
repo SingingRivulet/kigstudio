@@ -585,6 +585,7 @@ void RenderVoxelList::extract_skeleton(int index) {
             std::move(surface_skeleton_world_cache);
         it->second->skeleton_order_cache = std::move(skeleton_order_cache);
         it->second->sort_picked_skeleton_points();
+        it->second->joint_wireframe_dirty = true;
     }
 }
 

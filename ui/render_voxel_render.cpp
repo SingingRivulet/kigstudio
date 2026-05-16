@@ -185,6 +185,32 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 bgfx::submit(mesh_shader.overlay_view_id_,
                              mesh_shader.line_program_);
             }
+
+            // joint wireframes
+            if (joint_wireframe_dirty) {
+                rebuild_joint_wireframe();
+            }
+            if (!joint_wireframe_vertices.empty() &&
+                bgfx::getAvailTransientVertexBuffer(
+                    static_cast<uint32_t>(joint_wireframe_vertices.size()),
+                    layout) >= joint_wireframe_vertices.size()) {
+                bgfx::TransientVertexBuffer tvb;
+                bgfx::allocTransientVertexBuffer(
+                    &tvb,
+                    static_cast<uint32_t>(joint_wireframe_vertices.size()),
+                    layout);
+                std::memcpy(tvb.data, joint_wireframe_vertices.data(),
+                            joint_wireframe_vertices.size() *
+                                sizeof(mesh_detail::ColorLineVertex));
+                bgfx::setTransform(model_transform);
+                bgfx::setVertexBuffer(0, &tvb);
+                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                               BGFX_STATE_WRITE_Z |
+                               BGFX_STATE_DEPTH_TEST_LESS |
+                               BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+                bgfx::submit(mesh_shader.overlay_view_id_,
+                             mesh_shader.line_program_);
+            }
         }
     }
 }

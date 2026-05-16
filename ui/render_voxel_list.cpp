@@ -1,4 +1,5 @@
 #include "render_voxel_list.h"
+#include "kigstudio/sdf/sdf_chain_joint.h"
 #include <chrono>
 #include <cstring>
 #include <limits>
@@ -219,21 +220,31 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
                               static_cast<double>(sp.position.y),
                               static_cast<double>(sp.position.z)});
         }
-        kdtree::KDTree tree(points);
-        auto nearest = tree.nearest_pointIndex(
-            {static_cast<double>(mouse_world_pos.x),
-             static_cast<double>(mouse_world_pos.y),
-             static_cast<double>(mouse_world_pos.z)});
-        const double dx = nearest.first[0] - mouse_world_pos.x;
-        const double dy = nearest.first[1] - mouse_world_pos.y;
-        const double dz = nearest.first[2] - mouse_world_pos.z;
-        const double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
-        if (dist <= static_cast<double>(pick_range)) {
-            item.picked_skeleton_points.push_back(
-                item.skeleton_order_cache[nearest.second]);
-            item.sort_picked_skeleton_points();
+        if (!points.empty()) {
+            kdtree::KDTree tree(points);
+            if (!tree.empty()) {
+                size_t nearest_idx = tree.nearest_index(
+                    {static_cast<double>(mouse_world_pos.x),
+                     static_cast<double>(mouse_world_pos.y),
+                     static_cast<double>(mouse_world_pos.z)});
+                if (nearest_idx < item.skeleton_order_cache.size()) {
+                    const auto& nearest_pos =
+                        item.skeleton_order_cache[nearest_idx].position;
+                    const double dx = nearest_pos.x - mouse_world_pos.x;
+                    const double dy = nearest_pos.y - mouse_world_pos.y;
+                    const double dz = nearest_pos.z - mouse_world_pos.z;
+                    const double dist =
+                        std::sqrt(dx * dx + dy * dy + dz * dz);
+                    if (dist <= static_cast<double>(pick_range)) {
+                        item.picked_skeleton_points.push_back(
+                            item.skeleton_order_cache[nearest_idx]);
+                        item.sort_picked_skeleton_points();
+                        item.joint_wireframe_dirty = true;
+                        return;
+                    }
+                }
+            }
         }
-        return;
     }
 
     // 回退：基于 surface_skeleton_cache 遍历查找
@@ -263,6 +274,88 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
 
     item.picked_skeleton_points.push_back(*best_skeleton);
     item.sort_picked_skeleton_points();
+    item.joint_wireframe_dirty = true;
+}
+
+void RenderVoxelList::RenderVoxelItem::rebuild_joint_wireframe() {
+    joint_wireframe_vertices.clear();
+    joint_wireframe_dirty = false;
+    if (picked_skeleton_points.empty()) return;
+
+    using Vec3f = sinriv::kigstudio::sdf::joint::Vec3f;
+    using Frame = sinriv::kigstudio::sdf::joint::Frame;
+
+    auto get_pos = [&](size_t idx) -> Vec3f {
+        const auto& p = picked_skeleton_points[idx].position;
+        return {p.x, p.y, p.z};
+    };
+
+    for (size_t i = 0; i < picked_skeleton_points.size(); ++i) {
+        Vec3f start = get_pos(i);
+        Vec3f end;
+
+        if (i + 1 < picked_skeleton_points.size()) {
+            end = get_pos(i + 1);
+        } else if (picked_skeleton_points.size() >= 2) {
+            Vec3f prev = get_pos(i - 1);
+            end = start + (start - prev);
+        } else {
+            if (!skeleton_lines.empty()) {
+                float best_dist = std::numeric_limits<float>::max();
+                Vec3f target = start;
+                for (const auto& line : skeleton_lines) {
+                    Vec3f a(line.first.x, line.first.y, line.first.z);
+                    Vec3f b(line.second.x, line.second.y, line.second.z);
+                    float da = (a - start).length();
+                    float db = (b - start).length();
+                    if (da < best_dist) {
+                        best_dist = da;
+                        target = b;
+                    }
+                    if (db < best_dist) {
+                        best_dist = db;
+                        target = a;
+                    }
+                }
+                end = target;
+            } else if (!skeleton_order_cache.empty()) {
+                end = Vec3f(skeleton_order_cache.back().position.x,
+                            skeleton_order_cache.back().position.y,
+                            skeleton_order_cache.back().position.z);
+            } else {
+                end = start + Vec3f(0, 0, 10);
+            }
+        }
+
+        if ((end - start).length() < 1e-6f) {
+            end = start + Vec3f(0, 0, 1);
+        }
+
+        float rotation = 0.0f;
+        Frame frame = sinriv::kigstudio::sdf::joint::buildFrame(start, end, rotation);
+
+        sinriv::kigstudio::sdf::joint::JointNegativeSDF neg;
+        sinriv::kigstudio::sdf::joint::JointPositiveSDF pos;
+        neg.frame = frame;
+        pos.frame = frame;
+
+        std::vector<std::pair<Vec3f, Vec3f>> segments;
+        sinriv::kigstudio::sdf::joint::appendJointWireframe(segments, neg, pos);
+
+        const uint32_t color = 0xff00ffff;  // yellow ABGR
+        for (const auto& seg : segments) {
+            Vec3f a = frame.localToWorld(seg.first);
+            Vec3f b = frame.localToWorld(seg.second);
+            joint_wireframe_vertices.push_back({a.x, -a.y, a.z, color});
+            joint_wireframe_vertices.push_back({b.x, -b.y, b.z, color});
+        }
+
+        // center line
+        Vec3f a = start;
+        Vec3f b = end;
+        joint_wireframe_vertices.push_back({a.x, -a.y, a.z, 0xffffffff});
+        joint_wireframe_vertices.push_back({b.x, -b.y, b.z, 0xffffffff});
+    }
 }
 
 void RenderVoxelList::begin_marked_edit(int item_id) {

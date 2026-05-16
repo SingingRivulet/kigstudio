@@ -158,6 +158,10 @@ class RenderVoxelList {
         std::vector<SkeletonPointPick> picked_skeleton_points;
         std::vector<SkeletonPointPick> skeleton_order_cache;
 
+        std::vector<mesh_detail::ColorLineVertex> joint_wireframe_vertices;
+        bool joint_wireframe_dirty = true;
+        void rebuild_joint_wireframe();
+
         inline void sort_picked_skeleton_points() {
             std::sort(picked_skeleton_points.begin(),
                       picked_skeleton_points.end(),
