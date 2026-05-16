@@ -56,6 +56,31 @@ inline Frame buildFrame(const Vec3f& start,
     return f;
 }
 
+// Build a frame whose z-axis points from start to end,
+// and x-axis aligns with the world +Y axis (projected onto the plane
+// perpendicular to z). This makes the male cylinder point toward +Y.
+inline Frame buildFrameAlignedY(const Vec3f& start,
+                                 const Vec3f& end) {
+    Frame f;
+    f.origin = start;
+    f.z_axis = normalize(end - start);
+
+    Vec3f world_y(0, 1, 0);
+    Vec3f proj = world_y - f.z_axis * dot(world_y, f.z_axis);
+    float proj_len = std::sqrt(dot(proj, proj));
+
+    if (proj_len > 1e-6f) {
+        f.x_axis = proj / proj_len;
+    } else {
+        // z is parallel to world_y, fall back to default
+        Vec3f up = std::abs(f.z_axis.z) < 0.99f ? Vec3f(0, 0, 1) : Vec3f(1, 0, 0);
+        f.x_axis = normalize(cross(up, f.z_axis));
+    }
+
+    f.y_axis = normalize(cross(f.z_axis, f.x_axis));
+    return f;
+}
+
 // ============================================================
 // SDF helpers
 // ============================================================

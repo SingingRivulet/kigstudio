@@ -312,6 +312,50 @@ void init_locale_strings() {
                       {{"en", "Total"}, {"zh", "总计"}});
     add_locale_string("label.debug_voxel_pick_timings",
                       {{"en", "Timings (ms)"}, {"zh", "耗时统计 (ms)"}});
+
+    // Joint editor
+    add_locale_string("label.joint",
+                      {{"en", "Joint"}, {"zh", "关节"}});
+    add_locale_string("label.custom_direction",
+                      {{"en", "Custom Direction"}, {"zh", "自定义方向"}});
+    add_locale_string("label.direction_end",
+                      {{"en", "Direction End"}, {"zh", "方向终点"}});
+    add_locale_string("action.pick_direction",
+                      {{"en", "Pick Direction"}, {"zh", "拾取方向"}});
+    add_locale_string("action.stop_picking_direction",
+                      {{"en", "Stop Picking Direction"}, {"zh", "停止拾取方向"}});
+    add_locale_string("label.socket_cone",
+                      {{"en", "Socket Cone"}, {"zh", "关节窝圆锥"}});
+    add_locale_string("label.head_cone",
+                      {{"en", "Head Cone"}, {"zh", "关节头圆锥"}});
+    add_locale_string("label.support_cones",
+                      {{"en", "Support Cones"}, {"zh", "实体圆锥"}});
+    add_locale_string("label.cylinder",
+                      {{"en", "Cylinder"}, {"zh", "连接柱"}});
+    add_locale_string("label.offset",
+                      {{"en", "Offset"}, {"zh", "偏移"}});
+    add_locale_string("label.angle",
+                      {{"en", "Angle"}, {"zh", "角度"}});
+    add_locale_string("label.radius",
+                      {{"en", "Radius"}, {"zh", "半径"}});
+    add_locale_string("label.socket_support_offset",
+                      {{"en", "Socket Support Offset"}, {"zh", "关节窝实体偏移"}});
+    add_locale_string("label.socket_support_radius",
+                      {{"en", "Socket Support Radius"}, {"zh", "关节窝实体半径"}});
+    add_locale_string("label.head_support_offset",
+                      {{"en", "Head Support Offset"}, {"zh", "关节头实体偏移"}});
+    add_locale_string("label.head_support_radius",
+                      {{"en", "Head Support Radius"}, {"zh", "关节头实体半径"}});
+    add_locale_string("label.cylinder_offset",
+                      {{"en", "Cylinder Offset"}, {"zh", "连接柱偏移"}});
+    add_locale_string("label.cylinder_radius",
+                      {{"en", "Cylinder Radius"}, {"zh", "连接柱半径"}});
+    add_locale_string("label.female_gap",
+                      {{"en", "Female Gap"}, {"zh", "母连接柱间隙"}});
+    add_locale_string("label.slot_extra",
+                      {{"en", "Slot Extra"}, {"zh", "槽间隙"}});
+    add_locale_string("label.rotation_angle",
+                      {{"en", "Rotation Angle"}, {"zh", "旋转角度"}});
     add_locale_string("window.reload_stl",
                       {{"en", "Reload STL"}, {"zh", "重新加载 STL"}});
     add_locale_string("label.reload_stl_hint",

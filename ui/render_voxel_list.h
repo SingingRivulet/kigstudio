@@ -146,6 +146,24 @@ class RenderVoxelList {
         struct SkeletonPointPick {
             sinriv::kigstudio::voxel::vec3f position;
             int order = 0;
+
+            // Joint parameters for this picked point
+            bool use_custom_direction = false;
+            sinriv::kigstudio::voxel::vec3f custom_direction_end = {0, 0, 0};
+            float socket_cone_offset = 5.f;
+            float socket_cone_angle = 0.5f;
+            float socket_cone_radius = 4.f;
+            float head_cone_offset = 10.f;
+            float head_cone_radius = 3.5f;
+            float socket_support_offset = 2.f;
+            float socket_support_radius = 5.f;
+            float head_support_offset = 2.f;
+            float head_support_radius = 5.f;
+            float male_cylinder_offset = 3.f;
+            float male_cylinder_radius = 1.5f;
+            float female_gap = 0.3f;
+            float slot_extra = 0.5f;
+            float rotation_angle = 0.f;
         };
         struct SurfaceSkeletonCacheEntry {
             sinriv::kigstudio::voxel::Vec3i surface_voxel;

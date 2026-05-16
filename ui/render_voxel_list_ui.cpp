@@ -1538,9 +1538,10 @@ void RenderVoxelList::render_object_editor() {
                         }
                         int erase_picked_skeleton_index = -1;
                         bool moved_picked_skeleton_point = false;
+                        static int pick_direction_index = -1;
                         for (size_t i = 0;
                              i < item.picked_skeleton_points.size(); ++i) {
-                            const auto& picked = item.picked_skeleton_points[i];
+                            auto& picked = item.picked_skeleton_points[i];
                             const auto& p = picked.position;
                             ImGui::PushID(static_cast<int>(i));
                             if (ImGui::Button("<")) {
@@ -1562,66 +1563,149 @@ void RenderVoxelList::render_object_editor() {
                             ImGui::Text("#%d order=%d: %.3f, %.3f, %.3f",
                                         static_cast<int>(i), picked.order, p.x,
                                         p.y, p.z);
+
+                            // ===== Joint Editor =====
+                            char joint_label[64];
+                            snprintf(joint_label, sizeof(joint_label), "%s #%d",
+                                     get_locale_cstr("label.joint"),
+                                     static_cast<int>(i));
+                            if (ImGui::CollapsingHeader(joint_label)) {
+                                bool dirty = false;
+
+                                // Custom direction
+                                if (ImGui::Checkbox(
+                                        get_locale_cstr("label.custom_direction"),
+                                        &picked.use_custom_direction)) {
+                                    dirty = true;
+                                }
+                                if (picked.use_custom_direction) {
+                                    auto r = edit_local_position_stepper(
+                                        get_locale_cstr("label.direction_end"),
+                                        picked.custom_direction_end, 0.1f,
+                                        false, false);
+                                    if (r.value_changed) dirty = true;
+
+                                    if (pick_direction_index == (int)i) {
+                                        if (ImGui::Button(get_locale_cstr(
+                                                "action.stop_picking_direction"))) {
+                                            pick_direction_index = -1;
+                                        }
+                                    } else {
+                                        if (ImGui::Button(get_locale_cstr(
+                                                "action.pick_direction"))) {
+                                            pick_direction_index = (int)i;
+                                        }
+                                    }
+                                }
+
+                                // Socket cone
+                                if (ImGui::CollapsingHeader(
+                                        get_locale_cstr("label.socket_cone"))) {
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr("label.offset"),
+                                        &picked.socket_cone_offset,
+                                        0.1f, 0.0f, 100.0f);
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr("label.angle"),
+                                        &picked.socket_cone_angle,
+                                        0.01f, 0.01f, 1.5f);
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr("label.radius"),
+                                        &picked.socket_cone_radius,
+                                        0.1f, 0.1f, 50.0f);
+                                }
+
+                                // Head cone
+                                if (ImGui::CollapsingHeader(
+                                        get_locale_cstr("label.head_cone"))) {
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr("label.offset"),
+                                        &picked.head_cone_offset,
+                                        0.1f, 0.0f, 100.0f);
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr("label.radius"),
+                                        &picked.head_cone_radius,
+                                        0.1f, 0.1f, 50.0f);
+                                }
+
+                                // Support cones
+                                if (ImGui::CollapsingHeader(
+                                        get_locale_cstr("label.support_cones"))) {
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr(
+                                            "label.socket_support_offset"),
+                                        &picked.socket_support_offset, 0.1f,
+                                        0.0f, 100.0f);
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr(
+                                            "label.socket_support_radius"),
+                                        &picked.socket_support_radius, 0.1f,
+                                        0.1f, 50.0f);
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr(
+                                            "label.head_support_offset"),
+                                        &picked.head_support_offset, 0.1f,
+                                        0.0f, 100.0f);
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr(
+                                            "label.head_support_radius"),
+                                        &picked.head_support_radius, 0.1f,
+                                        0.1f, 50.0f);
+                                }
+
+                                // Cylinder
+                                if (ImGui::CollapsingHeader(
+                                        get_locale_cstr("label.cylinder"))) {
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr(
+                                            "label.cylinder_offset"),
+                                        &picked.male_cylinder_offset, 0.1f,
+                                        0.0f, 100.0f);
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr(
+                                            "label.cylinder_radius"),
+                                        &picked.male_cylinder_radius, 0.1f,
+                                        0.1f, 50.0f);
+                                    dirty |= ImGui::DragFloat(
+                                        get_locale_cstr("label.female_gap"),
+                                        &picked.female_gap,
+                                        0.01f, 0.0f, 10.0f);
+                                }
+
+                                // Slot
+                                dirty |= ImGui::DragFloat(
+                                    get_locale_cstr("label.slot_extra"),
+                                    &picked.slot_extra, 0.1f,
+                                    0.0f, 10.0f);
+
+                                // Rotation
+                                dirty |= ImGui::DragFloat(
+                                    get_locale_cstr("label.rotation_angle"),
+                                    &picked.rotation_angle,
+                                    0.01f, -3.14f, 3.14f);
+
+                                if (dirty) {
+                                    item.joint_wireframe_dirty = true;
+                                }
+                            }
+
                             ImGui::PopID();
                             if (moved_picked_skeleton_point) {
                                 item.joint_wireframe_dirty = true;
                                 break;
                             }
-                            /*
-                             * TODO:
-                             *   链条关节结构及参数：
-                             *      中心线：
-                             *           起点（一定位于skeleton point上）
-                             *           终点（一定位于skeleton point上）
-                             *           起点和终点构成一根直线
-                             *      关节窝：
-                             *           切割圆锥
-                             * 用于切割出关节窝的圆锥，需要三个参数定义：
-                             *               距离中心线起点的距离
-                             *               圆锥张开的角度
-                             *               底面半径
-                             *               *圆锥开口方向一定指向终点，所以无需定义*
-                             *           实体圆锥
-                             * 将关节窝后面填充一定范围，以增加强度：
-                             *               距离关节窝切割圆锥顶点的距离（实体圆锥顶点位于切割圆锥顶点与中心线起点之间）
-                             *               底面半径
-                             *               *实体圆锥表面与切割圆锥平行，所以其他参数无需定义*
-                             *           连接柱（公）
-                             * 一个圆柱，与圆锥底面平行，轴穿过中心线，两边在与切割圆锥相交处终止（所以底面不是正圆），需要三个参数定义：
-                             *               距离关节窝切割圆锥顶点的距离（连接柱顶点位于切割圆锥顶点与中心线起点之间）
-                             *               圆柱底面半径
-                             *               旋转角度关节连接柱的旋转角度（一个向量，从中心线上一点往这个方向作射线，圆柱的轴位于该射线与中心线围成的平面上）
-                             *      关节头：
-                             *           切割圆锥
-                             * 用于切割出关节头的圆锥，需要两个参数定义：
-                             *               距离关节窝切割圆锥的距离
-                             *               底面半径
-                             *               *张开的角度一定等于关节窝切割圆锥的角度，所以无需定义*
-                             *               *圆锥开口方向一定指向终点，所以无需定义*
-                             *           实体圆锥
-                             * 将关节头后面填充一定范围，以增加强度：
-                             *               距离关节头切割圆锥顶点的距离（实体圆锥顶点位于切割圆锥顶点后方）
-                             *               底面半径
-                             *               *实体圆锥表面与切割圆锥平行，所以其他参数无需定义*
-                             *           连接柱（母）
-                             * 切割一个圆柱，离公连接柱有一定距离，使其能活动
-                             *               半径（通过与公连接柱的差值来定义）
-                             *               *轴和角度无需定义（和公连接柱共用轴）*
-                             *      连接槽：
-                             *           在关节头和关节窝的切割圆锥之间进行切割一个带厚度的锥形，便于活动
-                             *           没有可设置的参数，形状取决于关节头的切割圆锥和关节窝的切割圆锥
-                             *   构造链条流程：
-                             *       1. 构造负mesh
-                             *           母连接柱
-                             *           两个切割圆锥之间的区域
-                             *       2. 构造正mesh
-                             *           公连接柱
-                             *           两个切割圆锥分别与各自实体圆锥之间构成的区域
-                             *       3.1.
-                             * 利用射线追踪算法对体素执行布尔，先执行负mesh，再执行正mesh，被切掉的部分直接丢弃，不需要返回新的item
-                             *       3.2.
-                             * 可以尝试使用sinriv::kigstudio::sdf::joint进行切割，但是3.1的mesh要保留，用于可视化
-                             */
+                        }
+
+                        // Handle direction picking
+                        if (pick_direction_index >= 0 &&
+                            pick_direction_index <
+                                (int)item.picked_skeleton_points.size() &&
+                            mouse_world_pos_valid && mouse_world_pos_picked) {
+                            auto& picked = item.picked_skeleton_points[
+                                pick_direction_index];
+                            picked.custom_direction_end = mouse_world_pos;
+                            item.joint_wireframe_dirty = true;
+                            pick_direction_index = -1;
                         }
                         if (erase_picked_skeleton_index >= 0) {
                             item.picked_skeleton_points.erase(

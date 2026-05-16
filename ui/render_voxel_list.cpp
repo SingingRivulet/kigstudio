@@ -291,39 +291,46 @@ void RenderVoxelList::RenderVoxelItem::rebuild_joint_wireframe() {
     };
 
     for (size_t i = 0; i < picked_skeleton_points.size(); ++i) {
+        const auto& params = picked_skeleton_points[i];
         Vec3f start = get_pos(i);
         Vec3f end;
 
-        if (i + 1 < picked_skeleton_points.size()) {
-            end = get_pos(i + 1);
-        } else if (picked_skeleton_points.size() >= 2) {
-            Vec3f prev = get_pos(i - 1);
-            end = start + (start - prev);
+        if (params.use_custom_direction) {
+            end = Vec3f(params.custom_direction_end.x,
+                        params.custom_direction_end.y,
+                        params.custom_direction_end.z);
         } else {
-            if (!skeleton_lines.empty()) {
-                float best_dist = std::numeric_limits<float>::max();
-                Vec3f target = start;
-                for (const auto& line : skeleton_lines) {
-                    Vec3f a(line.first.x, line.first.y, line.first.z);
-                    Vec3f b(line.second.x, line.second.y, line.second.z);
-                    float da = (a - start).length();
-                    float db = (b - start).length();
-                    if (da < best_dist) {
-                        best_dist = da;
-                        target = b;
-                    }
-                    if (db < best_dist) {
-                        best_dist = db;
-                        target = a;
-                    }
-                }
-                end = target;
-            } else if (!skeleton_order_cache.empty()) {
-                end = Vec3f(skeleton_order_cache.back().position.x,
-                            skeleton_order_cache.back().position.y,
-                            skeleton_order_cache.back().position.z);
+            if (i + 1 < picked_skeleton_points.size()) {
+                end = get_pos(i + 1);
+            } else if (picked_skeleton_points.size() >= 2) {
+                Vec3f prev = get_pos(i - 1);
+                end = start + (start - prev);
             } else {
-                end = start + Vec3f(0, 0, 10);
+                if (!skeleton_lines.empty()) {
+                    float best_dist = std::numeric_limits<float>::max();
+                    Vec3f target = start;
+                    for (const auto& line : skeleton_lines) {
+                        Vec3f a(line.first.x, line.first.y, line.first.z);
+                        Vec3f b(line.second.x, line.second.y, line.second.z);
+                        float da = (a - start).length();
+                        float db = (b - start).length();
+                        if (da < best_dist) {
+                            best_dist = da;
+                            target = b;
+                        }
+                        if (db < best_dist) {
+                            best_dist = db;
+                            target = a;
+                        }
+                    }
+                    end = target;
+                } else if (!skeleton_order_cache.empty()) {
+                    end = Vec3f(skeleton_order_cache.back().position.x,
+                                skeleton_order_cache.back().position.y,
+                                skeleton_order_cache.back().position.z);
+                } else {
+                    end = start + Vec3f(0, 0, 10);
+                }
             }
         }
 
@@ -331,13 +338,36 @@ void RenderVoxelList::RenderVoxelItem::rebuild_joint_wireframe() {
             end = start + Vec3f(0, 0, 1);
         }
 
-        float rotation = 0.0f;
-        Frame frame = sinriv::kigstudio::sdf::joint::buildFrame(start, end, rotation);
+        Frame frame;
+        if (params.use_custom_direction) {
+            frame = sinriv::kigstudio::sdf::joint::buildFrame(
+                start, end, params.rotation_angle);
+        } else {
+            frame = sinriv::kigstudio::sdf::joint::buildFrameAlignedY(start, end);
+        }
 
         sinriv::kigstudio::sdf::joint::JointNegativeSDF neg;
         sinriv::kigstudio::sdf::joint::JointPositiveSDF pos;
         neg.frame = frame;
         pos.frame = frame;
+
+        // Apply per-node parameters
+        neg.socket_cone_offset = params.socket_cone_offset;
+        neg.socket_cone_angle = params.socket_cone_angle;
+        neg.socket_cone_radius = params.socket_cone_radius;
+        neg.head_cone_offset = params.head_cone_offset;
+        neg.head_cone_radius = params.head_cone_radius;
+        neg.female_gap = params.female_gap;
+        neg.male_cylinder_offset = params.male_cylinder_offset;
+        neg.male_cylinder_radius = params.male_cylinder_radius;
+        neg.slot_extra = params.slot_extra;
+
+        pos.socket_support_offset = params.socket_support_offset;
+        pos.socket_support_radius = params.socket_support_radius;
+        pos.head_support_offset = params.head_support_offset;
+        pos.head_support_radius = params.head_support_radius;
+        pos.male_cylinder_offset = params.male_cylinder_offset;
+        pos.male_cylinder_radius = params.male_cylinder_radius;
 
         std::vector<std::pair<Vec3f, Vec3f>> segments;
         sinriv::kigstudio::sdf::joint::appendJointWireframe(segments, neg, pos);
