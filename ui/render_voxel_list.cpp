@@ -476,6 +476,78 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
         if (!to_remove.empty()) {
             result.removeMany(to_remove);
         }
+
+        // Add positive joint volume (support cones + male cylinder)
+        sinriv::kigstudio::sdf::joint::JointPositiveSDF pos;
+        pos.frame = frame;
+        pos.socket_support_offset = params.socket_support_offset;
+        pos.socket_support_radius = params.socket_support_radius;
+        pos.head_support_offset = params.head_support_offset;
+        pos.head_support_radius = params.head_support_radius;
+        pos.male_cylinder_offset = params.male_cylinder_offset;
+        pos.male_cylinder_radius = params.male_cylinder_radius;
+
+        {
+            float socket_sup_h =
+                pos.socket_support_radius / std::tan(pos.socket_support_angle);
+            float head_sup_h =
+                pos.head_support_radius / std::tan(pos.head_support_angle);
+            float local_x_min = -std::max(
+                {pos.socket_support_radius, pos.head_support_radius,
+                 pos.male_cylinder_half_height});
+            float local_x_max = -local_x_min;
+            float local_y_min = local_x_min;
+            float local_y_max = local_x_max;
+            float local_z_min =
+                std::min({pos.socket_support_offset, pos.head_support_offset,
+                          pos.male_cylinder_offset - pos.male_cylinder_radius});
+            float local_z_max = std::max(
+                {pos.socket_support_offset + socket_sup_h,
+                 pos.head_support_offset + head_sup_h,
+                 pos.male_cylinder_offset + pos.male_cylinder_radius});
+
+            Vec3f local_corners[8] = {
+                {local_x_min, local_y_min, local_z_min},
+                {local_x_min, local_y_min, local_z_max},
+                {local_x_min, local_y_max, local_z_min},
+                {local_x_min, local_y_max, local_z_max},
+                {local_x_max, local_y_min, local_z_min},
+                {local_x_max, local_y_min, local_z_max},
+                {local_x_max, local_y_max, local_z_min},
+                {local_x_max, local_y_max, local_z_max}};
+
+            Vec3f world_min = frame.localToWorld(local_corners[0]);
+            Vec3f world_max = world_min;
+            for (int i = 1; i < 8; ++i) {
+                Vec3f wc = frame.localToWorld(local_corners[i]);
+                world_min.x = std::min(world_min.x, wc.x);
+                world_min.y = std::min(world_min.y, wc.y);
+                world_min.z = std::min(world_min.z, wc.z);
+                world_max.x = std::max(world_max.x, wc.x);
+                world_max.y = std::max(world_max.y, wc.y);
+                world_max.z = std::max(world_max.z, wc.z);
+            }
+
+            Vec3i voxel_min = result.worldToVoxel(world_min);
+            Vec3i voxel_max = result.worldToVoxel(world_max);
+
+            std::vector<Vec3i> to_add;
+            for (int vx = voxel_min.x; vx <= voxel_max.x; ++vx) {
+                for (int vy = voxel_min.y; vy <= voxel_max.y; ++vy) {
+                    for (int vz = voxel_min.z; vz <= voxel_max.z; ++vz) {
+                        Vec3i voxel(vx, vy, vz);
+                        auto world_pos = result.voxelCenterToWorld(voxel);
+                        Vec3f world_p(world_pos.x, world_pos.y, world_pos.z);
+                        if (pos.contains(world_p)) {
+                            to_add.push_back(voxel);
+                        }
+                    }
+                }
+            }
+            if (!to_add.empty()) {
+                result.insertMany(to_add);
+            }
+        }
     }
 
     return result;

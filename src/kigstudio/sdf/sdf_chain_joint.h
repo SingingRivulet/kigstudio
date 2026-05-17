@@ -160,6 +160,7 @@ class JointNegativeSDF {
     // male cylinder source (shared axis/angle for female cylinder)
     float male_cylinder_offset = 3.f;
     float male_cylinder_radius = 1.5f;
+    float male_cylinder_half_height = 10.f;
 
     // head cutting cone
     float head_cone_offset = 10.f;
@@ -200,8 +201,7 @@ class JointNegativeSDF {
         female_p.z -= male_cylinder_offset;
 
         float female_cyl = sdCappedCylinderX(
-            female_p, male_cylinder_radius + female_gap, 1000.0f);
-        female_cyl = opIntersection(female_cyl, socket_cone);
+            female_p, male_cylinder_radius + female_gap, male_cylinder_half_height);
 
         // ============================================
         // slot: region inside socket cone but outside the
@@ -242,6 +242,7 @@ class JointPositiveSDF {
     // male cylinder
     float male_cylinder_offset = 3.f;
     float male_cylinder_radius = 1.5f;
+    float male_cylinder_half_height = 10.f;
 
     inline float sdf(const Vec3f& world_p) const {
         Vec3f p = frame.worldToLocal(world_p);
@@ -280,8 +281,10 @@ class JointPositiveSDF {
         male_p.z -= male_cylinder_offset;
 
         float male_cyl =
-            sdCappedCylinderX(male_p, male_cylinder_radius, 1000.0f);
+            sdCappedCylinderX(male_p, male_cylinder_radius, male_cylinder_half_height);
 
+        // Remove portion inside socket support cone so the cylinder
+        // terminates at the socket surface (not the head).
         male_cyl = opIntersection(male_cyl, -socket_support_cone);
 
         // ============================================
