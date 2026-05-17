@@ -449,6 +449,7 @@ void RenderVoxelList::render_object_editor_chain_mode(
             // Socket cone
             if (ImGui::CollapsingHeader(
                     get_locale_cstr("label.socket_cone"))) {
+                ImGui::PushID("SocketCone");
                 if (ImGui::DragFloat(
                         get_locale_cstr("label.offset"),
                         &picked.socket_cone_offset, 0.1f,
@@ -476,11 +477,13 @@ void RenderVoxelList::render_object_editor_chain_mode(
                     ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
+                ImGui::PopID();
             }
 
             // Head cone
             if (ImGui::CollapsingHeader(
                     get_locale_cstr("label.head_cone"))) {
+                ImGui::PushID("HeadCone");
                 if (ImGui::DragFloat(
                         get_locale_cstr("label.offset"),
                         &picked.head_cone_offset, 0.1f,
@@ -499,6 +502,7 @@ void RenderVoxelList::render_object_editor_chain_mode(
                     ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
+                ImGui::PopID();
             }
 
             // Support cones

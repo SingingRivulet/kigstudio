@@ -81,6 +81,52 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddItemToObject(
         obj, "voxel_size",
         sinriv::kigstudio::to_json(item.voxel_grid_data.voxel_size));
+    cJSON_AddBoolToObject(obj, "use_cgal_skeleton",
+                          item.use_cgal_skeleton);
+    cJSON* skeleton_points = cJSON_CreateArray();
+    for (const auto& sp : item.picked_skeleton_points) {
+        cJSON* sp_obj = cJSON_CreateObject();
+        cJSON_AddItemToObject(
+            sp_obj, "position",
+            sinriv::kigstudio::to_json(sp.position));
+        cJSON_AddNumberToObject(sp_obj, "order", sp.order);
+        cJSON_AddBoolToObject(sp_obj, "use_custom_direction",
+                              sp.use_custom_direction);
+        cJSON_AddItemToObject(
+            sp_obj, "custom_direction_end",
+            sinriv::kigstudio::to_json(sp.custom_direction_end));
+        cJSON_AddNumberToObject(sp_obj, "socket_cone_offset",
+                                sp.socket_cone_offset);
+        cJSON_AddNumberToObject(sp_obj, "socket_cone_angle",
+                                sp.socket_cone_angle);
+        cJSON_AddNumberToObject(sp_obj, "socket_cone_radius",
+                                sp.socket_cone_radius);
+        cJSON_AddNumberToObject(sp_obj, "head_cone_offset",
+                                sp.head_cone_offset);
+        cJSON_AddNumberToObject(sp_obj, "head_cone_radius",
+                                sp.head_cone_radius);
+        cJSON_AddNumberToObject(sp_obj, "socket_support_offset",
+                                sp.socket_support_offset);
+        cJSON_AddNumberToObject(sp_obj, "socket_support_radius",
+                                sp.socket_support_radius);
+        cJSON_AddNumberToObject(sp_obj, "head_support_offset",
+                                sp.head_support_offset);
+        cJSON_AddNumberToObject(sp_obj, "head_support_radius",
+                                sp.head_support_radius);
+        cJSON_AddNumberToObject(sp_obj, "male_cylinder_offset",
+                                sp.male_cylinder_offset);
+        cJSON_AddNumberToObject(sp_obj, "male_cylinder_radius",
+                                sp.male_cylinder_radius);
+        cJSON_AddNumberToObject(sp_obj, "female_gap",
+                                sp.female_gap);
+        cJSON_AddNumberToObject(sp_obj, "slot_extra",
+                                sp.slot_extra);
+        cJSON_AddNumberToObject(sp_obj, "rotation_angle",
+                                sp.rotation_angle);
+        cJSON_AddItemToArray(skeleton_points, sp_obj);
+    }
+    cJSON_AddItemToObject(obj, "picked_skeleton_points",
+                          skeleton_points);
     return obj;
 }
 
@@ -177,6 +223,114 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         cJSON_GetObjectItem(obj, "chain_min_radius");
     if (chain_min_radius_json) {
         item->chain_min_radius = chain_min_radius_json->valueint;
+    }
+    const cJSON* use_cgal_json =
+        cJSON_GetObjectItem(obj, "use_cgal_skeleton");
+    if (use_cgal_json) {
+        item->use_cgal_skeleton = cJSON_IsTrue(use_cgal_json);
+    }
+    const cJSON* skeleton_points =
+        cJSON_GetObjectItem(obj, "picked_skeleton_points");
+    if (skeleton_points) {
+        int sp_count = cJSON_GetArraySize(skeleton_points);
+        for (int i = 0; i < sp_count; ++i) {
+            const cJSON* sp_obj =
+                cJSON_GetArrayItem(skeleton_points, i);
+            SkeletonPointPick sp;
+            sp.position =
+                sinriv::kigstudio::vec3_from_json<
+                    sinriv::kigstudio::voxel::vec3f>(
+                    cJSON_GetObjectItem(sp_obj, "position"));
+            cJSON* order_json =
+                cJSON_GetObjectItem(sp_obj, "order");
+            if (order_json)
+                sp.order = order_json->valueint;
+            cJSON* use_custom_dir_json = cJSON_GetObjectItem(
+                sp_obj, "use_custom_direction");
+            if (use_custom_dir_json)
+                sp.use_custom_direction =
+                    cJSON_IsTrue(use_custom_dir_json);
+            sp.custom_direction_end =
+                sinriv::kigstudio::vec3_from_json<
+                    sinriv::kigstudio::voxel::vec3f>(
+                    cJSON_GetObjectItem(sp_obj,
+                                        "custom_direction_end"));
+            cJSON* socket_cone_offset_json = cJSON_GetObjectItem(
+                sp_obj, "socket_cone_offset");
+            if (socket_cone_offset_json)
+                sp.socket_cone_offset = static_cast<float>(
+                    socket_cone_offset_json->valuedouble);
+            cJSON* socket_cone_angle_json = cJSON_GetObjectItem(
+                sp_obj, "socket_cone_angle");
+            if (socket_cone_angle_json)
+                sp.socket_cone_angle = static_cast<float>(
+                    socket_cone_angle_json->valuedouble);
+            cJSON* socket_cone_radius_json = cJSON_GetObjectItem(
+                sp_obj, "socket_cone_radius");
+            if (socket_cone_radius_json)
+                sp.socket_cone_radius = static_cast<float>(
+                    socket_cone_radius_json->valuedouble);
+            cJSON* head_cone_offset_json = cJSON_GetObjectItem(
+                sp_obj, "head_cone_offset");
+            if (head_cone_offset_json)
+                sp.head_cone_offset = static_cast<float>(
+                    head_cone_offset_json->valuedouble);
+            cJSON* head_cone_radius_json = cJSON_GetObjectItem(
+                sp_obj, "head_cone_radius");
+            if (head_cone_radius_json)
+                sp.head_cone_radius = static_cast<float>(
+                    head_cone_radius_json->valuedouble);
+            cJSON* socket_support_offset_json =
+                cJSON_GetObjectItem(sp_obj,
+                                    "socket_support_offset");
+            if (socket_support_offset_json)
+                sp.socket_support_offset = static_cast<float>(
+                    socket_support_offset_json->valuedouble);
+            cJSON* socket_support_radius_json =
+                cJSON_GetObjectItem(sp_obj,
+                                    "socket_support_radius");
+            if (socket_support_radius_json)
+                sp.socket_support_radius = static_cast<float>(
+                    socket_support_radius_json->valuedouble);
+            cJSON* head_support_offset_json = cJSON_GetObjectItem(
+                sp_obj, "head_support_offset");
+            if (head_support_offset_json)
+                sp.head_support_offset = static_cast<float>(
+                    head_support_offset_json->valuedouble);
+            cJSON* head_support_radius_json = cJSON_GetObjectItem(
+                sp_obj, "head_support_radius");
+            if (head_support_radius_json)
+                sp.head_support_radius = static_cast<float>(
+                    head_support_radius_json->valuedouble);
+            cJSON* male_cylinder_offset_json =
+                cJSON_GetObjectItem(sp_obj,
+                                    "male_cylinder_offset");
+            if (male_cylinder_offset_json)
+                sp.male_cylinder_offset = static_cast<float>(
+                    male_cylinder_offset_json->valuedouble);
+            cJSON* male_cylinder_radius_json =
+                cJSON_GetObjectItem(sp_obj,
+                                    "male_cylinder_radius");
+            if (male_cylinder_radius_json)
+                sp.male_cylinder_radius = static_cast<float>(
+                    male_cylinder_radius_json->valuedouble);
+            cJSON* female_gap_json =
+                cJSON_GetObjectItem(sp_obj, "female_gap");
+            if (female_gap_json)
+                sp.female_gap = static_cast<float>(
+                    female_gap_json->valuedouble);
+            cJSON* slot_extra_json =
+                cJSON_GetObjectItem(sp_obj, "slot_extra");
+            if (slot_extra_json)
+                sp.slot_extra = static_cast<float>(
+                    slot_extra_json->valuedouble);
+            cJSON* rotation_angle_json =
+                cJSON_GetObjectItem(sp_obj, "rotation_angle");
+            if (rotation_angle_json)
+                sp.rotation_angle = static_cast<float>(
+                    rotation_angle_json->valuedouble);
+            item->picked_skeleton_points.push_back(sp);
+        }
     }
     return item;
 }

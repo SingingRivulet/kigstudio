@@ -246,7 +246,10 @@ class RenderVoxelList {
             next_order = std::max(
                 0, std::min(next_order,
                             static_cast<int>(skeleton_order_cache.size()) - 1));
-            picked_skeleton_points[index] = skeleton_order_cache[next_order];
+            auto& target = picked_skeleton_points[index];
+            const auto& source = skeleton_order_cache[next_order];
+            target.position = source.position;
+            target.order = source.order;
             sort_picked_skeleton_points();
         }
 
