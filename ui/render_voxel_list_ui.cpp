@@ -1331,36 +1331,55 @@ void RenderVoxelList::render_object_editor() {
                 if (!file)
                     return;
 
-                std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
-                                       sinriv::kigstudio::voxel::vec3f>>
-                    mesh;
-                int numTriangles = 0;
-                if (mode == 1) {
-                    // Smooth SDF
-                    for (auto triangles :
-                         sinriv::kigstudio::voxel::generateSmoothMeshFromSDF(
-                             item.voxel_grid_data, numTriangles, true)) {
-                        mesh.push_back(triangles);
+                try {
+                    std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
+                                           sinriv::kigstudio::voxel::vec3f>>
+                        mesh;
+                    int numTriangles = 0;
+                    if (mode == 1) {
+                        // Smooth SDF
+                        for (auto triangles :
+                             sinriv::kigstudio::voxel::generateSmoothMeshFromSDF(
+                                 item.voxel_grid_data, numTriangles, true)) {
+                            mesh.push_back(triangles);
+                        }
+                    } else if (mode == 2) {
+                        // Poisson reconstruction
+                        if (!item.source_triangles.empty()) {
+                            auto cloud = sinriv::kigstudio::cgal::samplePointCloudFromTriangles(
+                                item.source_triangles);
+                            mesh = sinriv::kigstudio::cgal::poissonReconstruct(
+                                cloud, item.voxel_grid_data.voxel_size.x);
+                        }
+                    } else {
+                        // Standard
+                        for (auto triangles :
+                             sinriv::kigstudio::voxel::generateMesh(
+                                 item.voxel_grid_data, 0.5, numTriangles, true)) {
+                            mesh.push_back(triangles);
+                        }
                     }
-                } else if (mode == 2) {
-                    // Poisson reconstruction
-                    if (!item.source_triangles.empty()) {
-                        auto cloud = sinriv::kigstudio::cgal::samplePointCloudFromTriangles(
-                            item.source_triangles);
-                        mesh = sinriv::kigstudio::cgal::poissonReconstruct(
-                            cloud, item.voxel_grid_data.voxel_size.x);
+                    if (mesh.empty()) {
+                        std::string msg = "[Export STL] Warning: generated mesh is empty (mode=" + std::to_string(mode) + ")";
+                        std::cerr << msg << std::endl;
+                        append_queue_log(msg);
+                        show_log_window = true;
+                        return;
                     }
-                } else {
-                    // Standard
-                    for (auto triangles :
-                         sinriv::kigstudio::voxel::generateMesh(
-                             item.voxel_grid_data, 0.5, numTriangles, true)) {
-                        mesh.push_back(triangles);
-                    }
+                    mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
+                    sinriv::kigstudio::voxel::saveMeshToASCIISTL(
+                        mesh, tinyfd_path_to_utf8(file));
+                } catch (const std::exception& e) {
+                    std::string msg = std::string("[Export STL] Error: ") + e.what();
+                    std::cerr << msg << std::endl;
+                    append_queue_log(msg);
+                    show_log_window = true;
+                } catch (...) {
+                    std::string msg = "[Export STL] Unknown error during export";
+                    std::cerr << msg << std::endl;
+                    append_queue_log(msg);
+                    show_log_window = true;
                 }
-                mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
-                sinriv::kigstudio::voxel::saveMeshToASCIISTL(
-                    mesh, tinyfd_path_to_utf8(file));
             };
 
             const std::string export_popup_title =
@@ -1539,11 +1558,11 @@ void RenderVoxelList::render_object_editor() {
                         ImGui::DragInt(
                             get_locale_cstr("label.chain_min_radius"),
                             &item.chain_min_radius, 1, 1, 20);
-                        ImGui::Checkbox(
-                            get_locale_cstr("label.use_cgal_skeleton"),
-                            &item.use_cgal_skeleton);
-                        ImGui::TextUnformatted(
-                            get_locale_cstr("tooltip.mode.chain"));
+                        if (!item.stl_path.empty()) {
+                            ImGui::Checkbox(
+                                get_locale_cstr("label.use_cgal_skeleton"),
+                                &item.use_cgal_skeleton);
+                        }
                         if (ImGui::Button(
                                 get_locale_cstr("action.extract_skeleton"))) {
                             queue_extract_skeleton(item.id);

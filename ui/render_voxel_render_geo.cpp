@@ -506,30 +506,42 @@ void RenderVoxelList::extract_skeleton(int index) {
     bool cgal_succeeded = false;
 
     // --- CGAL mesh-based skeleton path ---
-    if (it->second->use_cgal_skeleton && !it->second->source_triangles.empty()) {
+    if (it->second->use_cgal_skeleton && !it->second->stl_path.empty()) {
         try {
             queue_status = "CGAL skeleton extraction...";
-            auto cgal_lines = sinriv::kigstudio::cgal::extractSkeletonFromMesh(
-                it->second->source_triangles);
-            if (!cgal_lines.empty()) {
-                chain_lines = std::move(cgal_lines);
-                chain_lines = smoothSkeletonLines(chain_lines);
+            std::vector<sinriv::kigstudio::voxel::Triangle> cgal_triangles;
+            if (!it->second->source_triangles.empty()) {
+                cgal_triangles = it->second->source_triangles;
+            } else {
+                // Read STL directly
+                for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(it->second->stl_path)) {
+                    (void)n;
+                    cgal_triangles.push_back(tri);
+                }
+            }
+            if (!cgal_triangles.empty()) {
+                auto cgal_lines = sinriv::kigstudio::cgal::extractSkeletonFromMesh(
+                    cgal_triangles);
+                if (!cgal_lines.empty()) {
+                    chain_lines = std::move(cgal_lines);
+                    chain_lines = smoothSkeletonLines(chain_lines);
 
-                // Build skeleton_order_cache from unique endpoints
-                std::set<std::tuple<float,float,float>> seen;
-                int order = 0;
-                for (const auto& line : chain_lines) {
-                    for (const auto& p : {line.first, line.second}) {
-                        auto key = std::make_tuple(p.x, p.y, p.z);
-                        if (seen.insert(key).second) {
-                            RenderVoxelItem::SkeletonPointPick pick;
-                            pick.position = p;
-                            pick.order = order++;
-                            skeleton_order_cache.push_back(pick);
+                    // Build skeleton_order_cache from unique endpoints
+                    std::set<std::tuple<float,float,float>> seen;
+                    int order = 0;
+                    for (const auto& line : chain_lines) {
+                        for (const auto& p : {line.first, line.second}) {
+                            auto key = std::make_tuple(p.x, p.y, p.z);
+                            if (seen.insert(key).second) {
+                                RenderVoxelItem::SkeletonPointPick pick;
+                                pick.position = p;
+                                pick.order = order++;
+                                skeleton_order_cache.push_back(pick);
+                            }
                         }
                     }
+                    cgal_succeeded = true;
                 }
-                cgal_succeeded = true;
             }
         } catch (const std::exception& e) {
             std::cerr << "[CGAL Skeleton] failed: " << e.what()
