@@ -11,6 +11,8 @@
 #include <windows.h>
 #endif
 #include "kigstudio/utils/vec3.h"
+#include "kigstudio/cgal/poisson_reconstruction.h"
+#include "kigstudio/cgal/poisson_utils.h"
 #include "locale.h"
 #include "render_voxel_list.h"
 #include "tinyfiledialogs.h"
@@ -1320,7 +1322,7 @@ void RenderVoxelList::render_object_editor() {
                 }
                 ImGui::SameLine();
             }
-            auto export_item_as_stl = [&](bool smooth_sdf) {
+            auto export_item_as_stl = [&](int mode) {
                 const char* filters[] = {"*.stl"};
                 const char* file = tinyfd_saveFileDialog(
                     get_locale_cstr("dialog.save_voxel_as_stl"),
@@ -1333,13 +1335,23 @@ void RenderVoxelList::render_object_editor() {
                                        sinriv::kigstudio::voxel::vec3f>>
                     mesh;
                 int numTriangles = 0;
-                if (smooth_sdf) {
+                if (mode == 1) {
+                    // Smooth SDF
                     for (auto triangles :
                          sinriv::kigstudio::voxel::generateSmoothMeshFromSDF(
                              item.voxel_grid_data, numTriangles, true)) {
                         mesh.push_back(triangles);
                     }
+                } else if (mode == 2) {
+                    // Poisson reconstruction
+                    if (!item.source_triangles.empty()) {
+                        auto cloud = sinriv::kigstudio::cgal::samplePointCloudFromTriangles(
+                            item.source_triangles);
+                        mesh = sinriv::kigstudio::cgal::poissonReconstruct(
+                            cloud, item.voxel_grid_data.voxel_size.x);
+                    }
                 } else {
+                    // Standard
                     for (auto triangles :
                          sinriv::kigstudio::voxel::generateMesh(
                              item.voxel_grid_data, 0.5, numTriangles, true)) {
@@ -1363,13 +1375,19 @@ void RenderVoxelList::render_object_editor() {
                 if (ImGui::Button(
                         get_locale_cstr("action.export_standard_stl"))) {
                     ImGui::CloseCurrentPopup();
-                    export_item_as_stl(false);
+                    export_item_as_stl(0);
                 }
                 ImGui::SameLine();
                 if (ImGui::Button(
                         get_locale_cstr("action.export_smooth_sdf_stl"))) {
                     ImGui::CloseCurrentPopup();
-                    export_item_as_stl(true);
+                    export_item_as_stl(1);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button(
+                        get_locale_cstr("action.export_poisson_stl"))) {
+                    ImGui::CloseCurrentPopup();
+                    export_item_as_stl(2);
                 }
                 ImGui::SameLine();
                 if (ImGui::Button(get_locale_cstr("action.cancel"))) {
@@ -1521,6 +1539,9 @@ void RenderVoxelList::render_object_editor() {
                         ImGui::DragInt(
                             get_locale_cstr("label.chain_min_radius"),
                             &item.chain_min_radius, 1, 1, 20);
+                        ImGui::Checkbox(
+                            get_locale_cstr("label.use_cgal_skeleton"),
+                            &item.use_cgal_skeleton);
                         ImGui::TextUnformatted(
                             get_locale_cstr("tooltip.mode.chain"));
                         if (ImGui::Button(

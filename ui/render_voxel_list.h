@@ -297,6 +297,8 @@ class RenderVoxelList {
         bool thumbnail_dirty = true;
 
         std::string stl_path;
+        std::vector<sinriv::kigstudio::voxel::Triangle> source_triangles;
+        bool use_cgal_skeleton = true;
         std::string voxel_path;
         float stl_voxel_size = 1.0f;
 

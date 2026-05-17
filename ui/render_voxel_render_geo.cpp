@@ -1,8 +1,10 @@
 #include "render_voxel_list.h"
+#include "kigstudio/cgal/skeleton_extraction.h"
 #include <cmath>
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
+#include <set>
 
 namespace sinriv::ui::render {
 namespace {
@@ -501,7 +503,42 @@ void RenderVoxelList::extract_skeleton(int index) {
     std::vector<RenderVoxelItem::SurfaceSkeletonCacheEntry>
         surface_skeleton_world_cache;
     std::vector<RenderVoxelItem::SkeletonPointPick> skeleton_order_cache;
-    try {
+    bool cgal_succeeded = false;
+
+    // --- CGAL mesh-based skeleton path ---
+    if (it->second->use_cgal_skeleton && !it->second->source_triangles.empty()) {
+        try {
+            queue_status = "CGAL skeleton extraction...";
+            auto cgal_lines = sinriv::kigstudio::cgal::extractSkeletonFromMesh(
+                it->second->source_triangles);
+            if (!cgal_lines.empty()) {
+                chain_lines = std::move(cgal_lines);
+                chain_lines = smoothSkeletonLines(chain_lines);
+
+                // Build skeleton_order_cache from unique endpoints
+                std::set<std::tuple<float,float,float>> seen;
+                int order = 0;
+                for (const auto& line : chain_lines) {
+                    for (const auto& p : {line.first, line.second}) {
+                        auto key = std::make_tuple(p.x, p.y, p.z);
+                        if (seen.insert(key).second) {
+                            RenderVoxelItem::SkeletonPointPick pick;
+                            pick.position = p;
+                            pick.order = order++;
+                            skeleton_order_cache.push_back(pick);
+                        }
+                    }
+                }
+                cgal_succeeded = true;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[CGAL Skeleton] failed: " << e.what()
+                      << ", falling back to voxel method.\n";
+        }
+    }
+
+    // --- Voxel-based skeleton path (fallback) ---
+    if (!cgal_succeeded) try {
         char res_buf[512];
         queue_status =
             get_locale_cstr("progress.extract_skeleton.buildDenseGrid");
@@ -603,9 +640,12 @@ void RenderVoxelList::load_stl(std::string filename,
     triangle_bvh<float> bvh;
     size_t tri_count = 0;
     kdtree::pointVec kdtree_points;
+    std::vector<Triangle> source_triangles;
+    source_triangles.reserve(1024);
     for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(filename)) {
         (void)n;
         bvh.insert(tri);
+        source_triangles.push_back(tri);
         kdtree_points.push_back({static_cast<double>(std::get<0>(tri).x),
                                  static_cast<double>(std::get<0>(tri).y),
                                  static_cast<double>(std::get<0>(tri).z)});
@@ -716,6 +756,7 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
                                                          smooth_normals);
                 item.voxel_grid_data = std::move(voxel_data);
+                item.source_triangles = std::move(source_triangles);
                 item.stl_voxel_size = voxel_size;
                 item.thumbnail_dirty = true;
                 item.dirty = true;
@@ -744,6 +785,7 @@ void RenderVoxelList::load_stl(std::string filename,
         item->voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
                                                   smooth_normals);
         item->voxel_grid_data = std::move(voxel_data);
+        item->source_triangles = std::move(source_triangles);
         item->thumbnail_dirty = true;
         item->stl_path = filename;
         item->stl_voxel_size = voxel_size;

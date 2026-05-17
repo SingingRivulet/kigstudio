@@ -10,3 +10,6 @@
 [submodule "dep/zlib"]
 	path = dep/zlib
 	url = https://github.com/madler/zlib.git
+[submodule "dep/cgal"]
+	path = dep/cgal
+	url = https://github.com/CGAL/cgal.git

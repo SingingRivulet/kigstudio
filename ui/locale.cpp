@@ -244,6 +244,10 @@ void init_locale_strings() {
                       {{"en", "Standard"}, {"zh", "标准"}});
     add_locale_string("action.export_smooth_sdf_stl",
                       {{"en", "Smooth SDF"}, {"zh", "SDF 平滑"}});
+    add_locale_string("action.export_poisson_stl",
+                      {{"en", "Poisson Reconstruction"}, {"zh", "泊松重建"}});
+    add_locale_string("label.use_cgal_skeleton",
+                      {{"en", "Use CGAL mesh skeleton"}, {"zh", "使用 CGAL 网格骨架"}});
     add_locale_string("action.reload",
                       {{"en", "Reload"}, {"zh", "重新加载"}});
     add_locale_string("action.reload_stl",

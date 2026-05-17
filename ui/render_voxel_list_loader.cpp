@@ -363,6 +363,11 @@ bool RenderVoxelList::load_project(const std::string& folder) {
             if (!item->stl_path.empty()) {
                 try {
                     item->mesh_renderer.loadSTL(item->stl_path);
+                    item->source_triangles.clear();
+                    for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(item->stl_path)) {
+                        (void)n;
+                        item->source_triangles.push_back(tri);
+                    }
                 } catch (const std::exception& e) {
                     std::cout << "Failed to load STL mesh for item " << id
                               << ": " << e.what() << std::endl;

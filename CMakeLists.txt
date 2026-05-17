@@ -4,6 +4,28 @@ cmake_minimum_required(VERSION 3.10)
 project(kigstudio)  
 find_package(OpenMP REQUIRED)
 
+# Boost (required by CGAL) — header-only branch build
+set(BOOST_ROOT "${CMAKE_SOURCE_DIR}/dep/boost")
+set(Boost_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dep/boost")
+set(Boost_NO_BOOST_CMAKE TRUE CACHE BOOL "" FORCE)
+
+# CGAL (branch build, header-only)
+set(CGAL_DIR "${CMAKE_SOURCE_DIR}/dep/cgal/Installation")
+
+# CMake 3.31+ removed FindBoost from its default module path.
+# Provide our own patched copy in scripts/cmake_modules so CGAL can still use it.
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/scripts/cmake_modules" ${CMAKE_MODULE_PATH})
+find_package(CGAL REQUIRED)
+
+# Eigen3 (header-only, required by CGAL Surface_mesh_skeletonization)
+set(EIGEN3_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dep/eigen3")
+find_package(Eigen3 3.3.7 QUIET)
+if(NOT Eigen3_FOUND)
+    # Manual fallback for branch-build / tarball layout
+    set(EIGEN3_FOUND TRUE)
+    set(Eigen3_VERSION "3.4.0")
+endif()
+
 set(SDL_DIR "${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/cmake")
 
 set(CMAKE_CXX_STANDARD 20)
@@ -25,6 +47,8 @@ set(SDL2_LIB_DIR "${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/lib/x64")
 include_directories(
     ${PROJECT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/src
+    ${CGAL_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/dep/libtinyfiledialog 
     ${CMAKE_SOURCE_DIR}/dep/SDL2-2.30.11/include
     ${CMAKE_SOURCE_DIR}/dep/bgfx.cmake/bgfx/examples/common
@@ -60,7 +84,12 @@ file(GLOB_RECURSE SRC_FILES
 
 # 创建静态库libkigstudio.a  
 add_library(kigstudio STATIC ${SRC_FILES})  
-target_link_libraries(kigstudio PUBLIC OpenMP::OpenMP_CXX)
+target_link_libraries(kigstudio PUBLIC OpenMP::OpenMP_CXX CGAL::CGAL)
+if(TARGET CGAL::Eigen3_support)
+    target_link_libraries(kigstudio PUBLIC CGAL::Eigen3_support)
+else()
+    target_compile_definitions(kigstudio PUBLIC CGAL_EIGEN3_ENABLED)
+endif()
 
 # 编译可执行文件
 file(GLOB_RECURSE TEST_FILES "${PROJECT_SOURCE_DIR}/tests/*.cpp")  
