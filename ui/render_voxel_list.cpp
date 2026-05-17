@@ -253,7 +253,7 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
 
     const float pick_range_sq = pick_range * pick_range;
     float best_dist_sq = std::numeric_limits<float>::max();
-    const RenderVoxelItem::SkeletonPointPick* best_skeleton = nullptr;
+    const SkeletonPointPick* best_skeleton = nullptr;
 
     for (const auto& entry : item.surface_skeleton_cache) {
         const auto surface_world =

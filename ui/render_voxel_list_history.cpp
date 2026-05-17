@@ -3,8 +3,16 @@ namespace sinriv::ui::render {
 
 CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
     const RenderVoxelItem& item) const {
-    return {item.collision_group, item.plane, item.concave_cone,
-            item.concave_cone_expanded_vertices, item.segment_mode};
+    return {item.collision_group,
+            item.plane,
+            item.concave_cone,
+            item.concave_cone_expanded_vertices,
+            item.segment_mode,
+            "",
+            item.chain_min_radius,
+            item.use_cgal_skeleton,
+            item.picked_skeleton_points,
+            item.skeleton_lines};
 }
 
 void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
@@ -16,6 +24,11 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
         snapshot.concave_cone_expanded_vertices;
     item.segment_mode =
         static_cast<RenderVoxelItem::SegmentMode>(snapshot.segment_mode);
+    item.chain_min_radius = snapshot.chain_min_radius;
+    item.use_cgal_skeleton = snapshot.use_cgal_skeleton;
+    item.picked_skeleton_points = snapshot.picked_skeleton_points;
+    item.skeleton_lines = snapshot.skeleton_lines;
+    item.joint_wireframe_dirty = true;
 }
 
 void RenderVoxelList::begin_edit(int item_id) {

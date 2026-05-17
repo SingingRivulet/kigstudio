@@ -250,14 +250,14 @@ bool voxelLess(const sinriv::kigstudio::voxel::Vec3i& a,
     return a.z < b.z;
 }
 
-std::vector<RenderVoxelList::RenderVoxelItem::SkeletonPointPick>
+std::vector<SkeletonPointPick>
 buildSkeletonOrderCache(
     const std::vector<std::pair<sinriv::kigstudio::voxel::Vec3i,
                                 sinriv::kigstudio::voxel::Vec3i>>& lines,
     const sinriv::kigstudio::voxel::VoxelGrid& voxel_grid,
     std::unordered_map<VoxelKey, int, VoxelKeyHash>& order_by_voxel) {
     using Vec3i = sinriv::kigstudio::voxel::Vec3i;
-    using Pick = RenderVoxelList::RenderVoxelItem::SkeletonPointPick;
+    using Pick = SkeletonPointPick;
 
     std::vector<Vec3i> nodes;
     std::unordered_map<VoxelKey, size_t, VoxelKeyHash> node_ids;
@@ -502,7 +502,7 @@ void RenderVoxelList::extract_skeleton(int index) {
         chain_lines;
     std::vector<RenderVoxelItem::SurfaceSkeletonCacheEntry>
         surface_skeleton_world_cache;
-    std::vector<RenderVoxelItem::SkeletonPointPick> skeleton_order_cache;
+    std::vector<SkeletonPointPick> skeleton_order_cache;
     bool cgal_succeeded = false;
 
     // --- CGAL mesh-based skeleton path ---
@@ -533,7 +533,7 @@ void RenderVoxelList::extract_skeleton(int index) {
                         for (const auto& p : {line.first, line.second}) {
                             auto key = std::make_tuple(p.x, p.y, p.z);
                             if (seen.insert(key).second) {
-                                RenderVoxelItem::SkeletonPointPick pick;
+                                SkeletonPointPick pick;
                                 pick.position = p;
                                 pick.order = order++;
                                 skeleton_order_cache.push_back(pick);

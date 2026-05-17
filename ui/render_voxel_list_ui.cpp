@@ -1555,13 +1555,27 @@ void RenderVoxelList::render_object_editor() {
                         ImGui::TextUnformatted(
                             get_locale_cstr("tooltip.mode.fill_interior"));
                     } else if (item.segment_mode == RenderVoxelItem::CHAIN) {
+                        EditResult chain_edit_result;
+
+                        // chain_min_radius
                         ImGui::DragInt(
                             get_locale_cstr("label.chain_min_radius"),
                             &item.chain_min_radius, 1, 1, 20);
+                        chain_edit_result.activated |= ImGui::IsItemActivated();
+                        chain_edit_result.deactivated_after_edit |=
+                            ImGui::IsItemDeactivatedAfterEdit();
+
+                        // use_cgal_skeleton
                         if (!item.stl_path.empty()) {
-                            ImGui::Checkbox(
-                                get_locale_cstr("label.use_cgal_skeleton"),
-                                &item.use_cgal_skeleton);
+                            auto before = capture_snapshot(item);
+                            if (ImGui::Checkbox(
+                                    get_locale_cstr("label.use_cgal_skeleton"),
+                                    &item.use_cgal_skeleton)) {
+                                push_undo_now(
+                                    item.id, before,
+                                    get_locale_string(
+                                        "label.use_cgal_skeleton"));
+                            }
                         }
                         if (ImGui::Button(
                                 get_locale_cstr("action.extract_skeleton"))) {
@@ -1573,6 +1587,9 @@ void RenderVoxelList::render_object_editor() {
                                         item.picked_skeleton_points.size()));
                         ImGui::SameLine();
                         if (ImGui::Button("Clear##PickedSkeletonPoints")) {
+                            push_undo_now(
+                                item.id, std::nullopt,
+                                get_locale_string("action.clear_vertices"));
                             item.picked_skeleton_points.clear();
                             item.joint_wireframe_dirty = true;
                         }
@@ -1585,16 +1602,25 @@ void RenderVoxelList::render_object_editor() {
                             const auto& p = picked.position;
                             ImGui::PushID(static_cast<int>(i));
                             if (ImGui::Button("<")) {
+                                push_undo_now(
+                                    item.id, std::nullopt,
+                                    get_locale_string("action.move"));
                                 item.move_picked_skeleton_point(i, -1);
                                 moved_picked_skeleton_point = true;
                             }
                             ImGui::SameLine();
                             if (ImGui::Button(">")) {
+                                push_undo_now(
+                                    item.id, std::nullopt,
+                                    get_locale_string("action.move"));
                                 item.move_picked_skeleton_point(i, 1);
                                 moved_picked_skeleton_point = true;
                             }
                             ImGui::SameLine();
                             if (ImGui::Button("X")) {
+                                push_undo_now(
+                                    item.id, std::nullopt,
+                                    get_locale_string("action.delete"));
                                 erase_picked_skeleton_index =
                                     static_cast<int>(i);
                                 item.joint_wireframe_dirty = true;
@@ -1618,11 +1644,18 @@ void RenderVoxelList::render_object_editor() {
                                         &picked.use_custom_direction)) {
                                     dirty = true;
                                 }
+                                chain_edit_result.activated |=
+                                    ImGui::IsItemActivated();
+                                chain_edit_result.deactivated_after_edit |=
+                                    ImGui::IsItemDeactivatedAfterEdit();
                                 if (picked.use_custom_direction) {
                                     auto r = edit_local_position_stepper(
                                         get_locale_cstr("label.direction_end"),
                                         picked.custom_direction_end, 0.1f,
                                         false, false);
+                                    chain_edit_result.activated |= r.activated;
+                                    chain_edit_result.deactivated_after_edit |=
+                                        r.deactivated_after_edit;
                                     if (r.value_changed) dirty = true;
 
                                     if (pick_direction_index == (int)i) {
@@ -1641,88 +1674,159 @@ void RenderVoxelList::render_object_editor() {
                                 // Socket cone
                                 if (ImGui::CollapsingHeader(
                                         get_locale_cstr("label.socket_cone"))) {
-                                    dirty |= ImGui::DragFloat(
-                                        get_locale_cstr("label.offset"),
-                                        &picked.socket_cone_offset,
-                                        0.1f, 0.0f, 100.0f);
-                                    dirty |= ImGui::DragFloat(
-                                        get_locale_cstr("label.angle"),
-                                        &picked.socket_cone_angle,
-                                        0.01f, 0.01f, 1.5f);
-                                    dirty |= ImGui::DragFloat(
-                                        get_locale_cstr("label.radius"),
-                                        &picked.socket_cone_radius,
-                                        0.1f, 0.1f, 50.0f);
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr("label.offset"),
+                                            &picked.socket_cone_offset,
+                                            0.1f, 0.0f, 100.0f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr("label.angle"),
+                                            &picked.socket_cone_angle,
+                                            0.01f, 0.01f, 1.5f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr("label.radius"),
+                                            &picked.socket_cone_radius,
+                                            0.1f, 0.1f, 50.0f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
                                 }
 
                                 // Head cone
                                 if (ImGui::CollapsingHeader(
                                         get_locale_cstr("label.head_cone"))) {
-                                    dirty |= ImGui::DragFloat(
-                                        get_locale_cstr("label.offset"),
-                                        &picked.head_cone_offset,
-                                        0.1f, 0.0f, 100.0f);
-                                    dirty |= ImGui::DragFloat(
-                                        get_locale_cstr("label.radius"),
-                                        &picked.head_cone_radius,
-                                        0.1f, 0.1f, 50.0f);
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr("label.offset"),
+                                            &picked.head_cone_offset,
+                                            0.1f, 0.0f, 100.0f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr("label.radius"),
+                                            &picked.head_cone_radius,
+                                            0.1f, 0.1f, 50.0f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
                                 }
 
                                 // Support cones
                                 if (ImGui::CollapsingHeader(
-                                        get_locale_cstr("label.support_cones"))) {
-                                    dirty |= ImGui::DragFloat(
                                         get_locale_cstr(
-                                            "label.socket_support_offset"),
-                                        &picked.socket_support_offset, 0.1f,
-                                        0.0f, 100.0f);
-                                    dirty |= ImGui::DragFloat(
-                                        get_locale_cstr(
-                                            "label.socket_support_radius"),
-                                        &picked.socket_support_radius, 0.1f,
-                                        0.1f, 50.0f);
-                                    dirty |= ImGui::DragFloat(
-                                        get_locale_cstr(
-                                            "label.head_support_offset"),
-                                        &picked.head_support_offset, 0.1f,
-                                        0.0f, 100.0f);
-                                    dirty |= ImGui::DragFloat(
-                                        get_locale_cstr(
-                                            "label.head_support_radius"),
-                                        &picked.head_support_radius, 0.1f,
-                                        0.1f, 50.0f);
+                                            "label.support_cones"))) {
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr(
+                                                "label.socket_support_offset"),
+                                            &picked.socket_support_offset, 0.1f,
+                                            0.0f, 100.0f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr(
+                                                "label.socket_support_radius"),
+                                            &picked.socket_support_radius, 0.1f,
+                                            0.1f, 50.0f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr(
+                                                "label.head_support_offset"),
+                                            &picked.head_support_offset, 0.1f,
+                                            0.0f, 100.0f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr(
+                                                "label.head_support_radius"),
+                                            &picked.head_support_radius, 0.1f,
+                                            0.1f, 50.0f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
                                 }
 
                                 // Cylinder
                                 if (ImGui::CollapsingHeader(
                                         get_locale_cstr("label.cylinder"))) {
-                                    dirty |= ImGui::DragFloat(
-                                        get_locale_cstr(
-                                            "label.cylinder_offset"),
-                                        &picked.male_cylinder_offset, 0.1f,
-                                        0.0f, 100.0f);
-                                    dirty |= ImGui::DragFloat(
-                                        get_locale_cstr(
-                                            "label.cylinder_radius"),
-                                        &picked.male_cylinder_radius, 0.1f,
-                                        0.1f, 50.0f);
-                                    dirty |= ImGui::DragFloat(
-                                        get_locale_cstr("label.female_gap"),
-                                        &picked.female_gap,
-                                        0.01f, 0.0f, 10.0f);
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr(
+                                                "label.cylinder_offset"),
+                                            &picked.male_cylinder_offset, 0.1f,
+                                            0.0f, 100.0f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr(
+                                                "label.cylinder_radius"),
+                                            &picked.male_cylinder_radius, 0.1f,
+                                            0.1f, 50.0f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
+                                    if (ImGui::DragFloat(
+                                            get_locale_cstr("label.female_gap"),
+                                            &picked.female_gap,
+                                            0.01f, 0.0f, 10.0f))
+                                        dirty = true;
+                                    chain_edit_result.activated |=
+                                        ImGui::IsItemActivated();
+                                    chain_edit_result.deactivated_after_edit |=
+                                        ImGui::IsItemDeactivatedAfterEdit();
                                 }
 
                                 // Slot
-                                dirty |= ImGui::DragFloat(
-                                    get_locale_cstr("label.slot_extra"),
-                                    &picked.slot_extra, 0.1f,
-                                    0.0f, 10.0f);
+                                if (ImGui::DragFloat(
+                                        get_locale_cstr("label.slot_extra"),
+                                        &picked.slot_extra, 0.1f,
+                                        0.0f, 10.0f))
+                                    dirty = true;
+                                chain_edit_result.activated |=
+                                    ImGui::IsItemActivated();
+                                chain_edit_result.deactivated_after_edit |=
+                                    ImGui::IsItemDeactivatedAfterEdit();
 
                                 // Rotation
-                                dirty |= ImGui::DragFloat(
-                                    get_locale_cstr("label.rotation_angle"),
-                                    &picked.rotation_angle,
-                                    0.01f, -3.14f, 3.14f);
+                                if (ImGui::DragFloat(
+                                        get_locale_cstr("label.rotation_angle"),
+                                        &picked.rotation_angle,
+                                        0.01f, -3.14f, 3.14f))
+                                    dirty = true;
+                                chain_edit_result.activated |=
+                                    ImGui::IsItemActivated();
+                                chain_edit_result.deactivated_after_edit |=
+                                    ImGui::IsItemDeactivatedAfterEdit();
 
                                 if (dirty) {
                                     item.joint_wireframe_dirty = true;
@@ -1743,6 +1847,9 @@ void RenderVoxelList::render_object_editor() {
                             mouse_world_pos_valid && mouse_world_pos_picked) {
                             auto& picked = item.picked_skeleton_points[
                                 pick_direction_index];
+                            push_undo_now(
+                                item.id, std::nullopt,
+                                get_locale_string("label.pick_point_by_mouse"));
                             picked.custom_direction_end = mouse_world_pos;
                             item.joint_wireframe_dirty = true;
                             pick_direction_index = -1;
@@ -1755,9 +1862,18 @@ void RenderVoxelList::render_object_editor() {
                             item.joint_wireframe_dirty = true;
                         }
                         if (mouse_world_pos_picked) {
+                            push_undo_now(
+                                item.id, std::nullopt,
+                                get_locale_string("label.pick_point_by_mouse"));
                             pick_skeleton_point_from_mouse();
                             item.joint_wireframe_dirty = true;
                         }
+
+                        if (chain_edit_result.activated)
+                            begin_edit(item.id);
+                        if (chain_edit_result.deactivated_after_edit)
+                            end_edit(item.id,
+                                     get_locale_string("label.joint"));
                     }
 
                     ImGui::EndTabItem();
