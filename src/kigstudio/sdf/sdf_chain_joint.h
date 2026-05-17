@@ -201,6 +201,7 @@ class JointNegativeSDF {
 
         float female_cyl = sdCappedCylinderX(
             female_p, male_cylinder_radius + female_gap, 1000.0f);
+        female_cyl = opIntersection(female_cyl, socket_cone);
 
         // ============================================
         // slot: region inside socket cone but outside the
