@@ -388,6 +388,99 @@ void RenderVoxelList::RenderVoxelItem::rebuild_joint_wireframe() {
     }
 }
 
+sinriv::kigstudio::voxel::VoxelGrid
+RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
+    using Vec3f = sinriv::kigstudio::sdf::joint::Vec3f;
+    using Frame = sinriv::kigstudio::sdf::joint::Frame;
+    using Vec3i = sinriv::kigstudio::voxel::Vec3i;
+    using Chunk = sinriv::kigstudio::voxel::Chunk;
+
+    auto result = voxel_grid_data;
+
+    if (picked_skeleton_points.empty()) {
+        return result;
+    }
+
+    auto get_pos = [&](size_t idx) -> Vec3f {
+        const auto& p = picked_skeleton_points[idx].position;
+        return {p.x, p.y, p.z};
+    };
+
+    for (size_t i = 0; i < picked_skeleton_points.size(); ++i) {
+        const auto& params = picked_skeleton_points[i];
+        Vec3f start = get_pos(i);
+        Vec3f end;
+
+        if (params.use_custom_direction) {
+            end = Vec3f(params.custom_direction_end.x,
+                        params.custom_direction_end.y,
+                        params.custom_direction_end.z);
+        } else {
+            if (i + 1 < picked_skeleton_points.size()) {
+                end = get_pos(i + 1);
+            } else if (picked_skeleton_points.size() >= 2) {
+                Vec3f prev = get_pos(i - 1);
+                end = start + (start - prev);
+            } else {
+                end = start + Vec3f(0, 0, 10);
+            }
+        }
+
+        if ((end - start).length() < 1e-6f) {
+            end = start + Vec3f(0, 0, 1);
+        }
+
+        Frame frame;
+        if (params.use_custom_direction) {
+            frame = sinriv::kigstudio::sdf::joint::buildFrame(
+                start, end, params.rotation_angle);
+        } else {
+            frame = sinriv::kigstudio::sdf::joint::buildFrameAlignedY(
+                start, end);
+        }
+
+        sinriv::kigstudio::sdf::joint::JointNegativeSDF neg;
+        neg.frame = frame;
+        neg.socket_cone_offset = params.socket_cone_offset;
+        neg.socket_cone_angle = params.socket_cone_angle;
+        neg.socket_cone_radius = params.socket_cone_radius;
+        neg.head_cone_offset = params.head_cone_offset;
+        neg.head_cone_radius = params.head_cone_radius;
+        neg.female_gap = params.female_gap;
+        neg.male_cylinder_offset = params.male_cylinder_offset;
+        neg.male_cylinder_radius = params.male_cylinder_radius;
+        neg.slot_extra = params.slot_extra;
+
+        std::vector<Vec3i> to_remove;
+        for (const auto& [key, chunk] : result.chunks) {
+            int cx = static_cast<int32_t>(key >> 42);
+            int cy = static_cast<int32_t>((key >> 21) & 0x1FFFFF);
+            int cz = static_cast<int32_t>(key & 0x1FFFFF);
+            for (int ly = 0; ly < Chunk::SIZE; ++ly) {
+                for (int lx = 0; lx < Chunk::SIZE; ++lx) {
+                    for (int lz = 0; lz < Chunk::SIZE; ++lz) {
+                        if (chunk.get(lx, ly, lz)) {
+                            Vec3i voxel(cx * Chunk::SIZE + lx,
+                                        cy * Chunk::SIZE + ly,
+                                        cz * Chunk::SIZE + lz);
+                            auto world_pos = result.voxelCenterToWorld(voxel);
+                            Vec3f world_p(world_pos.x, world_pos.y, world_pos.z);
+                            if (neg.contains(world_p)) {
+                                to_remove.push_back(voxel);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (!to_remove.empty()) {
+            result.removeMany(to_remove);
+        }
+    }
+
+    return result;
+}
+
 void RenderVoxelList::begin_marked_edit(int item_id) {
     if (pending_marked_undo.has_value() && pending_marked_undo->item_id == item_id) {
         return;

@@ -277,6 +277,8 @@ class RenderVoxelList {
             target.chain_min_radius = chain_min_radius;
         }
 
+        sinriv::kigstudio::voxel::VoxelGrid do_segment_chain() const;
+
         inline std::vector<sinriv::kigstudio::voxel::VoxelGrid> do_segment() {
             if (segment_mode == COLLISION) {
                 auto res = voxel_grid_data.segment(collision_group);
@@ -305,7 +307,7 @@ class RenderVoxelList {
                 auto filled = voxel_grid_data.fillInterior(true);
                 return {std::move(filled)};
             } else if (segment_mode == CHAIN) {
-                return {voxel_grid_data};
+                return {do_segment_chain()};
             } else {
                 throw std::runtime_error("Unknow method");
             }
