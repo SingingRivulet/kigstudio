@@ -1,5 +1,6 @@
 #pragma once
 #include <cJSON.h>
+#include <algorithm>
 #include <atomic>
 #include <cstdarg>
 #include <filesystem>
@@ -12,7 +13,6 @@
 #include <thread>
 #include <tuple>
 #include <unordered_map>
-#include <algorithm>
 #include <vector>
 
 #ifdef _WIN32
@@ -72,7 +72,19 @@ inline std::string path_to_utf8(const std::filesystem::path& p) {
 }
 #endif
 
+std::string tinyfd_path_to_utf8(const char* path);
+std::string localize_id(const char* key, int id);
+
 using mat4f = sinriv::kigstudio::mat::matrix<float>;
+using CollisionGroup = sinriv::kigstudio::voxel::collision::CollisionGroup;
+using GeometryInstance = sinriv::kigstudio::voxel::collision::GeometryInstance;
+using Sphere = sinriv::kigstudio::voxel::collision::Sphere;
+using Cylinder = sinriv::kigstudio::voxel::collision::Cylinder;
+using Capsule = sinriv::kigstudio::voxel::collision::Capsule;
+using Box = sinriv::kigstudio::voxel::collision::Box;
+using Transform = sinriv::kigstudio::voxel::collision::Transform;
+using vec3f = sinriv::kigstudio::voxel::collision::vec3f;
+using Plane = sinriv::kigstudio::Plane<float>;
 
 // Forward declaration
 class RenderVoxelList;
@@ -99,6 +111,27 @@ struct SkeletonPointPick {
     float slot_extra = 0.5f;
     float rotation_angle = 0.f;
 };
+
+struct EditResult {
+    bool activated = false;
+    bool deactivated_after_edit = false;
+    bool value_changed = false;  // 按钮点击等立即变化
+};
+
+EditResult edit_float_stepper(const char* label, float& value, float step = 1.0f);
+EditResult edit_vec3_stepper(const char* label,
+                             vec3f& value,
+                             float step = 0.5f,
+                             bool normalize = false);
+EditResult edit_local_position_stepper(const char* label,
+                                       vec3f& value,
+                                       float step = 0.5f,
+                                       bool normalize = false,
+                                       bool show_label = true);
+EditResult edit_transform_controls(Transform& transform);
+const char* geometry_type_name(const GeometryInstance& instance);
+EditResult edit_geometry_shape(GeometryInstance& instance);
+void add_collision_geometry(CollisionGroup& group, int type_index);
 
 struct CollisionEditorSnapshot {
     sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
@@ -190,18 +223,17 @@ class RenderVoxelList {
         void rebuild_joint_wireframe();
 
         inline void sort_picked_skeleton_points() {
-            std::sort(picked_skeleton_points.begin(),
-                      picked_skeleton_points.end(),
-                      [](const SkeletonPointPick& a,
-                         const SkeletonPointPick& b) {
-                          if (a.order != b.order)
-                              return a.order < b.order;
-                          if (a.position.x != b.position.x)
-                              return a.position.x < b.position.x;
-                          if (a.position.y != b.position.y)
-                              return a.position.y < b.position.y;
-                          return a.position.z < b.position.z;
-                      });
+            std::sort(
+                picked_skeleton_points.begin(), picked_skeleton_points.end(),
+                [](const SkeletonPointPick& a, const SkeletonPointPick& b) {
+                    if (a.order != b.order)
+                        return a.order < b.order;
+                    if (a.position.x != b.position.x)
+                        return a.position.x < b.position.x;
+                    if (a.position.y != b.position.y)
+                        return a.position.y < b.position.y;
+                    return a.position.z < b.position.z;
+                });
         }
 
         inline void move_picked_skeleton_point(size_t index, int delta) {
@@ -211,11 +243,9 @@ class RenderVoxelList {
             }
 
             int next_order = picked_skeleton_points[index].order + delta;
-            next_order =
-                std::max(0, std::min(next_order,
-                                     static_cast<int>(
-                                         skeleton_order_cache.size()) -
-                                         1));
+            next_order = std::max(
+                0, std::min(next_order,
+                            static_cast<int>(skeleton_order_cache.size()) - 1));
             picked_skeleton_points[index] = skeleton_order_cache[next_order];
             sort_picked_skeleton_points();
         }
