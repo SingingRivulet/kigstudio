@@ -43,13 +43,17 @@
 | 组件 | 说明 |
 |------|------|
 | C++20 | 核心语言标准 |
-| CMake | 构建系统 |
-| SDL2 | 窗口与输入 |
-| bgfx | 跨平台图形渲染 |
-| Dear ImGui / ImNodes | 即时模式 UI 与节点编辑器 |
-| tinyfiledialogs | 系统文件对话框 |
-| cJSON | 项目元数据序列化 |
-| zlib | 体素数据压缩 |
+| [CMake](https://cmake.org/) | 构建系统 |
+| [SDL2](https://www.libsdl.org/) | 窗口与输入 |
+| [bgfx](https://github.com/bkaradzic/bgfx) | 跨平台图形渲染 |
+| [Dear ImGui](https://github.com/ocornut/imgui) / [imnodes](https://github.com/Nelarius/imnodes) | 即时模式 UI 与节点编辑器 |
+| [tinyfiledialogs](https://sourceforge.net/projects/tinyfiledialogs/) | 系统文件对话框 |
+| [cJSON](https://github.com/DaveGamble/cJSON) | 项目元数据序列化 |
+| [zlib](https://github.com/madler/zlib) | 体素数据压缩 |
+| [FreeImage](https://freeimage.sourceforge.io/) | 图像加载与处理 |
+| [Boost](https://www.boost.org/) | C++ 通用库集合 |
+| [CGAL](https://www.cgal.org/) | 计算几何算法库 |
+| [Eigen3](https://eigen.tuxfamily.org/) | 线性代数库 |
 
 ## 构建
 
