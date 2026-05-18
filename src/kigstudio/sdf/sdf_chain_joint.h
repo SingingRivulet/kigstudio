@@ -289,15 +289,14 @@ class JointPositiveSDF {
     float male_cylinder_half_height = 1000.f;
 
     inline float effectiveHalfHeight() const {
-        float max_radius = std::max(socket_support_radius, head_support_radius);
-        return std::min(male_cylinder_half_height, max_radius);
+        return std::min(male_cylinder_half_height, socket_support_radius * 4.0f);
     }
 
     inline float sdf(const Vec3f& world_p) const {
         Vec3f p = frame.worldToLocal(world_p);
 
         // ============================================
-        // socket support cone (finite)
+        // socket support cone (finite) — 最简测试版本
         // ============================================
 
         float socket_h =
@@ -308,43 +307,17 @@ class JointPositiveSDF {
         float socket_support_cone =
             sdFiniteCone(socket_p, socket_support_angle, socket_h);
 
-        // ============================================
-        // head support cone (finite)
-        // ============================================
-
-        float head_h = head_support_radius / std::tan(head_support_angle);
-        Vec3f head_p = p;
-        head_p.z -= head_support_offset;
-
-        float head_support_cone =
-            sdFiniteCone(head_p, head_support_angle, head_h);
-
-        // ============================================
-        // male cylinder
-        // Axis is the local x-axis, passing through (0,0,male_cylinder_offset).
-        // Use a large half_height so the cylinder is effectively infinite;
-        // the socket support cone cuts it to form slanted ends.
-        // ============================================
-
         Vec3f male_p = p;
         male_p.z -= male_cylinder_offset;
-
         float male_cyl = sdCappedCylinderX(
             male_p, male_cylinder_radius, male_cylinder_half_height);
-
-        male_cyl = opIntersection(male_cyl, -socket_support_cone);
-
-        // ============================================
-        // union
-        // ============================================
-
-        float result = opUnion(socket_support_cone, head_support_cone);
-        result = opUnion(result, male_cyl);
+        
+        float result = opSubtraction(male_cyl , -socket_support_cone);
 
         return result;
     }
 
-    inline bool contains(const Vec3f& p) const { return sdf(p) < 0.f; }
+    inline bool contains(const Vec3f& p) const { return sdf(p) <= 0.f; }
 };
 
 // ============================================================

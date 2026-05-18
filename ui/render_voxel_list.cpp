@@ -362,10 +362,13 @@ void RenderVoxelList::RenderVoxelItem::rebuild_joint_wireframe() {
         neg.male_cylinder_radius = params.male_cylinder_radius;
         neg.slot_extra = params.slot_extra;
 
-        pos.socket_support_offset = params.socket_support_offset;
-        pos.socket_support_radius = params.socket_support_radius;
-        pos.head_support_offset = params.head_support_offset;
-        pos.head_support_radius = params.head_support_radius;
+        // 正体积 socket 支撑锥与负体积切割锥完全匹配
+        pos.socket_support_offset = params.socket_cone_offset;
+        pos.socket_support_angle = params.socket_cone_angle;
+        pos.socket_support_radius = params.socket_cone_radius;
+        pos.head_support_offset = params.head_cone_offset;
+        pos.head_support_angle = params.socket_cone_angle;
+        pos.head_support_radius = params.head_cone_radius;
         pos.male_cylinder_offset = params.male_cylinder_offset;
         pos.male_cylinder_radius = params.male_cylinder_radius;
 
@@ -480,10 +483,13 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
         // Add positive joint volume (support cones + male cylinder)
         sinriv::kigstudio::sdf::joint::JointPositiveSDF pos;
         pos.frame = frame;
-        pos.socket_support_offset = params.socket_support_offset;
-        pos.socket_support_radius = params.socket_support_radius;
-        pos.head_support_offset = params.head_support_offset;
-        pos.head_support_radius = params.head_support_radius;
+        // 正体积 socket/head 支撑锥与负体积切割锥完全匹配
+        pos.socket_support_offset = params.socket_cone_offset;
+        pos.socket_support_angle = params.socket_cone_angle;
+        pos.socket_support_radius = params.socket_cone_radius;
+        pos.head_support_offset = params.head_cone_offset;
+        pos.head_support_angle = params.socket_cone_angle;
+        pos.head_support_radius = params.head_cone_radius;
         pos.male_cylinder_offset = params.male_cylinder_offset;
         pos.male_cylinder_radius = params.male_cylinder_radius;
 
@@ -540,6 +546,7 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
                         Vec3f world_p(world_pos.x, world_pos.y, world_pos.z);
                         if (pos.contains(world_p)) {
                             to_add.push_back(voxel);
+                            // std::cout << "Adding voxel " << voxel << " at " << world_p << std::endl;
                         }
                     }
                 }
