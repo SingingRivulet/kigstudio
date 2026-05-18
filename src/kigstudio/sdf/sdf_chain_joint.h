@@ -4,7 +4,51 @@
 #include "kigstudio/utils/vec3.h"
 
 namespace sinriv::kigstudio::sdf::joint {
-
+/*
+ *   链条关节结构及参数：
+ *      中心线：
+ *           起点（一定位于skeleton point上）
+ *           终点（一定位于skeleton point上）
+ *           起点和终点构成一根直线
+ *      关节窝：
+ *           切割圆锥 用于切割出关节窝的圆锥，需要三个参数定义：
+ *               距离中心线起点的距离
+ *               圆锥张开的角度
+ *               底面半径
+ *               *圆锥开口方向一定指向终点，所以无需定义*
+ *           实体圆锥 将关节窝后面填充一定范围，以增加强度：
+ *               距离关节窝切割圆锥顶点的距离（实体圆锥顶点位于切割圆锥顶点与中心线起点之间）
+ *               底面半径
+ *               *实体圆锥表面与切割圆锥平行，所以其他参数无需定义*
+ *           连接柱（公） 一个圆柱，与圆锥底面平行，轴穿过中心线，两边在与切割圆锥相交处终止（所以底面不是正圆），需要三个参数定义：
+ *               距离关节窝切割圆锥顶点的距离（连接柱顶点位于切割圆锥顶点与中心线起点之间）
+ *               圆柱底面半径
+ *               旋转角度关节连接柱的旋转角度（一个向量，从中心线上一点往这个方向作射线，圆柱的轴位于该射线与中心线围成的平面上）
+ *      关节头：
+ *           切割圆锥 用于切割出关节头的圆锥，需要两个参数定义：
+ *               距离关节窝切割圆锥的距离
+ *               底面半径
+ *               *张开的角度一定等于关节窝切割圆锥的角度，所以无需定义*
+ *               *圆锥开口方向一定指向终点，所以无需定义*
+ *           实体圆锥 将关节头后面填充一定范围，以增加强度：
+ *               距离关节头切割圆锥顶点的距离（实体圆锥顶点位于切割圆锥顶点后方）
+ *               底面半径
+ *               *实体圆锥表面与切割圆锥平行，所以其他参数无需定义*
+ *           连接柱（母） 切割一个圆柱，离公连接柱有一定距离，使其能活动
+ *               半径（通过与公连接柱的差值来定义）
+ *               *轴和角度无需定义（和公连接柱共用轴）*
+ *      连接槽：
+ *           在关节头和关节窝的切割圆锥之间进行切割一个带厚度的锥形，便于活动
+ *           没有可设置的参数，形状取决于关节头的切割圆锥和关节窝的切割圆锥
+ *   构造链条流程：
+ *       1. 构造负mesh
+ *           母连接柱
+ *           两个切割圆锥之间的区域
+ *       2. 构造正mesh
+ *           公连接柱
+ *           两个切割圆锥分别与各自实体圆锥之间构成的区域
+ *       3. 利用射线追踪算法对体素执行布尔，先执行负mesh，再执行正mesh，被切掉的部分直接丢弃，不需要返回新的item
+ */
 // ============================================================
 // Basic Vec3
 // ============================================================
@@ -218,7 +262,7 @@ class JointNegativeSDF {
         return opUnion(female_cyl, slot);
     }
 
-    inline bool contains(const Vec3f& p) const { return sdf(p) < 0.f; }
+    inline bool contains(const Vec3f& p) const { return sdf(p) <= 0.f; }
 };
 
 // ============================================================
@@ -242,7 +286,12 @@ class JointPositiveSDF {
     // male cylinder
     float male_cylinder_offset = 3.f;
     float male_cylinder_radius = 1.5f;
-    float male_cylinder_half_height = 10.f;
+    float male_cylinder_half_height = 1000.f;
+
+    inline float effectiveHalfHeight() const {
+        float max_radius = std::max(socket_support_radius, head_support_radius);
+        return std::min(male_cylinder_half_height, max_radius);
+    }
 
     inline float sdf(const Vec3f& world_p) const {
         Vec3f p = frame.worldToLocal(world_p);
@@ -273,18 +322,16 @@ class JointPositiveSDF {
         // ============================================
         // male cylinder
         // Axis is the local x-axis, passing through (0,0,male_cylinder_offset).
-        // The portion inside the socket support cone is removed so that
-        // the cylinder terminates at the cone surface.
+        // Use a large half_height so the cylinder is effectively infinite;
+        // the socket support cone cuts it to form slanted ends.
         // ============================================
 
         Vec3f male_p = p;
         male_p.z -= male_cylinder_offset;
 
-        float male_cyl =
-            sdCappedCylinderX(male_p, male_cylinder_radius, male_cylinder_half_height);
+        float male_cyl = sdCappedCylinderX(
+            male_p, male_cylinder_radius, male_cylinder_half_height);
 
-        // Remove portion inside socket support cone so the cylinder
-        // terminates at the socket surface (not the head).
         male_cyl = opIntersection(male_cyl, -socket_support_cone);
 
         // ============================================

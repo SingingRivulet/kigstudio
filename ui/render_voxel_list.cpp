@@ -494,7 +494,7 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
                 pos.head_support_radius / std::tan(pos.head_support_angle);
             float local_x_min = -std::max(
                 {pos.socket_support_radius, pos.head_support_radius,
-                 pos.male_cylinder_half_height});
+                 pos.effectiveHalfHeight()});
             float local_x_max = -local_x_min;
             float local_y_min = local_x_min;
             float local_y_max = local_x_max;
