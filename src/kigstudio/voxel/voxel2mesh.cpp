@@ -87,9 +87,8 @@ namespace sinriv::kigstudio::voxel {
         // ===== 遍历所有 chunk =====
         for (const auto& [key, chunk] : voxelData.chunks) {
 
-            int cx = int(key >> 42);
-            int cy = int((key >> 21) & ((1<<21)-1));
-            int cz = int(key & ((1<<21)-1));
+            int cx, cy, cz;
+            unpackChunkKey(key, cx, cy, cz);
 
             int baseX = cx << 5;
             int baseY = cy << 5;
@@ -392,9 +391,8 @@ namespace sinriv::kigstudio::voxel {
         auto it = voxelData.chunks.find(chunkKey);
         if (it == voxelData.chunks.end()) co_return;
 
-        int cx = int(chunkKey >> 42);
-        int cy = int((chunkKey >> 21) & ((1 << 21) - 1));
-        int cz = int(chunkKey & ((1 << 21) - 1));
+        int cx, cy, cz;
+        unpackChunkKey(chunkKey, cx, cy, cz);
 
         int baseX = cx << 5;
         int baseY = cy << 5;

@@ -1,5 +1,6 @@
 #include "render_voxel_list.h"
 #include "kigstudio/sdf/sdf_chain_joint.h"
+#include <bit>
 #include <chrono>
 #include <cstring>
 #include <limits>
@@ -132,13 +133,54 @@ void RenderVoxelList::brush_marked_voxels(
     }
 
     float range_sq = range * range;
+    const int voxel_radius = static_cast<int>(std::ceil(range));
+    const int min_cx = (center.x - voxel_radius) >> 5;
+    const int max_cx = (center.x + voxel_radius) >> 5;
+    const int min_cy = (center.y - voxel_radius) >> 5;
+    const int max_cy = (center.y + voxel_radius) >> 5;
+    const int min_cz = (center.z - voxel_radius) >> 5;
+    const int max_cz = (center.z + voxel_radius) >> 5;
+
     std::vector<sinriv::kigstudio::voxel::Vec3i> to_mark;
-    for (const auto& v : item.surface_voxels) {
-        float dx = float(v.x - center.x);
-        float dy = float(v.y - center.y);
-        float dz = float(v.z - center.z);
-        if (dx * dx + dy * dy + dz * dz <= range_sq) {
-            to_mark.push_back(v);
+    for (int cz = min_cz; cz <= max_cz; ++cz) {
+        for (int cy = min_cy; cy <= max_cy; ++cy) {
+            for (int cx = min_cx; cx <= max_cx; ++cx) {
+                const uint64_t key =
+                    sinriv::kigstudio::voxel::packChunkKey(cx, cy, cz);
+                const auto chunk_it = item.surface_voxels.chunks.find(key);
+                if (chunk_it == item.surface_voxels.chunks.end()) {
+                    continue;
+                }
+
+                const auto& chunk = chunk_it->second;
+                const int base_x = cx << 5;
+                const int base_y = cy << 5;
+                const int base_z = cz << 5;
+
+                for (int word = 0;
+                     word < sinriv::kigstudio::voxel::Chunk::WORD_COUNT;
+                     ++word) {
+                    uint64_t bits = chunk.data[word];
+                    while (bits != 0) {
+                        const int bit = std::countr_zero(bits);
+                        bits &= bits - 1;
+
+                        const int idx = (word << 6) + bit;
+                        const int lx = idx & 31;
+                        const int ly = (idx >> 5) & 31;
+                        const int lz = (idx >> 10) & 31;
+
+                        const sinriv::kigstudio::voxel::Vec3i v(
+                            base_x + lx, base_y + ly, base_z + lz);
+                        const float dx = float(v.x - center.x);
+                        const float dy = float(v.y - center.y);
+                        const float dz = float(v.z - center.z);
+                        if (dx * dx + dy * dy + dz * dz <= range_sq) {
+                            to_mark.push_back(v);
+                        }
+                    }
+                }
+            }
         }
     }
     if (debug.show_voxel_pick_debug) {
@@ -456,9 +498,8 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
 
         std::vector<Vec3i> to_remove;
         for (const auto& [key, chunk] : result.chunks) {
-            int cx = static_cast<int32_t>(key >> 42);
-            int cy = static_cast<int32_t>((key >> 21) & 0x1FFFFF);
-            int cz = static_cast<int32_t>(key & 0x1FFFFF);
+            int cx, cy, cz;
+            sinriv::kigstudio::voxel::unpackChunkKey(key, cx, cy, cz);
             for (int ly = 0; ly < Chunk::SIZE; ++ly) {
                 for (int lx = 0; lx < Chunk::SIZE; ++lx) {
                     for (int lz = 0; lz < Chunk::SIZE; ++lz) {

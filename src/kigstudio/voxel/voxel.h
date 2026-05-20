@@ -128,9 +128,31 @@ struct Chunk {
 
 // ================= Hash =================
 
+inline uint64_t packSignedField(int value, int bits) {
+    const uint64_t mask = (1ULL << bits) - 1ULL;
+    return uint64_t(uint32_t(value)) & mask;
+}
+
+inline int unpackSignedField(uint64_t value, int bits) {
+    const uint32_t mask = (1U << bits) - 1U;
+    const uint32_t sign_bit = 1U << (bits - 1);
+    int field = int(uint32_t(value) & mask);
+    if ((field & sign_bit) != 0U) {
+        field -= int(1U << bits);
+    }
+    return field;
+}
+
 inline uint64_t packChunkKey(int x, int y, int z) {
-    return (uint64_t(uint32_t(x)) << 42) | (uint64_t(uint32_t(y)) << 21) |
-           (uint64_t(uint32_t(z)));
+    return (packSignedField(x, 22) << 42) |
+           (packSignedField(y, 21) << 21) |
+           packSignedField(z, 21);
+}
+
+inline void unpackChunkKey(uint64_t key, int& x, int& y, int& z) {
+    x = unpackSignedField(key >> 42, 22);
+    y = unpackSignedField(key >> 21, 21);
+    z = unpackSignedField(key, 21);
 }
 
 // ================= Hybrid Segment =================
@@ -281,12 +303,6 @@ class VoxelGrid {
 
         int cx, cy, cz;
 
-        inline static void unpackKey(uint64_t key, int& x, int& y, int& z) {
-            x = int(key >> 42);
-            y = int((key >> 21) & ((1 << 21) - 1));
-            z = int(key & ((1 << 21) - 1));
-        }
-
         inline void advance() {
             valid = false;
 
@@ -338,7 +354,7 @@ class VoxelGrid {
                 int lz = (idx >> 10) & 31;
 
                 // ===== 7. 解 chunk 坐标 =====
-                unpackKey(it->first, cx, cy, cz);
+                unpackChunkKey(it->first, cx, cy, cz);
 
                 current = {(cx << 5) + lx, (cy << 5) + ly, (cz << 5) + lz};
 
