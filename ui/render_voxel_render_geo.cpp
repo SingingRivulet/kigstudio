@@ -799,6 +799,7 @@ void RenderVoxelList::load_stl(std::string filename,
         item->voxel_grid_data = std::move(voxel_data);
         item->source_triangles = std::move(source_triangles);
         item->thumbnail_dirty = true;
+        item->dirty = true;
         item->stl_path = filename;
         item->stl_voxel_size = voxel_size;
         item->mesh_kd_tree = kdtree::KDTree(kdtree_points);

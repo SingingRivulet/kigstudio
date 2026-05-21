@@ -140,6 +140,8 @@ void RenderVoxelList::brush_marked_voxels(
     const int max_cy = (center.y + voxel_radius) >> 5;
     const int min_cz = (center.z - voxel_radius) >> 5;
     const int max_cz = (center.z + voxel_radius) >> 5;
+    const bool use_local_voxel_scan =
+        voxel_radius < sinriv::kigstudio::voxel::Chunk::SIZE / 2;
 
     std::vector<sinriv::kigstudio::voxel::Vec3i> to_mark;
     for (int cz = min_cz; cz <= max_cz; ++cz) {
@@ -156,6 +158,44 @@ void RenderVoxelList::brush_marked_voxels(
                 const int base_x = cx << 5;
                 const int base_y = cy << 5;
                 const int base_z = cz << 5;
+
+                if (use_local_voxel_scan) {
+                    const int min_lx =
+                        std::max(0, center.x - voxel_radius - base_x);
+                    const int max_lx = std::min(
+                        sinriv::kigstudio::voxel::Chunk::SIZE - 1,
+                        center.x + voxel_radius - base_x);
+                    const int min_ly =
+                        std::max(0, center.y - voxel_radius - base_y);
+                    const int max_ly = std::min(
+                        sinriv::kigstudio::voxel::Chunk::SIZE - 1,
+                        center.y + voxel_radius - base_y);
+                    const int min_lz =
+                        std::max(0, center.z - voxel_radius - base_z);
+                    const int max_lz = std::min(
+                        sinriv::kigstudio::voxel::Chunk::SIZE - 1,
+                        center.z + voxel_radius - base_z);
+
+                    for (int lz = min_lz; lz <= max_lz; ++lz) {
+                        for (int ly = min_ly; ly <= max_ly; ++ly) {
+                            for (int lx = min_lx; lx <= max_lx; ++lx) {
+                                if (!chunk.get(lx, ly, lz)) {
+                                    continue;
+                                }
+
+                                const sinriv::kigstudio::voxel::Vec3i v(
+                                    base_x + lx, base_y + ly, base_z + lz);
+                                const float dx = float(v.x - center.x);
+                                const float dy = float(v.y - center.y);
+                                const float dz = float(v.z - center.z);
+                                if (dx * dx + dy * dy + dz * dz <= range_sq) {
+                                    to_mark.push_back(v);
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
 
                 for (int word = 0;
                      word < sinriv::kigstudio::voxel::Chunk::WORD_COUNT;
@@ -648,6 +688,7 @@ void RenderVoxelList::end_marked_edit(int item_id, const std::string& desc) {
             it->second->marked_undo_stack.push_back(
                 MarkedVoxelsSnapshot{before, desc});
             it->second->marked_redo_stack.clear();
+            it->second->dirty = true;
             if (it->second->marked_undo_stack.size() > kMaxUndoSize) {
                 it->second->marked_undo_stack.erase(
                     it->second->marked_undo_stack.begin());
@@ -663,6 +704,7 @@ void RenderVoxelList::push_marked_undo_now(int item_id, const std::string& desc)
     it->second->marked_undo_stack.push_back(
         MarkedVoxelsSnapshot{it->second->marked_voxels, desc});
     it->second->marked_redo_stack.clear();
+    it->second->dirty = true;
     if (it->second->marked_undo_stack.size() > kMaxUndoSize) {
         it->second->marked_undo_stack.erase(
             it->second->marked_undo_stack.begin());
@@ -678,6 +720,7 @@ void RenderVoxelList::undo_marked(int item_id) {
     it->second->marked_voxels = it->second->marked_undo_stack.back().marked_voxels;
     it->second->marked_undo_stack.pop_back();
     it->second->marked_voxels_dirty = true;
+    it->second->dirty = true;
 }
 
 void RenderVoxelList::redo_marked(int item_id) {
@@ -688,6 +731,7 @@ void RenderVoxelList::redo_marked(int item_id) {
     it->second->marked_voxels = it->second->marked_redo_stack.back().marked_voxels;
     it->second->marked_redo_stack.pop_back();
     it->second->marked_voxels_dirty = true;
+    it->second->dirty = true;
 }
 
 bool RenderVoxelList::can_undo_marked(int item_id) const {

@@ -5,8 +5,11 @@
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
 #include <bx/math.h>
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include "locale.h"
 #include "render.hpp"
@@ -31,7 +34,7 @@
 #include "ui/render_voxel_list.h"
 #include "ui/utils.h"
 
-int main() {
+int main(int argc, char** argv) {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
 #endif
@@ -137,6 +140,93 @@ int main() {
     sinriv::ui::render::locale_init();
 
     render_items.start_thread();
+
+    auto try_load_startup_path = [&]() {
+        if (argc <= 1)
+            return;
+
+        const std::filesystem::path input_path(argv[1]);
+        std::error_code ec;
+        if (std::filesystem::is_directory(input_path, ec)) {
+            const std::string path =
+                sinriv::ui::render::path_to_utf8(input_path);
+            if (!render_items.load_project(path)) {
+                std::cerr << "Failed to load project directory: " << path
+                          << "\n" << render_items.last_load_error
+                          << std::endl;
+            }
+            return;
+        }
+
+        if (std::filesystem::is_regular_file(input_path, ec)) {
+            std::string ext =
+                sinriv::ui::render::path_to_utf8(input_path.extension());
+            std::transform(ext.begin(), ext.end(), ext.begin(),
+                           [](unsigned char c) {
+                               return static_cast<char>(std::tolower(c));
+                           });
+            if (ext == ".stl") {
+                render_items.queue_load_stl(
+                    sinriv::ui::render::path_to_utf8(input_path), 0.5f);
+            } else {
+                std::cerr << "Unsupported input file, expected .stl: "
+                          << sinriv::ui::render::path_to_utf8(input_path)
+                          << std::endl;
+            }
+            return;
+        }
+
+        std::cerr << "Input path is neither a directory nor an STL file: "
+                  << sinriv::ui::render::path_to_utf8(input_path)
+                  << std::endl;
+    };
+
+    try_load_startup_path();
+
+    auto confirm_quit = [&]() -> bool {
+        if (!render_items.has_dirty_items())
+            return true;
+
+        int choice = tinyfd_messageBox(
+            "Unsaved changes",
+            "There are unsaved changes. Save before closing?",
+            "yesnocancel", "warning", 1);
+        if (choice == 0) {
+            return false;
+        }
+        if (choice == 2) {
+            return true;
+        }
+
+        bool saved = false;
+        if (!render_items.project_path.empty()) {
+            saved = render_items.save_current_project();
+        } else {
+            const char* folder = tinyfd_selectFolderDialog(
+                sinriv::ui::render::utf8_to_ansi(
+                    sinriv::ui::render::get_locale_cstr(
+                        "dialog.save_project_title"))
+                    .c_str(),
+                "");
+            if (!folder) {
+                return false;
+            }
+            saved = render_items.save_project(
+                sinriv::ui::render::tinyfd_path_to_utf8(folder));
+        }
+
+        if (!saved) {
+            std::string msg =
+                sinriv::ui::render::get_locale_string("error.save_failed") +
+                "\n" + render_items.last_save_error;
+            tinyfd_messageBox(
+                "Error",
+                sinriv::ui::render::utf8_to_ansi(msg.c_str()).c_str(), "ok",
+                "error", 1);
+            return false;
+        }
+        return true;
+    };
 
     auto pathes = sinriv::ui::render::get_default_font_path();
     if (!pathes.empty()) {
@@ -333,7 +423,7 @@ int main() {
                 }
             }
 
-            if (e.type == SDL_QUIT)
+            if (e.type == SDL_QUIT && confirm_quit())
                 running = false;
         }
 
