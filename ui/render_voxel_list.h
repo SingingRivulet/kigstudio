@@ -96,7 +96,7 @@ struct SkeletonPointPick {
     // Joint parameters for this picked point
     bool use_custom_direction = false;
     sinriv::kigstudio::voxel::vec3f custom_direction_end = {0, 0, 0};
-    float socket_cone_offset = 5.f;
+    float socket_cone_offset = 0.f;
     float socket_cone_angle = 0.5f;
     float socket_cone_radius = 4.f;
     float head_cone_offset = 10.f;

@@ -187,10 +187,15 @@ int main(int argc, char** argv) {
         if (!render_items.has_dirty_items())
             return true;
 
-        int choice = tinyfd_messageBox(
-            "Unsaved changes",
-            "There are unsaved changes. Save before closing?",
-            "yesnocancel", "warning", 1);
+        const std::string unsaved_title = sinriv::ui::render::utf8_to_ansi(
+            sinriv::ui::render::get_locale_cstr(
+                "dialog.unsaved_changes_title"));
+        const std::string unsaved_message = sinriv::ui::render::utf8_to_ansi(
+            sinriv::ui::render::get_locale_cstr(
+                "dialog.unsaved_changes_message"));
+        int choice = tinyfd_messageBox(unsaved_title.c_str(),
+                                       unsaved_message.c_str(),
+                                       "yesnocancel", "warning", 1);
         if (choice == 0) {
             return false;
         }
@@ -219,10 +224,12 @@ int main(int argc, char** argv) {
             std::string msg =
                 sinriv::ui::render::get_locale_string("error.save_failed") +
                 "\n" + render_items.last_save_error;
-            tinyfd_messageBox(
-                "Error",
-                sinriv::ui::render::utf8_to_ansi(msg.c_str()).c_str(), "ok",
-                "error", 1);
+            const std::string error_title =
+                sinriv::ui::render::utf8_to_ansi("Error");
+            const std::string error_message =
+                sinriv::ui::render::utf8_to_ansi(msg.c_str());
+            tinyfd_messageBox(error_title.c_str(), error_message.c_str(), "ok",
+                              "error", 1);
             return false;
         }
         return true;

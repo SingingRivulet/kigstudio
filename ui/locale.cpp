@@ -222,6 +222,12 @@ void init_locale_strings() {
                        {"zh", "添加顶点（在场景中点击...）"}});
     add_locale_string("action.clear_vertices",
                       {{"en", "clear vertices"}, {"zh", "清空顶点"}});
+    add_locale_string("action.init_all_joint_radii",
+                      {{"en", "Initialize All Radii"},
+                       {"zh", "初始化所有半径"}});
+    add_locale_string("action.auto_detect_joint_radius",
+                      {{"en", "Auto Detect"},
+                       {"zh", "自动识别"}});
     add_locale_string("action.replace", {{"en", "replace"}, {"zh", "替换"}});
     add_locale_string("action.replace_picking",
                       {{"en", "replace (...)"}, {"zh", "替换 (...)"}});
@@ -320,6 +326,9 @@ void init_locale_strings() {
     // Joint editor
     add_locale_string("label.joint",
                       {{"en", "Joint"}, {"zh", "关节"}});
+    add_locale_string("label.picked_skeleton_points",
+                      {{"en", "Picked skeleton points: %d"},
+                       {"zh", "已选骨架点：%d"}});
     add_locale_string("label.custom_direction",
                       {{"en", "Custom Direction"}, {"zh", "自定义方向"}});
     add_locale_string("label.direction_end",
@@ -476,7 +485,7 @@ void init_locale_strings() {
     add_locale_string("mode.fill_interior",
                       {{"en", "Fill Interior"}, {"zh", "填充内部"}});
     add_locale_string("mode.chain",
-                      {{"en", "Chain (Skeleton)"}, {"zh", "链条（骨架）"}});
+                      {{"en", "Chain"}, {"zh", "链条化"}});
 
     add_locale_string("tooltip.mode.collision",
                       {{"en", "Use collision shapes to split the model. Voxels inside the shapes are separated from those outside."},
@@ -546,6 +555,11 @@ void init_locale_strings() {
     add_locale_string("dialog.confirm_update_clears_mark",
                       {{"en", "Update will clear marked voxels. Continue?"},
                        {"zh", "更新将清除标记的体素，是否继续？"}});
+    add_locale_string("dialog.unsaved_changes_title",
+                      {{"en", "Unsaved changes"}, {"zh", "未保存的更改"}});
+    add_locale_string("dialog.unsaved_changes_message",
+                      {{"en", "There are unsaved changes. Save before closing?"},
+                       {"zh", "存在未保存的更改。关闭前是否保存？"}});
     add_locale_string("dialog.save_marked_voxels",
                       {{"en", "Save Marked Voxels"}, {"zh", "保存标记体素"}});
     add_locale_string("dialog.load_marked_voxels",

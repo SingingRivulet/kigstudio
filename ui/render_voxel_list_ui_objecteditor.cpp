@@ -4,12 +4,16 @@
 #include <imgui/imgui.h>
 #include <imnodes.h>
 #include <stb/stb_truetype.h>
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <type_traits>
 #include <unordered_set>
 #include <variant>
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include "kigstudio/sdf/sdf_chain_joint.h"
 #include "kigstudio/cgal/poisson_reconstruction.h"
 #include "kigstudio/cgal/poisson_utils.h"
 #include "kigstudio/utils/vec3.h"
@@ -17,6 +21,98 @@
 #include "render_voxel_list.h"
 #include "tinyfiledialogs.h"
 namespace sinriv::ui::render {
+namespace {
+
+bool autoDetectJointRadius(RenderVoxelList::RenderVoxelItem& item,
+                           size_t joint_index) {
+    if (joint_index >= item.picked_skeleton_points.size()) {
+        return false;
+    }
+
+    using Vec3f = sinriv::kigstudio::sdf::joint::Vec3f;
+    using Frame = sinriv::kigstudio::sdf::joint::Frame;
+
+    auto& picked = item.picked_skeleton_points[joint_index];
+
+    auto get_pos = [&](size_t idx) -> Vec3f {
+        const auto& pos = item.picked_skeleton_points[idx].position;
+        return {pos.x, pos.y, pos.z};
+    };
+
+    Vec3f start = get_pos(joint_index);
+    Vec3f end;
+    if (picked.use_custom_direction) {
+        end = Vec3f(picked.custom_direction_end.x,
+                    picked.custom_direction_end.y,
+                    picked.custom_direction_end.z);
+    } else {
+        if (joint_index + 1 < item.picked_skeleton_points.size()) {
+            end = get_pos(joint_index + 1);
+        } else if (item.picked_skeleton_points.size() >= 2) {
+            Vec3f prev = get_pos(joint_index - 1);
+            end = start + (start - prev);
+        } else {
+            end = start + Vec3f(0, 0, 10);
+        }
+    }
+    if ((end - start).length() < 1e-6f) {
+        end = start + Vec3f(0, 0, 1);
+    }
+
+    Frame frame;
+    if (picked.use_custom_direction) {
+        frame = sinriv::kigstudio::sdf::joint::buildFrame(
+            start, end, picked.rotation_angle);
+    } else {
+        frame = sinriv::kigstudio::sdf::joint::buildFrameAlignedY(start, end);
+    }
+
+    const auto& voxel_size = item.voxel_grid_data.voxel_size;
+    const float half_thickness =
+        std::max({voxel_size.x, voxel_size.y, voxel_size.z}) * 0.75f;
+    float socket_radius = -1.0f;
+    float head_radius = -1.0f;
+
+    for (const auto& voxel : item.voxel_grid_data) {
+        const auto world = item.voxel_grid_data.voxelCenterToWorld(voxel);
+        const Vec3f local = frame.worldToLocal({world.x, world.y, world.z});
+        const float radius =
+            std::sqrt(local.x * local.x + local.y * local.y);
+
+        if (std::abs(local.z - picked.socket_cone_offset) <= half_thickness) {
+            socket_radius = std::max(socket_radius, radius);
+        }
+        if (std::abs(local.z - picked.head_cone_offset) <= half_thickness) {
+            head_radius = std::max(head_radius, radius);
+        }
+    }
+
+    bool changed = false;
+    if (socket_radius > 0.0f &&
+        std::abs(socket_radius - picked.socket_cone_radius) > 1e-4f) {
+        picked.socket_cone_radius = socket_radius*1.2f;
+        changed = true;
+    }
+    if (head_radius > 0.0f &&
+        std::abs(head_radius - picked.head_cone_radius) > 1e-4f) {
+        picked.head_cone_radius = head_radius*1.2f;
+        changed = true;
+    }
+
+    const float socket_base_z =
+        picked.socket_cone_offset +
+        picked.socket_cone_radius / std::tan(picked.socket_cone_angle);
+    const float cylinder_offset =
+        (picked.head_cone_offset + socket_base_z) * 0.5f;
+    if (std::abs(cylinder_offset - picked.male_cylinder_offset) > 1e-4f) {
+        picked.male_cylinder_offset = cylinder_offset;
+        changed = true;
+    }
+
+    return changed;
+}
+
+}  // namespace
 
 void RenderVoxelList::render_object_editor() {
     ImGui::SetNextWindowPos(ImVec2((float)window_width, (float)menu_height),
@@ -356,16 +452,33 @@ void RenderVoxelList::render_object_editor_chain_mode(
         queue_extract_skeleton(item.id);
     }
     ImGui::Separator();
-    ImGui::Text("Picked skeleton points: %d",
-                static_cast<int>(
-                    item.picked_skeleton_points.size()));
+    ImGui::Text(get_locale_cstr("label.picked_skeleton_points"),
+                static_cast<int>(item.picked_skeleton_points.size()));
     ImGui::SameLine();
-    if (ImGui::Button("Clear##PickedSkeletonPoints")) {
+    const std::string clear_picked_label =
+        get_locale_string("action.clear_vertices") + "##PickedSkeletonPoints";
+    if (ImGui::Button(clear_picked_label.c_str())) {
         push_undo_now(
             item.id, std::nullopt,
             get_locale_string("action.clear_vertices"));
         item.picked_skeleton_points.clear();
         item.joint_wireframe_dirty = true;
+    }
+    ImGui::SameLine();
+    const std::string init_radii_label =
+        get_locale_string("action.init_all_joint_radii") +
+        "##InitAllJointRadii";
+    if (ImGui::Button(init_radii_label.c_str())) {
+        const auto before = capture_snapshot(item);
+        bool changed = false;
+        for (size_t idx = 0; idx < item.picked_skeleton_points.size(); ++idx) {
+            changed |= autoDetectJointRadius(item, idx);
+        }
+        if (changed) {
+            push_undo_now(item.id, before,
+                          get_locale_string("action.init_all_joint_radii"));
+            item.joint_wireframe_dirty = true;
+        }
     }
     int erase_picked_skeleton_index = -1;
     bool moved_picked_skeleton_point = false;
@@ -409,6 +522,19 @@ void RenderVoxelList::render_object_editor_chain_mode(
                  static_cast<int>(i));
         if (ImGui::CollapsingHeader(joint_label)) {
             bool dirty = false;
+
+            const std::string auto_detect_label =
+                get_locale_string("action.auto_detect_joint_radius") +
+                "##AutoDetectJointRadius";
+            if (ImGui::Button(auto_detect_label.c_str())) {
+                const auto before = capture_snapshot(item);
+                if (autoDetectJointRadius(item, i)) {
+                    push_undo_now(
+                        item.id, before,
+                        get_locale_string("action.auto_detect_joint_radius"));
+                    dirty = true;
+                }
+            }
 
             // Custom direction
             if (ImGui::Checkbox(
