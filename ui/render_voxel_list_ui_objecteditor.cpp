@@ -14,8 +14,7 @@
 #include <windows.h>
 #endif
 #include "kigstudio/sdf/sdf_chain_joint.h"
-#include "kigstudio/cgal/poisson_reconstruction.h"
-#include "kigstudio/cgal/poisson_utils.h"
+#include "kigstudio/cgal/mesh_simplification.h"
 #include "kigstudio/utils/vec3.h"
 #include "locale.h"
 #include "render_voxel_list.h"
@@ -195,7 +194,13 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
         }
         ImGui::SameLine();
     }
-    auto export_item_as_stl = [&](int mode) {
+    // Export dialog state (persisted per session)
+    static int export_mode = 0; // 0 = Standard, 1 = Smooth SDF
+    static bool export_simplify = true;
+    static float export_simplify_ratio = 0.1f;
+
+    auto export_item_as_stl = [&](int mode, bool do_simplify,
+                                  double simplify_ratio) {
         const char* filters[] = {"*.stl"};
         const char* file = tinyfd_saveFileDialog(
             get_locale_cstr("dialog.save_voxel_as_stl"),
@@ -217,15 +222,6 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
                                                    true)) {
                     mesh.push_back(triangles);
                 }
-            } else if (mode == 2) {
-                // Poisson reconstruction
-                if (!item.source_triangles.empty()) {
-                    auto cloud = sinriv::kigstudio::cgal::
-                        samplePointCloudFromTriangles(
-                            item.source_triangles);
-                    mesh = sinriv::kigstudio::cgal::poissonReconstruct(
-                        cloud, item.voxel_grid_data.voxel_size.x);
-                }
             } else {
                 // Standard
                 for (auto triangles :
@@ -246,6 +242,12 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
                 return;
             }
             mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
+
+            if (do_simplify && !mesh.empty()) {
+                mesh = sinriv::kigstudio::cgal::simplifyMesh(
+                    mesh, simplify_ratio);
+            }
+
             sinriv::kigstudio::voxel::saveMeshToASCIISTL(
                 mesh, tinyfd_path_to_utf8(file));
         } catch (const std::exception& e) {
@@ -272,22 +274,33 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
                                ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted(
             get_locale_cstr("dialog.choose_export_method"));
-        if (ImGui::Button(
-                get_locale_cstr("action.export_standard_stl"))) {
-            ImGui::CloseCurrentPopup();
-            export_item_as_stl(0);
+
+        // Export mode selection
+        ImGui::RadioButton(get_locale_cstr("label.export_mode_standard"),
+                           &export_mode, 0);
+        ImGui::RadioButton(get_locale_cstr("label.export_mode_smooth"),
+                           &export_mode, 1);
+
+        ImGui::Separator();
+
+        // Simplification option
+        ImGui::Checkbox(get_locale_cstr("label.simplify_model"),
+                        &export_simplify);
+        if (export_simplify) {
+            ImGui::Indent();
+            ImGui::SliderFloat(
+                get_locale_cstr("label.simplification_ratio"),
+                &export_simplify_ratio, 0.01f, 1.0f,
+                "%.2f");
+            ImGui::Unindent();
         }
-        ImGui::SameLine();
-        if (ImGui::Button(
-                get_locale_cstr("action.export_smooth_sdf_stl"))) {
+
+        ImGui::Separator();
+
+        if (ImGui::Button(get_locale_cstr("action.save_as_stl"))) {
             ImGui::CloseCurrentPopup();
-            export_item_as_stl(1);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button(
-                get_locale_cstr("action.export_poisson_stl"))) {
-            ImGui::CloseCurrentPopup();
-            export_item_as_stl(2);
+            export_item_as_stl(export_mode, export_simplify,
+                               static_cast<double>(export_simplify_ratio));
         }
         ImGui::SameLine();
         if (ImGui::Button(get_locale_cstr("action.cancel"))) {

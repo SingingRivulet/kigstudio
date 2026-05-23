@@ -107,7 +107,7 @@ struct SkeletonPointPick {
     float head_support_radius = 5.f;
     float male_cylinder_offset = 3.f;
     float male_cylinder_radius = 1.5f;
-    float female_gap = 0.3f;
+    float female_gap = 2.0f;
     float slot_extra = 0.5f;
     float rotation_angle = 0.f;
 };

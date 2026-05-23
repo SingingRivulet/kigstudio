@@ -246,12 +246,14 @@ void init_locale_strings() {
     add_locale_string("action.close", {{"en", "Close"}, {"zh", "关闭"}});
     add_locale_string("action.save_as_stl",
                       {{"en", "Save as STL"}, {"zh", "另存为 STL"}});
-    add_locale_string("action.export_standard_stl",
+    add_locale_string("label.export_mode_standard",
                       {{"en", "Standard"}, {"zh", "标准"}});
-    add_locale_string("action.export_smooth_sdf_stl",
+    add_locale_string("label.export_mode_smooth",
                       {{"en", "Smooth SDF"}, {"zh", "SDF 平滑"}});
-    add_locale_string("action.export_poisson_stl",
-                      {{"en", "Poisson Reconstruction"}, {"zh", "泊松重建"}});
+    add_locale_string("label.simplify_model",
+                      {{"en", "Simplify model"}, {"zh", "简化模型"}});
+    add_locale_string("label.simplification_ratio",
+                      {{"en", "Simplification ratio"}, {"zh", "简化比例"}});
     add_locale_string("label.use_cgal_skeleton",
                       {{"en", "Use CGAL mesh skeleton"}, {"zh", "使用 CGAL 网格骨架"}});
     add_locale_string("action.reload",
@@ -506,8 +508,8 @@ void init_locale_strings() {
                       {{"en", "Fill all enclosed hollow cavities inside the model with solid voxels. Produces a single child node."},
                        {"zh", "用实体体素填满模型内部所有封闭的中空腔体。产生一个子节点。"}});
     add_locale_string("tooltip.mode.chain",
-                      {{"en", "Extract the voxel skeleton using maximal balls. Result is displayed as 3D line segments without generating collision bodies or child nodes."},
-                       {"zh", "使用最大球算法提取体素骨架。结果显示为 3D 线段，不生成碰撞体或子节点。"}});
+                      {{"en", "Split the model into 3D-printable chains (e.g. for jointed dragon)."},
+                       {"zh", "将物体切分为3D打印一体成形的链条（例如关节龙）。"}});
     add_locale_string("tooltip.update_collision",
                       {{"en", "Update collision shapes. This will clear all marked voxels. Proceed?"},
                        {"zh", "在当前节点上执行设置好的碰撞编辑器。"}});

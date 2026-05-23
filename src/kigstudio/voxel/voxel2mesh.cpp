@@ -211,8 +211,8 @@ namespace sinriv::kigstudio::voxel {
         bool computeNormals,
         int subdivisions)
     {
+        (void)subdivisions;
         numTriangles = 0;
-        subdivisions = std::max(1, subdivisions);
 
         DenseGrid dense = buildDenseGrid(voxelData, 2);
         if (dense.sx <= 1 || dense.sy <= 1 || dense.sz <= 1) {
@@ -220,154 +220,221 @@ namespace sinriv::kigstudio::voxel {
         }
 
         SDFGrid sdf = buildSDF(dense);
-        vec3f vertlist[12];
 
-        auto sample = [&](float x, float y, float z) -> float {
-            x = std::max(0.0f, std::min(x, static_cast<float>(sdf.sx - 1)));
-            y = std::max(0.0f, std::min(y, static_cast<float>(sdf.sy - 1)));
-            z = std::max(0.0f, std::min(z, static_cast<float>(sdf.sz - 1)));
-
-            const int x0 = static_cast<int>(std::floor(x));
-            const int y0 = static_cast<int>(std::floor(y));
-            const int z0 = static_cast<int>(std::floor(z));
-            const int x1 = std::min(x0 + 1, sdf.sx - 1);
-            const int y1 = std::min(y0 + 1, sdf.sy - 1);
-            const int z1 = std::min(z0 + 1, sdf.sz - 1);
-
-            const float tx = x - static_cast<float>(x0);
-            const float ty = y - static_cast<float>(y0);
-            const float tz = z - static_cast<float>(z0);
-
-            auto lerp = [](float a, float b, float t) {
-                return a + (b - a) * t;
-            };
-
-            const float c00 = lerp(sdf.get(x0, y0, z0), sdf.get(x1, y0, z0), tx);
-            const float c10 = lerp(sdf.get(x0, y1, z0), sdf.get(x1, y1, z0), tx);
-            const float c01 = lerp(sdf.get(x0, y0, z1), sdf.get(x1, y0, z1), tx);
-            const float c11 = lerp(sdf.get(x0, y1, z1), sdf.get(x1, y1, z1), tx);
-            const float c0 = lerp(c00, c10, ty);
-            const float c1 = lerp(c01, c11, ty);
-            return lerp(c0, c1, tz);
+        // Surface Nets lookup tables
+        static const int CUBE_CORNERS[8][3] = {
+            {0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {1, 1, 0},
+            {0, 0, 1}, {1, 0, 1}, {0, 1, 1}, {1, 1, 1}
+        };
+        static const vec3f CUBE_CORNER_VECTORS[8] = {
+            {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f},
+            {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}
+        };
+        static const int CUBE_EDGES[12][2] = {
+            {0, 1}, {0, 2}, {0, 4}, {1, 3}, {1, 5}, {2, 3},
+            {2, 6}, {3, 7}, {4, 5}, {4, 6}, {5, 7}, {6, 7}
         };
 
-        auto samplePosition = [&](float x, float y, float z) -> vec3f {
-            return {static_cast<float>(sdf.min_bound.x) + x + 0.5f,
-                    static_cast<float>(sdf.min_bound.y) + y + 0.5f,
-                    static_cast<float>(sdf.min_bound.z) + z + 0.5f};
-        };
+        const int sx = sdf.sx;
+        const int sy = sdf.sy;
+        const int sz = sdf.sz;
 
-        auto interpolate = [](const vec3f& p1,
-                              const vec3f& p2,
-                              float v1,
-                              float v2) -> vec3f {
-            const float denom = v1 - v2;
-            if (std::abs(denom) < 1e-6f) {
-                return (p1 + p2) * 0.5f;
-            }
-
-            float t = v1 / denom;
-            t = std::max(0.0f, std::min(1.0f, t));
-            return p1 + (p2 - p1) * t;
-        };
-
-        const int hsx = (sdf.sx - 1) * subdivisions;
-        const int hsy = (sdf.sy - 1) * subdivisions;
-        const int hsz = (sdf.sz - 1) * subdivisions;
-        const float inv_subdiv = 1.0f / static_cast<float>(subdivisions);
-
-        for (int z = 0; z < hsz; ++z)
-        for (int y = 0; y < hsy; ++y)
-        for (int x = 0; x < hsx; ++x) {
-            const float x0 = static_cast<float>(x) * inv_subdiv;
-            const float y0 = static_cast<float>(y) * inv_subdiv;
-            const float z0 = static_cast<float>(z) * inv_subdiv;
-            const float x1 = static_cast<float>(x + 1) * inv_subdiv;
-            const float y1 = static_cast<float>(y + 1) * inv_subdiv;
-            const float z1 = static_cast<float>(z + 1) * inv_subdiv;
-
-            float val[8] = {
-                sample(x0, y0, z0),
-                sample(x1, y0, z0),
-                sample(x1, y1, z0),
-                sample(x0, y1, z0),
-                sample(x0, y0, z1),
-                sample(x1, y0, z1),
-                sample(x1, y1, z1),
-                sample(x0, y1, z1),
-            };
-
-            int cubeindex = 0;
-            cubeindex |= (val[0] < 0.0f) << 0;
-            cubeindex |= (val[1] < 0.0f) << 1;
-            cubeindex |= (val[2] < 0.0f) << 2;
-            cubeindex |= (val[3] < 0.0f) << 3;
-            cubeindex |= (val[4] < 0.0f) << 4;
-            cubeindex |= (val[5] < 0.0f) << 5;
-            cubeindex |= (val[6] < 0.0f) << 6;
-            cubeindex |= (val[7] < 0.0f) << 7;
-
-            if (cubeindex == 0 || cubeindex == 255 || edgeTable[cubeindex] == 0)
-                continue;
-
-            vec3f p[8] = {
-                samplePosition(x0, y0, z0),
-                samplePosition(x1, y0, z0),
-                samplePosition(x1, y1, z0),
-                samplePosition(x0, y1, z0),
-                samplePosition(x0, y0, z1),
-                samplePosition(x1, y0, z1),
-                samplePosition(x1, y1, z1),
-                samplePosition(x0, y1, z1),
-            };
-
-            if (edgeTable[cubeindex] & 1)
-                vertlist[0] = interpolate(p[0], p[1], val[0], val[1]);
-            if (edgeTable[cubeindex] & 2)
-                vertlist[1] = interpolate(p[1], p[2], val[1], val[2]);
-            if (edgeTable[cubeindex] & 4)
-                vertlist[2] = interpolate(p[2], p[3], val[2], val[3]);
-            if (edgeTable[cubeindex] & 8)
-                vertlist[3] = interpolate(p[3], p[0], val[3], val[0]);
-
-            if (edgeTable[cubeindex] & 16)
-                vertlist[4] = interpolate(p[4], p[5], val[4], val[5]);
-            if (edgeTable[cubeindex] & 32)
-                vertlist[5] = interpolate(p[5], p[6], val[5], val[6]);
-            if (edgeTable[cubeindex] & 64)
-                vertlist[6] = interpolate(p[6], p[7], val[6], val[7]);
-            if (edgeTable[cubeindex] & 128)
-                vertlist[7] = interpolate(p[7], p[4], val[7], val[4]);
-
-            if (edgeTable[cubeindex] & 256)
-                vertlist[8] = interpolate(p[0], p[4], val[0], val[4]);
-            if (edgeTable[cubeindex] & 512)
-                vertlist[9] = interpolate(p[1], p[5], val[1], val[5]);
-            if (edgeTable[cubeindex] & 1024)
-                vertlist[10] = interpolate(p[2], p[6], val[2], val[6]);
-            if (edgeTable[cubeindex] & 2048)
-                vertlist[11] = interpolate(p[3], p[7], val[3], val[7]);
-
-            for (int i = 0; triTable[cubeindex][i] != -1; i += 3) {
-                vec3f v1 = vertlist[triTable[cubeindex][i]];
-                vec3f v2 = vertlist[triTable[cubeindex][i + 1]];
-                vec3f v3 = vertlist[triTable[cubeindex][i + 2]];
-
-                vec3f normal{0, 0, 0};
-                if (computeNormals) {
-                    normal = -((v2 - v1).cross(v3 - v1).normalize());
+        // --- helper: estimate centroid of edge intersections inside a unit cube ---
+        auto centroid_of_edge_intersections = [&](const float dists[8]) -> vec3f {
+            int count = 0;
+            vec3f sum(0.0f, 0.0f, 0.0f);
+            for (int e = 0; e < 12; ++e) {
+                int c1 = CUBE_EDGES[e][0];
+                int c2 = CUBE_EDGES[e][1];
+                float d1 = dists[c1];
+                float d2 = dists[c2];
+                if ((d1 < 0.0f) != (d2 < 0.0f)) {
+                    count++;
+                    float interp = d1 / (d1 - d2);
+                    const vec3f& corner1 = CUBE_CORNER_VECTORS[c1];
+                    const vec3f& corner2 = CUBE_CORNER_VECTORS[c2];
+                    sum = sum + corner1 * (1.0f - interp) + corner2 * interp;
                 }
-
-                co_yield {
-                    Triangle(
-                        v1 * voxelData.voxel_size + voxelData.global_position,
-                        v3 * voxelData.voxel_size + voxelData.global_position,
-                        v2 * voxelData.voxel_size + voxelData.global_position),
-                    normal
-                };
-
-                numTriangles++;
             }
+            if (count == 0) return vec3f(0.5f, 0.5f, 0.5f);
+            return sum / static_cast<float>(count);
+        };
+
+        // --- helper: SDF gradient via bilinear interpolation of edge differences ---
+        auto sdf_gradient = [&](const float dists[8], const vec3f& s) -> vec3f {
+            vec3f p00(dists[0b001], dists[0b010], dists[0b100]);
+            vec3f n00(dists[0b000], dists[0b000], dists[0b000]);
+
+            vec3f p10(dists[0b101], dists[0b011], dists[0b110]);
+            vec3f n10(dists[0b100], dists[0b001], dists[0b010]);
+
+            vec3f p01(dists[0b011], dists[0b110], dists[0b101]);
+            vec3f n01(dists[0b010], dists[0b100], dists[0b001]);
+
+            vec3f p11(dists[0b111], dists[0b111], dists[0b111]);
+            vec3f n11(dists[0b110], dists[0b101], dists[0b011]);
+
+            vec3f d00 = p00 - n00;
+            vec3f d10 = p10 - n10;
+            vec3f d01 = p01 - n01;
+            vec3f d11 = p11 - n11;
+
+            float nx = 1.0f - s.x;
+            float ny = 1.0f - s.y;
+            float nz = 1.0f - s.z;
+
+            vec3f grad;
+            grad.x = (ny * nz) * d00.x + (ny * s.z) * d10.x + (s.y * nz) * d01.x + (s.y * s.z) * d11.x;
+            grad.y = (nz * nx) * d00.y + (nz * s.x) * d10.y + (s.z * nx) * d01.y + (s.z * s.x) * d11.y;
+            grad.z = (nx * ny) * d00.z + (nx * s.y) * d10.z + (s.x * ny) * d01.z + (s.x * s.y) * d11.z;
+            return grad;
+        };
+
+        // --- Phase 1: estimate surface point and normal for every cube ---
+        std::vector<vec3f> positions;
+        std::vector<vec3f> normals;
+        std::vector<uint32_t> stride_to_index(static_cast<size_t>(sx) * sy * sz, UINT32_MAX);
+
+        for (int z = 0; z < sz - 1; ++z) {
+            for (int y = 0; y < sy - 1; ++y) {
+                for (int x = 0; x < sx - 1; ++x) {
+                    float corner_dists[8];
+                    int num_negative = 0;
+                    for (int i = 0; i < 8; ++i) {
+                        int cx = x + CUBE_CORNERS[i][0];
+                        int cy = y + CUBE_CORNERS[i][1];
+                        int cz = z + CUBE_CORNERS[i][2];
+                        float d = sdf.get(cx, cy, cz);
+                        corner_dists[i] = d;
+                        if (d < 0.0f) num_negative++;
+                    }
+
+                    if (num_negative == 0 || num_negative == 8) {
+                        continue;
+                    }
+
+                    vec3f c = centroid_of_edge_intersections(corner_dists);
+                    vec3f pos(
+                        static_cast<float>(sdf.min_bound.x) + static_cast<float>(x) + c.x,
+                        static_cast<float>(sdf.min_bound.y) + static_cast<float>(y) + c.y,
+                        static_cast<float>(sdf.min_bound.z) + static_cast<float>(z) + c.z
+                    );
+                    vec3f normal = sdf_gradient(corner_dists, c);
+
+                    uint32_t idx = static_cast<uint32_t>(positions.size());
+                    positions.push_back(pos);
+                    normals.push_back(normal);
+                    stride_to_index[sdf.index(x, y, z)] = idx;
+                }
+            }
+        }
+
+        if (positions.empty()) {
+            co_return;
+        }
+
+        // --- Phase 2: emit quads for every crossing edge ---
+        int x_stride = sdf.index(1, 0, 0) - sdf.index(0, 0, 0); // == 1
+        int y_stride = sdf.index(0, 1, 0) - sdf.index(0, 0, 0); // == sx
+        int z_stride = sdf.index(0, 0, 1) - sdf.index(0, 0, 0); // == sx*sy
+
+        std::vector<uint32_t> indices;
+        indices.reserve(positions.size() * 6);
+
+        auto maybe_make_quad = [&](int p1, int p2, int axis_b_stride, int axis_c_stride) {
+            float d1 = sdf.sdf[p1];
+            float d2 = sdf.sdf[p2];
+            bool negative_face;
+            if (d1 < 0.0f && d2 >= 0.0f) {
+                negative_face = false;
+            } else if (d1 >= 0.0f && d2 < 0.0f) {
+                negative_face = true;
+            } else {
+                return;
+            }
+
+            uint32_t v1 = stride_to_index[p1];
+            uint32_t v2 = stride_to_index[p1 - axis_b_stride];
+            uint32_t v3 = stride_to_index[p1 - axis_c_stride];
+            uint32_t v4 = stride_to_index[p1 - axis_b_stride - axis_c_stride];
+
+            if (v1 == UINT32_MAX || v2 == UINT32_MAX || v3 == UINT32_MAX || v4 == UINT32_MAX) {
+                return;
+            }
+
+            const vec3f& pos1 = positions[v1];
+            const vec3f& pos2 = positions[v2];
+            const vec3f& pos3 = positions[v3];
+            const vec3f& pos4 = positions[v4];
+
+            float d14 = pos1.dist2(pos4);
+            float d23 = pos2.dist2(pos3);
+
+            if (d14 < d23) {
+                if (negative_face) {
+                    indices.push_back(v1); indices.push_back(v4); indices.push_back(v2);
+                    indices.push_back(v1); indices.push_back(v3); indices.push_back(v4);
+                } else {
+                    indices.push_back(v1); indices.push_back(v2); indices.push_back(v4);
+                    indices.push_back(v1); indices.push_back(v4); indices.push_back(v3);
+                }
+            } else {
+                if (negative_face) {
+                    indices.push_back(v2); indices.push_back(v3); indices.push_back(v4);
+                    indices.push_back(v2); indices.push_back(v1); indices.push_back(v3);
+                } else {
+                    indices.push_back(v2); indices.push_back(v4); indices.push_back(v3);
+                    indices.push_back(v2); indices.push_back(v3); indices.push_back(v1);
+                }
+            }
+        };
+
+        for (int z = 0; z < sz - 1; ++z) {
+            for (int y = 0; y < sy - 1; ++y) {
+                for (int x = 0; x < sx - 1; ++x) {
+                    int p_stride = sdf.index(x, y, z);
+                    if (stride_to_index[p_stride] == UINT32_MAX) continue;
+
+                    // X axis edge
+                    if (y > 0 && z > 0 && x < sx - 2) {
+                        maybe_make_quad(p_stride, p_stride + x_stride, y_stride, z_stride);
+                    }
+                    // Y axis edge
+                    if (x > 0 && z > 0 && y < sy - 2) {
+                        maybe_make_quad(p_stride, p_stride + y_stride, z_stride, x_stride);
+                    }
+                    // Z axis edge
+                    if (x > 0 && y > 0 && z < sz - 2) {
+                        maybe_make_quad(p_stride, p_stride + z_stride, x_stride, y_stride);
+                    }
+                }
+            }
+        }
+
+        // --- Phase 3: yield triangles ---
+        for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+            uint32_t i0 = indices[i];
+            uint32_t i1 = indices[i + 1];
+            uint32_t i2 = indices[i + 2];
+
+            vec3f v1 = positions[i0];
+            vec3f v2 = positions[i1];
+            vec3f v3 = positions[i2];
+
+            vec3f normal{0, 0, 0};
+            if (computeNormals) {
+                normal = -((v2 - v1).cross(v3 - v1).normalize());
+            }
+
+            co_yield {
+                Triangle(
+                    v1 * voxelData.voxel_size + voxelData.global_position,
+                    v3 * voxelData.voxel_size + voxelData.global_position,
+                    v2 * voxelData.voxel_size + voxelData.global_position),
+                normal
+            };
+
+            numTriangles++;
         }
     }
 
