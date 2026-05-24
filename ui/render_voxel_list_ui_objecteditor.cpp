@@ -194,77 +194,6 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
         }
         ImGui::SameLine();
     }
-    // Export dialog state (persisted per session)
-    static int export_mode = 0; // 0 = Standard, 1 = Smooth SDF
-    static bool export_simplify = true;
-    static float export_simplify_ratio = 0.1f;
-
-    auto export_item_as_stl = [&](int mode, bool do_simplify,
-                                  double simplify_ratio) {
-        const char* filters[] = {"*.stl"};
-        const char* file = tinyfd_saveFileDialog(
-            get_locale_cstr("dialog.save_voxel_as_stl"),
-            "node_voxel.stl", 1, filters,
-            get_locale_cstr("dialog.stl_files"));
-        if (!file)
-            return;
-
-        try {
-            std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
-                                   sinriv::kigstudio::voxel::vec3f>>
-                mesh;
-            int numTriangles = 0;
-            if (mode == 1) {
-                // Smooth SDF
-                for (auto triangles : sinriv::kigstudio::voxel::
-                         generateSmoothMeshFromSDF(item.voxel_grid_data,
-                                                   numTriangles,
-                                                   true)) {
-                    mesh.push_back(triangles);
-                }
-            } else {
-                // Standard
-                for (auto triangles :
-                     sinriv::kigstudio::voxel::generateMesh(
-                         item.voxel_grid_data, 0.5, numTriangles,
-                         true)) {
-                    mesh.push_back(triangles);
-                }
-            }
-            if (mesh.empty()) {
-                std::string msg =
-                    "[Export STL] Warning: generated mesh is empty "
-                    "(mode=" +
-                    std::to_string(mode) + ")";
-                std::cerr << msg << std::endl;
-                append_queue_log(msg);
-                show_log_window = true;
-                return;
-            }
-            mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
-
-            if (do_simplify && !mesh.empty()) {
-                mesh = sinriv::kigstudio::cgal::simplifyMesh(
-                    mesh, simplify_ratio);
-            }
-
-            sinriv::kigstudio::voxel::saveMeshToASCIISTL(
-                mesh, tinyfd_path_to_utf8(file));
-        } catch (const std::exception& e) {
-            std::string msg =
-                std::string("[Export STL] Error: ") + e.what();
-            std::cerr << msg << std::endl;
-            append_queue_log(msg);
-            show_log_window = true;
-        } catch (...) {
-            std::string msg =
-                "[Export STL] Unknown error during export";
-            std::cerr << msg << std::endl;
-            append_queue_log(msg);
-            show_log_window = true;
-        }
-    };
-
     const std::string export_popup_title =
         localize_id("dialog.choose_export_method", item.id);
     if (ImGui::Button(get_locale_cstr("action.save_as_stl"))) {
@@ -277,20 +206,20 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
 
         // Export mode selection
         ImGui::RadioButton(get_locale_cstr("label.export_mode_standard"),
-                           &export_mode, 0);
+                           &export_stl_mode, 0);
         ImGui::RadioButton(get_locale_cstr("label.export_mode_smooth"),
-                           &export_mode, 1);
+                           &export_stl_mode, 1);
 
         ImGui::Separator();
 
         // Simplification option
         ImGui::Checkbox(get_locale_cstr("label.simplify_model"),
-                        &export_simplify);
-        if (export_simplify) {
+                        &export_stl_simplify);
+        if (export_stl_simplify) {
             ImGui::Indent();
             ImGui::SliderFloat(
                 get_locale_cstr("label.simplification_ratio"),
-                &export_simplify_ratio, 0.01f, 1.0f,
+                &export_stl_simplify_ratio, 0.01f, 1.0f,
                 "%.2f");
             ImGui::Unindent();
         }
@@ -299,8 +228,17 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
 
         if (ImGui::Button(get_locale_cstr("action.save_as_stl"))) {
             ImGui::CloseCurrentPopup();
-            export_item_as_stl(export_mode, export_simplify,
-                               static_cast<double>(export_simplify_ratio));
+            const char* filters[] = {"*.stl"};
+            const char* file = tinyfd_saveFileDialog(
+                get_locale_cstr("dialog.save_voxel_as_stl"),
+                "node_voxel.stl", 1, filters,
+                get_locale_cstr("dialog.stl_files"));
+            if (file) {
+                queue_export_stl(
+                    item.id, tinyfd_path_to_utf8(file),
+                    export_stl_mode, export_stl_simplify,
+                    export_stl_simplify_ratio);
+            }
         }
         ImGui::SameLine();
         if (ImGui::Button(get_locale_cstr("action.cancel"))) {

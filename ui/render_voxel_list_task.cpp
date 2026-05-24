@@ -1,6 +1,7 @@
 
 #include <sstream>
 #include "render_voxel_list.h"
+#include "kigstudio/cgal/mesh_simplification.h"
 namespace sinriv::ui::render {
 
 void RenderVoxelList::process_queue_result() {
@@ -357,6 +358,207 @@ void RenderVoxelList::queue_thread() {
                 queue_running = false;
                 break;
             }
+            case TASK_EXPORT_STL: {
+                append_queue_logf("log.queue.start_export_stl", task.index,
+                                  task.file_path.c_str());
+                queue_running = true;
+                queue_status = get_locale_string("status.exporting_stl");
+                queue_progress = 0.0f;
+                try {
+                    // 锁定 item
+                    locker.lock();
+                    auto it = items.find(task.index);
+                    if (it == items.end() || it->second->write_count != 0) {
+                        locker.unlock();
+                        append_queue_logf("log.queue.skip_item_busy", task.index);
+                        break;
+                    }
+                    it->second->write_count++;
+                    auto item_ptr = it->second.get();
+                    locker.unlock();
+
+                    std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
+                                           sinriv::kigstudio::voxel::vec3f>>
+                        mesh;
+                    int numTriangles = 0;
+                    if (task.export_mode == 1) {
+                        for (auto triangles : sinriv::kigstudio::voxel::
+                                 generateSmoothMeshFromSDF(item_ptr->voxel_grid_data,
+                                                           numTriangles,
+                                                           true)) {
+                            mesh.push_back(triangles);
+                        }
+                    } else {
+                        for (auto triangles :
+                             sinriv::kigstudio::voxel::generateMesh(
+                                 item_ptr->voxel_grid_data, 0.5, numTriangles,
+                                 true)) {
+                            mesh.push_back(triangles);
+                        }
+                    }
+                    queue_progress = 0.4f;
+
+                    if (!mesh.empty()) {
+                        mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
+                    }
+                    queue_progress = 0.7f;
+
+                    if (task.export_simplify && !mesh.empty()) {
+                        mesh = sinriv::kigstudio::cgal::simplifyMesh(
+                            mesh, static_cast<double>(task.export_simplify_ratio));
+                    }
+                    queue_progress = 0.9f;
+
+                    if (!mesh.empty()) {
+                        sinriv::kigstudio::voxel::saveMeshToASCIISTL(
+                            mesh, task.file_path);
+                        append_queue_logf("log.queue.done_export_stl", task.index,
+                                          task.file_path.c_str());
+                    } else {
+                        append_queue_logf("log.queue.error_export_stl_empty",
+                                          task.index);
+                    }
+
+                    // 解锁
+                    locker.lock();
+                    it = items.find(task.index);
+                    if (it != items.end()) {
+                        it->second->write_count--;
+                    }
+                    locker.unlock();
+                    queue_progress = 1.0f;
+                } catch (std::exception& e) {
+                    append_queue_logf("log.queue.error_export_stl", task.index,
+                                      e.what());
+                    locker.lock();
+                    auto it = items.find(task.index);
+                    if (it != items.end()) {
+                        it->second->write_count--;
+                    }
+                    locker.unlock();
+                }
+                queue_running = false;
+                break;
+            }
+            case TASK_EXPORT_STL_ALL: {
+                queue_running = true;
+                queue_status = get_locale_string("status.exporting_stl_all");
+                queue_progress = 0.0f;
+                try {
+                    std::vector<int> target_ids;
+                    {
+                        std::lock_guard<std::mutex> lock(locker);
+                        for (auto& [id, item] : items) {
+                            bool is_leaf = true;
+                            for (int cid : item->children) {
+                                if (cid >= 0) {
+                                    is_leaf = false;
+                                    break;
+                                }
+                            }
+                            if (is_leaf) {
+                                target_ids.push_back(id);
+                            }
+                        }
+                    }
+
+                    if (target_ids.empty()) {
+                        append_queue_logf("log.queue.error_export_stl_all_empty");
+                        queue_progress = 1.0f;
+                        queue_running = false;
+                        break;
+                    }
+
+                    std::filesystem::path export_dir =
+                        utf8_path(task.file_path);
+                    std::filesystem::create_directories(export_dir);
+
+                    int total = static_cast<int>(target_ids.size());
+                    int success = 0;
+                    for (int i = 0; i < total; ++i) {
+                        int id = target_ids[i];
+                        queue_progress = static_cast<float>(i) / static_cast<float>(total);
+                        {
+                            std::string fmt = get_locale_string("status.exporting_stl_all_item");
+                            char buf[256];
+                            snprintf(buf, sizeof(buf), fmt.c_str(), id, i + 1, total);
+                            queue_status = buf;
+                        }
+
+                        locker.lock();
+                        auto it = items.find(id);
+                        if (it == items.end() || it->second->write_count != 0) {
+                            locker.unlock();
+                            append_queue_logf("log.queue.skip_item_busy", id);
+                            continue;
+                        }
+                        it->second->write_count++;
+                        auto item_ptr = it->second.get();
+                        locker.unlock();
+
+                        try {
+                            std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
+                                                   sinriv::kigstudio::voxel::vec3f>>
+                                mesh;
+                            int numTriangles = 0;
+                            if (task.export_mode == 1) {
+                                for (auto triangles : sinriv::kigstudio::voxel::
+                                         generateSmoothMeshFromSDF(
+                                             item_ptr->voxel_grid_data,
+                                             numTriangles, true)) {
+                                    mesh.push_back(triangles);
+                                }
+                            } else {
+                                for (auto triangles :
+                                     sinriv::kigstudio::voxel::generateMesh(
+                                         item_ptr->voxel_grid_data, 0.5,
+                                         numTriangles, true)) {
+                                    mesh.push_back(triangles);
+                                }
+                            }
+
+                            if (!mesh.empty()) {
+                                mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
+                            }
+
+                            if (task.export_simplify && !mesh.empty()) {
+                                mesh = sinriv::kigstudio::cgal::simplifyMesh(
+                                    mesh,
+                                    static_cast<double>(task.export_simplify_ratio));
+                            }
+
+                            if (!mesh.empty()) {
+                                std::string filename =
+                                    "node_" + std::to_string(id) + ".stl";
+                                std::filesystem::path filepath =
+                                    export_dir / filename;
+                                sinriv::kigstudio::voxel::saveMeshToASCIISTL(
+                                    mesh, path_to_utf8(filepath));
+                                success++;
+                            }
+                        } catch (std::exception& e) {
+                            append_queue_logf("log.queue.error_export_stl", id,
+                                              e.what());
+                        }
+
+                        locker.lock();
+                        it = items.find(id);
+                        if (it != items.end()) {
+                            it->second->write_count--;
+                        }
+                        locker.unlock();
+                    }
+
+                    append_queue_logf("log.queue.done_export_stl_all", success,
+                                      total);
+                    queue_progress = 1.0f;
+                } catch (std::exception& e) {
+                    append_queue_logf("log.queue.error_export_stl_all",
+                                      e.what());
+                }
+                queue_running = false;
+                break;
+            }
         }
     }
 }
@@ -477,6 +679,38 @@ void RenderVoxelList::release() {
     destroyThumbnailResources();
     items.clear();
     pending_deletion.clear();
+}
+
+void RenderVoxelList::queue_export_stl(int item_id,
+                                       const std::string& file_path,
+                                       int mode,
+                                       bool simplify,
+                                       float ratio) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_EXPORT_STL;
+    task.index = item_id;
+    task.file_path = file_path;
+    task.export_mode = mode;
+    task.export_simplify = simplify;
+    task.export_simplify_ratio = ratio;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
+}
+
+void RenderVoxelList::queue_export_stl_all(const std::string& export_dir,
+                                           int mode,
+                                           bool simplify,
+                                           float ratio) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_EXPORT_STL_ALL;
+    task.file_path = export_dir;
+    task.export_mode = mode;
+    task.export_simplify = simplify;
+    task.export_simplify_ratio = ratio;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
 }
 
 }  // namespace sinriv::ui::render

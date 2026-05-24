@@ -550,6 +550,12 @@ class RenderVoxelList {
     bool show_log_window = false;
     void render_log_window();
 
+    // STL export dialog state (shared between single and batch export)
+    int export_stl_mode = 0; // 0 = Standard, 1 = Smooth SDF
+    bool export_stl_simplify = false;
+    float export_stl_simplify_ratio = 0.1f;
+    bool pending_open_export_stl_all_dialog = false;
+
     struct Debug {
         struct VoxelPickTiming {
             double world_to_voxel_ms = 0.0;
@@ -648,12 +654,17 @@ class RenderVoxelList {
         TASK_RELOAD_STL = 6,
         TASK_CHECK_NON_MANIFOLD = 7,
         TASK_EXTRACT_SKELETON = 8,
+        TASK_EXPORT_STL = 9,
+        TASK_EXPORT_STL_ALL = 10,
     };
     struct QueueTask {
         QueueTaskType type;
         int index;
         std::string file_path;
         float voxel_size;
+        int export_mode = 0;
+        bool export_simplify = false;
+        float export_simplify_ratio = 0.1f;
     };
     std::queue<QueueTask> queue;
     std::mutex queue_mutex;
@@ -680,6 +691,15 @@ class RenderVoxelList {
     void queue_remove_item(int index);
     void queue_check_non_manifold(int index);
     void queue_extract_skeleton(int index);
+    void queue_export_stl(int item_id,
+                          const std::string& file_path,
+                          int mode,
+                          bool simplify,
+                          float ratio);
+    void queue_export_stl_all(const std::string& export_dir,
+                              int mode,
+                              bool simplify,
+                              float ratio);
     bool isQueueRunning();
     std::string getQueueStatus();
     float getQueueProgress();

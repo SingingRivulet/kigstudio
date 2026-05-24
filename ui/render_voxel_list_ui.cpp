@@ -11,8 +11,7 @@
 #include <windows.h>
 #endif
 #include "kigstudio/utils/vec3.h"
-#include "kigstudio/cgal/poisson_reconstruction.h"
-#include "kigstudio/cgal/poisson_utils.h"
+
 #include "locale.h"
 #include "render_voxel_list.h"
 #include "tinyfiledialogs.h"
@@ -71,67 +70,7 @@ void RenderVoxelList::render_ui() {
                 } else {
                     if (ImGui::MenuItem(
                             get_locale_cstr("menu.export_stl_all"))) {
-                        std::filesystem::path export_dir =
-                            utf8_path(project_path) / "exported_stl";
-                        std::filesystem::create_directories(export_dir);
-                        std::vector<int> exported_ids;
-                        {
-                            std::lock_guard<std::mutex> lock(locker);
-                            for (auto& [id, item] : items) {
-                                bool is_leaf = true;
-                                for (int cid : item->children) {
-                                    if (cid >= 0) {
-                                        is_leaf = false;
-                                        break;
-                                    }
-                                }
-                                if (is_leaf) {
-                                    try {
-                                        std::vector<std::tuple<
-                                            sinriv::kigstudio::voxel::Triangle,
-                                            sinriv::kigstudio::voxel::vec3f>>
-                                            mesh;
-                                        int numTriangles = 0;
-                                        for (auto triangles : sinriv::
-                                                 kigstudio::voxel::generateMesh(
-                                                     item->voxel_grid_data, 0.5,
-                                                     numTriangles, true)) {
-                                            mesh.push_back(triangles);
-                                        }
-                                        mesh =
-                                            sinriv::kigstudio::voxel::cleanMesh(
-                                                mesh);
-                                        std::string filename =
-                                            "node_" + std::to_string(id) +
-                                            ".stl";
-                                        std::filesystem::path filepath =
-                                            export_dir / filename;
-                                        sinriv::kigstudio::voxel::
-                                            saveMeshToASCIISTL(
-                                                mesh, path_to_utf8(filepath));
-                                        exported_ids.push_back(id);
-                                    } catch (const std::exception& e) {
-                                        std::cout
-                                            << "Export STL failed for node "
-                                            << id << ": " << e.what()
-                                            << std::endl;
-                                    }
-                                }
-                            }
-                        }
-                        if (exported_ids.empty()) {
-                            tinyfd_messageBox(
-                                get_locale_cstr("dialog.info"),
-                                utf8_to_ansi(
-                                    get_locale_cstr(
-                                        "tooltip.export_stl_all_empty"))
-                                    .c_str(),
-                                "ok", "info", 1);
-                        } else {
-                            std::cout << "Exported " << exported_ids.size()
-                                      << " STL files to "
-                                      << path_to_utf8(export_dir) << std::endl;
-                        }
+                        pending_open_export_stl_all_dialog = true;
                     }
                 }
                 ImGui::EndMenu();
@@ -193,6 +132,60 @@ void RenderVoxelList::render_ui() {
             }
             ImGui::EndMenuBar();
         }
+
+        // Batch export STL dialog (must be outside MenuBar)
+        if (pending_open_export_stl_all_dialog) {
+            ImGui::OpenPopup(get_locale_cstr("dialog.export_stl_all"));
+            pending_open_export_stl_all_dialog = false;
+        }
+        if (ImGui::BeginPopupModal(
+                get_locale_cstr("dialog.export_stl_all"),
+                nullptr,
+                ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted(
+                get_locale_cstr("dialog.choose_export_method"));
+
+            ImGui::RadioButton(
+                get_locale_cstr("label.export_mode_standard"),
+                &export_stl_mode, 0);
+            ImGui::RadioButton(
+                get_locale_cstr("label.export_mode_smooth"),
+                &export_stl_mode, 1);
+
+            ImGui::Separator();
+
+            ImGui::Checkbox(
+                get_locale_cstr("label.simplify_model"),
+                &export_stl_simplify);
+            if (export_stl_simplify) {
+                ImGui::Indent();
+                ImGui::SliderFloat(
+                    get_locale_cstr("label.simplification_ratio"),
+                    &export_stl_simplify_ratio, 0.01f, 1.0f,
+                    "%.2f");
+                ImGui::Unindent();
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::Button(
+                    get_locale_cstr("action.export_stl_all"))) {
+                ImGui::CloseCurrentPopup();
+                std::filesystem::path export_dir =
+                    utf8_path(project_path) / "exported_stl";
+                queue_export_stl_all(
+                    path_to_utf8(export_dir),
+                    export_stl_mode,
+                    export_stl_simplify,
+                    export_stl_simplify_ratio);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(get_locale_cstr("action.cancel"))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+
         const char* update_button_key = "action.update_collision";
         {
             std::lock_guard<std::mutex> lock(locker);

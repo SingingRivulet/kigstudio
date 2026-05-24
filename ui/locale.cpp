@@ -171,6 +171,20 @@ void init_locale_strings() {
                       {{"en", "[Queue] Skip: Cannot check non-manifold edges - item busy or not found"}, {"zh", "[队列] 跳过: 无法检查非流形边 - 项目正忙或不存在"}});
     add_locale_string("log.queue.unknown_error",
                       {{"en", "Unknown error"}, {"zh", "未知错误"}});
+    add_locale_string("log.queue.start_export_stl",
+                      {{"en", "[Queue] Start: Export STL for item %d to \"%s\""}, {"zh", "[队列] 开始: 导出节点 %d 的 STL 到 \"%s\""}});
+    add_locale_string("log.queue.done_export_stl",
+                      {{"en", "[Queue] Done:  Exported STL for item %d to \"%s\""}, {"zh", "[队列] 完成: 已导出节点 %d 的 STL 到 \"%s\""}});
+    add_locale_string("log.queue.error_export_stl",
+                      {{"en", "[Queue] Error: Export STL for item %d - %s"}, {"zh", "[队列] 错误: 导出节点 %d 的 STL - %s"}});
+    add_locale_string("log.queue.error_export_stl_empty",
+                      {{"en", "[Queue] Error: Export STL for item %d - empty mesh"}, {"zh", "[队列] 错误: 导出节点 %d 的 STL - 网格为空"}});
+    add_locale_string("log.queue.error_export_stl_all",
+                      {{"en", "[Queue] Error: Batch export STL - %s"}, {"zh", "[队列] 错误: 批量导出 STL - %s"}});
+    add_locale_string("log.queue.error_export_stl_all_empty",
+                      {{"en", "[Queue] Error: Batch export STL - no leaf nodes"}, {"zh", "[队列] 错误: 批量导出 STL - 没有叶子节点"}});
+    add_locale_string("log.queue.done_export_stl_all",
+                      {{"en", "[Queue] Done:  Exported %d/%d STL files"}, {"zh", "[队列] 完成: 已导出 %d/%d 个 STL 文件"}});
     add_locale_string("log.extract_skeleton.result",
                       {{"en", "[Extract Skeleton] Result: %d vertices"}, {"zh", "[骨架提取]处理成功，共%d个顶点"}});
     add_locale_string("log.extract_skeleton.buildDenseGrid.result",
@@ -186,6 +200,12 @@ void init_locale_strings() {
                       {{"en", "Generating thumbnail mesh..."}, {"zh", "正在生成缩略图网格..."}});
     add_locale_string("status.filling_interior",
                       {{"en", "Filling interior..."}, {"zh", "正在填充内部..."}});
+    add_locale_string("status.exporting_stl",
+                      {{"en", "Exporting STL..."}, {"zh", "正在导出 STL..."}});
+    add_locale_string("status.exporting_stl_all",
+                      {{"en", "Exporting all STL..."}, {"zh", "正在批量导出 STL..."}});
+    add_locale_string("status.exporting_stl_all_item",
+                      {{"en", "Exporting item %d (%d/%d)..."}, {"zh", "正在导出节点 %d (%d/%d)..."}});
 
     // Labels
     add_locale_string("label.no_log_entries",
@@ -246,6 +266,8 @@ void init_locale_strings() {
     add_locale_string("action.close", {{"en", "Close"}, {"zh", "关闭"}});
     add_locale_string("action.save_as_stl",
                       {{"en", "Save as STL"}, {"zh", "另存为 STL"}});
+    add_locale_string("action.export_stl_all",
+                      {{"en", "Export All"}, {"zh", "全部导出"}});
     add_locale_string("label.export_mode_standard",
                       {{"en", "Standard"}, {"zh", "标准"}});
     add_locale_string("label.export_mode_smooth",
@@ -536,6 +558,8 @@ void init_locale_strings() {
                        {"zh", "选择 STL 导出方式"}});
     add_locale_string("dialog.stl_files",
                       {{"en", "STL files"}, {"zh", "STL 文件"}});
+    add_locale_string("dialog.export_stl_all",
+                      {{"en", "Export All STL"}, {"zh", "全部导出 STL"}});
     add_locale_string("dialog.save_project_title",
                       {{"en", "Select Folder to Save Project"},
                        {"zh", "选择文件夹保存项目"}});
