@@ -140,6 +140,7 @@ int main(int argc, char** argv) {
     sinriv::ui::render::locale_init();
 
     render_items.start_thread();
+    render_items.initIcons();
 
     auto try_load_startup_path = [&]() {
         if (argc <= 1)

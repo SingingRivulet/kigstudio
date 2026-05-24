@@ -71,6 +71,25 @@ void RenderVoxelList::render_nav_map() {
             ImGui::Dummy(ImVec2(64.0f, 64.0f));
         }
 
+        if (item->sdf_grid_data && bgfx::isValid(icons.circles)) {
+            ImGui::Image(icons.circles, ImVec2(20.0f, 20.0f));
+            if (ImGui::BeginItemTooltip()) {
+                ImGui::Text(get_locale_cstr("tooltip.sdf_resolution"),
+                            item->sdf_grid_data->sx,
+                            item->sdf_grid_data->sy,
+                            item->sdf_grid_data->sz);
+                ImGui::EndTooltip();
+            }
+        }
+        if (!item->stl_path.empty() && bgfx::isValid(icons.hexagon)) {
+            ImGui::Image(icons.hexagon, ImVec2(20.0f, 20.0f));
+            if (ImGui::BeginItemTooltip()) {
+                ImGui::Text(get_locale_cstr("tooltip.triangle_count"),
+                            item->source_triangles.size());
+                ImGui::EndTooltip();
+            }
+        }
+
         // Output attributes (连向子节点)
         for (size_t i = 0; i < item->children.size(); ++i) {
             ImNodes::BeginOutputAttribute(

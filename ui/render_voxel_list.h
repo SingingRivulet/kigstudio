@@ -96,7 +96,7 @@ struct SkeletonPointPick {
     // Joint parameters for this picked point
     bool use_custom_direction = false;
     sinriv::kigstudio::voxel::vec3f custom_direction_end = {0, 0, 0};
-    float socket_cone_offset = 0.f;
+    float socket_cone_offset = 5.f;
     float socket_cone_angle = 0.5f;
     float socket_cone_radius = 4.f;
     float head_cone_offset = 10.f;
@@ -107,7 +107,7 @@ struct SkeletonPointPick {
     float head_support_radius = 5.f;
     float male_cylinder_offset = 3.f;
     float male_cylinder_radius = 1.5f;
-    float female_gap = 2.0f;
+    float female_gap = 0.3f;
     float slot_extra = 0.5f;
     float rotation_angle = 0.f;
 };
@@ -200,6 +200,8 @@ class RenderVoxelList {
         sinriv::ui::render::RenderVoxel voxel_renderer;
         sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
         kdtree::KDTree mesh_kd_tree;  // 三角形顶点的kd树，用于实现自动吸附
+
+        std::unique_ptr<sinriv::kigstudio::voxel::SDFGrid> sdf_grid_data{};
 
         sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
         kigstudio::Plane<float> plane;
@@ -556,6 +558,14 @@ class RenderVoxelList {
     float export_stl_simplify_ratio = 0.1f;
     bool pending_open_export_stl_all_dialog = false;
 
+    struct Icons{
+        bgfx::TextureHandle hexagon = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle circles = BGFX_INVALID_HANDLE;
+    }icons;
+
+    void initIcons();
+    void destroyIcons();
+
     struct Debug {
         struct VoxelPickTiming {
             double world_to_voxel_ms = 0.0;
@@ -691,15 +701,8 @@ class RenderVoxelList {
     void queue_remove_item(int index);
     void queue_check_non_manifold(int index);
     void queue_extract_skeleton(int index);
-    void queue_export_stl(int item_id,
-                          const std::string& file_path,
-                          int mode,
-                          bool simplify,
-                          float ratio);
-    void queue_export_stl_all(const std::string& export_dir,
-                              int mode,
-                              bool simplify,
-                              float ratio);
+    void queue_export_stl(int item_id, const std::string& file_path, int mode, bool simplify, float ratio);
+    void queue_export_stl_all(const std::string& export_dir, int mode, bool simplify, float ratio);
     bool isQueueRunning();
     std::string getQueueStatus();
     float getQueueProgress();

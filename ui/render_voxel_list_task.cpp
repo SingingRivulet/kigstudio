@@ -684,6 +684,7 @@ float RenderVoxelList::getQueueProgress() {
 
 void RenderVoxelList::release() {
     stop_thread();
+    destroyIcons();
     destroyThumbnailResources();
     items.clear();
     pending_deletion.clear();
