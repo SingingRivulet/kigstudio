@@ -552,7 +552,7 @@ class RenderVoxelList {
 
     // STL export dialog state (shared between single and batch export)
     int export_stl_mode = 0; // 0 = Standard, 1 = Smooth SDF
-    bool export_stl_simplify = false;
+    bool export_stl_simplify = true;
     float export_stl_simplify_ratio = 0.1f;
     bool pending_open_export_stl_all_dialog = false;
 

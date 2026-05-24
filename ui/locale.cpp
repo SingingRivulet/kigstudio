@@ -183,6 +183,8 @@ void init_locale_strings() {
                       {{"en", "[Queue] Error: Batch export STL - %s"}, {"zh", "[队列] 错误: 批量导出 STL - %s"}});
     add_locale_string("log.queue.error_export_stl_all_empty",
                       {{"en", "[Queue] Error: Batch export STL - no leaf nodes"}, {"zh", "[队列] 错误: 批量导出 STL - 没有叶子节点"}});
+    add_locale_string("log.queue.simplify_result",
+                      {{"en", "[Queue] Simplify: %d -> %d triangles"}, {"zh", "[队列] 简化: %d -> %d 个三角形"}});
     add_locale_string("log.queue.done_export_stl_all",
                       {{"en", "[Queue] Done:  Exported %d/%d STL files"}, {"zh", "[队列] 完成: 已导出 %d/%d 个 STL 文件"}});
     add_locale_string("log.extract_skeleton.result",
@@ -276,6 +278,8 @@ void init_locale_strings() {
                       {{"en", "Simplify model"}, {"zh", "简化模型"}});
     add_locale_string("label.simplification_ratio",
                       {{"en", "Simplification ratio"}, {"zh", "简化比例"}});
+    add_locale_string("hint.simplification_ratio",
+                      {{"en", "Lower = more simplification (0.01=aggressive, 1.0=none)"}, {"zh", "数值越小简化越多 (0.01=大量简化, 1.0=不简化)"}});
     add_locale_string("label.use_cgal_skeleton",
                       {{"en", "Use CGAL mesh skeleton"}, {"zh", "使用 CGAL 网格骨架"}});
     add_locale_string("action.reload",

@@ -35,7 +35,10 @@ simplifyMesh(const std::vector<std::tuple<Triangle, vec3f>>& mesh, double ratio)
     };
     struct VKeyHash {
         size_t operator()(const VKey& k) const {
-            return std::hash<int64_t>()(k.x ^ (k.y * 0x9e3779b97f4a7c15ULL) ^ (k.z * 0x9e3779b97f4a7c15ULL));
+            // Use distinct mixing constants for each component to avoid collisions
+            return std::hash<int64_t>()(k.x
+                ^ (k.y * 0x9e3779b97f4a7c15ULL)
+                ^ (k.z * 0x9e3779b97f4a7c16ULL));
         }
     };
 
@@ -71,7 +74,11 @@ simplifyMesh(const std::vector<std::tuple<Triangle, vec3f>>& mesh, double ratio)
             continue;
         }
 
-        sm.add_face(va, vb, vc);
+        Surface_mesh::Face_index f = sm.add_face(va, vb, vc);
+        if (f == Surface_mesh::null_face()) {
+            // Non-manifold or duplicate face; skip
+            continue;
+        }
     }
 
     if (sm.number_of_faces() == 0) {
@@ -82,12 +89,32 @@ simplifyMesh(const std::vector<std::tuple<Triangle, vec3f>>& mesh, double ratio)
     std::cerr << "[CGAL Simplify] Before: " << sm.number_of_vertices()
               << " vertices, " << sm.number_of_faces() << " faces.\n";
 
-    SMS::Edge_count_ratio_stop_predicate<Surface_mesh> stop(ratio);
-    int r = SMS::edge_collapse(sm, stop);
+    try {
+        SMS::Edge_count_ratio_stop_predicate<Surface_mesh> stop(ratio);
+        int r = SMS::edge_collapse(sm, stop,
+            CGAL::parameters::vertex_index_map(get(CGAL::vertex_index, sm)));
 
-    std::cerr << "[CGAL Simplify] Collapsed " << r << " edges. After: "
-              << sm.number_of_vertices() << " vertices, "
-              << sm.number_of_faces() << " faces.\n";
+        std::cerr << "[CGAL Simplify] Collapsed " << r << " edges. After: "
+                  << sm.number_of_vertices() << " vertices, "
+                  << sm.number_of_faces() << " faces.\n";
+    } catch (const std::exception& e) {
+        std::cerr << "[CGAL Simplify] Exception during edge_collapse: " << e.what() << "\n";
+        // Return un-simplified mesh on failure
+        std::vector<std::tuple<Triangle, vec3f>> result;
+        result.reserve(sm.number_of_faces());
+        for (auto f : sm.faces()) {
+            auto hd = sm.halfedge(f);
+            auto p0 = sm.point(sm.source(hd));
+            auto p1 = sm.point(sm.target(hd));
+            auto p2 = sm.point(sm.target(sm.next(hd)));
+            vec3f a(static_cast<float>(p0.x()), static_cast<float>(p0.y()), static_cast<float>(p0.z()));
+            vec3f b(static_cast<float>(p1.x()), static_cast<float>(p1.y()), static_cast<float>(p1.z()));
+            vec3f c(static_cast<float>(p2.x()), static_cast<float>(p2.y()), static_cast<float>(p2.z()));
+            vec3f n = (b - a).cross(c - a).normalize();
+            result.push_back({std::make_tuple(a, b, c), n});
+        }
+        return result;
+    }
 
     std::vector<std::tuple<Triangle, vec3f>> result;
     result.reserve(sm.number_of_faces());

@@ -404,8 +404,12 @@ void RenderVoxelList::queue_thread() {
                     queue_progress = 0.7f;
 
                     if (task.export_simplify && !mesh.empty()) {
+                        size_t before = mesh.size();
                         mesh = sinriv::kigstudio::cgal::simplifyMesh(
                             mesh, static_cast<double>(task.export_simplify_ratio));
+                        append_queue_logf("log.queue.simplify_result", task.index,
+                                          static_cast<int>(before),
+                                          static_cast<int>(mesh.size()));
                     }
                     queue_progress = 0.9f;
 
@@ -522,9 +526,13 @@ void RenderVoxelList::queue_thread() {
                             }
 
                             if (task.export_simplify && !mesh.empty()) {
+                                size_t before = mesh.size();
                                 mesh = sinriv::kigstudio::cgal::simplifyMesh(
                                     mesh,
                                     static_cast<double>(task.export_simplify_ratio));
+                                append_queue_logf("log.queue.simplify_result", id,
+                                                  static_cast<int>(before),
+                                                  static_cast<int>(mesh.size()));
                             }
 
                             if (!mesh.empty()) {

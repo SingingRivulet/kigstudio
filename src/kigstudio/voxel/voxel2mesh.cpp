@@ -211,7 +211,7 @@ namespace sinriv::kigstudio::voxel {
         bool computeNormals,
         int subdivisions)
     {
-        (void)subdivisions;
+        subdivisions = std::max(1, subdivisions);
         numTriangles = 0;
 
         DenseGrid dense = buildDenseGrid(voxelData, 2);
@@ -220,6 +220,63 @@ namespace sinriv::kigstudio::voxel {
         }
 
         SDFGrid sdf = buildSDF(dense);
+
+        // --- helper: trilinear interpolation on the base SDF ---
+        auto sampleSDF = [&](float x, float y, float z) -> float {
+            x = std::max(0.0f, std::min(x, static_cast<float>(sdf.sx - 1)));
+            y = std::max(0.0f, std::min(y, static_cast<float>(sdf.sy - 1)));
+            z = std::max(0.0f, std::min(z, static_cast<float>(sdf.sz - 1)));
+
+            const int x0 = static_cast<int>(std::floor(x));
+            const int y0 = static_cast<int>(std::floor(y));
+            const int z0 = static_cast<int>(std::floor(z));
+            const int x1 = std::min(x0 + 1, sdf.sx - 1);
+            const int y1 = std::min(y0 + 1, sdf.sy - 1);
+            const int z1 = std::min(z0 + 1, sdf.sz - 1);
+
+            const float tx = x - static_cast<float>(x0);
+            const float ty = y - static_cast<float>(y0);
+            const float tz = z - static_cast<float>(z0);
+
+            auto lerp = [](float a, float b, float t) {
+                return a + (b - a) * t;
+            };
+
+            const float c00 = lerp(sdf.get(x0, y0, z0), sdf.get(x1, y0, z0), tx);
+            const float c10 = lerp(sdf.get(x0, y1, z0), sdf.get(x1, y1, z0), tx);
+            const float c01 = lerp(sdf.get(x0, y0, z1), sdf.get(x1, y0, z1), tx);
+            const float c11 = lerp(sdf.get(x0, y1, z1), sdf.get(x1, y1, z1), tx);
+            const float c0 = lerp(c00, c10, ty);
+            const float c1 = lerp(c01, c11, ty);
+            return lerp(c0, c1, tz);
+        };
+
+        // Upsample the SDF if subdivisions > 1
+        std::unique_ptr<SDFGrid> usdf;
+        SDFGrid* psdf = &sdf;
+        if (subdivisions > 1) {
+            usdf = std::make_unique<SDFGrid>();
+            usdf->min_bound = sdf.min_bound;
+            usdf->max_bound = sdf.max_bound;
+            usdf->sx = (sdf.sx - 1) * subdivisions + 1;
+            usdf->sy = (sdf.sy - 1) * subdivisions + 1;
+            usdf->sz = (sdf.sz - 1) * subdivisions + 1;
+            usdf->sdf.resize(static_cast<size_t>(usdf->sx) * usdf->sy * usdf->sz);
+
+            const float inv_sub = 1.0f / static_cast<float>(subdivisions);
+            for (int z = 0; z < usdf->sz; ++z) {
+                for (int y = 0; y < usdf->sy; ++y) {
+                    for (int x = 0; x < usdf->sx; ++x) {
+                        float val = sampleSDF(
+                            static_cast<float>(x) * inv_sub,
+                            static_cast<float>(y) * inv_sub,
+                            static_cast<float>(z) * inv_sub);
+                        usdf->set(x, y, z, val);
+                    }
+                }
+            }
+            psdf = usdf.get();
+        }
 
         // Surface Nets lookup tables
         static const int CUBE_CORNERS[8][3] = {
@@ -235,9 +292,10 @@ namespace sinriv::kigstudio::voxel {
             {2, 6}, {3, 7}, {4, 5}, {4, 6}, {5, 7}, {6, 7}
         };
 
-        const int sx = sdf.sx;
-        const int sy = sdf.sy;
-        const int sz = sdf.sz;
+        const int sx = psdf->sx;
+        const int sy = psdf->sy;
+        const int sz = psdf->sz;
+        const float inv_subdiv = 1.0f / static_cast<float>(subdivisions);
 
         // --- helper: estimate centroid of edge intersections inside a unit cube ---
         auto centroid_of_edge_intersections = [&](const float dists[8]) -> vec3f {
@@ -304,7 +362,7 @@ namespace sinriv::kigstudio::voxel {
                         int cx = x + CUBE_CORNERS[i][0];
                         int cy = y + CUBE_CORNERS[i][1];
                         int cz = z + CUBE_CORNERS[i][2];
-                        float d = sdf.get(cx, cy, cz);
+                        float d = psdf->get(cx, cy, cz);
                         corner_dists[i] = d;
                         if (d < 0.0f) num_negative++;
                     }
@@ -315,16 +373,16 @@ namespace sinriv::kigstudio::voxel {
 
                     vec3f c = centroid_of_edge_intersections(corner_dists);
                     vec3f pos(
-                        static_cast<float>(sdf.min_bound.x) + static_cast<float>(x) + c.x,
-                        static_cast<float>(sdf.min_bound.y) + static_cast<float>(y) + c.y,
-                        static_cast<float>(sdf.min_bound.z) + static_cast<float>(z) + c.z
+                        static_cast<float>(psdf->min_bound.x) + (static_cast<float>(x) + c.x) * inv_subdiv,
+                        static_cast<float>(psdf->min_bound.y) + (static_cast<float>(y) + c.y) * inv_subdiv,
+                        static_cast<float>(psdf->min_bound.z) + (static_cast<float>(z) + c.z) * inv_subdiv
                     );
                     vec3f normal = sdf_gradient(corner_dists, c);
 
                     uint32_t idx = static_cast<uint32_t>(positions.size());
                     positions.push_back(pos);
                     normals.push_back(normal);
-                    stride_to_index[sdf.index(x, y, z)] = idx;
+                    stride_to_index[psdf->index(x, y, z)] = idx;
                 }
             }
         }
@@ -334,16 +392,16 @@ namespace sinriv::kigstudio::voxel {
         }
 
         // --- Phase 2: emit quads for every crossing edge ---
-        int x_stride = sdf.index(1, 0, 0) - sdf.index(0, 0, 0); // == 1
-        int y_stride = sdf.index(0, 1, 0) - sdf.index(0, 0, 0); // == sx
-        int z_stride = sdf.index(0, 0, 1) - sdf.index(0, 0, 0); // == sx*sy
+        int x_stride = psdf->index(1, 0, 0) - psdf->index(0, 0, 0); // == 1
+        int y_stride = psdf->index(0, 1, 0) - psdf->index(0, 0, 0); // == sx
+        int z_stride = psdf->index(0, 0, 1) - psdf->index(0, 0, 0); // == sx*sy
 
         std::vector<uint32_t> indices;
         indices.reserve(positions.size() * 6);
 
         auto maybe_make_quad = [&](int p1, int p2, int axis_b_stride, int axis_c_stride) {
-            float d1 = sdf.sdf[p1];
-            float d2 = sdf.sdf[p2];
+            float d1 = psdf->sdf[p1];
+            float d2 = psdf->sdf[p2];
             bool negative_face;
             if (d1 < 0.0f && d2 >= 0.0f) {
                 negative_face = false;
@@ -392,7 +450,7 @@ namespace sinriv::kigstudio::voxel {
         for (int z = 0; z < sz - 1; ++z) {
             for (int y = 0; y < sy - 1; ++y) {
                 for (int x = 0; x < sx - 1; ++x) {
-                    int p_stride = sdf.index(x, y, z);
+                    int p_stride = psdf->index(x, y, z);
                     if (stride_to_index[p_stride] == UINT32_MAX) continue;
 
                     // X axis edge

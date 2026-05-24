@@ -1007,10 +1007,13 @@ SDFGrid buildSDF(const DenseGrid& src) {
                 // outside = positive
                 // ============================================
 
+                // EDT computes distance to the nearest voxel center, but the
+                // actual surface lies at the voxel boundary (half a voxel away).
+                // Subtract 0.5 to correct this systematic offset.
                 if (src.getSolid(x, y, z)) {
-                    value = -din;
+                    value = -(din - 0.5f);
                 } else {
-                    value = dout;
+                    value = dout - 0.5f;
                 }
 
                 sdf.set(x, y, z, value);

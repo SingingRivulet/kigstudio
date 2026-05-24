@@ -163,6 +163,8 @@ void RenderVoxelList::render_ui() {
                     get_locale_cstr("label.simplification_ratio"),
                     &export_stl_simplify_ratio, 0.01f, 1.0f,
                     "%.2f");
+                ImGui::TextUnformatted(
+                    get_locale_cstr("hint.simplification_ratio"));
                 ImGui::Unindent();
             }
 
