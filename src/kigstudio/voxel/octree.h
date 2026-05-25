@@ -7,7 +7,7 @@
 #include "kigstudio/voxel/voxel.h"
 
 namespace sinriv::kigstudio::octree {
-    using Vec3i = sinriv::kigstudio::voxel::Vec3i;
+    // using Vec3i = sinriv::kigstudio::voxel::Vec3i;
 
     // 定义八叉树节点类
     class OctreeNode {

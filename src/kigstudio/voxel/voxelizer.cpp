@@ -94,7 +94,7 @@ namespace sinriv::kigstudio::voxel {
         }
     }
 
-    Generator<vec3i> draw_line(
+    Generator<Vec3i> draw_line(
         vec3f start,
         vec3f end
     ) {
@@ -114,7 +114,7 @@ namespace sinriv::kigstudio::voxel {
         int x = (int)start.x, y = (int)start.y, z = (int)start.z;
 
         for (int i = 0; i <= maxDelta; ++i) {
-            co_yield vec3i(x, y, z);
+            co_yield Vec3i(x, y, z);
 
             if (errorX > 0) {
                 x += xStep;

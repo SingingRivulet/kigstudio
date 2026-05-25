@@ -9,7 +9,7 @@
 
 namespace sinriv::kigstudio::voxel {
 
-    using vec3i = sinriv::kigstudio::octree::Vec3i;
+    using vec3i = sinriv::kigstudio::Vec3i;
 
     void draw_triangle(
         sinriv::kigstudio::voxel::VoxelGrid& voxelData,

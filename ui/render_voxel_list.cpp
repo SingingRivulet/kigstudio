@@ -143,7 +143,7 @@ void RenderVoxelList::brush_marked_voxels(
     const bool use_local_voxel_scan =
         voxel_radius < sinriv::kigstudio::voxel::Chunk::SIZE / 2;
 
-    std::vector<sinriv::kigstudio::voxel::Vec3i> to_mark;
+    std::vector<sinriv::kigstudio::Vec3i> to_mark;
     for (int cz = min_cz; cz <= max_cz; ++cz) {
         for (int cy = min_cy; cy <= max_cy; ++cy) {
             for (int cx = min_cx; cx <= max_cx; ++cx) {
@@ -183,7 +183,7 @@ void RenderVoxelList::brush_marked_voxels(
                                     continue;
                                 }
 
-                                const sinriv::kigstudio::voxel::Vec3i v(
+                                const sinriv::kigstudio::Vec3i v(
                                     base_x + lx, base_y + ly, base_z + lz);
                                 const float dx = float(v.x - center.x);
                                 const float dy = float(v.y - center.y);
@@ -210,7 +210,7 @@ void RenderVoxelList::brush_marked_voxels(
                         const int ly = (idx >> 5) & 31;
                         const int lz = (idx >> 10) & 31;
 
-                        const sinriv::kigstudio::voxel::Vec3i v(
+                        const sinriv::kigstudio::Vec3i v(
                             base_x + lx, base_y + ly, base_z + lz);
                         const float dx = float(v.x - center.x);
                         const float dy = float(v.y - center.y);
@@ -477,7 +477,7 @@ sinriv::kigstudio::voxel::VoxelGrid
 RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
     using Vec3f = sinriv::kigstudio::sdf::joint::Vec3f;
     using Frame = sinriv::kigstudio::sdf::joint::Frame;
-    using Vec3i = sinriv::kigstudio::voxel::Vec3i;
+    using Vec3i = sinriv::kigstudio::Vec3i;
     using Chunk = sinriv::kigstudio::voxel::Chunk;
 
     auto result = voxel_grid_data;

@@ -1,12 +1,14 @@
 #include "kigstudio/voxel/octree.h"
+#include "kigstudio/utils/vec3.h"
 
 using namespace sinriv::kigstudio::octree;
+using Vec3i = sinriv::kigstudio::Vec3i;
 // int main() {
 //     Octree octree(1024); // 假设空间边长为1024
 
 //     Vec3i point1(100, 200, 300);
 //     Vec3i point2(500, 600, 700);
-//     // Vec3i point3(200, 600, 700);
+//     // Vec3i point3(200, 600, 700);`
 //     // Vec3i point4(500, 300, 700);
 
 //     octree.insert(point1);

@@ -237,12 +237,12 @@ struct VoxelKeyHash {
     }
 };
 
-VoxelKey makeVoxelKey(const sinriv::kigstudio::voxel::Vec3i& p) {
+VoxelKey makeVoxelKey(const sinriv::kigstudio::Vec3i& p) {
     return {p.x, p.y, p.z};
 }
 
-bool voxelLess(const sinriv::kigstudio::voxel::Vec3i& a,
-               const sinriv::kigstudio::voxel::Vec3i& b) {
+bool voxelLess(const sinriv::kigstudio::Vec3i& a,
+               const sinriv::kigstudio::Vec3i& b) {
     if (a.x != b.x)
         return a.x < b.x;
     if (a.y != b.y)
@@ -252,11 +252,11 @@ bool voxelLess(const sinriv::kigstudio::voxel::Vec3i& a,
 
 std::vector<SkeletonPointPick>
 buildSkeletonOrderCache(
-    const std::vector<std::pair<sinriv::kigstudio::voxel::Vec3i,
-                                sinriv::kigstudio::voxel::Vec3i>>& lines,
+    const std::vector<std::pair<sinriv::kigstudio::Vec3i,
+                                sinriv::kigstudio::Vec3i>>& lines,
     const sinriv::kigstudio::voxel::VoxelGrid& voxel_grid,
     std::unordered_map<VoxelKey, int, VoxelKeyHash>& order_by_voxel) {
-    using Vec3i = sinriv::kigstudio::voxel::Vec3i;
+    using Vec3i = sinriv::kigstudio::Vec3i;
     using Pick = SkeletonPointPick;
 
     std::vector<Vec3i> nodes;
@@ -588,7 +588,7 @@ void RenderVoxelList::extract_skeleton(int index) {
         skeleton_order_cache =
             buildSkeletonOrderCache(skeleton_lines, voxel_grid, order_by_voxel);
 
-        auto to_world = [&voxel_grid](const kigstudio::voxel::Vec3i& voxel) {
+        auto to_world = [&voxel_grid](const kigstudio::Vec3i& voxel) {
             return voxel_grid.voxelCenterToWorld(voxel);
         };
 

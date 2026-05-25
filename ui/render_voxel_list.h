@@ -210,7 +210,7 @@ class RenderVoxelList {
 
         int chain_min_radius = 1;
         struct SurfaceSkeletonCacheEntry {
-            sinriv::kigstudio::voxel::Vec3i surface_voxel;
+            sinriv::kigstudio::Vec3i surface_voxel;
             SkeletonPointPick skeleton;
         };
         std::vector<std::pair<sinriv::kigstudio::voxel::vec3f,
@@ -297,7 +297,7 @@ class RenderVoxelList {
             } else if (segment_mode == SPLIT_DISCONNECTED) {
                 return voxel_grid_data.splitDisconnected(true);
             } else if (segment_mode == NEIGHBOR) {
-                std::vector<sinriv::kigstudio::voxel::Vec3i> seeds;
+                std::vector<sinriv::kigstudio::Vec3i> seeds;
                 for (const auto& v : marked_voxels) {
                     seeds.push_back(v);
                 }

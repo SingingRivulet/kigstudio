@@ -625,7 +625,7 @@ namespace sinriv::kigstudio::voxel {
     Generator<std::tuple<Triangle, vec3f>> generateMesh(sinriv::kigstudio::octree::Octree& voxelData, double isolevel, int& numTriangles, bool computeNormals) {
         //static int numVectorMeshes;
         //numVectorMeshes++;
-        using vec3i = sinriv::kigstudio::octree::Vec3i;
+        using vec3i = sinriv::kigstudio::Vec3i;
         std::set<vec3i> back_face;
 
         numTriangles = 0;

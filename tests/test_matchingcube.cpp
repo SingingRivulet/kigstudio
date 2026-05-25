@@ -6,7 +6,7 @@ int main() {
     for (int i = 0; i < 2;++i) {
         for (int j = 0; j < 2; ++j) {
             for (int k = 0; k < 2; ++k) {
-                voxelData.insert(sinriv::kigstudio::octree::Vec3i(i + 1, j + 1, k + 1));
+                voxelData.insert(sinriv::kigstudio::Vec3i(i + 1, j + 1, k + 1));
             }
         }
     }

@@ -551,9 +551,9 @@ void init_locale_strings() {
     add_locale_string("label.chain_min_radius",
                       {{"en", "min radius"}, {"zh", "最小半径"}});
     add_locale_string("tooltip.sdf_resolution",
-                      {{"en", "SDF: %d x %d x %d"}, {"zh", "SDF 分辨率: %d x %d x %d"}});
+                      {{"en", "SDF: %d x %d x %d"}, {"zh", "此节点有SDF\n分辨率: %d x %d x %d"}});
     add_locale_string("tooltip.triangle_count",
-                      {{"en", "Triangles: %zu"}, {"zh", "三角形: %zu 个"}});
+                      {{"en", "Triangles: %zu"}, {"zh", "此节点有STL模型\n三角形: %zu 个"}});
 
     add_locale_string("dialog.open_stl_title",
                       {{"en", "Open STL"}, {"zh", "打开 STL"}});
