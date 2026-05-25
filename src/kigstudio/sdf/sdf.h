@@ -78,7 +78,7 @@ struct SDF_Offset : public SDFBase {
     }
 };
 
-struct SDFGrid {
+struct SDFGrid : public SDFBase {
     Vec3i min_bound;
     Vec3i max_bound;
 
@@ -107,6 +107,8 @@ struct SDFGrid {
     inline Vec3i worldVoxelToDense(const Vec3i& p) const {
         return Vec3i(p.x - min_bound.x, p.y - min_bound.y, p.z - min_bound.z);
     }
+
+    float get(const Vec3f& p) const override;
 };
 
 }  // namespace sinriv::kigstudio::sdf
