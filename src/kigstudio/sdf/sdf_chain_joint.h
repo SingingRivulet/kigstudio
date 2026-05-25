@@ -1,6 +1,10 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <memory>
+#include <utility>
+#include <vector>
+#include "kigstudio/sdf/sdf.h"
 #include "kigstudio/utils/vec3.h"
 
 namespace sinriv::kigstudio::sdf::joint {
@@ -20,7 +24,8 @@ namespace sinriv::kigstudio::sdf::joint {
  *               距离关节窝切割圆锥顶点的距离（实体圆锥顶点位于切割圆锥顶点与中心线起点之间）
  *               底面半径
  *               *实体圆锥表面与切割圆锥平行，所以其他参数无需定义*
- *           连接柱（公） 一个圆柱，与圆锥底面平行，轴穿过中心线，两边在与切割圆锥相交处终止（所以底面不是正圆），需要三个参数定义：
+ *           连接柱（公）
+ * 一个圆柱，与圆锥底面平行，轴穿过中心线，两边在与切割圆锥相交处终止（所以底面不是正圆），需要三个参数定义：
  *               距离关节窝切割圆锥顶点的距离（连接柱顶点位于切割圆锥顶点与中心线起点之间）
  *               圆柱底面半径
  *               旋转角度关节连接柱的旋转角度（一个向量，从中心线上一点往这个方向作射线，圆柱的轴位于该射线与中心线围成的平面上）
@@ -47,7 +52,8 @@ namespace sinriv::kigstudio::sdf::joint {
  *       2. 构造正mesh
  *           公连接柱
  *           两个切割圆锥分别与各自实体圆锥之间构成的区域
- *       3. 利用射线追踪算法对体素执行布尔，先执行负mesh，再执行正mesh，被切掉的部分直接丢弃，不需要返回新的item
+ *       3.
+ * 利用射线追踪算法对体素执行布尔，先执行负mesh，再执行正mesh，被切掉的部分直接丢弃，不需要返回新的item
  */
 // ============================================================
 // Basic Vec3
@@ -77,119 +83,80 @@ struct Frame {
     }
 };
 
-inline Frame buildFrame(const Vec3f& start,
-                        const Vec3f& end,
-                        float rotation_angle_rad) {
-    Frame f;
-
-    f.origin = start;
-
-    f.z_axis = normalize(end - start);
-
-    Vec3f up = std::abs(f.z_axis.z) < 0.99f ? Vec3f(0, 0, 1) : Vec3f(1, 0, 0);
-
-    Vec3f t0 = normalize(cross(up, f.z_axis));
-    Vec3f t1 = cross(f.z_axis, t0);
-
-    float c = std::cos(rotation_angle_rad);
-    float s = std::sin(rotation_angle_rad);
-
-    f.x_axis = normalize(t0 * c + t1 * s);
-    f.y_axis = normalize(cross(f.z_axis, f.x_axis));
-
-    return f;
-}
+Frame buildFrame(const Vec3f& start,
+                 const Vec3f& end,
+                 float rotation_angle_rad);
 
 // Build a frame whose z-axis points from start to end,
 // and x-axis aligns with the world +Y axis (projected onto the plane
 // perpendicular to z). This makes the male cylinder point toward +Y.
-inline Frame buildFrameAlignedY(const Vec3f& start,
-                                 const Vec3f& end) {
-    Frame f;
-    f.origin = start;
-    f.z_axis = normalize(end - start);
-
-    Vec3f world_y(0, 1, 0);
-    Vec3f proj = world_y - f.z_axis * dot(world_y, f.z_axis);
-    float proj_len = std::sqrt(dot(proj, proj));
-
-    if (proj_len > 1e-6f) {
-        f.x_axis = proj / proj_len;
-    } else {
-        // z is parallel to world_y, fall back to default
-        Vec3f up = std::abs(f.z_axis.z) < 0.99f ? Vec3f(0, 0, 1) : Vec3f(1, 0, 0);
-        f.x_axis = normalize(cross(up, f.z_axis));
-    }
-
-    f.y_axis = normalize(cross(f.z_axis, f.x_axis));
-    return f;
-}
+Frame buildFrameAlignedY(const Vec3f& start, const Vec3f& end);
 
 // ============================================================
 // SDF helpers
 // ============================================================
 
-inline float sdCappedCylinder(const Vec3f& p, float radius, float half_height) {
-    float dx = std::sqrt(p.x * p.x + p.y * p.y) - radius;
-    float dy = std::abs(p.z) - half_height;
-
-    float ax = std::max(dx, 0.0f);
-    float ay = std::max(dy, 0.0f);
-
-    return std::min(std::max(dx, dy), 0.0f) + std::sqrt(ax * ax + ay * ay);
-}
+float sdCappedCylinder(const Vec3f& p, float radius, float half_height);
 
 // Capped cylinder aligned with the local x-axis.
 // The cylinder axis passes through the origin and points along +x.
-inline float sdCappedCylinderX(const Vec3f& p, float radius, float half_height) {
-    float r = std::sqrt(p.y * p.y + p.z * p.z);
-    float dx = r - radius;
-    float dy = std::abs(p.x) - half_height;
-
-    float ax = std::max(dx, 0.0f);
-    float ay = std::max(dy, 0.0f);
-
-    return std::min(std::max(dx, dy), 0.0f) + std::sqrt(ax * ax + ay * ay);
-}
+float sdCappedCylinderX(const Vec3f& p, float radius, float half_height);
 
 // Infinite cone with vertex at origin, opening along +z.
 // angle_rad is the half-opening angle.
-inline float sdCone(const Vec3f& p, float angle_rad) {
-    float r = std::sqrt(p.x * p.x + p.y * p.y);
+float sdCone(const Vec3f& p, float angle_rad);
 
-    return r - p.z * std::tan(angle_rad);
-}
+float opUnion(float a, float b);
 
-inline float opUnion(float a, float b) {
-    return std::min(a, b);
-}
+float opSubtraction(float a, float b);
 
-inline float opSubtraction(float a, float b) {
-    return std::max(a, -b);
-}
-
-inline float opIntersection(float a, float b) {
-    return std::max(a, b);
-}
+float opIntersection(float a, float b);
 
 // Finite cone: vertex at origin, opening along +z, truncated at z = height.
 // The base radius at the truncation plane is height * tan(angle_rad).
-inline float sdFiniteCone(const Vec3f& p, float angle_rad, float height) {
-    float cone = sdCone(p, angle_rad);
+float sdFiniteCone(const Vec3f& p, float angle_rad, float height);
 
-    // Keep z >= 0 (above the vertex)
-    cone = opIntersection(cone, -p.z);
-    // Keep z <= height (below the truncation plane)
-    cone = opIntersection(cone, p.z - height);
+// ============================================================
+// SDF Primitives (inherited from SDFBase)
+// ============================================================
 
-    return cone;
-}
+struct SDF_FiniteCone : public sinriv::kigstudio::sdf::SDFBase {
+    float angle_rad;
+    float height;
+
+    inline SDF_FiniteCone(float angle_rad, float height)
+        : angle_rad(angle_rad), height(height) {}
+
+    float get(const Vec3f& p) const override;
+};
+
+struct SDF_CappedCylinderX : public sinriv::kigstudio::sdf::SDFBase {
+    float radius;
+    float half_height;
+
+    inline SDF_CappedCylinderX(float radius, float half_height)
+        : radius(radius), half_height(half_height) {}
+
+    float get(const Vec3f& p) const override;
+};
+
+struct SDF_FrameTransform : public sinriv::kigstudio::sdf::SDFBase {
+    Frame frame;
+    std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> child;
+
+    inline SDF_FrameTransform(
+        const Frame& frame,
+        std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> child)
+        : frame(frame), child(std::move(child)) {}
+
+    float get(const Vec3f& p) const override;
+};
 
 // ============================================================
 // Negative Joint Volume
 // ============================================================
 
-class JointNegativeSDF {
+class JointNegativeSDF : public sinriv::kigstudio::sdf::SDFBase {
    public:
     Frame frame;
 
@@ -213,63 +180,17 @@ class JointNegativeSDF {
     // slot thickness between socket and head cones
     float slot_extra = 0.5f;
 
-    inline float sdf(const Vec3f& world_p) const {
-        Vec3f p = frame.worldToLocal(world_p);
+    std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> buildTree() const;
+    float get(const Vec3f& world_p) const override;
 
-        // ============================================
-        // socket cutting cone (finite)
-        // ============================================
-
-        float socket_h = socket_cone_radius / std::tan(socket_cone_angle);
-        Vec3f socket_p = p;
-        socket_p.z -= socket_cone_offset;
-
-        float socket_cone = sdFiniteCone(socket_p, socket_cone_angle, socket_h);
-
-        // ============================================
-        // head cutting cone (finite)
-        // ============================================
-
-        float head_h = head_cone_radius / std::tan(socket_cone_angle);
-        Vec3f head_p = p;
-        head_p.z -= head_cone_offset;
-
-        float head_cone = sdFiniteCone(head_p, socket_cone_angle, head_h);
-
-        // ============================================
-        // female cylinder (shares axis with male cylinder)
-        // Axis is the local x-axis, passing through (0,0,male_cylinder_offset).
-        // ============================================
-
-        Vec3f female_p = p;
-        female_p.z -= male_cylinder_offset;
-
-        float female_cyl = sdCappedCylinderX(
-            female_p, male_cylinder_radius + female_gap, male_cylinder_half_height);
-
-        // ============================================
-        // slot: region inside socket cone but outside the
-        // inflated head cone (provides clearance for movement)
-        // ============================================
-
-        float head_inflated = head_cone - slot_extra;
-        float slot = opIntersection(socket_cone, -head_inflated);
-
-        // ============================================
-        // union: female cylinder + slot
-        // ============================================
-
-        return opUnion(female_cyl, slot);
-    }
-
-    inline bool contains(const Vec3f& p) const { return sdf(p) <= 0.f; }
+    inline bool contains(const Vec3f& p) const { return get(p) <= 0.f; }
 };
 
 // ============================================================
 // Positive Joint Volume
 // ============================================================
 
-class JointPositiveSDF {
+class JointPositiveSDF : public sinriv::kigstudio::sdf::SDFBase {
    public:
     Frame frame;
 
@@ -289,135 +210,22 @@ class JointPositiveSDF {
     float male_cylinder_half_height = 1000.f;
 
     inline float effectiveHalfHeight() const {
-        return std::min(male_cylinder_half_height, socket_support_radius * 4.0f);
+        return std::min(male_cylinder_half_height,
+                        socket_support_radius * 4.0f);
     }
 
-    inline float sdf(const Vec3f& world_p) const {
-        Vec3f p = frame.worldToLocal(world_p);
+    std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> buildTree() const;
+    float get(const Vec3f& world_p) const override;
 
-        // ============================================
-        // socket support cone (finite) — 最简测试版本
-        // ============================================
-
-        float socket_h =
-            socket_support_radius / std::tan(socket_support_angle);
-        Vec3f socket_p = p;
-        socket_p.z -= socket_support_offset;
-
-        float socket_support_cone =
-            sdFiniteCone(socket_p, socket_support_angle, socket_h);
-
-        Vec3f male_p = p;
-        male_p.z -= male_cylinder_offset;
-        float male_cyl = sdCappedCylinderX(
-            male_p, male_cylinder_radius, male_cylinder_half_height);
-        
-        float result = opSubtraction(male_cyl , -socket_support_cone);
-
-        return result;
-    }
-
-    inline bool contains(const Vec3f& p) const { return sdf(p) <= 0.f; }
+    inline bool contains(const Vec3f& p) const { return get(p) <= 0.f; }
 };
 
 // ============================================================
 // Joint Wireframe Helpers
 // ============================================================
 
-inline void appendJointWireframe(
-    std::vector<std::pair<Vec3f, Vec3f>>& segments,
-    const JointNegativeSDF& neg,
-    const JointPositiveSDF& pos) {
-
-    auto addSeg = [&](const Vec3f& a, const Vec3f& b) {
-        segments.emplace_back(a, b);
-    };
-
-    auto addCircleZ = [&](const Vec3f& center, float radius, int seg_count = 16) {
-        for (int i = 0; i < seg_count; ++i) {
-            float a0 = 2.0f * 3.14159265f * i / seg_count;
-            float a1 = 2.0f * 3.14159265f * (i + 1) / seg_count;
-            Vec3f p0(center.x + std::cos(a0) * radius,
-                     center.y + std::sin(a0) * radius, center.z);
-            Vec3f p1(center.x + std::cos(a1) * radius,
-                     center.y + std::sin(a1) * radius, center.z);
-            addSeg(p0, p1);
-        }
-    };
-
-    // socket cutting cone
-    float socket_h = neg.socket_cone_radius / std::tan(neg.socket_cone_angle);
-    Vec3f socket_v(0, 0, neg.socket_cone_offset);
-    Vec3f socket_base_c(0, 0, neg.socket_cone_offset + socket_h);
-    addCircleZ(socket_base_c, neg.socket_cone_radius);
-    for (int i = 0; i < 4; ++i) {
-        float a = 2.0f * 3.14159265f * i / 4;
-        Vec3f p(std::cos(a) * neg.socket_cone_radius,
-                std::sin(a) * neg.socket_cone_radius, socket_base_c.z);
-        addSeg(socket_v, p);
-    }
-
-    // head cutting cone
-    float head_h = neg.head_cone_radius / std::tan(neg.socket_cone_angle);
-    Vec3f head_v(0, 0, neg.head_cone_offset);
-    Vec3f head_base_c(0, 0, neg.head_cone_offset + head_h);
-    addCircleZ(head_base_c, neg.head_cone_radius);
-    for (int i = 0; i < 4; ++i) {
-        float a = 2.0f * 3.14159265f * i / 4;
-        Vec3f p(std::cos(a) * neg.head_cone_radius,
-                std::sin(a) * neg.head_cone_radius, head_base_c.z);
-        addSeg(head_v, p);
-    }
-
-    // male cylinder (along x-axis)
-    Vec3f cyl_c(0, 0, pos.male_cylinder_offset);
-    float cyl_r = pos.male_cylinder_radius;
-    for (int side = -1; side <= 1; side += 2) {
-        Vec3f center(cyl_c.x + side * 2.0f, cyl_c.y, cyl_c.z);
-        for (int i = 0; i < 16; ++i) {
-            float a0 = 2.0f * 3.14159265f * i / 16;
-            float a1 = 2.0f * 3.14159265f * (i + 1) / 16;
-            Vec3f p0(center.x, center.y + std::cos(a0) * cyl_r,
-                     center.z + std::sin(a0) * cyl_r);
-            Vec3f p1(center.x, center.y + std::cos(a1) * cyl_r,
-                     center.z + std::sin(a1) * cyl_r);
-            addSeg(p0, p1);
-        }
-    }
-    for (int i = 0; i < 4; ++i) {
-        float a = 2.0f * 3.14159265f * i / 4;
-        float y = std::cos(a) * cyl_r;
-        float z = std::sin(a) * cyl_r;
-        Vec3f p0(cyl_c.x - 2.0f, cyl_c.y + y, cyl_c.z + z);
-        Vec3f p1(cyl_c.x + 2.0f, cyl_c.y + y, cyl_c.z + z);
-        addSeg(p0, p1);
-    }
-
-    // socket support cone
-    float socket_sup_h =
-        pos.socket_support_radius / std::tan(pos.socket_support_angle);
-    Vec3f socket_sup_v(0, 0, pos.socket_support_offset);
-    Vec3f socket_sup_base(0, 0, pos.socket_support_offset + socket_sup_h);
-    addCircleZ(socket_sup_base, pos.socket_support_radius);
-    for (int i = 0; i < 4; ++i) {
-        float a = 2.0f * 3.14159265f * i / 4;
-        Vec3f p(std::cos(a) * pos.socket_support_radius,
-                std::sin(a) * pos.socket_support_radius, socket_sup_base.z);
-        addSeg(socket_sup_v, p);
-    }
-
-    // head support cone
-    float head_sup_h =
-        pos.head_support_radius / std::tan(pos.head_support_angle);
-    Vec3f head_sup_v(0, 0, pos.head_support_offset);
-    Vec3f head_sup_base(0, 0, pos.head_support_offset + head_sup_h);
-    addCircleZ(head_sup_base, pos.head_support_radius);
-    for (int i = 0; i < 4; ++i) {
-        float a = 2.0f * 3.14159265f * i / 4;
-        Vec3f p(std::cos(a) * pos.head_support_radius,
-                std::sin(a) * pos.head_support_radius, head_sup_base.z);
-        addSeg(head_sup_v, p);
-    }
-}
+void appendJointWireframe(std::vector<std::pair<Vec3f, Vec3f>>& segments,
+                          const JointNegativeSDF& neg,
+                          const JointPositiveSDF& pos);
 
 }  // namespace sinriv::kigstudio::sdf::joint

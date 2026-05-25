@@ -1,6 +1,8 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <memory>
+#include <vector>
 #include "kigstudio/utils/vec3.h"
 
 namespace sinriv::kigstudio::sdf {
@@ -8,8 +10,72 @@ namespace sinriv::kigstudio::sdf {
 using Vec3f = sinriv::kigstudio::vec3<float>;
 
 struct SDFBase {
+    virtual ~SDFBase() = default;
     virtual float get(const Vec3f& p) const = 0;
     inline float get(float x, float y, float z) const { return get(Vec3f(x, y, z)); }
+};
+
+enum class SDFBoolOp {
+    Union,
+    Intersection,
+    Subtraction
+};
+
+struct SDF_bool : public SDFBase {
+    SDFBoolOp op;
+    std::shared_ptr<SDFBase> left;
+    std::shared_ptr<SDFBase> right;
+
+    SDF_bool(SDFBoolOp op,
+             std::shared_ptr<SDFBase> left,
+             std::shared_ptr<SDFBase> right)
+        : op(op), left(std::move(left)), right(std::move(right)) {}
+
+    float get(const Vec3f& p) const override {
+        float a = left->get(p);
+        float b = right->get(p);
+        switch (op) {
+            case SDFBoolOp::Union:
+                return std::min(a, b);
+            case SDFBoolOp::Intersection:
+                return std::max(a, b);
+            case SDFBoolOp::Subtraction:
+                return std::max(a, -b);
+        }
+        return a;
+    }
+};
+
+std::shared_ptr<SDF_bool> sdf_union(
+    std::shared_ptr<SDFBase> a, std::shared_ptr<SDFBase> b);
+std::shared_ptr<SDF_bool> sdf_intersection(
+    std::shared_ptr<SDFBase> a, std::shared_ptr<SDFBase> b);
+std::shared_ptr<SDF_bool> sdf_subtraction(
+    std::shared_ptr<SDFBase> a, std::shared_ptr<SDFBase> b);
+
+struct SDF_Translate : public SDFBase {
+    Vec3f offset;
+    std::shared_ptr<SDFBase> child;
+
+    SDF_Translate(const Vec3f& offset,
+                  std::shared_ptr<SDFBase> child)
+        : offset(offset), child(std::move(child)) {}
+
+    float get(const Vec3f& p) const override {
+        return child->get(p - offset);
+    }
+};
+
+struct SDF_Offset : public SDFBase {
+    float offset;
+    std::shared_ptr<SDFBase> child;
+
+    SDF_Offset(float offset, std::shared_ptr<SDFBase> child)
+        : offset(offset), child(std::move(child)) {}
+
+    float get(const Vec3f& p) const override {
+        return child->get(p) - offset;
+    }
 };
 
 struct SDFGrid {
@@ -42,4 +108,5 @@ struct SDFGrid {
         return Vec3i(p.x - min_bound.x, p.y - min_bound.y, p.z - min_bound.z);
     }
 };
+
 }  // namespace sinriv::kigstudio::sdf
