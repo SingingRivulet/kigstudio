@@ -557,6 +557,7 @@ class RenderVoxelList {
     int export_stl_mode = 0; // 0 = Standard, 1 = Smooth SDF
     bool export_stl_simplify = true;
     float export_stl_simplify_ratio = 0.1f;
+    int export_stl_subdivisions = 3;
     bool pending_open_export_stl_all_dialog = false;
 
     struct Icons{
@@ -678,6 +679,7 @@ class RenderVoxelList {
         bool export_simplify = false;
         float export_simplify_ratio = 0.1f;
         bool load_as_sdf = false;
+        int subdivisions = 3;
     };
     std::queue<QueueTask> queue;
     std::mutex queue_mutex;
@@ -707,8 +709,8 @@ class RenderVoxelList {
     void queue_remove_item(int index);
     void queue_check_non_manifold(int index);
     void queue_extract_skeleton(int index);
-    void queue_export_stl(int item_id, const std::string& file_path, int mode, bool simplify, float ratio);
-    void queue_export_stl_all(const std::string& export_dir, int mode, bool simplify, float ratio);
+    void queue_export_stl(int item_id, const std::string& file_path, int mode, bool simplify, float ratio, int subdivisions);
+    void queue_export_stl_all(const std::string& export_dir, int mode, bool simplify, float ratio, int subdivisions);
     bool isQueueRunning();
     std::string getQueueStatus();
     float getQueueProgress();

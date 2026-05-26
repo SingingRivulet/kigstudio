@@ -384,9 +384,15 @@ void RenderVoxelList::queue_thread() {
                     int numTriangles = 0;
                     if (task.export_mode == 1) {
                         for (auto triangles : sinriv::kigstudio::voxel::
-                                 generateSmoothMeshFromSDF(item_ptr->voxel_grid_data,
-                                                           numTriangles,
-                                                           true)) {
+                                 generateSmoothMeshFromSDF(
+                                    item_ptr->voxel_grid_data,
+                                    numTriangles, 
+                                    [&](const std::string& status){
+                                        queue_status = status;
+                                    },
+                                    true,
+                                    task.subdivisions,
+                                    item_ptr->sdf_data.get())) {
                             mesh.push_back(triangles);
                         }
                     } else {
@@ -509,8 +515,14 @@ void RenderVoxelList::queue_thread() {
                             if (task.export_mode == 1) {
                                 for (auto triangles : sinriv::kigstudio::voxel::
                                          generateSmoothMeshFromSDF(
-                                             item_ptr->voxel_grid_data,
-                                             numTriangles, true)) {
+                                            item_ptr->voxel_grid_data,
+                                            numTriangles,
+                                            [&](const std::string& status){
+                                                queue_status = status;
+                                            },
+                                            true,
+                                            task.subdivisions,
+                                            item_ptr->sdf_data.get())) {
                                     mesh.push_back(triangles);
                                 }
                             } else {
@@ -699,7 +711,8 @@ void RenderVoxelList::queue_export_stl(int item_id,
                                        const std::string& file_path,
                                        int mode,
                                        bool simplify,
-                                       float ratio) {
+                                       float ratio,
+                                       int subdivisions) {
     std::lock_guard<std::mutex> lock(queue_mutex);
     QueueTask task;
     task.type = TASK_EXPORT_STL;
@@ -708,6 +721,7 @@ void RenderVoxelList::queue_export_stl(int item_id,
     task.export_mode = mode;
     task.export_simplify = simplify;
     task.export_simplify_ratio = ratio;
+    task.subdivisions = subdivisions;
     queue.push(task);
     this->queue_num = static_cast<int>(queue.size());
 }
@@ -715,7 +729,8 @@ void RenderVoxelList::queue_export_stl(int item_id,
 void RenderVoxelList::queue_export_stl_all(const std::string& export_dir,
                                            int mode,
                                            bool simplify,
-                                           float ratio) {
+                                           float ratio,
+                                           int subdivisions) {
     std::lock_guard<std::mutex> lock(queue_mutex);
     QueueTask task;
     task.type = TASK_EXPORT_STL_ALL;
@@ -723,6 +738,7 @@ void RenderVoxelList::queue_export_stl_all(const std::string& export_dir,
     task.export_mode = mode;
     task.export_simplify = simplify;
     task.export_simplify_ratio = ratio;
+    task.subdivisions = subdivisions;
     queue.push(task);
     this->queue_num = static_cast<int>(queue.size());
 }

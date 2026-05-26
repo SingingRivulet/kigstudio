@@ -167,6 +167,12 @@ void RenderVoxelList::render_ui() {
                     get_locale_cstr("hint.simplification_ratio"));
                 ImGui::Unindent();
             }
+            
+            if (export_stl_mode == 1) {
+                ImGui::SliderInt(
+                    get_locale_cstr("label.subdivisions_ratio"),
+                    &export_stl_subdivisions, 1, 8);
+            }
 
             ImGui::Separator();
 
@@ -179,7 +185,8 @@ void RenderVoxelList::render_ui() {
                     path_to_utf8(export_dir),
                     export_stl_mode,
                     export_stl_simplify,
-                    export_stl_simplify_ratio);
+                    export_stl_simplify_ratio,
+                    export_stl_subdivisions);
             }
             ImGui::SameLine();
             if (ImGui::Button(get_locale_cstr("action.cancel"))) {

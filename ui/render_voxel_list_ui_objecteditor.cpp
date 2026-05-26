@@ -225,6 +225,12 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
                 get_locale_cstr("hint.simplification_ratio"));
             ImGui::Unindent();
         }
+        
+        if (export_stl_mode == 1) {
+            ImGui::SliderInt(
+                get_locale_cstr("label.subdivisions_ratio"),
+                &export_stl_subdivisions, 1, 8);
+        }
 
         ImGui::Separator();
 
@@ -239,7 +245,8 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
                 queue_export_stl(
                     item.id, tinyfd_path_to_utf8(file),
                     export_stl_mode, export_stl_simplify,
-                    export_stl_simplify_ratio);
+                    export_stl_simplify_ratio,
+                    export_stl_subdivisions);
             }
         }
         ImGui::SameLine();

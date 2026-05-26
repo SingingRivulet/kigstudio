@@ -7,9 +7,11 @@
 #include <string>
 #include <fstream>
 #include <cmath>
+#include <functional>
 #include "kigstudio/voxel/octree.h"
 #include "kigstudio/voxel/triangle_bvh.h"
 #include "kigstudio/utils/generator.h"
+#include "kigstudio/sdf/sdf.h"
 namespace sinriv::kigstudio::voxel {
 
     using vec3f = sinriv::kigstudio::vec3<float>;
@@ -19,8 +21,10 @@ namespace sinriv::kigstudio::voxel {
     Generator<std::tuple<Triangle, vec3f>> generateSmoothMeshFromSDF(
         sinriv::kigstudio::voxel::VoxelGrid& voxelData,
         int& numTriangles,
+        std::function<void(const std::string&)> status_callback,
         bool computeNormals = false,
-        int subdivisions = 3);
+        int subdivisions = 3,
+        const sdf::SDFBase * sdf = nullptr);
     Generator<std::tuple<Triangle, vec3f>> generateMesh(sinriv::kigstudio::octree::Octree& voxelData, double isolevel, int& numTriangles, bool computeNormals = false);
     Generator<std::tuple<Triangle, vec3f>> generateMeshForChunk(sinriv::kigstudio::voxel::VoxelGrid& voxelData, uint64_t chunkKey, double isolevel, int& numTriangles, bool computeNormals = false, float expand = 0.0f);
 

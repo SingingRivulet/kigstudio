@@ -280,6 +280,8 @@ void init_locale_strings() {
                       {{"en", "Simplify model"}, {"zh", "简化模型"}});
     add_locale_string("label.simplification_ratio",
                       {{"en", "Simplification ratio"}, {"zh", "简化比例"}});
+    add_locale_string("label.subdivisions_ratio",
+                      {{"en", "Subdivisions ratio"}, {"zh", "细分比例"}});
     add_locale_string("hint.simplification_ratio",
                       {{"en", "Lower = more simplification (0.01=aggressive, 1.0=none)"}, {"zh", "数值越小简化越多 (0.01=大量简化, 1.0=不简化)"}});
     add_locale_string("label.use_cgal_skeleton",
