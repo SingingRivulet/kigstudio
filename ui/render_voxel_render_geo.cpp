@@ -364,7 +364,7 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
     it->second->write_count++;
     locker.unlock();
 
-    queue_status = "Segmenting...";
+    setQueueStatus("Segmenting...");
     queue_progress = 0.0f;
     std::vector<sinriv::kigstudio::voxel::VoxelGrid> grids;
     std::cout << "[do_segment] start item=" << index
@@ -496,7 +496,7 @@ void RenderVoxelList::extract_skeleton(int index) {
     it->second->write_count++;
     locker.unlock();
 
-    queue_status = "Extracting skeleton...";
+    setQueueStatus("Extracting skeleton...");
     queue_progress = 0.0f;
     std::vector<std::pair<sinriv::kigstudio::voxel::vec3f,
                           sinriv::kigstudio::voxel::vec3f>>
@@ -509,7 +509,7 @@ void RenderVoxelList::extract_skeleton(int index) {
     // --- CGAL mesh-based skeleton path ---
     if (it->second->use_cgal_skeleton && !it->second->stl_path.empty()) {
         try {
-            queue_status = "CGAL skeleton extraction...";
+            setQueueStatus("CGAL skeleton extraction...");
             std::vector<sinriv::kigstudio::voxel::Triangle> cgal_triangles;
             if (!it->second->source_triangles.empty()) {
                 cgal_triangles = it->second->source_triangles;
@@ -553,8 +553,7 @@ void RenderVoxelList::extract_skeleton(int index) {
     // --- Voxel-based skeleton path (fallback) ---
     if (!cgal_succeeded) try {
         char res_buf[512];
-        queue_status =
-            get_locale_cstr("progress.extract_skeleton.buildDenseGrid");
+        setQueueStatus(get_locale_cstr("progress.extract_skeleton.buildDenseGrid"));
         kigstudio::voxel::DenseGrid dense =
             kigstudio::voxel::buildDenseGrid(it->second->voxel_grid_data);
         snprintf(res_buf, sizeof(res_buf),
@@ -565,14 +564,13 @@ void RenderVoxelList::extract_skeleton(int index) {
         append_queue_logf(res_buf);
         std::cout << res_buf << std::endl;
         queue_progress = 0.25f;
-        queue_status = get_locale_cstr("progress.extract_skeleton.computeEDT");
+        setQueueStatus(get_locale_cstr("progress.extract_skeleton.computeEDT"));
         kigstudio::voxel::computeEDT(dense);
         queue_progress = 0.5f;
-        queue_status = get_locale_cstr("progress.extract_skeleton.finalizeEDT");
+        setQueueStatus(get_locale_cstr("progress.extract_skeleton.finalizeEDT"));
         kigstudio::voxel::finalizeEDT(dense);
         queue_progress = 0.75f;
-        queue_status =
-            get_locale_cstr("progress.extract_skeleton.extractCenterline");
+        setQueueStatus(get_locale_cstr("progress.extract_skeleton.extractCenterline"));
         auto skeleton_lines =
             kigstudio::voxel::extractGradientFlowSkeletonLines(dense);
         auto surface_skeleton_cache =
@@ -678,7 +676,7 @@ void RenderVoxelList::load_stl(std::string filename,
     }
 
     // Phase 2: Voxelize
-    queue_status = "Voxelizing...";
+    setQueueStatus("Voxelizing...");
     queue_progress = 0.15f;
 
     VoxelGrid voxel_data;
@@ -753,7 +751,7 @@ void RenderVoxelList::load_stl(std::string filename,
     queue_progress = 0.50f;
 
     // Phase 3: Generate chunked mesh
-    queue_status = "Generating mesh...";
+    setQueueStatus("Generating mesh...");
     queue_progress = 0.75f;
 
     if (target_item_id >= 0) {
@@ -822,10 +820,10 @@ void RenderVoxelList::load_stl(std::string filename,
         }
     }
 
-    queue_status = "Uploading...";
+    setQueueStatus("Uploading...");
     queue_progress = 0.95f;
 
-    queue_status = "Done";
+    setQueueStatus("Done");
     queue_progress = 1.0f;
 }
 }  // namespace sinriv::ui::render

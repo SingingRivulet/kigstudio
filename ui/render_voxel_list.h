@@ -165,9 +165,10 @@ class RenderVoxelList {
     std::atomic<int> current_id = 0;
     std::mutex locker;
 
-    float queue_progress = 0;
+    std::atomic<float> queue_progress = 0;
     bool queue_running = false;
     std::string queue_status;
+    std::mutex queue_status_mtx;
 
     bool update_nav_node_status = true;
 
@@ -713,6 +714,7 @@ class RenderVoxelList {
     void queue_export_stl_all(const std::string& export_dir, int mode, bool simplify, float ratio, int subdivisions);
     bool isQueueRunning();
     std::string getQueueStatus();
+    void setQueueStatus(const std::string& status);
     float getQueueProgress();
     void release();
 

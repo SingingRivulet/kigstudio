@@ -204,22 +204,20 @@ Generator<std::tuple<Triangle, vec3f>> generateMesh(
     }
 }
 
-Generator<std::tuple<Triangle, vec3f>> generateSmoothMeshFromSDF(
+Generator<std::tuple<Triangle, vec3f>>
+generateSmoothMeshFromSDF(
     sinriv::kigstudio::voxel::VoxelGrid& voxelData,
     int& numTriangles,
     std::function<void(const std::string&)> status_callback,
     bool computeNormals,
     int subdivisions,
-    const sdf::SDFBase* sdf_ptr) {
+    const sdf::SDFBase* sdf_ptr)
+{
     subdivisions = std::max(1, subdivisions);
     numTriangles = 0;
 
-    std::cout << "[generateSmoothMeshFromSDF] Building dense grid..." << std::endl;
-    
-    if (status_callback){
-        status_callback("正在构建稠密网格...");
-    }
-    
+    status_callback("[SurfaceNets] Building dense grid...");
+
     DenseGrid dense = buildDenseGrid(voxelData, 2);
 
     if (dense.sx <= 1 || dense.sy <= 1 || dense.sz <= 1) {
@@ -227,245 +225,276 @@ Generator<std::tuple<Triangle, vec3f>> generateSmoothMeshFromSDF(
     }
 
     // ============================================================
-    // Build base sampled grid
+    // Coordinate system
+    //
+    // GRID SPACE:
+    //     integer sampling lattice
+    //
+    // WORLD SPACE:
+    //     actual scene/world coordinate
+    //
+    // IMPORTANT:
+    // analytic sdf queries and mesh output MUST use
+    // the SAME coordinate system.
+    // ============================================================
+
+    const float cell_size_x =
+        voxelData.voxel_size.x / static_cast<float>(subdivisions);
+
+    const float cell_size_y =
+        voxelData.voxel_size.y / static_cast<float>(subdivisions);
+
+    const float cell_size_z =
+        voxelData.voxel_size.z / static_cast<float>(subdivisions);
+
+    // ABSOLUTE WORLD SPACE origin of sampling grid
+    const vec3f world_min(
+        voxelData.global_position.x +
+            dense.min_bound.x * voxelData.voxel_size.x,
+
+        voxelData.global_position.y +
+            dense.min_bound.y * voxelData.voxel_size.y,
+
+        voxelData.global_position.z +
+            dense.min_bound.z * voxelData.voxel_size.z);
+
+    // ============================================================
+    // High resolution lattice
+    // ============================================================
+
+    const int sx =
+        (dense.sx - 1) * subdivisions + 1;
+
+    const int sy =
+        (dense.sy - 1) * subdivisions + 1;
+
+    const int sz =
+        (dense.sz - 1) * subdivisions + 1;
+
+    // ============================================================
+    // SDF cache
     // ============================================================
 
     SDFGrid sdf;
 
-    sdf.min_bound = dense.min_bound;
-    sdf.max_bound = dense.max_bound;
+    sdf.min_bound = Vec3i(0, 0, 0);
+    sdf.max_bound = Vec3i(sx - 1, sy - 1, sz - 1);
 
-    sdf.sx = (dense.sx - 1) * subdivisions + 1;
-    sdf.sy = (dense.sy - 1) * subdivisions + 1;
-    sdf.sz = (dense.sz - 1) * subdivisions + 1;
+    sdf.sx = sx;
+    sdf.sy = sy;
+    sdf.sz = sz;
 
-    constexpr float UNINITIALIZED = std::numeric_limits<float>::quiet_NaN();
-
-    sdf.sdf.resize(static_cast<size_t>(sdf.sx) * sdf.sy * sdf.sz,
-                   UNINITIALIZED);
-
-    const float inv_subdiv = 1.0f / static_cast<float>(subdivisions);
+    sdf.sdf.resize(
+        static_cast<size_t>(sx) * sy * sz,
+        std::numeric_limits<float>::infinity());
 
     // ============================================================
-    // If no external sdf is provided:
-    // fully bake voxel sdf into dense field
+    // Build base voxel sdf ONCE
     // ============================================================
 
-    if (sdf_ptr == nullptr) {
-        if (status_callback) {
-            status_callback("正在构建体素SDF...");
-        }
-        std::cout << "[generateSmoothMeshFromSDF] Building voxel SDF..." << std::endl;
-        SDFGrid voxel_sdf = buildSDF(dense);
+    std::optional<SDFGrid> base_sdf;
 
-        int total = sdf.sx * sdf.sy * sdf.sz;
-        int count = 0;
-        int update_interval = std::max(1, total / 100);  // 每处理1%更新一次状态
-
-        for (int z = 0; z < sdf.sz; ++z) {
-            for (int y = 0; y < sdf.sy; ++y) {
-                for (int x = 0; x < sdf.sx; ++x) {
-                    count++;
-                    if (status_callback && count % update_interval == 0) {
-                        int progress = static_cast<int>(
-                            (static_cast<float>(count) / total) * 100);
-                        status_callback("正在构建体素SDF... " +
-                                        std::to_string(progress) + "%");
-                    }
-
-                    sdf::Vec3f wp(static_cast<float>(sdf.min_bound.x) +
-                                 static_cast<float>(x) * inv_subdiv,
-
-                             static_cast<float>(sdf.min_bound.y) +
-                                 static_cast<float>(y) * inv_subdiv,
-
-                             static_cast<float>(sdf.min_bound.z) +
-                                 static_cast<float>(z) * inv_subdiv);
-
-                    float lx = wp.x - static_cast<float>(voxel_sdf.min_bound.x);
-
-                    float ly = wp.y - static_cast<float>(voxel_sdf.min_bound.y);
-
-                    float lz = wp.z - static_cast<float>(voxel_sdf.min_bound.z);
-
-                    lx = std::clamp(lx, 0.0f,
-                                    static_cast<float>(voxel_sdf.sx - 1));
-
-                    ly = std::clamp(ly, 0.0f,
-                                    static_cast<float>(voxel_sdf.sy - 1));
-
-                    lz = std::clamp(lz, 0.0f,
-                                    static_cast<float>(voxel_sdf.sz - 1));
-
-                    int x0 = static_cast<int>(std::floor(lx));
-
-                    int y0 = static_cast<int>(std::floor(ly));
-
-                    int z0 = static_cast<int>(std::floor(lz));
-
-                    int x1 = std::min(x0 + 1, voxel_sdf.sx - 1);
-
-                    int y1 = std::min(y0 + 1, voxel_sdf.sy - 1);
-
-                    int z1 = std::min(z0 + 1, voxel_sdf.sz - 1);
-
-                    float tx = lx - static_cast<float>(x0);
-
-                    float ty = ly - static_cast<float>(y0);
-
-                    float tz = lz - static_cast<float>(z0);
-
-                    auto lerp = [](float a, float b, float t) {
-                        return a + (b - a) * t;
-                    };
-
-                    float c00 = lerp(voxel_sdf.get(x0, y0, z0),
-                                     voxel_sdf.get(x1, y0, z0), tx);
-
-                    float c10 = lerp(voxel_sdf.get(x0, y1, z0),
-                                     voxel_sdf.get(x1, y1, z0), tx);
-
-                    float c01 = lerp(voxel_sdf.get(x0, y0, z1),
-                                     voxel_sdf.get(x1, y0, z1), tx);
-
-                    float c11 = lerp(voxel_sdf.get(x0, y1, z1),
-                                     voxel_sdf.get(x1, y1, z1), tx);
-
-                    float c0 = lerp(c00, c10, ty);
-
-                    float c1 = lerp(c01, c11, ty);
-
-                    float d = lerp(c0, c1, tz);
-
-                    sdf.set(x, y, z, d);
-                }
-            }
-        }
+    if (!sdf_ptr) {
+        status_callback("[SurfaceNets] Building voxel SDF...");
+        base_sdf.emplace(buildSDF(dense));
     }
 
     // ============================================================
-    // Lazy sampled sdf access
+    // Grid -> world conversion
     // ============================================================
 
-    auto get_cached_sdf = [&](int x, int y, int z) -> float {
-        int idx = sdf.index(x, y, z);
-
-        float& v = sdf.sdf[idx];
-
-        // lazy evaluate
-        if (std::isnan(v)) {
-            sdf::Vec3f wp(static_cast<float>(sdf.min_bound.x) +
-                         static_cast<float>(x) * inv_subdiv,
-
-                     static_cast<float>(sdf.min_bound.y) +
-                         static_cast<float>(y) * inv_subdiv,
-
-                     static_cast<float>(sdf.min_bound.z) +
-                         static_cast<float>(z) * inv_subdiv);
-
-            v = sdf_ptr->get(wp);
-        }
-
-        return v;
+    auto gridIndexToWorld =
+        [&](float gx, float gy, float gz) -> vec3f
+    {
+        return vec3f(
+            world_min.x + gx * cell_size_x,
+            world_min.y + gy * cell_size_y,
+            world_min.z + gz * cell_size_z);
     };
 
     // ============================================================
-    // Trilinear interpolation
+    // Lazy cached SDF sampling
     // ============================================================
 
-    auto sample_grid_sdf = [&](float wx, float wy, float wz) -> float {
-        float gx = (wx - static_cast<float>(sdf.min_bound.x)) / inv_subdiv;
+    auto sampleSDF =
+        [&](int x, int y, int z) -> float
+    {
+        float& cached =
+            sdf.sdf[sdf.index(x, y, z)];
 
-        float gy = (wy - static_cast<float>(sdf.min_bound.y)) / inv_subdiv;
+        if (std::isfinite(cached)) {
+            return cached;
+        }
 
-        float gz = (wz - static_cast<float>(sdf.min_bound.z)) / inv_subdiv;
+        vec3f wp =
+            gridIndexToWorld(
+                static_cast<float>(x),
+                static_cast<float>(y),
+                static_cast<float>(z));
 
-        gx = std::clamp(gx, 0.0f, static_cast<float>(sdf.sx - 1));
+        float val = 0.0f;
 
-        gy = std::clamp(gy, 0.0f, static_cast<float>(sdf.sy - 1));
+        // ========================================================
+        // Analytic/world-space sdf
+        // ========================================================
 
-        gz = std::clamp(gz, 0.0f, static_cast<float>(sdf.sz - 1));
+        if (sdf_ptr) {
 
-        int x0 = static_cast<int>(std::floor(gx));
+            val = sdf_ptr->get(wp);
 
-        int y0 = static_cast<int>(std::floor(gy));
+        } else {
 
-        int z0 = static_cast<int>(std::floor(gz));
+            // ====================================================
+            // Trilinear interpolation of discrete sdf
+            // ====================================================
 
-        int x1 = std::min(x0 + 1, sdf.sx - 1);
+            float gx =
+                static_cast<float>(x)
+                / static_cast<float>(subdivisions);
 
-        int y1 = std::min(y0 + 1, sdf.sy - 1);
+            float gy =
+                static_cast<float>(y)
+                / static_cast<float>(subdivisions);
 
-        int z1 = std::min(z0 + 1, sdf.sz - 1);
+            float gz =
+                static_cast<float>(z)
+                / static_cast<float>(subdivisions);
 
-        float tx = gx - static_cast<float>(x0);
+            gx = std::max(
+                0.0f,
+                std::min(gx,
+                    static_cast<float>(dense.sx - 1)));
 
-        float ty = gy - static_cast<float>(y0);
+            gy = std::max(
+                0.0f,
+                std::min(gy,
+                    static_cast<float>(dense.sy - 1)));
 
-        float tz = gz - static_cast<float>(z0);
+            gz = std::max(
+                0.0f,
+                std::min(gz,
+                    static_cast<float>(dense.sz - 1)));
 
-        auto lerp = [](float a, float b, float t) { return a + (b - a) * t; };
+            int x0 = static_cast<int>(std::floor(gx));
+            int y0 = static_cast<int>(std::floor(gy));
+            int z0 = static_cast<int>(std::floor(gz));
 
-        float c00 =
-            lerp(get_cached_sdf(x0, y0, z0), get_cached_sdf(x1, y0, z0), tx);
+            int x1 = std::min(x0 + 1, dense.sx - 1);
+            int y1 = std::min(y0 + 1, dense.sy - 1);
+            int z1 = std::min(z0 + 1, dense.sz - 1);
 
-        float c10 =
-            lerp(get_cached_sdf(x0, y1, z0), get_cached_sdf(x1, y1, z0), tx);
+            float tx = gx - static_cast<float>(x0);
+            float ty = gy - static_cast<float>(y0);
+            float tz = gz - static_cast<float>(z0);
 
-        float c01 =
-            lerp(get_cached_sdf(x0, y0, z1), get_cached_sdf(x1, y0, z1), tx);
+            auto lerp =
+                [](float a, float b, float t)
+            {
+                return a + (b - a) * t;
+            };
 
-        float c11 =
-            lerp(get_cached_sdf(x0, y1, z1), get_cached_sdf(x1, y1, z1), tx);
+            float c00 =
+                lerp(
+                    base_sdf->get(x0, y0, z0),
+                    base_sdf->get(x1, y0, z0),
+                    tx);
 
-        float c0 = lerp(c00, c10, ty);
+            float c10 =
+                lerp(
+                    base_sdf->get(x0, y1, z0),
+                    base_sdf->get(x1, y1, z0),
+                    tx);
 
-        float c1 = lerp(c01, c11, ty);
+            float c01 =
+                lerp(
+                    base_sdf->get(x0, y0, z1),
+                    base_sdf->get(x1, y0, z1),
+                    tx);
 
-        return lerp(c0, c1, tz);
+            float c11 =
+                lerp(
+                    base_sdf->get(x0, y1, z1),
+                    base_sdf->get(x1, y1, z1),
+                    tx);
+
+            float c0 = lerp(c00, c10, ty);
+            float c1 = lerp(c01, c11, ty);
+
+            val = lerp(c0, c1, tz);
+        }
+
+        cached = val;
+        return val;
     };
 
     // ============================================================
     // Surface Nets tables
     // ============================================================
 
-    static const int CUBE_CORNERS[8][3] = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0},
-                                           {1, 1, 0}, {0, 0, 1}, {1, 0, 1},
-                                           {0, 1, 1}, {1, 1, 1}};
+    static const int CUBE_CORNERS[8][3] = {
+        {0,0,0},
+        {1,0,0},
+        {0,1,0},
+        {1,1,0},
+        {0,0,1},
+        {1,0,1},
+        {0,1,1},
+        {1,1,1}
+    };
 
     static const vec3f CUBE_CORNER_VECTORS[8] = {
-        {0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {1, 1, 0},
-        {0, 0, 1}, {1, 0, 1}, {0, 1, 1}, {1, 1, 1}};
+        {0,0,0},
+        {1,0,0},
+        {0,1,0},
+        {1,1,0},
+        {0,0,1},
+        {1,0,1},
+        {0,1,1},
+        {1,1,1}
+    };
 
-    static const int CUBE_EDGES[12][2] = {{0, 1}, {0, 2}, {0, 4}, {1, 3},
-                                          {1, 5}, {2, 3}, {2, 6}, {3, 7},
-                                          {4, 5}, {4, 6}, {5, 7}, {6, 7}};
+    static const int CUBE_EDGES[12][2] = {
+        {0,1},
+        {0,2},
+        {0,4},
+        {1,3},
+        {1,5},
+        {2,3},
+        {2,6},
+        {3,7},
+        {4,5},
+        {4,6},
+        {5,7},
+        {6,7}
+    };
 
-    // ============================================================
-    // Edge centroid
-    // ============================================================
-
-    auto centroid_of_edge_intersections = [&](const float dists[8]) -> vec3f {
-        vec3f sum(0, 0, 0);
+    auto centroid_of_edge_intersections =
+        [&](const float dists[8]) -> vec3f
+    {
+        vec3f sum(0,0,0);
 
         int count = 0;
 
         for (int e = 0; e < 12; ++e) {
-            int c1 = CUBE_EDGES[e][0];
 
+            int c1 = CUBE_EDGES[e][0];
             int c2 = CUBE_EDGES[e][1];
 
             float d1 = dists[c1];
-
             float d2 = dists[c2];
 
             if ((d1 < 0.0f) != (d2 < 0.0f)) {
+
                 float t = d1 / (d1 - d2);
 
-                sum = sum + CUBE_CORNER_VECTORS[c1] * (1.0f - t) +
-                      CUBE_CORNER_VECTORS[c2] * t;
+                sum +=
+                    CUBE_CORNER_VECTORS[c1]
+                        * (1.0f - t)
+                    +
+                    CUBE_CORNER_VECTORS[c2]
+                        * t;
 
-                ++count;
+                count++;
             }
         }
 
@@ -477,270 +506,321 @@ Generator<std::tuple<Triangle, vec3f>> generateSmoothMeshFromSDF(
     };
 
     // ============================================================
-    // Central difference normals
+    // Analytic normal estimation
     // ============================================================
 
-    auto estimate_normal = [&](const vec3f& wp) -> vec3f {
-        float h = 0.5f * inv_subdiv;
+    auto estimateNormal =
+        [&](const vec3f& p) -> vec3f
+    {
+        if (!computeNormals) {
+            return vec3f(0,0,0);
+        }
 
-        float dx = sample_grid_sdf(wp.x + h, wp.y, wp.z) -
-                   sample_grid_sdf(wp.x - h, wp.y, wp.z);
+        if (!sdf_ptr) {
+            return vec3f(0,0,0);
+        }
 
-        float dy = sample_grid_sdf(wp.x, wp.y + h, wp.z) -
-                   sample_grid_sdf(wp.x, wp.y - h, wp.z);
+        float dx =
+            sdf_ptr->get(
+                p.x + cell_size_x,
+                p.y,
+                p.z)
+            -
+            sdf_ptr->get(
+                p.x - cell_size_x,
+                p.y,
+                p.z);
 
-        float dz = sample_grid_sdf(wp.x, wp.y, wp.z + h) -
-                   sample_grid_sdf(wp.x, wp.y, wp.z - h);
+        float dy =
+            sdf_ptr->get(
+                p.x,
+                p.y + cell_size_y,
+                p.z)
+            -
+            sdf_ptr->get(
+                p.x,
+                p.y - cell_size_y,
+                p.z);
 
-        return vec3f(dx, dy, dz).normalize();
+        float dz =
+            sdf_ptr->get(
+                p.x,
+                p.y,
+                p.z + cell_size_z)
+            -
+            sdf_ptr->get(
+                p.x,
+                p.y,
+                p.z - cell_size_z);
+
+        vec3f n(dx,dy,dz);
+
+        if (n.length2() < 1e-12f) {
+            return vec3f(0,1,0);
+        }
+
+        return n.normalize();
     };
 
     // ============================================================
-    // Phase 1:
-    // one vertex per active cube
+    // Phase 1
     // ============================================================
 
-    const int sx = sdf.sx;
-    const int sy = sdf.sy;
-    const int sz = sdf.sz;
+    status_callback(
+        "[SurfaceNets] Extracting vertices...");
 
     std::vector<vec3f> positions;
     std::vector<vec3f> normals;
 
-    std::vector<uint32_t> stride_to_index(static_cast<size_t>(sx) * sy * sz,
-                                          UINT32_MAX);
+    std::vector<uint32_t> grid_to_vertex(
+        static_cast<size_t>(sx) * sy * sz,
+        UINT32_MAX);
 
-    std::cout << "[generateSmoothMeshFromSDF] Generating mesh..." << std::endl;
-
-    int total = (sx - 1) * (sy - 1) * (sz - 1);
-    int count = 0;
-    int update_interval = std::max(1, total / 100);  // 每处理1%更新一次状态
     for (int z = 0; z < sz - 1; ++z) {
         for (int y = 0; y < sy - 1; ++y) {
             for (int x = 0; x < sx - 1; ++x) {
-                count++;
-                if (status_callback && count % update_interval == 0) {
-                    int progress = static_cast<int>(
-                        (static_cast<float>(count) / total) * 100);
-                    status_callback("正在生成网格... " + std::to_string(progress) + "%");
-                }
-                float corner_dists[8];
 
-                int negative_count = 0;
+                float dists[8];
+
+                int neg = 0;
 
                 for (int i = 0; i < 8; ++i) {
-                    int cx = x + CUBE_CORNERS[i][0];
 
-                    int cy = y + CUBE_CORNERS[i][1];
+                    int cx =
+                        x + CUBE_CORNERS[i][0];
 
-                    int cz = z + CUBE_CORNERS[i][2];
+                    int cy =
+                        y + CUBE_CORNERS[i][1];
 
-                    float d = get_cached_sdf(cx, cy, cz);
+                    int cz =
+                        z + CUBE_CORNERS[i][2];
 
-                    corner_dists[i] = d;
+                    float d =
+                        sampleSDF(cx, cy, cz);
+
+                    dists[i] = d;
 
                     if (d < 0.0f) {
-                        ++negative_count;
+                        neg++;
                     }
                 }
 
-                if (negative_count == 0 || negative_count == 8) {
+                if (neg == 0 || neg == 8) {
                     continue;
                 }
 
-                vec3f c = centroid_of_edge_intersections(corner_dists);
+                vec3f local =
+                    centroid_of_edge_intersections(
+                        dists);
 
-                vec3f wp(static_cast<float>(sdf.min_bound.x) +
-                             (static_cast<float>(x) + c.x) * inv_subdiv,
+                vec3f world_pos =
+                    gridIndexToWorld(
+                        x + local.x,
+                        y + local.y,
+                        z + local.z);
 
-                         static_cast<float>(sdf.min_bound.y) +
-                             (static_cast<float>(y) + c.y) * inv_subdiv,
+                vec3f normal =
+                    estimateNormal(world_pos);
 
-                         static_cast<float>(sdf.min_bound.z) +
-                             (static_cast<float>(z) + c.z) * inv_subdiv);
+                uint32_t idx =
+                    static_cast<uint32_t>(
+                        positions.size());
 
-                vec3f normal = estimate_normal(wp);
-
-                uint32_t idx = static_cast<uint32_t>(positions.size());
-
-                positions.push_back(wp);
+                positions.push_back(world_pos);
                 normals.push_back(normal);
 
-                stride_to_index[sdf.index(x, y, z)] = idx;
+                grid_to_vertex[
+                    sdf.index(x,y,z)
+                ] = idx;
             }
         }
     }
 
     if (positions.empty()) {
+        status_callback(
+            "[SurfaceNets] No surface found.");
         co_return;
     }
 
     // ============================================================
-    // Phase 2:
-    // build quads
+    // Phase 2
     // ============================================================
 
-    int x_stride = 1;
-    int y_stride = sx;
-    int z_stride = sx * sy;
+    status_callback(
+        "[SurfaceNets] Building faces...");
 
     std::vector<uint32_t> indices;
 
-    indices.reserve(positions.size() * 6);
+    const int x_stride = 1;
+    const int y_stride = sx;
+    const int z_stride = sx * sy;
 
-    auto maybe_make_quad = [&](int p1, int p2, int axis_b_stride,
-                               int axis_c_stride) {
+    auto maybe_make_quad =
+        [&](int p1,
+            int p2,
+            int axis_b_stride,
+            int axis_c_stride)
+    {
         float d1 = sdf.sdf[p1];
-
         float d2 = sdf.sdf[p2];
 
-        bool negative_face;
+        bool flip;
 
         if (d1 < 0.0f && d2 >= 0.0f) {
-            negative_face = false;
-        } else if (d1 >= 0.0f && d2 < 0.0f) {
-            negative_face = true;
-        } else {
+            flip = false;
+        }
+        else if (d1 >= 0.0f && d2 < 0.0f) {
+            flip = true;
+        }
+        else {
             return;
         }
 
-        uint32_t v1 = stride_to_index[p1];
+        uint32_t v1 =
+            grid_to_vertex[p1];
 
-        uint32_t v2 = stride_to_index[p1 - axis_b_stride];
+        uint32_t v2 =
+            grid_to_vertex[
+                p1 - axis_b_stride];
 
-        uint32_t v3 = stride_to_index[p1 - axis_c_stride];
+        uint32_t v3 =
+            grid_to_vertex[
+                p1 - axis_c_stride];
 
-        uint32_t v4 = stride_to_index[p1 - axis_b_stride - axis_c_stride];
+        uint32_t v4 =
+            grid_to_vertex[
+                p1 - axis_b_stride
+                    - axis_c_stride];
 
-        if (v1 == UINT32_MAX || v2 == UINT32_MAX || v3 == UINT32_MAX ||
-            v4 == UINT32_MAX) {
+        if (v1 == UINT32_MAX ||
+            v2 == UINT32_MAX ||
+            v3 == UINT32_MAX ||
+            v4 == UINT32_MAX)
+        {
             return;
         }
 
-        const vec3f& pos1 = positions[v1];
+        auto emitTri =
+            [&](uint32_t a,
+                uint32_t b,
+                uint32_t c)
+        {
+            indices.push_back(a);
+            indices.push_back(b);
+            indices.push_back(c);
+        };
 
-        const vec3f& pos2 = positions[v2];
+        if (!flip) {
 
-        const vec3f& pos3 = positions[v3];
+            emitTri(v1, v2, v4);
+            emitTri(v1, v4, v3);
 
-        const vec3f& pos4 = positions[v4];
-
-        float d14 = pos1.dist2(pos4);
-
-        float d23 = pos2.dist2(pos3);
-
-        if (d14 < d23) {
-            if (negative_face) {
-                indices.push_back(v1);
-                indices.push_back(v4);
-                indices.push_back(v2);
-
-                indices.push_back(v1);
-                indices.push_back(v3);
-                indices.push_back(v4);
-            } else {
-                indices.push_back(v1);
-                indices.push_back(v2);
-                indices.push_back(v4);
-
-                indices.push_back(v1);
-                indices.push_back(v4);
-                indices.push_back(v3);
-            }
         } else {
-            if (negative_face) {
-                indices.push_back(v2);
-                indices.push_back(v3);
-                indices.push_back(v4);
 
-                indices.push_back(v2);
-                indices.push_back(v1);
-                indices.push_back(v3);
-            } else {
-                indices.push_back(v2);
-                indices.push_back(v4);
-                indices.push_back(v3);
-
-                indices.push_back(v2);
-                indices.push_back(v3);
-                indices.push_back(v1);
-            }
+            emitTri(v1, v4, v2);
+            emitTri(v1, v3, v4);
         }
     };
-
-    total = (sx - 1) * (sy - 1) * (sz - 1);
-    count = 0;
-    update_interval = std::max(1, total / 100);
-
-    std::cout << "[generateSmoothMeshFromSDF] total quads: " << total << std::endl;
 
     for (int z = 0; z < sz - 1; ++z) {
         for (int y = 0; y < sy - 1; ++y) {
             for (int x = 0; x < sx - 1; ++x) {
-                count++;
-                if (status_callback && count % update_interval == 0) {
-                    int progress = static_cast<int>(
-                        (static_cast<float>(count) / total) * 100);
-                    status_callback("正在生成网格... " + std::to_string(progress) + "%");
-                }
-                int p = sdf.index(x, y, z);
 
-                if (stride_to_index[p] == UINT32_MAX) {
+                int p =
+                    sdf.index(x,y,z);
+
+                if (grid_to_vertex[p]
+                    == UINT32_MAX)
+                {
                     continue;
                 }
 
-                if (y > 0 && z > 0 && x < sx - 2) {
-                    maybe_make_quad(p, p + x_stride, y_stride, z_stride);
+                if (y > 0 &&
+                    z > 0 &&
+                    x < sx - 2)
+                {
+                    maybe_make_quad(
+                        p,
+                        p + x_stride,
+                        y_stride,
+                        z_stride);
                 }
 
-                if (x > 0 && z > 0 && y < sy - 2) {
-                    maybe_make_quad(p, p + y_stride, z_stride, x_stride);
+                if (x > 0 &&
+                    z > 0 &&
+                    y < sy - 2)
+                {
+                    maybe_make_quad(
+                        p,
+                        p + y_stride,
+                        z_stride,
+                        x_stride);
                 }
 
-                if (x > 0 && y > 0 && z < sz - 2) {
-                    maybe_make_quad(p, p + z_stride, x_stride, y_stride);
+                if (x > 0 &&
+                    y > 0 &&
+                    z < sz - 2)
+                {
+                    maybe_make_quad(
+                        p,
+                        p + z_stride,
+                        x_stride,
+                        y_stride);
                 }
             }
         }
     }
 
     // ============================================================
-    // Phase 3:
-    // emit triangles
+    // Phase 3
     // ============================================================
-    
-    std::cout << "[generateSmoothMeshFromSDF] total triangles: " << numTriangles << std::endl;
 
-    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+    status_callback(
+        "[SurfaceNets] Emitting triangles...");
+
+    for (size_t i = 0;
+         i + 2 < indices.size();
+         i += 3)
+    {
         uint32_t i0 = indices[i];
-
         uint32_t i1 = indices[i + 1];
-
         uint32_t i2 = indices[i + 2];
 
         vec3f v1 = positions[i0];
-
         vec3f v2 = positions[i1];
-
         vec3f v3 = positions[i2];
 
-        vec3f normal(0, 0, 0);
+        vec3f normal(0,0,0);
 
         if (computeNormals) {
-            normal = -((v2 - v1).cross(v3 - v1).normalize());
+
+            if (sdf_ptr) {
+
+                normal =
+                    (normals[i0]
+                    + normals[i1]
+                    + normals[i2])
+                    .normalize();
+
+            } else {
+
+                normal =
+                    ((v2 - v1)
+                    .cross(v3 - v1))
+                    .normalize();
+            }
         }
 
         co_yield {
-            Triangle(v1 * voxelData.voxel_size + voxelData.global_position,
+            Triangle(v1, v2, v3),
+            normal
+        };
 
-                     v3 * voxelData.voxel_size + voxelData.global_position,
-
-                     v2 * voxelData.voxel_size + voxelData.global_position),
-
-            normal};
-
-        ++numTriangles;
+        numTriangles++;
     }
+
+    status_callback(
+        "[SurfaceNets] Done.");
 }
 
 Generator<std::tuple<Triangle, vec3f>> generateMeshForChunk(

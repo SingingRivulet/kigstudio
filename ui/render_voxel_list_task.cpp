@@ -171,7 +171,7 @@ void RenderVoxelList::queue_thread() {
             case TASK_CHECK_NON_MANIFOLD: {
                 append_queue_logf("log.queue.start_check_manifold", task.index);
                 queue_running = true;
-                queue_status = get_locale_string("status.checking_manifold");
+                setQueueStatus(get_locale_string("status.checking_manifold"));
                 queue_progress = 0.0f;
                 try {
                     // 锁定 item
@@ -239,7 +239,7 @@ void RenderVoxelList::queue_thread() {
             case TASK_EXTRACT_SKELETON: {
                 append_queue_logf("log.queue.start_extract_skeleton", task.index);
                 queue_running = true;
-                queue_status = get_locale_string("status.extracting_skeleton");
+                setQueueStatus(get_locale_string("status.extracting_skeleton"));
                 queue_progress = 0.0f;
                 try {
                     extract_skeleton(task.index);
@@ -271,7 +271,7 @@ void RenderVoxelList::queue_thread() {
             case TASK_GENERATE_THUMBNAIL_MESH: {
                 append_queue_logf("log.queue.start_thumbnail", task.index);
                 queue_running = true;
-                queue_status = get_locale_string("status.generating_thumbnail");
+                setQueueStatus(get_locale_string("status.generating_thumbnail"));
                 queue_progress = 0.0f;
 
                 try {
@@ -355,7 +355,7 @@ void RenderVoxelList::queue_thread() {
                 }
 
                 queue_progress = 1.0f;
-                queue_status = "Done";
+                setQueueStatus("Done");
                 queue_running = false;
                 break;
             }
@@ -363,7 +363,7 @@ void RenderVoxelList::queue_thread() {
                 append_queue_logf("log.queue.start_export_stl", task.index,
                                   task.file_path.c_str());
                 queue_running = true;
-                queue_status = get_locale_string("status.exporting_stl");
+                setQueueStatus(get_locale_string("status.exporting_stl"));
                 queue_progress = 0.0f;
                 try {
                     // 锁定 item
@@ -388,7 +388,7 @@ void RenderVoxelList::queue_thread() {
                                     item_ptr->voxel_grid_data,
                                     numTriangles, 
                                     [&](const std::string& status){
-                                        queue_status = status;
+                                        setQueueStatus(status);
                                     },
                                     true,
                                     task.subdivisions,
@@ -453,7 +453,7 @@ void RenderVoxelList::queue_thread() {
             }
             case TASK_EXPORT_STL_ALL: {
                 queue_running = true;
-                queue_status = get_locale_string("status.exporting_stl_all");
+                setQueueStatus(get_locale_string("status.exporting_stl_all"));
                 queue_progress = 0.0f;
                 try {
                     std::vector<int> target_ids;
@@ -493,7 +493,7 @@ void RenderVoxelList::queue_thread() {
                             std::string fmt = get_locale_string("status.exporting_stl_all_item");
                             char buf[256];
                             snprintf(buf, sizeof(buf), fmt.c_str(), id, i + 1, total);
-                            queue_status = buf;
+                            setQueueStatus(buf);
                         }
 
                         locker.lock();
@@ -518,7 +518,7 @@ void RenderVoxelList::queue_thread() {
                                             item_ptr->voxel_grid_data,
                                             numTriangles,
                                             [&](const std::string& status){
-                                                queue_status = status;
+                                                setQueueStatus(status);
                                             },
                                             true,
                                             task.subdivisions,
@@ -692,7 +692,13 @@ bool RenderVoxelList::isQueueRunning() {
 }
 
 std::string RenderVoxelList::getQueueStatus() {
+    std::lock_guard<std::mutex> lock(queue_status_mtx);
     return queue_status;
+}
+
+void RenderVoxelList::setQueueStatus(const std::string& status) {
+    std::lock_guard<std::mutex> lock(queue_status_mtx);
+    queue_status = status;
 }
 
 float RenderVoxelList::getQueueProgress() {

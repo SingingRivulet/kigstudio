@@ -158,10 +158,11 @@ struct vec3 {
                     x * o.y - y * o.x   // z 分量
         );
     }
-    inline T length() const { return sqrt((x * x) + (y * y) + (z * z)); }
+    inline T length2() const { return (x * x) + (y * y) + (z * z); }
+    inline T length() const { return sqrt(length2()); }
     inline T L1() const { return abs(x) + abs(y) + abs(z); }
     inline vec3<T> normalize() const { return (*this) * invnorm(); }
-    inline T invnorm() const { return 1 / sqrt((x * x) + (y * y) + (z * z)); }
+    inline T invnorm() const { return 1 / sqrt(length2()); }
     inline T dist2(const vec3<T>& p) const {
         auto t = p - (*this);
         return ((t.x * t.x) + (t.y * t.y) + (t.z * t.z));
