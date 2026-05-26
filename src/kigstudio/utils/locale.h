@@ -3,7 +3,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
-namespace sinriv::ui::render {
+namespace sinriv::locale {
 // 依次检测这些文件是否存在
 std::vector<std::string> get_default_font_path();
 std::string get_system_language();

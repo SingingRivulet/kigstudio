@@ -388,7 +388,7 @@ void RenderVoxelList::queue_thread() {
                                     item_ptr->voxel_grid_data,
                                     numTriangles, 
                                     [&](const std::string& status){
-                                        setQueueStatus(status);
+                                        setQueueStatus(get_locale_string("status.exporting_stl") + " " + status);
                                     },
                                     true,
                                     task.subdivisions,
@@ -404,14 +404,19 @@ void RenderVoxelList::queue_thread() {
                         }
                     }
                     queue_progress = 0.4f;
-
                     if (!mesh.empty()) {
+                        setQueueStatus(
+                            get_locale_string("status.exporting_stl") + " " + 
+                            get_locale_string("status.exporting_stl.cleaning_mesh"));
                         mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
                     }
                     queue_progress = 0.7f;
 
                     if (task.export_simplify && !mesh.empty()) {
                         size_t before = mesh.size();
+                        setQueueStatus(
+                            get_locale_string("status.exporting_stl") + " " + 
+                            get_locale_string("status.exporting_stl.simplifying_mesh"));
                         mesh = sinriv::kigstudio::cgal::simplifyMesh(
                             mesh, static_cast<double>(task.export_simplify_ratio));
                         append_queue_logf("log.queue.simplify_result", task.index,
@@ -419,8 +424,10 @@ void RenderVoxelList::queue_thread() {
                                           static_cast<int>(mesh.size()));
                     }
                     queue_progress = 0.9f;
-
                     if (!mesh.empty()) {
+                        setQueueStatus(
+                            get_locale_string("status.exporting_stl") + " " + 
+                            get_locale_string("status.exporting_stl.saveing_mesh"));
                         sinriv::kigstudio::voxel::saveMeshToASCIISTL(
                             mesh, task.file_path);
                         append_queue_logf("log.queue.done_export_stl", task.index,
@@ -489,11 +496,13 @@ void RenderVoxelList::queue_thread() {
                     for (int i = 0; i < total; ++i) {
                         int id = target_ids[i];
                         queue_progress = static_cast<float>(i) / static_cast<float>(total);
+                        std::string status_prefix;
                         {
                             std::string fmt = get_locale_string("status.exporting_stl_all_item");
                             char buf[256];
                             snprintf(buf, sizeof(buf), fmt.c_str(), id, i + 1, total);
                             setQueueStatus(buf);
+                            status_prefix = buf;
                         }
 
                         locker.lock();
@@ -518,7 +527,7 @@ void RenderVoxelList::queue_thread() {
                                             item_ptr->voxel_grid_data,
                                             numTriangles,
                                             [&](const std::string& status){
-                                                setQueueStatus(status);
+                                                setQueueStatus(status_prefix + status);
                                             },
                                             true,
                                             task.subdivisions,
@@ -535,11 +544,17 @@ void RenderVoxelList::queue_thread() {
                             }
 
                             if (!mesh.empty()) {
+                                setQueueStatus(
+                                    status_prefix + " " + 
+                                    get_locale_string("status.exporting_stl.cleaning_mesh"));
                                 mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
                             }
 
                             if (task.export_simplify && !mesh.empty()) {
                                 size_t before = mesh.size();
+                                setQueueStatus(
+                                    status_prefix + " " + 
+                                    get_locale_string("status.exporting_stl.simplifying_mesh"));
                                 mesh = sinriv::kigstudio::cgal::simplifyMesh(
                                     mesh,
                                     static_cast<double>(task.export_simplify_ratio));
@@ -549,6 +564,9 @@ void RenderVoxelList::queue_thread() {
                             }
 
                             if (!mesh.empty()) {
+                                setQueueStatus(
+                                    status_prefix + " " + 
+                                    get_locale_string("status.exporting_stl.saveing_mesh"));
                                 std::string filename =
                                     "node_" + std::to_string(id) + ".stl";
                                 std::filesystem::path filepath =

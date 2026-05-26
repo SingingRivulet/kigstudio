@@ -11,7 +11,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
-#include "locale.h"
+#include "kigstudio/utils/locale.h"
 #include "render.hpp"
 
 #ifdef _WIN32
@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
     int oldH = height;
     std::string current_window_title;
     
-    sinriv::ui::render::locale_init();
+    sinriv::locale::locale_init();
 
     render_items.start_thread();
     render_items.initIcons();

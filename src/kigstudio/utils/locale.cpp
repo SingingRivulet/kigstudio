@@ -11,7 +11,7 @@
 #include <cstdlib>
 #endif
 
-namespace sinriv::ui::render {
+namespace sinriv::locale {
 
 namespace {
 
@@ -203,11 +203,17 @@ void init_locale_strings() {
     add_locale_string("status.filling_interior",
                       {{"en", "Filling interior..."}, {"zh", "正在填充内部..."}});
     add_locale_string("status.exporting_stl",
-                      {{"en", "Exporting STL..."}, {"zh", "正在导出 STL..."}});
+                      {{"en", "Exporting STL: "}, {"zh", "正在导出 STL: "}});
     add_locale_string("status.exporting_stl_all",
                       {{"en", "Exporting all STL..."}, {"zh", "正在批量导出 STL..."}});
     add_locale_string("status.exporting_stl_all_item",
-                      {{"en", "Exporting item %d (%d/%d)..."}, {"zh", "正在导出节点 %d (%d/%d)..."}});
+                      {{"en", "Exporting item %d (%d/%d):"}, {"zh", "正在导出节点 %d (%d/%d):"}});
+    add_locale_string("status.exporting_stl.cleaning_mesh",
+                      {{"en", "Cleaning mesh"}, {"zh", "模型去重"}});
+    add_locale_string("status.exporting_stl.simplifying_mesh",
+                      {{"en", "Simplifying mesh"}, {"zh", "模型简化"}});
+    add_locale_string("status.exporting_stl.saveing_mesh",
+                      {{"en", "Saving mesh"}, {"zh", "保存模型"}});
 
     // Labels
     add_locale_string("label.no_log_entries",
@@ -633,6 +639,33 @@ void init_locale_strings() {
     add_locale_string("progress.extract_skeleton.extractCenterline",
                       {{"en", "extract center line"},
                        {"zh", "计算中心线"}});
+    add_locale_string("progress.surface_nets.building_dense_grid",
+                      {{"en", "building dense grid"},
+                       {"zh", "构建稠密体素网格"}});
+    add_locale_string("progress.extract_skeleton.extractCenterline",
+                      {{"en", "extract center line"},
+                       {"zh", "计算中心线"}});
+    add_locale_string("progress.surface_nets.extracting_vertices",
+                      {{"en", "extracting vertices"},
+                       {"zh", "提取顶点"}});
+    add_locale_string("progress.surface_nets.no_surface_found",
+                      {{"en", "no surface found"},
+                       {"zh", "未找到表面"}});
+    add_locale_string("progress.surface_nets.building_faces",
+                      {{"en", "building faces"},
+                       {"zh", "构建面"}});
+    add_locale_string("progress.surface_nets.emitting_triangles",
+                      {{"en", "emitting triangles"},
+                       {"zh", "发射三角形"}});
+    add_locale_string("progress.surface_nets.done",
+                      {{"en", "done"},
+                       {"zh", "完成"}});
+    add_locale_string("progress.surface_nets.building_voxel_sdf",
+                      {{"en", "building voxel SDF"},
+                       {"zh", "构建体素SDF"}});
+    add_locale_string("progress.surface_nets.sdf_sample",
+                        {{"en", "SDF sample"},
+                         {"zh", "采样SDF"}});
 }
 
 const std::string& get_locale_string_ref(const std::string& key) {

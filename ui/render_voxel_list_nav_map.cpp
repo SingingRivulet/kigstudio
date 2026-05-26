@@ -8,7 +8,7 @@
 
 #include <unordered_set>
 
-#include "locale.h"
+#include "kigstudio/utils/locale.h"
 
 namespace sinriv::ui::render {
 

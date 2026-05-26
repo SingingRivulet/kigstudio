@@ -13,7 +13,7 @@
 #include "kigstudio/cgal/poisson_reconstruction.h"
 #include "kigstudio/cgal/poisson_utils.h"
 #include "kigstudio/utils/vec3.h"
-#include "locale.h"
+#include "kigstudio/utils/locale.h"
 #include "render_voxel_list.h"
 #include "tinyfiledialogs.h"
 namespace sinriv::ui::render {

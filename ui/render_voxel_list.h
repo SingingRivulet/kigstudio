@@ -25,14 +25,16 @@
 #include "kigstudio/utils/KDTree.h"
 #include "kigstudio/utils/plane.h"
 #include "kigstudio/utils/vec3.h"
+#include "kigstudio/utils/locale.h"
 #include "kigstudio/voxel/concave.h"
 #include "kigstudio/voxel/voxel.h"
 #include "kigstudio/voxel/voxel_EDT.h"
 #include "kigstudio/voxel/voxelizer_svo.h"
-#include "ui/locale.h"
 #include "ui/render_deferred.h"
 
 namespace sinriv::ui::render {
+
+using namespace locale;
 
 #ifdef _WIN32
 inline std::wstring utf8_to_wstring(const std::string& utf8) {
