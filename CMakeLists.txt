@@ -83,7 +83,7 @@ file(GLOB_RECURSE SRC_FILES
     )  
 
 # 创建静态库libkigstudio.a  
-add_library(kigstudio STATIC ${SRC_FILES})  
+add_library(kigstudio STATIC ${SRC_FILES} ${CMAKE_SOURCE_DIR}/dep/cJSON/cJSON.c)  
 target_link_libraries(kigstudio PUBLIC OpenMP::OpenMP_CXX CGAL::CGAL)
 if(TARGET CGAL::Eigen3_support)
     target_link_libraries(kigstudio PUBLIC CGAL::Eigen3_support)
@@ -128,7 +128,6 @@ add_executable(
     kigstudio_ui 
     ${UI_FILES}
     ${CMAKE_SOURCE_DIR}/dep/imnodes/imnodes.cpp
-    ${CMAKE_SOURCE_DIR}/dep/cJSON/cJSON.c
     )
     
 target_link_libraries(kigstudio_ui

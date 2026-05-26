@@ -269,4 +269,233 @@ float JointPositiveSDF::get(const Vec3f& world_p) const {
     return buildTree()->get(world_p);
 }
 
+// ============================================================
+// Serialization helpers
+// ============================================================
+
+namespace {
+
+cJSON* vec3_to_json(const Vec3f& v) {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddNumberToObject(obj, "x", v.x);
+    cJSON_AddNumberToObject(obj, "y", v.y);
+    cJSON_AddNumberToObject(obj, "z", v.z);
+    return obj;
+}
+
+Vec3f json_to_vec3(const cJSON* json) {
+    return Vec3f(
+        static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "x"))),
+        static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "y"))),
+        static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "z"))));
+}
+
+cJSON* frame_to_json(const Frame& f) {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddItemToObject(obj, "origin", vec3_to_json(f.origin));
+    cJSON_AddItemToObject(obj, "x_axis", vec3_to_json(f.x_axis));
+    cJSON_AddItemToObject(obj, "y_axis", vec3_to_json(f.y_axis));
+    cJSON_AddItemToObject(obj, "z_axis", vec3_to_json(f.z_axis));
+    return obj;
+}
+
+Frame json_to_frame(const cJSON* json) {
+    Frame f;
+    const cJSON* origin = cJSON_GetObjectItem(json, "origin");
+    if (origin) f.origin = json_to_vec3(origin);
+    const cJSON* x_axis = cJSON_GetObjectItem(json, "x_axis");
+    if (x_axis) f.x_axis = json_to_vec3(x_axis);
+    const cJSON* y_axis = cJSON_GetObjectItem(json, "y_axis");
+    if (y_axis) f.y_axis = json_to_vec3(y_axis);
+    const cJSON* z_axis = cJSON_GetObjectItem(json, "z_axis");
+    if (z_axis) f.z_axis = json_to_vec3(z_axis);
+    return f;
+}
+
+}  // namespace
+
+// ============================================================
+// SDF_FiniteCone
+// ============================================================
+
+std::string SDF_FiniteCone::getInfo() const {
+    return "SDF_FiniteCone(angle=" + std::to_string(angle_rad) +
+           ", height=" + std::to_string(height) + ")";
+}
+
+cJSON* SDF_FiniteCone::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "finite_cone");
+    cJSON_AddNumberToObject(obj, "angle_rad", angle_rad);
+    cJSON_AddNumberToObject(obj, "height", height);
+    return obj;
+}
+
+void SDF_FiniteCone::fromJSON(const cJSON* json) {
+    angle_rad = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "angle_rad")));
+    height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "height")));
+}
+
+// ============================================================
+// SDF_CappedCylinderX
+// ============================================================
+
+std::string SDF_CappedCylinderX::getInfo() const {
+    return "SDF_CappedCylinderX(radius=" + std::to_string(radius) +
+           ", half_height=" + std::to_string(half_height) + ")";
+}
+
+cJSON* SDF_CappedCylinderX::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "capped_cylinder_x");
+    cJSON_AddNumberToObject(obj, "radius", radius);
+    cJSON_AddNumberToObject(obj, "half_height", half_height);
+    return obj;
+}
+
+void SDF_CappedCylinderX::fromJSON(const cJSON* json) {
+    radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "radius")));
+    half_height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "half_height")));
+}
+
+// ============================================================
+// SDF_FrameTransform
+// ============================================================
+
+std::string SDF_FrameTransform::getInfo() const {
+    return "SDF_FrameTransform(origin=" + std::to_string(frame.origin.x) + "," +
+           std::to_string(frame.origin.y) + "," + std::to_string(frame.origin.z) + ")";
+}
+
+cJSON* SDF_FrameTransform::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "frame_transform");
+    cJSON_AddItemToObject(obj, "frame", frame_to_json(frame));
+    if (child) cJSON_AddItemToObject(obj, "child", child->toJSON());
+    return obj;
+}
+
+void SDF_FrameTransform::fromJSON(const cJSON* json) {
+    const cJSON* frame_json = cJSON_GetObjectItem(json, "frame");
+    if (frame_json) frame = json_to_frame(frame_json);
+    const cJSON* cj = cJSON_GetObjectItem(json, "child");
+    if (cj) child = sinriv::kigstudio::sdf::sdf_from_json(cj);
+}
+
+// ============================================================
+// JointNegativeSDF
+// ============================================================
+
+std::string JointNegativeSDF::getInfo() const {
+    return "JointNegativeSDF(socket_cone_offset=" +
+           std::to_string(socket_cone_offset) +
+           ", head_cone_offset=" + std::to_string(head_cone_offset) + ")";
+}
+
+cJSON* JointNegativeSDF::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "joint_negative");
+    cJSON_AddItemToObject(obj, "frame", frame_to_json(frame));
+    cJSON_AddNumberToObject(obj, "socket_cone_offset", socket_cone_offset);
+    cJSON_AddNumberToObject(obj, "socket_cone_angle", socket_cone_angle);
+    cJSON_AddNumberToObject(obj, "socket_cone_radius", socket_cone_radius);
+    cJSON_AddNumberToObject(obj, "female_gap", female_gap);
+    cJSON_AddNumberToObject(obj, "male_cylinder_offset", male_cylinder_offset);
+    cJSON_AddNumberToObject(obj, "male_cylinder_radius", male_cylinder_radius);
+    cJSON_AddNumberToObject(obj, "male_cylinder_half_height", male_cylinder_half_height);
+    cJSON_AddNumberToObject(obj, "head_cone_offset", head_cone_offset);
+    cJSON_AddNumberToObject(obj, "head_cone_radius", head_cone_radius);
+    cJSON_AddNumberToObject(obj, "slot_extra", slot_extra);
+    return obj;
+}
+
+void JointNegativeSDF::fromJSON(const cJSON* json) {
+    const cJSON* frame_json = cJSON_GetObjectItem(json, "frame");
+    if (frame_json) frame = json_to_frame(frame_json);
+    socket_cone_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_cone_offset")));
+    socket_cone_angle = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_cone_angle")));
+    socket_cone_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_cone_radius")));
+    female_gap = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "female_gap")));
+    male_cylinder_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_offset")));
+    male_cylinder_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_radius")));
+    male_cylinder_half_height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_half_height")));
+    head_cone_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_cone_offset")));
+    head_cone_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_cone_radius")));
+    slot_extra = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "slot_extra")));
+}
+
+// ============================================================
+// JointPositiveSDF
+// ============================================================
+
+std::string JointPositiveSDF::getInfo() const {
+    return "JointPositiveSDF(socket_support_offset=" +
+           std::to_string(socket_support_offset) +
+           ", head_support_offset=" + std::to_string(head_support_offset) + ")";
+}
+
+cJSON* JointPositiveSDF::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "joint_positive");
+    cJSON_AddItemToObject(obj, "frame", frame_to_json(frame));
+    cJSON_AddNumberToObject(obj, "socket_support_offset", socket_support_offset);
+    cJSON_AddNumberToObject(obj, "socket_support_angle", socket_support_angle);
+    cJSON_AddNumberToObject(obj, "socket_support_radius", socket_support_radius);
+    cJSON_AddNumberToObject(obj, "head_support_offset", head_support_offset);
+    cJSON_AddNumberToObject(obj, "head_support_angle", head_support_angle);
+    cJSON_AddNumberToObject(obj, "head_support_radius", head_support_radius);
+    cJSON_AddNumberToObject(obj, "male_cylinder_offset", male_cylinder_offset);
+    cJSON_AddNumberToObject(obj, "male_cylinder_radius", male_cylinder_radius);
+    cJSON_AddNumberToObject(obj, "male_cylinder_half_height", male_cylinder_half_height);
+    return obj;
+}
+
+void JointPositiveSDF::fromJSON(const cJSON* json) {
+    const cJSON* frame_json = cJSON_GetObjectItem(json, "frame");
+    if (frame_json) frame = json_to_frame(frame_json);
+    socket_support_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_support_offset")));
+    socket_support_angle = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_support_angle")));
+    socket_support_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_support_radius")));
+    head_support_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_support_offset")));
+    head_support_angle = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_support_angle")));
+    head_support_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_support_radius")));
+    male_cylinder_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_offset")));
+    male_cylinder_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_radius")));
+    male_cylinder_half_height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_half_height")));
+}
+
+// ============================================================
+// Static registration
+// ============================================================
+
+static bool _register_joint_types = []() {
+    sinriv::kigstudio::sdf::sdf_register_type("finite_cone", [](const cJSON* json) -> std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> {
+        auto obj = std::make_shared<SDF_FiniteCone>(0.0f, 0.0f);
+        obj->fromJSON(json);
+        return obj;
+    });
+    sinriv::kigstudio::sdf::sdf_register_type("capped_cylinder_x", [](const cJSON* json) -> std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> {
+        auto obj = std::make_shared<SDF_CappedCylinderX>(0.0f, 0.0f);
+        obj->fromJSON(json);
+        return obj;
+    });
+    sinriv::kigstudio::sdf::sdf_register_type("frame_transform", [](const cJSON* json) -> std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> {
+        auto obj = std::make_shared<SDF_FrameTransform>(Frame{}, nullptr);
+        obj->fromJSON(json);
+        return obj;
+    });
+    sinriv::kigstudio::sdf::sdf_register_type("joint_negative", [](const cJSON* json) -> std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> {
+        auto obj = std::make_shared<JointNegativeSDF>();
+        obj->fromJSON(json);
+        return obj;
+    });
+    sinriv::kigstudio::sdf::sdf_register_type("joint_positive", [](const cJSON* json) -> std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> {
+        auto obj = std::make_shared<JointPositiveSDF>();
+        obj->fromJSON(json);
+        return obj;
+    });
+    return true;
+}();
+
 }  // namespace sinriv::kigstudio::sdf::joint
+

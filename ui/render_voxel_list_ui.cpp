@@ -393,6 +393,7 @@ void RenderVoxelList::render_file_loader() {
                 ImGui::TextUnformatted(
                     get_locale_cstr("label.no_file_selected"));
             }
+            ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"), &load_as_sdf);
             const float button_size = ImGui::GetFrameHeight();
             ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
             ImGui::SameLine();
@@ -417,7 +418,7 @@ void RenderVoxelList::render_file_loader() {
             }
             ImGui::BeginDisabled(stl_file_path.empty());
             if (ImGui::Button(get_locale_cstr("action.open"))) {
-                this->queue_load_stl(stl_file_path, voxel_size);
+                this->queue_load_stl(stl_file_path, voxel_size, load_as_sdf);
                 show_file_loader = false;
             }
             ImGui::EndDisabled();
@@ -441,6 +442,7 @@ void RenderVoxelList::render_reload_stl_dialog() {
                      &show_reload_stl_dialog,
                      ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted(get_locale_cstr("label.reload_stl_hint"));
+        ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"), &load_as_sdf);
         ImGui::Separator();
         ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
         ImGui::SameLine();
@@ -478,7 +480,8 @@ void RenderVoxelList::render_reload_stl_dialog() {
                     it->second->stl_voxel_size = reload_stl_voxel_size;
                     this->queue_reload_stl(reload_stl_item_id,
                                            reload_stl_voxel_size,
-                                           it->second->stl_path);
+                                           it->second->stl_path,
+                                           load_as_sdf);
                 }
             }
             show_reload_stl_dialog = false;

@@ -1,5 +1,6 @@
 #include "render_voxel_list.h"
 #include "kigstudio/cgal/skeleton_extraction.h"
+#include "kigstudio/sdf/sdf_mesh.h"
 #include <cmath>
 #include <cstdint>
 #include <unordered_map>
@@ -642,7 +643,8 @@ void RenderVoxelList::load_stl(std::string filename,
                                float voxel_size,
                                double isolevel,
                                bool smooth_normals,
-                               int target_item_id) {
+                               int target_item_id,
+                               bool load_as_sdf) {
     using namespace sinriv::kigstudio::voxel;
     using MeshData = mesh_detail::AsyncVoxelMeshData;
     using Triangle = triangle_bvh<float>::triangle;
@@ -772,6 +774,11 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.stl_voxel_size = voxel_size;
                 item.thumbnail_dirty = true;
                 item.dirty = true;
+                if (load_as_sdf) {
+                    auto mesh_sdf = std::make_unique<sinriv::kigstudio::sdf::SDF_Mesh>();
+                    mesh_sdf->loadSTL(filename);
+                    item.sdf_data = std::move(mesh_sdf);
+                }
                 // 重新分割 children
                 bool has_children = false;
                 for (int cid : item.children) {
@@ -803,6 +810,11 @@ void RenderVoxelList::load_stl(std::string filename,
         item->stl_path = filename;
         item->stl_voxel_size = voxel_size;
         item->mesh_kd_tree = kdtree::KDTree(kdtree_points);
+        if (load_as_sdf) {
+            auto mesh_sdf = std::make_unique<sinriv::kigstudio::sdf::SDF_Mesh>();
+            mesh_sdf->loadSTL(filename);
+            item->sdf_data = std::move(mesh_sdf);
+        }
         {
             std::lock_guard<std::mutex> lock(locker);
             items[item->id] = std::move(item);

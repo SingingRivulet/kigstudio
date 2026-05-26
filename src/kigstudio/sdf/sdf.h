@@ -1,7 +1,11 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <cJSON.h>
+#include <functional>
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
 #include "kigstudio/utils/vec3.h"
 
@@ -13,7 +17,15 @@ struct SDFBase {
     virtual ~SDFBase() = default;
     virtual float get(const Vec3f& p) const = 0;
     inline float get(float x, float y, float z) const { return get(Vec3f(x, y, z)); }
+    virtual std::string getInfo() const = 0;
+    virtual cJSON* toJSON() const = 0;
+    virtual void fromJSON(const cJSON* json) = 0;
 };
+
+std::shared_ptr<SDFBase> sdf_from_json(const cJSON* json);
+void sdf_register_type(
+    const std::string& name,
+    std::function<std::shared_ptr<SDFBase>(const cJSON*)> factory);
 
 enum class SDFBoolOp {
     Union,
@@ -44,6 +56,10 @@ struct SDF_bool : public SDFBase {
         }
         return a;
     }
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
 };
 
 std::shared_ptr<SDF_bool> sdf_union(
@@ -64,6 +80,10 @@ struct SDF_Translate : public SDFBase {
     float get(const Vec3f& p) const override {
         return child->get(p - offset);
     }
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
 };
 
 struct SDF_Offset : public SDFBase {
@@ -76,6 +96,10 @@ struct SDF_Offset : public SDFBase {
     float get(const Vec3f& p) const override {
         return child->get(p) - offset;
     }
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
 };
 
 struct SDFGrid : public SDFBase {
@@ -109,6 +133,10 @@ struct SDFGrid : public SDFBase {
     }
 
     float get(const Vec3f& p) const override;
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
 };
 
 }  // namespace sinriv::kigstudio::sdf

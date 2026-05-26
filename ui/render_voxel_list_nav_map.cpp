@@ -71,17 +71,15 @@ void RenderVoxelList::render_nav_map() {
             ImGui::Dummy(ImVec2(64.0f, 64.0f));
         }
 
-        if (item->sdf_grid_data && bgfx::isValid(icons.circles)) {
+        if (item->sdf_data && bgfx::isValid(icons.circles)) {
             ImGui::Image(icons.circles, ImVec2(20.0f, 20.0f));
             if (ImGui::BeginItemTooltip()) {
-                ImGui::Text(get_locale_cstr("tooltip.sdf_resolution"),
-                            item->sdf_grid_data->sx,
-                            item->sdf_grid_data->sy,
-                            item->sdf_grid_data->sz);
+                ImGui::Text(get_locale_cstr("tooltip.sdf_resolution"), item->sdf_data->getInfo().c_str());
                 ImGui::EndTooltip();
             }
         }
         if (!item->stl_path.empty() && bgfx::isValid(icons.hexagon)) {
+            ImGui::SameLine();
             ImGui::Image(icons.hexagon, ImVec2(20.0f, 20.0f));
             if (ImGui::BeginItemTooltip()) {
                 ImGui::Text(get_locale_cstr("tooltip.triangle_count"),

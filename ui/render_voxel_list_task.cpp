@@ -72,7 +72,8 @@ void RenderVoxelList::queue_thread() {
                 std::cout << "Load stl file: " << task.file_path << std::endl;
                 queue_running = true;
                 try {
-                    load_stl(task.file_path, task.voxel_size);
+                    load_stl(task.file_path, task.voxel_size, 0.5, true, -1,
+                             task.load_as_sdf);
                     append_queue_logf("log.queue.done_load_stl",
                                       task.file_path.c_str());
                 } catch (std::runtime_error& e) {
@@ -110,7 +111,7 @@ void RenderVoxelList::queue_thread() {
                 queue_running = true;
                 try {
                     load_stl(task.file_path, task.voxel_size, 0.5, true,
-                             task.index);
+                             task.index, task.load_as_sdf);
                     append_queue_logf("log.queue.done_reload_stl", task.index);
                 } catch (std::runtime_error& e) {
                     append_queue_logf("log.queue.error_reload_stl", task.index,
@@ -597,20 +598,23 @@ size_t RenderVoxelList::get_num_items() {
 }
 
 void RenderVoxelList::queue_load_stl(const std::string& file_path,
-                                     float voxel_size) {
+                                     float voxel_size,
+                                     bool load_as_sdf) {
     // 将加载任务加入队列
     std::lock_guard<std::mutex> lock(queue_mutex);
     QueueTask task;
     task.type = TASK_LOAD_STL;
     task.file_path = file_path;
     task.voxel_size = voxel_size;
+    task.load_as_sdf = load_as_sdf;
     queue.push(task);
     this->queue_num = static_cast<int>(queue.size());
 }
 
 void RenderVoxelList::queue_reload_stl(int item_id,
                                        float voxel_size,
-                                       const std::string& stl_path) {
+                                       const std::string& stl_path,
+                                       bool load_as_sdf) {
     if (stl_path.empty())
         return;
     std::lock_guard<std::mutex> lock(queue_mutex);
@@ -619,6 +623,7 @@ void RenderVoxelList::queue_reload_stl(int item_id,
     task.index = item_id;
     task.file_path = stl_path;
     task.voxel_size = voxel_size;
+    task.load_as_sdf = load_as_sdf;
     queue.push(task);
     this->queue_num = static_cast<int>(queue.size());
 }

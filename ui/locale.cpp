@@ -212,6 +212,8 @@ void init_locale_strings() {
     // Labels
     add_locale_string("label.no_log_entries",
                       {{"en", "No log entries."}, {"zh", "暂无日志记录。"}});
+    add_locale_string("label.load_as_sdf",
+                      {{"en", "Load as SDF"}, {"zh", "加载SDF"}});
 
     add_locale_string("menu.export_stl_all",
                       {{"en", "Export All STL"}, {"zh", "全部导出stl"}});
@@ -528,8 +530,8 @@ void init_locale_strings() {
                       {{"en", "Automatically split disconnected voxel regions into separate items."},
                        {"zh", "自动将不连通的体素区域分割成独立的项目。"}});
     add_locale_string("tooltip.mode.neighbor",
-                      {{"en", "Split voxels based on BFS distance from marked seed voxels."},
-                       {"zh", "基于与标记种子体素的 BFS 距离来分割体素。"}});
+                      {{"en", "Split voxels based on BFS distance from marked seed voxels.\nNote: This will lose SDF data."},
+                       {"zh", "基于与标记种子体素的 BFS 距离来分割体素。\n注意：此操作将丢失SDF数据"}});
     add_locale_string("tooltip.mode.fill_interior",
                       {{"en", "Fill all enclosed hollow cavities inside the model with solid voxels. Produces a single child node."},
                        {"zh", "用实体体素填满模型内部所有封闭的中空腔体。产生一个子节点。"}});
@@ -551,7 +553,7 @@ void init_locale_strings() {
     add_locale_string("label.chain_min_radius",
                       {{"en", "min radius"}, {"zh", "最小半径"}});
     add_locale_string("tooltip.sdf_resolution",
-                      {{"en", "SDF: %d x %d x %d"}, {"zh", "此节点有SDF\n分辨率: %d x %d x %d"}});
+                      {{"en", "SDF:\n%s"}, {"zh", "此节点有SDF\n%s"}});
     add_locale_string("tooltip.triangle_count",
                       {{"en", "Triangles: %zu"}, {"zh", "此节点有STL模型\n三角形: %zu 个"}});
 

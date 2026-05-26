@@ -128,6 +128,10 @@ struct SDF_FiniteCone : public sinriv::kigstudio::sdf::SDFBase {
         : angle_rad(angle_rad), height(height) {}
 
     float get(const Vec3f& p) const override;
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
 };
 
 struct SDF_CappedCylinderX : public sinriv::kigstudio::sdf::SDFBase {
@@ -138,6 +142,10 @@ struct SDF_CappedCylinderX : public sinriv::kigstudio::sdf::SDFBase {
         : radius(radius), half_height(half_height) {}
 
     float get(const Vec3f& p) const override;
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
 };
 
 struct SDF_FrameTransform : public sinriv::kigstudio::sdf::SDFBase {
@@ -150,6 +158,10 @@ struct SDF_FrameTransform : public sinriv::kigstudio::sdf::SDFBase {
         : frame(frame), child(std::move(child)) {}
 
     float get(const Vec3f& p) const override;
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
 };
 
 // ============================================================
@@ -184,6 +196,10 @@ class JointNegativeSDF : public sinriv::kigstudio::sdf::SDFBase {
     float get(const Vec3f& world_p) const override;
 
     inline bool contains(const Vec3f& p) const { return get(p) <= 0.f; }
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
 };
 
 // ============================================================
@@ -218,6 +234,10 @@ class JointPositiveSDF : public sinriv::kigstudio::sdf::SDFBase {
     float get(const Vec3f& world_p) const override;
 
     inline bool contains(const Vec3f& p) const { return get(p) <= 0.f; }
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
 };
 
 // ============================================================

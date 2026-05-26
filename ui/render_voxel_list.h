@@ -201,7 +201,7 @@ class RenderVoxelList {
         sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
         kdtree::KDTree mesh_kd_tree;  // 三角形顶点的kd树，用于实现自动吸附
 
-        std::unique_ptr<sinriv::kigstudio::voxel::SDFGrid> sdf_grid_data{};
+        std::unique_ptr<sinriv::kigstudio::sdf::SDFBase> sdf_data{};
 
         sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
         kigstudio::Plane<float> plane;
@@ -491,6 +491,7 @@ class RenderVoxelList {
     bool show_reload_stl_dialog = false;
     int reload_stl_item_id = -1;
     float reload_stl_voxel_size = 1.0f;
+    bool load_as_sdf = false;
     bool show_save_dialog = false;
     bool show_save_as_dialog = false;
     bool show_load_dialog = false;
@@ -639,7 +640,8 @@ class RenderVoxelList {
                   float voxel_size = 0.5f,
                   double isolevel = 0.5,
                   bool smooth_normals = true,
-                  int target_item_id = -1);
+                  int target_item_id = -1,
+                  bool load_as_sdf = false);
 
     // 后台队列
 
@@ -675,6 +677,7 @@ class RenderVoxelList {
         int export_mode = 0;
         bool export_simplify = false;
         float export_simplify_ratio = 0.1f;
+        bool load_as_sdf = false;
     };
     std::queue<QueueTask> queue;
     std::mutex queue_mutex;
@@ -691,10 +694,13 @@ class RenderVoxelList {
     void update_nav_node_position();
 
     size_t get_num_items();
-    void queue_load_stl(const std::string& file_path, float voxel_size);
+    void queue_load_stl(const std::string& file_path,
+                        float voxel_size,
+                        bool load_as_sdf = false);
     void queue_reload_stl(int item_id,
                           float voxel_size,
-                          const std::string& stl_path);
+                          const std::string& stl_path,
+                          bool load_as_sdf = false);
     void queue_do_segment(int index);
     void queue_do_segment();
     void queue_do_segment_unsafe();
