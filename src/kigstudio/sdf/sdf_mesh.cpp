@@ -1,21 +1,52 @@
 #include "kigstudio/sdf/sdf_mesh.h"
-#include "kigstudio/voxel/voxel2mesh.h"
-#include "kigstudio/utils/vec3.h"
 #include <cmath>
+#include "kigstudio/utils/vec3.h"
+#include "kigstudio/voxel/voxel2mesh.h"
 
-#include <CGAL/Simple_cartesian.h>
-#include <CGAL/AABB_tree.h>
 #include <CGAL/AABB_traits_3.h>
+#include <CGAL/AABB_tree.h>
 #include <CGAL/AABB_triangle_primitive_3.h>
+#include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
+#include <CGAL/Simple_cartesian.h>
 
 namespace sinriv::kigstudio::sdf {
 
 using Kernel = CGAL::Simple_cartesian<double>;
 using Point_3 = Kernel::Point_3;
 using Triangle_3 = Kernel::Triangle_3;
-using Primitive = CGAL::AABB_triangle_primitive_3<Kernel, std::vector<Triangle_3>::iterator>;
+using Primitive =
+    CGAL::AABB_triangle_primitive_3<Kernel, std::vector<Triangle_3>::iterator>;
 using Traits = CGAL::AABB_traits_3<Kernel, Primitive>;
 using Tree = CGAL::AABB_tree<Traits>;
+namespace PMP = CGAL::Polygon_mesh_processing;
+
+void orientTriangles(std::vector<Triangle_3>& triangles) {
+    std::vector<Point_3> points;
+    std::vector<std::vector<std::size_t>> polygons;
+
+    points.reserve(triangles.size() * 3);
+    polygons.reserve(triangles.size());
+
+    for (const auto& tri : triangles) {
+        std::size_t base = points.size();
+
+        points.push_back(tri.vertex(0));
+        points.push_back(tri.vertex(1));
+        points.push_back(tri.vertex(2));
+
+        polygons.push_back({base + 0, base + 1, base + 2});
+    }
+
+    PMP::orient_polygon_soup(points, polygons);
+
+    triangles.clear();
+    triangles.reserve(polygons.size());
+
+    for (const auto& poly : polygons) {
+        triangles.emplace_back(points[poly[0]], points[poly[1]],
+                               points[poly[2]]);
+    }
+}
 
 struct SDF_Mesh::Impl {
     std::vector<Triangle_3> triangles;
@@ -39,7 +70,8 @@ struct SDF_Mesh::Impl {
         bool inside_y = (count_y % 2) == 1;
         bool inside_z = (count_z % 2) == 1;
 
-        int inside_count = (inside_x ? 1 : 0) + (inside_y ? 1 : 0) + (inside_z ? 1 : 0);
+        int inside_count =
+            (inside_x ? 1 : 0) + (inside_y ? 1 : 0) + (inside_z ? 1 : 0);
         return inside_count >= 2;
     }
 };
@@ -55,16 +87,15 @@ bool SDF_Mesh::loadSTL(const std::string& filename) {
 
     for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(filename)) {
         auto& [a, b, c] = tri;
-        impl->triangles.emplace_back(
-            Point_3(a.x, a.y, a.z),
-            Point_3(b.x, b.y, b.z),
-            Point_3(c.x, c.y, c.z));
+        impl->triangles.emplace_back(Point_3(a.x, a.y, a.z),
+                                     Point_3(b.x, b.y, b.z),
+                                     Point_3(c.x, c.y, c.z));
     }
 
     if (impl->triangles.empty()) {
         return false;
     }
-
+    orientTriangles(impl->triangles);
     impl->tree.insert(impl->triangles.begin(), impl->triangles.end());
     impl->tree.build();
     impl->tree.accelerate_distance_queries();
@@ -127,7 +158,8 @@ void SDF_Mesh::fromJSON(const cJSON* json) {
         int tri_count = cJSON_GetArraySize(tri_array);
         for (int i = 0; i < tri_count; ++i) {
             cJSON* t = cJSON_GetArrayItem(tri_array, i);
-            if (!t || !cJSON_IsArray(t) || cJSON_GetArraySize(t) != 9) continue;
+            if (!t || !cJSON_IsArray(t) || cJSON_GetArraySize(t) != 9)
+                continue;
             double ax = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 0));
             double ay = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 1));
             double az = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 2));
@@ -138,9 +170,7 @@ void SDF_Mesh::fromJSON(const cJSON* json) {
             double cy = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 7));
             double cz = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 8));
             impl->triangles.emplace_back(
-                Point_3(ax, ay, az),
-                Point_3(bx, by, bz),
-                Point_3(cx, cy, cz));
+                Point_3(ax, ay, az), Point_3(bx, by, bz), Point_3(cx, cy, cz));
         }
         if (!impl->triangles.empty()) {
             impl->tree.insert(impl->triangles.begin(), impl->triangles.end());
@@ -162,11 +192,12 @@ void SDF_Mesh::fromJSON(const cJSON* json) {
 // ============================================================
 
 static bool _register_mesh_type = []() {
-    sdf_register_type("mesh", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
-        auto obj = std::make_shared<SDF_Mesh>();
-        obj->fromJSON(json);
-        return obj;
-    });
+    sdf_register_type("mesh",
+                      [](const cJSON* json) -> std::shared_ptr<SDFBase> {
+                          auto obj = std::make_shared<SDF_Mesh>();
+                          obj->fromJSON(json);
+                          return obj;
+                      });
     return true;
 }();
 

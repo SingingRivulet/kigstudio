@@ -1,7 +1,7 @@
 #pragma once
+#include <cJSON.h>
 #include <algorithm>
 #include <cmath>
-#include <cJSON.h>
 #include <functional>
 #include <memory>
 #include <string>
@@ -13,10 +13,22 @@ namespace sinriv::kigstudio::sdf {
 
 using Vec3f = sinriv::kigstudio::vec3<float>;
 
+struct SDF_QueryResult {
+    float distance;
+    Vec3f normal;
+    Vec3f position;
+};
+
 struct SDFBase {
     virtual ~SDFBase() = default;
     virtual float get(const Vec3f& p) const = 0;
-    inline float get(float x, float y, float z) const { return get(Vec3f(x, y, z)); }
+
+    // virtual void get(std::vector<SDF_QueryResult>& results)
+    //     const;  // 批量查询接口，默认实现为逐个调用
+
+    inline float get(float x, float y, float z) const {
+        return get(Vec3f(x, y, z));
+    }
     virtual std::string getInfo() const = 0;
     virtual cJSON* toJSON() const = 0;
     virtual void fromJSON(const cJSON* json) = 0;
@@ -27,11 +39,7 @@ void sdf_register_type(
     const std::string& name,
     std::function<std::shared_ptr<SDFBase>(const cJSON*)> factory);
 
-enum class SDFBoolOp {
-    Union,
-    Intersection,
-    Subtraction
-};
+enum class SDFBoolOp { Union, Intersection, Subtraction };
 
 struct SDF_bool : public SDFBase {
     SDFBoolOp op;
@@ -62,24 +70,21 @@ struct SDF_bool : public SDFBase {
     void fromJSON(const cJSON* json) override;
 };
 
-std::shared_ptr<SDF_bool> sdf_union(
-    std::shared_ptr<SDFBase> a, std::shared_ptr<SDFBase> b);
-std::shared_ptr<SDF_bool> sdf_intersection(
-    std::shared_ptr<SDFBase> a, std::shared_ptr<SDFBase> b);
-std::shared_ptr<SDF_bool> sdf_subtraction(
-    std::shared_ptr<SDFBase> a, std::shared_ptr<SDFBase> b);
+std::shared_ptr<SDF_bool> sdf_union(std::shared_ptr<SDFBase> a,
+                                    std::shared_ptr<SDFBase> b);
+std::shared_ptr<SDF_bool> sdf_intersection(std::shared_ptr<SDFBase> a,
+                                           std::shared_ptr<SDFBase> b);
+std::shared_ptr<SDF_bool> sdf_subtraction(std::shared_ptr<SDFBase> a,
+                                          std::shared_ptr<SDFBase> b);
 
 struct SDF_Translate : public SDFBase {
     Vec3f offset;
     std::shared_ptr<SDFBase> child;
 
-    SDF_Translate(const Vec3f& offset,
-                  std::shared_ptr<SDFBase> child)
+    SDF_Translate(const Vec3f& offset, std::shared_ptr<SDFBase> child)
         : offset(offset), child(std::move(child)) {}
 
-    float get(const Vec3f& p) const override {
-        return child->get(p - offset);
-    }
+    float get(const Vec3f& p) const override { return child->get(p - offset); }
 
     std::string getInfo() const override;
     cJSON* toJSON() const override;
@@ -93,9 +98,7 @@ struct SDF_Offset : public SDFBase {
     SDF_Offset(float offset, std::shared_ptr<SDFBase> child)
         : offset(offset), child(std::move(child)) {}
 
-    float get(const Vec3f& p) const override {
-        return child->get(p) - offset;
-    }
+    float get(const Vec3f& p) const override { return child->get(p) - offset; }
 
     std::string getInfo() const override;
     cJSON* toJSON() const override;
@@ -109,6 +112,7 @@ struct SDFGrid : public SDFBase {
     int sx = 0;
     int sy = 0;
     int sz = 0;
+    SDFGrid() = default;
 
     std::vector<float> sdf;
 
