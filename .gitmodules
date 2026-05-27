@@ -13,3 +13,9 @@
 [submodule "dep/cgal"]
 	path = dep/cgal
 	url = https://github.com/CGAL/cgal.git
+[submodule "dep/embree"]
+	path = dep/embree
+	url = https://github.com/RenderKit/embree.git
+[submodule "dep/openvdb"]
+	path = dep/openvdb
+	url = https://github.com/AcademySoftwareFoundation/openvdb

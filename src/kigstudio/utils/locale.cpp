@@ -642,6 +642,9 @@ void init_locale_strings() {
     add_locale_string("progress.surface_nets.building_dense_grid",
                       {{"en", "building dense grid"},
                        {"zh", "构建稠密体素网格"}});
+    add_locale_string("progress.surface_nets.processing_chunk",
+                      {{"en", "processing chunk"},
+                       {"zh", "处理块"}});
     add_locale_string("progress.extract_skeleton.extractCenterline",
                       {{"en", "extract center line"},
                        {"zh", "计算中心线"}});
