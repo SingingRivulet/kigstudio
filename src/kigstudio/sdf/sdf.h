@@ -23,9 +23,6 @@ struct SDFBase {
     virtual ~SDFBase() = default;
     virtual float get(const Vec3f& p) const = 0;
 
-    // virtual void get(std::vector<SDF_QueryResult>& results)
-    //     const;  // 批量查询接口，默认实现为逐个调用
-
     inline float get(float x, float y, float z) const {
         return get(Vec3f(x, y, z));
     }
