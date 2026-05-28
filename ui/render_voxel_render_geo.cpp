@@ -366,12 +366,14 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
 
     setQueueStatus("Segmenting...");
     queue_progress = 0.0f;
-    std::vector<sinriv::kigstudio::voxel::VoxelGrid> grids;
+    std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
+                           std::shared_ptr<sinriv::kigstudio::sdf::SDFBase>>>
+        results;
     std::cout << "[do_segment] start item=" << index
               << " mode=" << it->second->segment_mode
               << " write_count=" << it->second->write_count << std::endl;
     try {
-        grids = it->second->do_segment();
+        results = it->second->do_segment();
         queue_progress = 0.7f;
     } catch (const std::exception& e) {
         std::cerr << "[do_segment] exception: " << e.what() << std::endl;
@@ -394,7 +396,7 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
         it->second->write_count--;
         std::cout << "[do_segment] write_count decremented to="
                   << it->second->write_count << std::endl;
-        size_t num_results = grids.size();
+        size_t num_results = results.size();
         size_t num_existing = it->second->children.size();
 
         for (size_t i = 0; i < num_results; ++i) {
@@ -451,13 +453,14 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
     }
 
     std::vector<RenderVoxelItem*> result_ptrs;
-    for (size_t i = 0; i < grids.size(); ++i) {
+    for (size_t i = 0; i < results.size(); ++i) {
         auto new_item = std::make_unique<RenderVoxelItem>();
         new_item->manager = this;
         new_item->id = new_ids[i];
         new_item->children = new_children[i];
         new_item->auto_segment_update = new_auto_segment_update[i];
-        new_item->voxel_grid_data = std::move(grids[i]);
+        new_item->voxel_grid_data = std::move(std::get<0>(results[i]));
+        new_item->sdf_data = std::get<1>(results[i]);
         new_item->thumbnail_dirty = true;
         if (child_snapshots[i].has_value()) {
             this->apply_snapshot(*new_item, child_snapshots[i].value());
@@ -769,11 +772,12 @@ void RenderVoxelList::load_stl(std::string filename,
                                                          smooth_normals);
                 item.voxel_grid_data = std::move(voxel_data);
                 item.source_triangles = std::move(source_triangles);
+                item.stl_path = filename;
                 item.stl_voxel_size = voxel_size;
                 item.thumbnail_dirty = true;
                 item.dirty = true;
                 if (load_as_sdf) {
-                    auto mesh_sdf = std::make_unique<sinriv::kigstudio::sdf::SDF_Mesh>();
+                    auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
                     mesh_sdf->loadSTL(filename);
                     item.sdf_data = std::move(mesh_sdf);
                 }
@@ -809,7 +813,7 @@ void RenderVoxelList::load_stl(std::string filename,
         item->stl_voxel_size = voxel_size;
         item->mesh_kd_tree = kdtree::KDTree(kdtree_points);
         if (load_as_sdf) {
-            auto mesh_sdf = std::make_unique<sinriv::kigstudio::sdf::SDF_Mesh>();
+            auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
             mesh_sdf->loadSTL(filename);
             item->sdf_data = std::move(mesh_sdf);
         }

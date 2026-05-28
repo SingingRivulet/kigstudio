@@ -23,9 +23,9 @@
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/ui/render_voxel.h"
 #include "kigstudio/utils/KDTree.h"
+#include "kigstudio/utils/locale.h"
 #include "kigstudio/utils/plane.h"
 #include "kigstudio/utils/vec3.h"
-#include "kigstudio/utils/locale.h"
 #include "kigstudio/voxel/concave.h"
 #include "kigstudio/voxel/voxel.h"
 #include "kigstudio/voxel/voxel_EDT.h"
@@ -120,7 +120,9 @@ struct EditResult {
     bool value_changed = false;  // 按钮点击等立即变化
 };
 
-EditResult edit_float_stepper(const char* label, float& value, float step = 1.0f);
+EditResult edit_float_stepper(const char* label,
+                              float& value,
+                              float step = 1.0f);
 EditResult edit_vec3_stepper(const char* label,
                              vec3f& value,
                              float step = 0.5f,
@@ -204,7 +206,7 @@ class RenderVoxelList {
         sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
         kdtree::KDTree mesh_kd_tree;  // 三角形顶点的kd树，用于实现自动吸附
 
-        std::unique_ptr<sinriv::kigstudio::sdf::SDFBase> sdf_data{};
+        std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> sdf_data;
 
         sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
         kigstudio::Plane<float> plane;
@@ -284,37 +286,47 @@ class RenderVoxelList {
 
         sinriv::kigstudio::voxel::VoxelGrid do_segment_chain() const;
 
-        inline std::vector<sinriv::kigstudio::voxel::VoxelGrid> do_segment() {
+        inline std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
+                                      sinriv::kigstudio::sdf::SDFBasePtr>>
+        do_segment() {
             if (segment_mode == COLLISION) {
                 auto res = voxel_grid_data.segment(collision_group);
-                return {std::get<0>(std::move(res)),
-                        std::get<1>(std::move(res))};
+                return {{std::move(std::get<0>(res)), nullptr},
+                        {std::move(std::get<1>(res)), nullptr}};
             } else if (segment_mode == PLANE) {
                 auto res = voxel_grid_data.segment(plane);
-                return {std::get<0>(std::move(res)),
-                        std::get<1>(std::move(res))};
+                return {{std::move(std::get<0>(res)), nullptr},
+                        {std::move(std::get<1>(res)), nullptr}};
             } else if (segment_mode == CONCAVE_CONE) {
                 auto res = voxel_grid_data.segment(concave_cone);
-                return {std::get<0>(std::move(res)),
-                        std::get<1>(std::move(res))};
+                return {{std::move(std::get<0>(res)), nullptr},
+                        {std::move(std::get<1>(res)), nullptr}};
             } else if (segment_mode == SPLIT_DISCONNECTED) {
-                return voxel_grid_data.splitDisconnected(true);
+                auto splits = voxel_grid_data.splitDisconnected(true);
+                std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
+                                       sinriv::kigstudio::sdf::SDFBasePtr>>
+                    result;
+                result.reserve(splits.size());
+                for (auto& grid : splits) {
+                    result.emplace_back(std::move(grid), nullptr);
+                }
+                return result;
             } else if (segment_mode == NEIGHBOR) {
                 std::vector<sinriv::kigstudio::Vec3i> seeds;
                 for (const auto& v : marked_voxels) {
                     seeds.push_back(v);
                 }
-                auto res = voxel_grid_data.bfsSplit(
-                    seeds, neighbor_max_distance, true);
-                return {std::get<0>(std::move(res)),
-                        std::get<1>(std::move(res))};
+                auto res = voxel_grid_data.bfsSplit(seeds, neighbor_max_distance,
+                                                    true);
+                return {{std::move(std::get<0>(res)), nullptr},
+                        {std::move(std::get<1>(res)), nullptr}};
             } else if (segment_mode == FILL_INTERIOR) {
                 auto filled = voxel_grid_data.fillInterior(true);
-                return {std::move(filled)};
+                return {{std::move(filled), nullptr}};
             } else if (segment_mode == CHAIN) {
-                return {do_segment_chain()};
+                return {{do_segment_chain(), nullptr}};
             } else {
-                throw std::runtime_error("Unknow method");
+                throw std::runtime_error("Unknown method");
             }
         }
 
@@ -557,16 +569,16 @@ class RenderVoxelList {
     void render_log_window();
 
     // STL export dialog state (shared between single and batch export)
-    int export_stl_mode = 0; // 0 = Standard, 1 = Smooth SDF
+    int export_stl_mode = 0;  // 0 = Standard, 1 = Smooth SDF
     bool export_stl_simplify = true;
     float export_stl_simplify_ratio = 0.1f;
     int export_stl_subdivisions = 3;
     bool pending_open_export_stl_all_dialog = false;
 
-    struct Icons{
+    struct Icons {
         bgfx::TextureHandle hexagon = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle circles = BGFX_INVALID_HANDLE;
-    }icons;
+    } icons;
 
     void initIcons();
     void destroyIcons();
@@ -712,8 +724,17 @@ class RenderVoxelList {
     void queue_remove_item(int index);
     void queue_check_non_manifold(int index);
     void queue_extract_skeleton(int index);
-    void queue_export_stl(int item_id, const std::string& file_path, int mode, bool simplify, float ratio, int subdivisions);
-    void queue_export_stl_all(const std::string& export_dir, int mode, bool simplify, float ratio, int subdivisions);
+    void queue_export_stl(int item_id,
+                          const std::string& file_path,
+                          int mode,
+                          bool simplify,
+                          float ratio,
+                          int subdivisions);
+    void queue_export_stl_all(const std::string& export_dir,
+                              int mode,
+                              bool simplify,
+                              float ratio,
+                              int subdivisions);
     bool isQueueRunning();
     std::string getQueueStatus();
     void setQueueStatus(const std::string& status);

@@ -35,6 +35,7 @@ struct SDFBase {
     virtual cJSON* toJSON() const = 0;
     virtual void fromJSON(const cJSON* json) = 0;
 };
+using SDFBasePtr = std::shared_ptr<SDFBase>;
 
 std::shared_ptr<SDFBase> sdf_from_json(const cJSON* json);
 void sdf_register_type(

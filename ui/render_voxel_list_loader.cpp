@@ -441,6 +441,7 @@ bool RenderVoxelList::load_project(const std::string& folder) {
     last_load_error.clear();
     release();
     start_thread();
+    initIcons();
     current_id = 0;
 
     std::filesystem::path dir = utf8_path(folder);
@@ -516,9 +517,16 @@ bool RenderVoxelList::load_project(const std::string& folder) {
             }
             if (!item->stl_path.empty()) {
                 try {
-                    item->mesh_renderer.loadSTL(item->stl_path);
+                    std::cout << "Loading STL mesh for item " << id
+                              << " from path: " << item->stl_path << std::endl;
+                    auto stl_path = utf8_path(item->stl_path);
+                    std::string utf8_stl_path = path_to_utf8(stl_path);
+                    std::cout << "STL path after conversion: " << utf8_stl_path
+                              << std::endl;
+                    item->mesh_renderer.loadSTL(utf8_stl_path);
+                    item->stl_path = utf8_stl_path;
                     item->source_triangles.clear();
-                    for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(item->stl_path)) {
+                    for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(utf8_stl_path)) {
                         (void)n;
                         item->source_triangles.push_back(tri);
                     }
