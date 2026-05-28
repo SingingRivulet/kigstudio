@@ -1,4 +1,7 @@
 #include "kigstudio/sdf/sdf_chain_joint.h"
+#ifdef USE_AVX2
+#include <immintrin.h>
+#endif
 
 namespace sinriv::kigstudio::sdf::joint {
 
@@ -198,6 +201,140 @@ float JointNegativeSDF::get(const Vec3f& world_p) const {
     return out;
 }
 
+#ifdef USE_AVX2
+void JointNegativeSDF::get(const Vec3f& begin,
+                          const Vec3f& voxelSize,
+                          const Vec3i& voxelCount,
+                          std::vector<float>& out) const {
+    using namespace sinriv::kigstudio::sdf;
+    if (voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
+        out.clear();
+        return;
+    }
+
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    size_t i = 0;
+    for (int z = 0; z < voxelCount.z; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < voxelCount.y; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            int x = 0;
+            const int nx = voxelCount.x;
+            const int simdW = 4;
+
+            // precompute constants
+            const float socket_h = socket_cone_radius / std::tan(socket_cone_angle);
+            const float head_h = head_cone_radius / std::tan(socket_cone_angle);
+            const __m128 v_origin_x = _mm_set1_ps(frame.origin.x);
+            const __m128 v_origin_y = _mm_set1_ps(frame.origin.y);
+            const __m128 v_origin_z = _mm_set1_ps(frame.origin.z);
+            const __m128 v_xax_x = _mm_set1_ps(frame.x_axis.x);
+            const __m128 v_xax_y = _mm_set1_ps(frame.x_axis.y);
+            const __m128 v_xax_z = _mm_set1_ps(frame.x_axis.z);
+            const __m128 v_yax_x = _mm_set1_ps(frame.y_axis.x);
+            const __m128 v_yax_y = _mm_set1_ps(frame.y_axis.y);
+            const __m128 v_yax_z = _mm_set1_ps(frame.y_axis.z);
+            const __m128 v_zax_x = _mm_set1_ps(frame.z_axis.x);
+            const __m128 v_zax_y = _mm_set1_ps(frame.z_axis.y);
+            const __m128 v_zax_z = _mm_set1_ps(frame.z_axis.z);
+            const __m128 v_socket_off_z = _mm_set1_ps(socket_cone_offset);
+            const __m128 v_head_off_z = _mm_set1_ps(head_cone_offset);
+            const __m128 v_slot_extra = _mm_set1_ps(slot_extra);
+            const __m128 v_male_off_z = _mm_set1_ps(male_cylinder_offset);
+            const __m128 v_male_rad = _mm_set1_ps(male_cylinder_radius + female_gap);
+            const __m128 v_male_half = _mm_set1_ps(male_cylinder_half_height);
+            const __m128 v_tan_socket = _mm_set1_ps(std::tan(socket_cone_angle));
+            const __m128 v_socket_h = _mm_set1_ps(socket_h);
+            const __m128 v_head_h = _mm_set1_ps(head_h);
+
+            for (; x <= nx - simdW; x += simdW) {
+                // build wx vector for x..x+3
+                float wx0 = begin.x + static_cast<float>(x + 0) * voxelSize.x;
+                float wx1 = begin.x + static_cast<float>(x + 1) * voxelSize.x;
+                float wx2 = begin.x + static_cast<float>(x + 2) * voxelSize.x;
+                float wx3 = begin.x + static_cast<float>(x + 3) * voxelSize.x;
+                __m128 v_wx = _mm_setr_ps(wx0, wx1, wx2, wx3);
+                __m128 v_wy = _mm_set1_ps(wy);
+                __m128 v_wz = _mm_set1_ps(wz);
+
+                // d = world - origin
+                __m128 dx = _mm_sub_ps(v_wx, v_origin_x);
+                __m128 dy = _mm_sub_ps(v_wy, v_origin_y);
+                __m128 dz = _mm_sub_ps(v_wz, v_origin_z);
+
+                // p = R^T * d  (worldToLocal)
+                __m128 px = _mm_add_ps(_mm_add_ps(_mm_mul_ps(dx, v_xax_x), _mm_mul_ps(dy, v_xax_y)), _mm_mul_ps(dz, v_xax_z));
+                __m128 py = _mm_add_ps(_mm_add_ps(_mm_mul_ps(dx, v_yax_x), _mm_mul_ps(dy, v_yax_y)), _mm_mul_ps(dz, v_yax_z));
+                __m128 pz = _mm_add_ps(_mm_add_ps(_mm_mul_ps(dx, v_zax_x), _mm_mul_ps(dy, v_zax_y)), _mm_mul_ps(dz, v_zax_z));
+
+                // socket = sdFiniteCone(p - socket_off)
+                __m128 pz_so = _mm_sub_ps(pz, v_socket_off_z);
+                __m128 r = _mm_sqrt_ps(_mm_add_ps(_mm_mul_ps(px, px), _mm_mul_ps(py, py)));
+                __m128 cone = _mm_sub_ps(r, _mm_mul_ps(pz_so, v_tan_socket));
+                cone = _mm_max_ps(cone, _mm_sub_ps(_mm_set1_ps(0.0f), pz_so));
+                cone = _mm_max_ps(cone, _mm_sub_ps(pz_so, v_socket_h));
+
+                // head
+                __m128 pz_ho = _mm_sub_ps(pz, v_head_off_z);
+                __m128 r2 = _mm_sqrt_ps(_mm_add_ps(_mm_mul_ps(px, px), _mm_mul_ps(py, py)));
+                __m128 head = _mm_sub_ps(r2, _mm_mul_ps(pz_ho, v_tan_socket));
+                head = _mm_max_ps(head, _mm_sub_ps(_mm_set1_ps(0.0f), pz_ho));
+                head = _mm_max_ps(head, _mm_sub_ps(pz_ho, v_head_h));
+                __m128 head_infl = _mm_sub_ps(head, v_slot_extra);
+
+                // slot = opSubtraction(socket, head_inflated) => max(socket, -head_infl)
+                __m128 slotv = _mm_max_ps(cone, _mm_sub_ps(_mm_set1_ps(0.0f), head_infl));
+
+                // cyl = sdCappedCylinderX(p - cyl_off)
+                __m128 px_co = _mm_sub_ps(px, v_male_off_z); // careful: cyl_off is (0,0,off) and sdCappedCylinderX treats x as axis
+                // Note: for sdCappedCylinderX we need r = sqrt(py^2 + pz^2), dx = r - radius, dy = abs(px) - half_height
+                __m128 r_cyl = _mm_sqrt_ps(_mm_add_ps(_mm_mul_ps(py, py), _mm_mul_ps(pz, pz)));
+                __m128 dx_c = _mm_sub_ps(r_cyl, v_male_rad);
+                __m128 abs_px = _mm_max_ps(_mm_sub_ps(_mm_set1_ps(0.0f), px_co), px_co);
+                __m128 dy_c = _mm_sub_ps(abs_px, v_male_half);
+                __m128 ax = _mm_max_ps(dx_c, _mm_set1_ps(0.0f));
+                __m128 ay = _mm_max_ps(dy_c, _mm_set1_ps(0.0f));
+                __m128 maxdxdy = _mm_max_ps(dx_c, dy_c);
+                __m128 sq = _mm_sqrt_ps(_mm_add_ps(_mm_mul_ps(ax, ax), _mm_mul_ps(ay, ay)));
+                __m128 cylv = _mm_add_ps(_mm_min_ps(maxdxdy, _mm_set1_ps(0.0f)), sq);
+
+                // out = opUnion(cyl, slot) => min(cyl, slot)
+                __m128 outv = _mm_min_ps(cylv, slotv);
+                _mm_storeu_ps(&out[i], outv);
+                i += 4;
+            }
+
+            // tail scalar
+            for (; x < nx; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                Vec3f world_p(wx, wy, wz);
+                Vec3f p = frame.worldToLocal(world_p);
+
+                float socket_h2 = socket_cone_radius / std::tan(socket_cone_angle);
+                Vec3f socket_off(0, 0, socket_cone_offset);
+                float socket = sdFiniteCone(p - socket_off, socket_cone_angle, socket_h2);
+
+                float head_h2 = head_cone_radius / std::tan(socket_cone_angle);
+                Vec3f head_off(0, 0, head_cone_offset);
+                float head = sdFiniteCone(p - head_off, socket_cone_angle, head_h2);
+                float head_inflated = head - slot_extra;
+
+                float slot = opSubtraction(socket, head_inflated);
+
+                Vec3f cyl_off(0, 0, male_cylinder_offset);
+                float cyl = sdCappedCylinderX(p - cyl_off, male_cylinder_radius + female_gap, male_cylinder_half_height);
+
+                out[i++] = opUnion(cyl, slot);
+            }
+        }
+    }
+}
+
+#else
 void JointNegativeSDF::get(const Vec3f& begin,
                           const Vec3f& voxelSize,
                           const Vec3i& voxelCount,
@@ -242,6 +379,7 @@ void JointNegativeSDF::get(const Vec3f& begin,
         }
     }
 }
+#endif
 
 std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> JointPositiveSDF::buildTree()
     const {
@@ -282,6 +420,108 @@ float JointPositiveSDF::get(const Vec3f& world_p) const {
     return out;
 }
 
+#ifdef USE_AVX2
+void JointPositiveSDF::get(const Vec3f& begin,
+                          const Vec3f& voxelSize,
+                          const Vec3i& voxelCount,
+                          std::vector<float>& out) const {
+    using namespace sinriv::kigstudio::sdf;
+    if (voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
+        out.clear();
+        return;
+    }
+
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    size_t i = 0;
+    for (int z = 0; z < voxelCount.z; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < voxelCount.y; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            int x = 0;
+            const int nx = voxelCount.x;
+            const int simdW = 4;
+
+            const float socket_h = socket_support_radius / std::tan(socket_support_angle);
+            const float male_half = effectiveHalfHeight();
+            const __m128 v_origin_x = _mm_set1_ps(frame.origin.x);
+            const __m128 v_origin_y = _mm_set1_ps(frame.origin.y);
+            const __m128 v_origin_z = _mm_set1_ps(frame.origin.z);
+            const __m128 v_xax_x = _mm_set1_ps(frame.x_axis.x);
+            const __m128 v_xax_y = _mm_set1_ps(frame.x_axis.y);
+            const __m128 v_xax_z = _mm_set1_ps(frame.x_axis.z);
+            const __m128 v_yax_x = _mm_set1_ps(frame.y_axis.x);
+            const __m128 v_yax_y = _mm_set1_ps(frame.y_axis.y);
+            const __m128 v_yax_z = _mm_set1_ps(frame.y_axis.z);
+            const __m128 v_zax_x = _mm_set1_ps(frame.z_axis.x);
+            const __m128 v_zax_y = _mm_set1_ps(frame.z_axis.y);
+            const __m128 v_zax_z = _mm_set1_ps(frame.z_axis.z);
+            const __m128 v_socket_off_z = _mm_set1_ps(socket_support_offset);
+            const __m128 v_male_off_z = _mm_set1_ps(male_cylinder_offset);
+            const __m128 v_male_rad = _mm_set1_ps(male_cylinder_radius);
+            const __m128 v_male_half = _mm_set1_ps(male_half);
+            const __m128 v_tan_socket = _mm_set1_ps(std::tan(socket_support_angle));
+            const __m128 v_socket_h = _mm_set1_ps(socket_h);
+
+            for (; x <= nx - simdW; x += simdW) {
+                float wx0 = begin.x + static_cast<float>(x + 0) * voxelSize.x;
+                float wx1 = begin.x + static_cast<float>(x + 1) * voxelSize.x;
+                float wx2 = begin.x + static_cast<float>(x + 2) * voxelSize.x;
+                float wx3 = begin.x + static_cast<float>(x + 3) * voxelSize.x;
+                __m128 v_wx = _mm_setr_ps(wx0, wx1, wx2, wx3);
+                __m128 v_wy = _mm_set1_ps(wy);
+                __m128 v_wz = _mm_set1_ps(wz);
+
+                __m128 dx = _mm_sub_ps(v_wx, v_origin_x);
+                __m128 dy = _mm_sub_ps(v_wy, v_origin_y);
+                __m128 dz = _mm_sub_ps(v_wz, v_origin_z);
+
+                __m128 px = _mm_add_ps(_mm_add_ps(_mm_mul_ps(dx, v_xax_x), _mm_mul_ps(dy, v_xax_y)), _mm_mul_ps(dz, v_xax_z));
+                __m128 py = _mm_add_ps(_mm_add_ps(_mm_mul_ps(dx, v_yax_x), _mm_mul_ps(dy, v_yax_y)), _mm_mul_ps(dz, v_yax_z));
+                __m128 pz = _mm_add_ps(_mm_add_ps(_mm_mul_ps(dx, v_zax_x), _mm_mul_ps(dy, v_zax_y)), _mm_mul_ps(dz, v_zax_z));
+
+                __m128 pz_so = _mm_sub_ps(pz, v_socket_off_z);
+                __m128 r = _mm_sqrt_ps(_mm_add_ps(_mm_mul_ps(px, px), _mm_mul_ps(py, py)));
+                __m128 socketv = _mm_sub_ps(r, _mm_mul_ps(pz_so, v_tan_socket));
+                socketv = _mm_max_ps(socketv, _mm_sub_ps(_mm_set1_ps(0.0f), pz_so));
+                socketv = _mm_max_ps(socketv, _mm_sub_ps(pz_so, v_socket_h));
+
+                __m128 r_cyl = _mm_sqrt_ps(_mm_add_ps(_mm_mul_ps(py, py), _mm_mul_ps(pz, pz)));
+                __m128 dx_c = _mm_sub_ps(r_cyl, v_male_rad);
+                __m128 abs_px = _mm_max_ps(_mm_sub_ps(_mm_set1_ps(0.0f), px), px);
+                __m128 dy_c = _mm_sub_ps(abs_px, v_male_half);
+                __m128 ax = _mm_max_ps(dx_c, _mm_set1_ps(0.0f));
+                __m128 ay = _mm_max_ps(dy_c, _mm_set1_ps(0.0f));
+                __m128 maxdxdy = _mm_max_ps(dx_c, dy_c);
+                __m128 sq = _mm_sqrt_ps(_mm_add_ps(_mm_mul_ps(ax, ax), _mm_mul_ps(ay, ay)));
+                __m128 cylv = _mm_add_ps(_mm_min_ps(maxdxdy, _mm_set1_ps(0.0f)), sq);
+
+                __m128 outv = _mm_max_ps(cylv, socketv); // opIntersection -> max
+                _mm_storeu_ps(&out[i], outv);
+                i += 4;
+            }
+
+            for (; x < nx; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                Vec3f world_p(wx, wy, wz);
+                Vec3f p = frame.worldToLocal(world_p);
+
+                float socket_h2 = socket_support_radius / std::tan(socket_support_angle);
+                Vec3f socket_off(0, 0, socket_support_offset);
+                float socket = sdFiniteCone(p - socket_off, socket_support_angle, socket_h2);
+
+                Vec3f cyl_off(0, 0, male_cylinder_offset);
+                float cyl = sdCappedCylinderX(p - cyl_off, male_cylinder_radius, effectiveHalfHeight());
+
+                out[i++] = opIntersection(cyl, socket);
+            }
+        }
+    }
+}
+#else
 void JointPositiveSDF::get(const Vec3f& begin,
                           const Vec3f& voxelSize,
                           const Vec3i& voxelCount,
@@ -319,6 +559,7 @@ void JointPositiveSDF::get(const Vec3f& begin,
         }
     }
 }
+#endif
 
 // ============================================================
 // Serialization helpers
