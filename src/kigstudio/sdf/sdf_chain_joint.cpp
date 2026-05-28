@@ -47,56 +47,6 @@ Frame buildFrameAlignedY(const Vec3f& start, const Vec3f& end) {
     return f;
 }
 
-float sdCappedCylinder(const Vec3f& p, float radius, float half_height) {
-    float dx = std::sqrt(p.x * p.x + p.y * p.y) - radius;
-    float dy = std::abs(p.z) - half_height;
-
-    float ax = std::max(dx, 0.0f);
-    float ay = std::max(dy, 0.0f);
-
-    return std::min(std::max(dx, dy), 0.0f) + std::sqrt(ax * ax + ay * ay);
-}
-
-float sdCappedCylinderX(const Vec3f& p, float radius, float half_height) {
-    float r = std::sqrt(p.y * p.y + p.z * p.z);
-    float dx = r - radius;
-    float dy = std::abs(p.x) - half_height;
-
-    float ax = std::max(dx, 0.0f);
-    float ay = std::max(dy, 0.0f);
-
-    return std::min(std::max(dx, dy), 0.0f) + std::sqrt(ax * ax + ay * ay);
-}
-
-float sdCone(const Vec3f& p, float angle_rad) {
-    float r = std::sqrt(p.x * p.x + p.y * p.y);
-
-    return r - p.z * std::tan(angle_rad);
-}
-
-float opUnion(float a, float b) {
-    return std::min(a, b);
-}
-
-float opSubtraction(float a, float b) {
-    return std::max(a, -b);
-}
-
-float opIntersection(float a, float b) {
-    return std::max(a, b);
-}
-
-float sdFiniteCone(const Vec3f& p, float angle_rad, float height) {
-    float cone = sdCone(p, angle_rad);
-
-    // Keep z >= 0 (above the vertex)
-    cone = opIntersection(cone, -p.z);
-    // Keep z <= height (below the truncation plane)
-    cone = opIntersection(cone, p.z - height);
-
-    return cone;
-}
-
 void appendJointWireframe(std::vector<std::pair<Vec3f, Vec3f>>& segments,
                           const JointNegativeSDF& neg,
                           const JointPositiveSDF& pos) {
@@ -192,17 +142,6 @@ void appendJointWireframe(std::vector<std::pair<Vec3f, Vec3f>>& segments,
     }
 }
 
-float SDF_FiniteCone::get(const Vec3f& p) const {
-    return sdFiniteCone(p, angle_rad, height);
-}
-
-float SDF_CappedCylinderX::get(const Vec3f& p) const {
-    return sdCappedCylinderX(p, radius, half_height);
-}
-float SDF_FrameTransform::get(const Vec3f& p) const {
-    return child->get(frame.worldToLocal(p));
-}
-
 std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> JointNegativeSDF::buildTree()
     const {
     using namespace sinriv::kigstudio::sdf;
@@ -238,7 +177,70 @@ std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> JointNegativeSDF::buildTree()
 }
 
 float JointNegativeSDF::get(const Vec3f& world_p) const {
-    return buildTree()->get(world_p);
+    using namespace sinriv::kigstudio::sdf;
+    Vec3f p = frame.worldToLocal(world_p);
+
+    float socket_h = socket_cone_radius / std::tan(socket_cone_angle);
+    Vec3f socket_off(0, 0, socket_cone_offset);
+    float socket = sdFiniteCone(p - socket_off, socket_cone_angle, socket_h);
+
+    float head_h = head_cone_radius / std::tan(socket_cone_angle);
+    Vec3f head_off(0, 0, head_cone_offset);
+    float head = sdFiniteCone(p - head_off, socket_cone_angle, head_h);
+    float head_inflated = head - slot_extra;
+
+    float slot = opSubtraction(socket, head_inflated);
+
+    Vec3f cyl_off(0, 0, male_cylinder_offset);
+    float cyl = sdCappedCylinderX(p - cyl_off, male_cylinder_radius + female_gap, male_cylinder_half_height);
+
+    float out = opUnion(cyl, slot);
+    return out;
+}
+
+void JointNegativeSDF::get(const Vec3f& begin,
+                          const Vec3f& voxelSize,
+                          const Vec3i& voxelCount,
+                          std::vector<float>& out) const {
+    using namespace sinriv::kigstudio::sdf;
+    if (voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
+        out.clear();
+        return;
+    }
+
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    size_t i = 0;
+    for (int z = 0; z < voxelCount.z; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < voxelCount.y; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            for (int x = 0; x < voxelCount.x; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                Vec3f world_p(wx, wy, wz);
+                Vec3f p = frame.worldToLocal(world_p);
+
+                float socket_h = socket_cone_radius / std::tan(socket_cone_angle);
+                Vec3f socket_off(0, 0, socket_cone_offset);
+                float socket = sdFiniteCone(p - socket_off, socket_cone_angle, socket_h);
+
+                float head_h = head_cone_radius / std::tan(socket_cone_angle);
+                Vec3f head_off(0, 0, head_cone_offset);
+                float head = sdFiniteCone(p - head_off, socket_cone_angle, head_h);
+                float head_inflated = head - slot_extra;
+
+                float slot = opSubtraction(socket, head_inflated);
+
+                Vec3f cyl_off(0, 0, male_cylinder_offset);
+                float cyl = sdCappedCylinderX(p - cyl_off, male_cylinder_radius + female_gap, male_cylinder_half_height);
+
+                out[i++] = opUnion(cyl, slot);
+            }
+        }
+    }
 }
 
 std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> JointPositiveSDF::buildTree()
@@ -266,7 +268,56 @@ std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> JointPositiveSDF::buildTree()
 }
 
 float JointPositiveSDF::get(const Vec3f& world_p) const {
-    return buildTree()->get(world_p);
+    using namespace sinriv::kigstudio::sdf;
+    Vec3f p = frame.worldToLocal(world_p);
+
+    float socket_h = socket_support_radius / std::tan(socket_support_angle);
+    Vec3f socket_off(0, 0, socket_support_offset);
+    float socket = sdFiniteCone(p - socket_off, socket_support_angle, socket_h);
+
+    Vec3f cyl_off(0, 0, male_cylinder_offset);
+    float cyl = sdCappedCylinderX(p - cyl_off, male_cylinder_radius, effectiveHalfHeight());
+
+    float out = opIntersection(cyl, socket);
+    return out;
+}
+
+void JointPositiveSDF::get(const Vec3f& begin,
+                          const Vec3f& voxelSize,
+                          const Vec3i& voxelCount,
+                          std::vector<float>& out) const {
+    using namespace sinriv::kigstudio::sdf;
+    if (voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
+        out.clear();
+        return;
+    }
+
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    size_t i = 0;
+    for (int z = 0; z < voxelCount.z; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < voxelCount.y; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            for (int x = 0; x < voxelCount.x; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                Vec3f world_p(wx, wy, wz);
+                Vec3f p = frame.worldToLocal(world_p);
+
+                float socket_h = socket_support_radius / std::tan(socket_support_angle);
+                Vec3f socket_off(0, 0, socket_support_offset);
+                float socket = sdFiniteCone(p - socket_off, socket_support_angle, socket_h);
+
+                Vec3f cyl_off(0, 0, male_cylinder_offset);
+                float cyl = sdCappedCylinderX(p - cyl_off, male_cylinder_radius, effectiveHalfHeight());
+
+                out[i++] = opIntersection(cyl, socket);
+            }
+        }
+    }
 }
 
 // ============================================================
@@ -313,74 +364,6 @@ Frame json_to_frame(const cJSON* json) {
 }
 
 }  // namespace
-
-// ============================================================
-// SDF_FiniteCone
-// ============================================================
-
-std::string SDF_FiniteCone::getInfo() const {
-    return "SDF_FiniteCone(angle=" + std::to_string(angle_rad) +
-           ", height=" + std::to_string(height) + ")";
-}
-
-cJSON* SDF_FiniteCone::toJSON() const {
-    cJSON* obj = cJSON_CreateObject();
-    cJSON_AddStringToObject(obj, "type", "finite_cone");
-    cJSON_AddNumberToObject(obj, "angle_rad", angle_rad);
-    cJSON_AddNumberToObject(obj, "height", height);
-    return obj;
-}
-
-void SDF_FiniteCone::fromJSON(const cJSON* json) {
-    angle_rad = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "angle_rad")));
-    height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "height")));
-}
-
-// ============================================================
-// SDF_CappedCylinderX
-// ============================================================
-
-std::string SDF_CappedCylinderX::getInfo() const {
-    return "SDF_CappedCylinderX(radius=" + std::to_string(radius) +
-           ", half_height=" + std::to_string(half_height) + ")";
-}
-
-cJSON* SDF_CappedCylinderX::toJSON() const {
-    cJSON* obj = cJSON_CreateObject();
-    cJSON_AddStringToObject(obj, "type", "capped_cylinder_x");
-    cJSON_AddNumberToObject(obj, "radius", radius);
-    cJSON_AddNumberToObject(obj, "half_height", half_height);
-    return obj;
-}
-
-void SDF_CappedCylinderX::fromJSON(const cJSON* json) {
-    radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "radius")));
-    half_height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "half_height")));
-}
-
-// ============================================================
-// SDF_FrameTransform
-// ============================================================
-
-std::string SDF_FrameTransform::getInfo() const {
-    return "SDF_FrameTransform(origin=" + std::to_string(frame.origin.x) + "," +
-           std::to_string(frame.origin.y) + "," + std::to_string(frame.origin.z) + ")";
-}
-
-cJSON* SDF_FrameTransform::toJSON() const {
-    cJSON* obj = cJSON_CreateObject();
-    cJSON_AddStringToObject(obj, "type", "frame_transform");
-    cJSON_AddItemToObject(obj, "frame", frame_to_json(frame));
-    if (child) cJSON_AddItemToObject(obj, "child", child->toJSON());
-    return obj;
-}
-
-void SDF_FrameTransform::fromJSON(const cJSON* json) {
-    const cJSON* frame_json = cJSON_GetObjectItem(json, "frame");
-    if (frame_json) frame = json_to_frame(frame_json);
-    const cJSON* cj = cJSON_GetObjectItem(json, "child");
-    if (cj) child = sinriv::kigstudio::sdf::sdf_from_json(cj);
-}
 
 // ============================================================
 // JointNegativeSDF
@@ -469,21 +452,6 @@ void JointPositiveSDF::fromJSON(const cJSON* json) {
 // ============================================================
 
 static bool _register_joint_types = []() {
-    sinriv::kigstudio::sdf::sdf_register_type("finite_cone", [](const cJSON* json) -> std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> {
-        auto obj = std::make_shared<SDF_FiniteCone>(0.0f, 0.0f);
-        obj->fromJSON(json);
-        return obj;
-    });
-    sinriv::kigstudio::sdf::sdf_register_type("capped_cylinder_x", [](const cJSON* json) -> std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> {
-        auto obj = std::make_shared<SDF_CappedCylinderX>(0.0f, 0.0f);
-        obj->fromJSON(json);
-        return obj;
-    });
-    sinriv::kigstudio::sdf::sdf_register_type("frame_transform", [](const cJSON* json) -> std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> {
-        auto obj = std::make_shared<SDF_FrameTransform>(Frame{}, nullptr);
-        obj->fromJSON(json);
-        return obj;
-    });
     sinriv::kigstudio::sdf::sdf_register_type("joint_negative", [](const cJSON* json) -> std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> {
         auto obj = std::make_shared<JointNegativeSDF>();
         obj->fromJSON(json);

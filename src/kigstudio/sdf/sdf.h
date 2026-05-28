@@ -66,6 +66,11 @@ struct SDF_bool : public SDFBase {
         return a;
     }
 
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
+
     std::string getInfo() const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
@@ -86,6 +91,10 @@ struct SDF_Translate : public SDFBase {
         : offset(offset), child(std::move(child)) {}
 
     float get(const Vec3f& p) const override { return child->get(p - offset); }
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
 
     std::string getInfo() const override;
     cJSON* toJSON() const override;
@@ -100,6 +109,10 @@ struct SDF_Offset : public SDFBase {
         : offset(offset), child(std::move(child)) {}
 
     float get(const Vec3f& p) const override { return child->get(p) - offset; }
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
 
     std::string getInfo() const override;
     cJSON* toJSON() const override;

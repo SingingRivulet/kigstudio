@@ -1,6 +1,13 @@
 #include "kigstudio/sdf/sdf.h"
+#include <cstdint>
 #include <cstring>
 #include <cmath>
+
+#if defined(_MSC_VER)
+#define KIGSTUDIO_SIMD_LOOP __pragma(loop(ivdep))
+#else
+#define KIGSTUDIO_SIMD_LOOP _Pragma("omp simd")
+#endif
 
 namespace sinriv::kigstudio::sdf {
 
@@ -50,6 +57,70 @@ void SDFBase::get(const Vec3f& begin,
 // ============================================================
 // SDF_bool
 // ============================================================
+
+void SDF_bool::get(const Vec3f& begin,
+                   const Vec3f& voxelSize,
+                   const Vec3i& voxelCount,
+                   std::vector<float>& out) const {
+    if (!left || !right) {
+        SDFBase::get(begin, voxelSize, voxelCount, out);
+        return;
+    }
+
+    left->get(begin, voxelSize, voxelCount, out);
+
+    std::vector<float> rhs;
+    right->get(begin, voxelSize, voxelCount, rhs);
+
+    const size_t count = std::min(out.size(), rhs.size());
+    float* out_data = out.data();
+    const float* rhs_data = rhs.data();
+    constexpr int64_t simd_block_size = 1024;
+    const int64_t block_count =
+        (static_cast<int64_t>(count) + simd_block_size - 1) / simd_block_size;
+
+    switch (op) {
+        case SDFBoolOp::Union:
+#pragma omp parallel for
+            for (int64_t block = 0; block < block_count; ++block) {
+                const int64_t begin_i = block * simd_block_size;
+                const int64_t end_i =
+                    std::min<int64_t>(begin_i + simd_block_size,
+                                      static_cast<int64_t>(count));
+                KIGSTUDIO_SIMD_LOOP
+                for (int64_t i = begin_i; i < end_i; ++i) {
+                    out_data[i] = std::min(out_data[i], rhs_data[i]);
+                }
+            }
+            break;
+        case SDFBoolOp::Intersection:
+#pragma omp parallel for
+            for (int64_t block = 0; block < block_count; ++block) {
+                const int64_t begin_i = block * simd_block_size;
+                const int64_t end_i =
+                    std::min<int64_t>(begin_i + simd_block_size,
+                                      static_cast<int64_t>(count));
+                KIGSTUDIO_SIMD_LOOP
+                for (int64_t i = begin_i; i < end_i; ++i) {
+                    out_data[i] = std::max(out_data[i], rhs_data[i]);
+                }
+            }
+            break;
+        case SDFBoolOp::Subtraction:
+#pragma omp parallel for
+            for (int64_t block = 0; block < block_count; ++block) {
+                const int64_t begin_i = block * simd_block_size;
+                const int64_t end_i =
+                    std::min<int64_t>(begin_i + simd_block_size,
+                                      static_cast<int64_t>(count));
+                KIGSTUDIO_SIMD_LOOP
+                for (int64_t i = begin_i; i < end_i; ++i) {
+                    out_data[i] = std::max(out_data[i], -rhs_data[i]);
+                }
+            }
+            break;
+    }
+}
 
 std::string SDF_bool::getInfo() const {
     const char* op_name = "Unknown";
@@ -118,6 +189,17 @@ std::string SDF_Translate::getInfo() const {
            std::to_string(offset.y) + "," + std::to_string(offset.z) + ")";
 }
 
+void SDF_Translate::get(const Vec3f& begin,
+                         const Vec3f& voxelSize,
+                         const Vec3i& voxelCount,
+                         std::vector<float>& out) const {
+    if (!child) {
+        out.clear();
+        return;
+    }
+    child->get(begin - offset, voxelSize, voxelCount, out);
+}
+
 cJSON* SDF_Translate::toJSON() const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "type", "translate");
@@ -147,6 +229,21 @@ void SDF_Translate::fromJSON(const cJSON* json) {
 
 std::string SDF_Offset::getInfo() const {
     return "SDF_Offset(offset=" + std::to_string(offset) + ")";
+}
+
+void SDF_Offset::get(const Vec3f& begin,
+                      const Vec3f& voxelSize,
+                      const Vec3i& voxelCount,
+                      std::vector<float>& out) const {
+    if (!child) {
+        out.clear();
+        return;
+    }
+    child->get(begin, voxelSize, voxelCount, out);
+    const size_t count = out.size();
+    for (size_t i = 0; i < count; ++i) {
+        out[i] -= offset;
+    }
 }
 
 cJSON* SDF_Offset::toJSON() const {
@@ -301,3 +398,5 @@ static bool _register_sdf_types = []() {
 }();
 
 }  // namespace sinriv::kigstudio::sdf
+
+#undef KIGSTUDIO_SIMD_LOOP

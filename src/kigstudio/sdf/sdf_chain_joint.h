@@ -4,7 +4,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
-#include "kigstudio/sdf/sdf.h"
+#include "kigstudio/sdf/sdf_shape.h"
 #include "kigstudio/utils/vec3.h"
 
 namespace sinriv::kigstudio::sdf::joint {
@@ -60,28 +60,11 @@ namespace sinriv::kigstudio::sdf::joint {
 // ============================================================
 
 using Vec3f = sinriv::kigstudio::vec3<float>;
+using Frame = sinriv::kigstudio::sdf::Frame;
 
 // ============================================================
 // Local Frame
 // ============================================================
-
-struct Frame {
-    Vec3f origin;
-
-    Vec3f x_axis;
-    Vec3f y_axis;
-    Vec3f z_axis;
-
-    inline Vec3f worldToLocal(const Vec3f& p) const {
-        Vec3f d = p - origin;
-
-        return {dot(d, x_axis), dot(d, y_axis), dot(d, z_axis)};
-    }
-
-    inline Vec3f localToWorld(const Vec3f& p) const {
-        return origin + x_axis * p.x + y_axis * p.y + z_axis * p.z;
-    }
-};
 
 Frame buildFrame(const Vec3f& start,
                  const Vec3f& end,
@@ -91,78 +74,6 @@ Frame buildFrame(const Vec3f& start,
 // and x-axis aligns with the world +Y axis (projected onto the plane
 // perpendicular to z). This makes the male cylinder point toward +Y.
 Frame buildFrameAlignedY(const Vec3f& start, const Vec3f& end);
-
-// ============================================================
-// SDF helpers
-// ============================================================
-
-float sdCappedCylinder(const Vec3f& p, float radius, float half_height);
-
-// Capped cylinder aligned with the local x-axis.
-// The cylinder axis passes through the origin and points along +x.
-float sdCappedCylinderX(const Vec3f& p, float radius, float half_height);
-
-// Infinite cone with vertex at origin, opening along +z.
-// angle_rad is the half-opening angle.
-float sdCone(const Vec3f& p, float angle_rad);
-
-float opUnion(float a, float b);
-
-float opSubtraction(float a, float b);
-
-float opIntersection(float a, float b);
-
-// Finite cone: vertex at origin, opening along +z, truncated at z = height.
-// The base radius at the truncation plane is height * tan(angle_rad).
-float sdFiniteCone(const Vec3f& p, float angle_rad, float height);
-
-// ============================================================
-// SDF Primitives (inherited from SDFBase)
-// ============================================================
-
-struct SDF_FiniteCone : public sinriv::kigstudio::sdf::SDFBase {
-    float angle_rad;
-    float height;
-
-    inline SDF_FiniteCone(float angle_rad, float height)
-        : angle_rad(angle_rad), height(height) {}
-
-    float get(const Vec3f& p) const override;
-
-    std::string getInfo() const override;
-    cJSON* toJSON() const override;
-    void fromJSON(const cJSON* json) override;
-};
-
-struct SDF_CappedCylinderX : public sinriv::kigstudio::sdf::SDFBase {
-    float radius;
-    float half_height;
-
-    inline SDF_CappedCylinderX(float radius, float half_height)
-        : radius(radius), half_height(half_height) {}
-
-    float get(const Vec3f& p) const override;
-
-    std::string getInfo() const override;
-    cJSON* toJSON() const override;
-    void fromJSON(const cJSON* json) override;
-};
-
-struct SDF_FrameTransform : public sinriv::kigstudio::sdf::SDFBase {
-    Frame frame;
-    std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> child;
-
-    inline SDF_FrameTransform(
-        const Frame& frame,
-        std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> child)
-        : frame(frame), child(std::move(child)) {}
-
-    float get(const Vec3f& p) const override;
-
-    std::string getInfo() const override;
-    cJSON* toJSON() const override;
-    void fromJSON(const cJSON* json) override;
-};
 
 // ============================================================
 // Negative Joint Volume
@@ -194,6 +105,10 @@ class JointNegativeSDF : public sinriv::kigstudio::sdf::SDFBase {
 
     std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> buildTree() const;
     float get(const Vec3f& world_p) const override;
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
 
     inline bool contains(const Vec3f& p) const { return get(p) <= 0.f; }
 
@@ -232,6 +147,10 @@ class JointPositiveSDF : public sinriv::kigstudio::sdf::SDFBase {
 
     std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> buildTree() const;
     float get(const Vec3f& world_p) const override;
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
 
     inline bool contains(const Vec3f& p) const { return get(p) <= 0.f; }
 
