@@ -473,7 +473,8 @@ void RenderVoxelList::RenderVoxelItem::rebuild_joint_wireframe() {
     }
 }
 
-sinriv::kigstudio::voxel::VoxelGrid
+std::pair<sinriv::kigstudio::voxel::VoxelGrid,
+          std::shared_ptr<sinriv::kigstudio::sdf::SDFBase>>
 RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
     using Vec3f = sinriv::kigstudio::sdf::joint::Vec3f;
     using Frame = sinriv::kigstudio::sdf::joint::Frame;
@@ -481,9 +482,10 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
     using Chunk = sinriv::kigstudio::voxel::Chunk;
 
     auto result = voxel_grid_data;
+    auto result_sdf = sdf_data;
 
     if (picked_skeleton_points.empty()) {
-        return result;
+        return {std::move(result), std::move(result_sdf)};
     }
 
     auto get_pos = [&](size_t idx) -> Vec3f {
@@ -574,6 +576,14 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
         pos.male_cylinder_offset = params.male_cylinder_offset;
         pos.male_cylinder_radius = params.male_cylinder_radius;
 
+        auto neg_ptr = std::make_shared<sinriv::kigstudio::sdf::joint::JointNegativeSDF>(neg);
+        auto pos_ptr = std::make_shared<sinriv::kigstudio::sdf::joint::JointPositiveSDF>(pos);
+        if (result_sdf) {
+            result_sdf = sinriv::kigstudio::sdf::sdf_union(
+                sinriv::kigstudio::sdf::sdf_subtraction(result_sdf, neg_ptr),
+                pos_ptr);
+        }
+
         {
             float socket_sup_h =
                 pos.socket_support_radius / std::tan(pos.socket_support_angle);
@@ -638,7 +648,7 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
         }
     }
 
-    return result;
+    return {std::move(result), std::move(result_sdf)};
 }
 
 void RenderVoxelList::begin_marked_edit(int item_id) {
