@@ -273,17 +273,58 @@ class SmoothMeshGenerator {
         return val;
     }
 
-    vec3f estimateNormal(const vec3f& p) const {
-        if (!computeNormals_ || !sdf_ptr_) {
+    float sampleCachedSDF(const ChunkSDFData& chunk_sdf,
+                          float x,
+                          float y,
+                          float z) const {
+        const float max_coord = static_cast<float>(chunk_sdf.size - 1);
+        x = std::clamp(x, 0.0f, max_coord);
+        y = std::clamp(y, 0.0f, max_coord);
+        z = std::clamp(z, 0.0f, max_coord);
+
+        int x0 = static_cast<int>(std::floor(x));
+        int y0 = static_cast<int>(std::floor(y));
+        int z0 = static_cast<int>(std::floor(z));
+        int x1 = std::min(x0 + 1, chunk_sdf.size - 1);
+        int y1 = std::min(y0 + 1, chunk_sdf.size - 1);
+        int z1 = std::min(z0 + 1, chunk_sdf.size - 1);
+
+        float tx = x - static_cast<float>(x0);
+        float ty = y - static_cast<float>(y0);
+        float tz = z - static_cast<float>(z0);
+
+        auto lerp = [](float a, float b, float t) {
+            return a + (b - a) * t;
+        };
+
+        float c00 =
+            lerp(chunk_sdf.get(x0, y0, z0), chunk_sdf.get(x1, y0, z0), tx);
+        float c10 =
+            lerp(chunk_sdf.get(x0, y1, z0), chunk_sdf.get(x1, y1, z0), tx);
+        float c01 =
+            lerp(chunk_sdf.get(x0, y0, z1), chunk_sdf.get(x1, y0, z1), tx);
+        float c11 =
+            lerp(chunk_sdf.get(x0, y1, z1), chunk_sdf.get(x1, y1, z1), tx);
+
+        float c0 = lerp(c00, c10, ty);
+        float c1 = lerp(c01, c11, ty);
+        return lerp(c0, c1, tz);
+    }
+
+    vec3f estimateNormal(const ChunkSDFData& chunk_sdf,
+                         float gx,
+                         float gy,
+                         float gz) const {
+        if (!computeNormals_) {
             return vec3f(0, 0, 0);
         }
 
-        float dx = sdf_ptr_->get(p.x + cell_size_x_, p.y, p.z) -
-                   sdf_ptr_->get(p.x - cell_size_x_, p.y, p.z);
-        float dy = sdf_ptr_->get(p.x, p.y + cell_size_y_, p.z) -
-                   sdf_ptr_->get(p.x, p.y - cell_size_y_, p.z);
-        float dz = sdf_ptr_->get(p.x, p.y, p.z + cell_size_z_) -
-                   sdf_ptr_->get(p.x, p.y, p.z - cell_size_z_);
+        float dx = sampleCachedSDF(chunk_sdf, gx + 1.0f, gy, gz) -
+                   sampleCachedSDF(chunk_sdf, gx - 1.0f, gy, gz);
+        float dy = sampleCachedSDF(chunk_sdf, gx, gy + 1.0f, gz) -
+                   sampleCachedSDF(chunk_sdf, gx, gy - 1.0f, gz);
+        float dz = sampleCachedSDF(chunk_sdf, gx, gy, gz + 1.0f) -
+                   sampleCachedSDF(chunk_sdf, gx, gy, gz - 1.0f);
 
         vec3f n(dx, dy, dz);
         if (n.length2() < 1e-12f) {
@@ -336,6 +377,15 @@ class SmoothMeshGenerator {
 
     void buildChunkSDF(int cx, int cy, int cz, ChunkSDFData& chunk_sdf) {
         int size = chunk_sdf.size;
+
+        if (sdf_ptr_) {
+            const vec3f begin = gridIndexToWorld(cx, cy, cz, 0.0f, 0.0f, 0.0f);
+            const vec3f voxel_size(cell_size_x_, cell_size_y_, cell_size_z_);
+            sdf_ptr_->get(begin, voxel_size, Vec3i(size, size, size),
+                          chunk_sdf.sdf);
+            return;
+        }
+
         int64_t total = int64_t(size) * size * size;
         int64_t count = 0;
         int64_t update_interval = std::max<int64_t>(1, total / 100);
@@ -439,9 +489,11 @@ class SmoothMeshGenerator {
                         continue;
 
                     vec3f local = centroid_of_edge_intersections(dists);
-                    vec3f world_pos = gridIndexToWorld(
-                        cx, cy, cz, x + local.x, y + local.y, z + local.z);
-                    vec3f normal = estimateNormal(world_pos);
+                    float gx = x + local.x;
+                    float gy = y + local.y;
+                    float gz = z + local.z;
+                    vec3f world_pos = gridIndexToWorld(cx, cy, cz, gx, gy, gz);
+                    vec3f normal = estimateNormal(chunk_sdf, gx, gy, gz);
 
                     uint32_t idx =
                         static_cast<uint32_t>(chunk_positions.size());

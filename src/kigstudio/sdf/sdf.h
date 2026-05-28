@@ -26,6 +26,10 @@ struct SDFBase {
     inline float get(float x, float y, float z) const {
         return get(Vec3f(x, y, z));
     }
+    virtual void get(const Vec3f& begin,
+                     const Vec3f& voxelSize,
+                     const Vec3i& voxelCount,
+                     std::vector<float>& out) const;
     virtual std::string getInfo() const = 0;
     virtual cJSON* toJSON() const = 0;
     virtual void fromJSON(const cJSON* json) = 0;

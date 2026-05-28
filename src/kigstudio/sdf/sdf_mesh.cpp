@@ -1,5 +1,9 @@
 #include "kigstudio/sdf/sdf_mesh.h"
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
+#include <variant>
 #include "kigstudio/utils/vec3.h"
 #include "kigstudio/voxel/voxel2mesh.h"
 
@@ -7,20 +11,29 @@
 #include <CGAL/AABB_tree.h>
 #include <CGAL/AABB_triangle_primitive_3.h>
 #include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
+#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
+#include <CGAL/Side_of_triangle_mesh.h>
 #include <CGAL/Simple_cartesian.h>
+#include <CGAL/Surface_mesh.h>
+#include <CGAL/boost/graph/helpers.h>
 
 namespace sinriv::kigstudio::sdf {
 
 using Kernel = CGAL::Simple_cartesian<double>;
 using Point_3 = Kernel::Point_3;
+using Ray_3 = Kernel::Ray_3;
+using Segment_3 = Kernel::Segment_3;
 using Triangle_3 = Kernel::Triangle_3;
+using Mesh = CGAL::Surface_mesh<Point_3>;
+using SideTester = CGAL::Side_of_triangle_mesh<Mesh, Kernel>;
 using Primitive =
     CGAL::AABB_triangle_primitive_3<Kernel, std::vector<Triangle_3>::iterator>;
 using Traits = CGAL::AABB_traits_3<Kernel, Primitive>;
 using Tree = CGAL::AABB_tree<Traits>;
 namespace PMP = CGAL::Polygon_mesh_processing;
 
-void orientTriangles(std::vector<Triangle_3>& triangles) {
+void buildMeshFromTriangles(std::vector<Triangle_3>& triangles, Mesh& mesh) {
     std::vector<Point_3> points;
     std::vector<std::vector<std::size_t>> polygons;
 
@@ -37,6 +50,7 @@ void orientTriangles(std::vector<Triangle_3>& triangles) {
         polygons.push_back({base + 0, base + 1, base + 2});
     }
 
+    PMP::merge_duplicate_points_in_polygon_soup(points, polygons);
     PMP::orient_polygon_soup(points, polygons);
 
     triangles.clear();
@@ -46,33 +60,231 @@ void orientTriangles(std::vector<Triangle_3>& triangles) {
         triangles.emplace_back(points[poly[0]], points[poly[1]],
                                points[poly[2]]);
     }
+
+    mesh.clear();
+    PMP::polygon_soup_to_polygon_mesh(points, polygons, mesh);
 }
 
 struct SDF_Mesh::Impl {
     std::vector<Triangle_3> triangles;
+    Mesh mesh;
     Tree tree;
+    std::unique_ptr<SideTester> side_tester;
+
+    void clear() {
+        tree.clear();
+        side_tester.reset();
+        mesh.clear();
+        triangles.clear();
+    }
+
+    void rebuild() {
+        mesh.clear();
+        tree.clear();
+        side_tester.reset();
+
+        if (triangles.empty())
+            return;
+
+        buildMeshFromTriangles(triangles, mesh);
+
+        tree.insert(triangles.begin(), triangles.end());
+        tree.build();
+        tree.accelerate_distance_queries();
+
+        if (CGAL::is_closed(mesh)) {
+            side_tester = std::make_unique<SideTester>(mesh);
+        }
+    }
 
     bool isInside(const Vec3f& p) const {
-        if (triangles.empty())
+        if (!side_tester)
             return false;
 
         Point_3 query(p.x, p.y, p.z);
+        return (*side_tester)(query) == CGAL::ON_BOUNDED_SIDE;
+    }
 
-        Kernel::Ray_3 ray_x(query, Kernel::Direction_3(1, 0, 0));
-        Kernel::Ray_3 ray_y(query, Kernel::Direction_3(0, 1, 0));
-        Kernel::Ray_3 ray_z(query, Kernel::Direction_3(0, 0, 1));
+    void getBatch(const Vec3f& begin,
+                  const Vec3f& voxelSize,
+                  const Vec3i& voxelCount,
+                  std::vector<float>& out) const {
+        const int sx = voxelCount.x;
+        const int sy = voxelCount.y;
+        const int sz = voxelCount.z;
+        const size_t total =
+            static_cast<size_t>(sx) * static_cast<size_t>(sy) *
+            static_cast<size_t>(sz);
+        out.resize(total);
 
-        std::size_t count_x = tree.number_of_intersected_primitives(ray_x);
-        std::size_t count_y = tree.number_of_intersected_primitives(ray_y);
-        std::size_t count_z = tree.number_of_intersected_primitives(ray_z);
+        if (triangles.empty()) {
+            std::fill(out.begin(), out.end(), 1e6f);
+            return;
+        }
 
-        bool inside_x = (count_x % 2) == 1;
-        bool inside_y = (count_y % 2) == 1;
-        bool inside_z = (count_z % 2) == 1;
+#pragma omp parallel for
+        for (int64_t i = 0; i < static_cast<int64_t>(total); ++i) {
+            int x = static_cast<int>(i % sx);
+            int y = static_cast<int>((i / sx) % sy);
+            int z = static_cast<int>(i / (static_cast<int64_t>(sx) * sy));
 
-        int inside_count =
-            (inside_x ? 1 : 0) + (inside_y ? 1 : 0) + (inside_z ? 1 : 0);
-        return inside_count >= 2;
+            Point_3 query(begin.x + static_cast<float>(x) * voxelSize.x,
+                          begin.y + static_cast<float>(y) * voxelSize.y,
+                          begin.z + static_cast<float>(z) * voxelSize.z);
+            double dist = std::sqrt(tree.squared_distance(query));
+            out[static_cast<size_t>(i)] = static_cast<float>(dist);
+        }
+
+        if (!side_tester || sx <= 0 || sy <= 0 || sz <= 0)
+            return;
+
+        std::vector<uint8_t> inside_votes(total, 0);
+        const auto index = [sx, sy](int x, int y, int z) {
+            return (static_cast<size_t>(z) * sy + y) * sx + x;
+        };
+
+        const auto bbox = tree.bbox();
+
+        auto get_intersections = [&](const Ray_3& ray, int axis,
+                                     double unique_eps) {
+            std::vector<Tree::Intersection_and_primitive_id<Ray_3>::Type>
+                intersections;
+            tree.all_intersections(ray, std::back_inserter(intersections));
+
+            std::vector<double> coords;
+            coords.reserve(intersections.size() * 2);
+            for (const auto& item : intersections) {
+                if (const auto* p = std::get_if<Point_3>(&item.first)) {
+                    coords.push_back(axis == 0 ? p->x()
+                                     : axis == 1 ? p->y()
+                                                 : p->z());
+                } else if (const auto* s = std::get_if<Segment_3>(&item.first)) {
+                    coords.push_back(axis == 0 ? s->source().x()
+                                     : axis == 1 ? s->source().y()
+                                                 : s->source().z());
+                    coords.push_back(axis == 0 ? s->target().x()
+                                     : axis == 1 ? s->target().y()
+                                                 : s->target().z());
+                }
+            }
+
+            std::sort(coords.begin(), coords.end());
+            coords.erase(std::unique(coords.begin(), coords.end(),
+                                     [&](double a, double b) {
+                                         return std::abs(a - b) <= unique_eps;
+                                     }),
+                         coords.end());
+            return coords;
+        };
+
+        const double ray_x =
+            bbox.xmin() - std::max<double>(std::abs(voxelSize.x), 1.0) * 2.0 -
+            1e-6;
+        const double eps_x =
+            std::max<double>(std::abs(voxelSize.x) * 1e-5, 1e-7);
+
+#pragma omp parallel for collapse(2)
+        for (int z = 0; z < sz; ++z) {
+            for (int y = 0; y < sy; ++y) {
+                const double wy =
+                    begin.y + static_cast<double>(y) * voxelSize.y;
+                const double wz =
+                    begin.z + static_cast<double>(z) * voxelSize.z;
+
+                Ray_3 ray(Point_3(ray_x, wy, wz), Kernel::Direction_3(1, 0, 0));
+                std::vector<double> xs = get_intersections(ray, 0, eps_x);
+
+                bool inside = false;
+                size_t hit = 0;
+                for (int x = 0; x < sx; ++x) {
+                    const double wx =
+                        begin.x + static_cast<double>(x) * voxelSize.x;
+                    while (hit < xs.size() && xs[hit] < wx - eps_x) {
+                        inside = !inside;
+                        ++hit;
+                    }
+
+                    if (inside) {
+                        inside_votes[index(x, y, z)]++;
+                    }
+                }
+            }
+        }
+
+        const double ray_y =
+            bbox.ymin() - std::max<double>(std::abs(voxelSize.y), 1.0) * 2.0 -
+            1e-6;
+        const double eps_y =
+            std::max<double>(std::abs(voxelSize.y) * 1e-5, 1e-7);
+
+#pragma omp parallel for collapse(2)
+        for (int z = 0; z < sz; ++z) {
+            for (int x = 0; x < sx; ++x) {
+                const double wx =
+                    begin.x + static_cast<double>(x) * voxelSize.x;
+                const double wz =
+                    begin.z + static_cast<double>(z) * voxelSize.z;
+
+                Ray_3 ray(Point_3(wx, ray_y, wz), Kernel::Direction_3(0, 1, 0));
+                std::vector<double> ys = get_intersections(ray, 1, eps_y);
+
+                bool inside = false;
+                size_t hit = 0;
+                for (int y = 0; y < sy; ++y) {
+                    const double wy =
+                        begin.y + static_cast<double>(y) * voxelSize.y;
+                    while (hit < ys.size() && ys[hit] < wy - eps_y) {
+                        inside = !inside;
+                        ++hit;
+                    }
+
+                    if (inside) {
+                        inside_votes[index(x, y, z)]++;
+                    }
+                }
+            }
+        }
+
+        const double ray_z =
+            bbox.zmin() - std::max<double>(std::abs(voxelSize.z), 1.0) * 2.0 -
+            1e-6;
+        const double eps_z =
+            std::max<double>(std::abs(voxelSize.z) * 1e-5, 1e-7);
+
+#pragma omp parallel for collapse(2)
+        for (int y = 0; y < sy; ++y) {
+            for (int x = 0; x < sx; ++x) {
+                const double wx =
+                    begin.x + static_cast<double>(x) * voxelSize.x;
+                const double wy =
+                    begin.y + static_cast<double>(y) * voxelSize.y;
+
+                Ray_3 ray(Point_3(wx, wy, ray_z), Kernel::Direction_3(0, 0, 1));
+                std::vector<double> zs = get_intersections(ray, 2, eps_z);
+
+                bool inside = false;
+                size_t hit = 0;
+                for (int z = 0; z < sz; ++z) {
+                    const double wz =
+                        begin.z + static_cast<double>(z) * voxelSize.z;
+                    while (hit < zs.size() && zs[hit] < wz - eps_z) {
+                        inside = !inside;
+                        ++hit;
+                    }
+
+                    if (inside) {
+                        inside_votes[index(x, y, z)]++;
+                    }
+                }
+            }
+        }
+
+#pragma omp parallel for
+        for (int64_t i = 0; i < static_cast<int64_t>(total); ++i) {
+            if (inside_votes[static_cast<size_t>(i)] >= 2) {
+                out[static_cast<size_t>(i)] = -out[static_cast<size_t>(i)];
+            }
+        }
     }
 };
 
@@ -82,8 +294,7 @@ SDF_Mesh::~SDF_Mesh() = default;
 
 bool SDF_Mesh::loadSTL(const std::string& filename) {
     path = filename;
-    impl->triangles.clear();
-    impl->tree.clear();
+    impl->clear();
 
     for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(filename)) {
         auto& [a, b, c] = tri;
@@ -95,10 +306,7 @@ bool SDF_Mesh::loadSTL(const std::string& filename) {
     if (impl->triangles.empty()) {
         return false;
     }
-    orientTriangles(impl->triangles);
-    impl->tree.insert(impl->triangles.begin(), impl->triangles.end());
-    impl->tree.build();
-    impl->tree.accelerate_distance_queries();
+    impl->rebuild();
     return true;
 }
 
@@ -117,6 +325,18 @@ float SDF_Mesh::get(const Vec3f& p) const {
 
     bool inside = impl->isInside(p);
     return inside ? -static_cast<float>(dist) : static_cast<float>(dist);
+}
+
+void SDF_Mesh::get(const Vec3f& begin,
+                   const Vec3f& voxelSize,
+                   const Vec3i& voxelCount,
+                   std::vector<float>& out) const {
+    if (voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
+        out.clear();
+        return;
+    }
+
+    impl->getBatch(begin, voxelSize, voxelCount, out);
 }
 
 std::string SDF_Mesh::getInfo() const {
@@ -153,8 +373,7 @@ cJSON* SDF_Mesh::toJSON() const {
 void SDF_Mesh::fromJSON(const cJSON* json) {
     const cJSON* tri_array = cJSON_GetObjectItem(json, "triangles");
     if (tri_array && cJSON_IsArray(tri_array)) {
-        impl->triangles.clear();
-        impl->tree.clear();
+        impl->clear();
         int tri_count = cJSON_GetArraySize(tri_array);
         for (int i = 0; i < tri_count; ++i) {
             cJSON* t = cJSON_GetArrayItem(tri_array, i);
@@ -173,9 +392,7 @@ void SDF_Mesh::fromJSON(const cJSON* json) {
                 Point_3(ax, ay, az), Point_3(bx, by, bz), Point_3(cx, cy, cz));
         }
         if (!impl->triangles.empty()) {
-            impl->tree.insert(impl->triangles.begin(), impl->triangles.end());
-            impl->tree.build();
-            impl->tree.accelerate_distance_queries();
+            impl->rebuild();
         }
         path.clear();
     } else {

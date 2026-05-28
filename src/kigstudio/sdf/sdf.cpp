@@ -25,6 +25,28 @@ std::shared_ptr<SDFBase> sdf_from_json(const cJSON* json) {
     return it->second(json);
 }
 
+void SDFBase::get(const Vec3f& begin,
+                  const Vec3f& voxelSize,
+                  const Vec3i& voxelCount,
+                  std::vector<float>& out) const {
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    size_t i = 0;
+    for (int z = 0; z < voxelCount.z; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < voxelCount.y; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            for (int x = 0; x < voxelCount.x; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                out[i++] = get(Vec3f(wx, wy, wz));
+            }
+        }
+    }
+}
+
 // ============================================================
 // SDF_bool
 // ============================================================
