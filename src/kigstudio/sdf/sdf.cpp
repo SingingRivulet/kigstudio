@@ -180,6 +180,81 @@ std::shared_ptr<SDF_bool> sdf_subtraction(
                                        std::move(a), std::move(b));
 }
 
+std::shared_ptr<SDFBase> sdf_group(std::vector<std::shared_ptr<SDFBase>> children) {
+    return std::make_shared<SDF_Group>(std::move(children));
+}
+
+// ============================================================
+// SDF_Group
+// ============================================================
+
+float SDF_Group::get(const Vec3f& p) const {
+    if (children.empty())
+        return std::numeric_limits<float>::infinity();
+    float result = std::numeric_limits<float>::infinity();
+    for (const auto& child : children) {
+        if (!child) continue;
+        result = std::min(result, child->get(p));
+    }
+    return result;
+}
+
+void SDF_Group::get(const Vec3f& begin,
+                    const Vec3f& voxelSize,
+                    const Vec3i& voxelCount,
+                    std::vector<float>& out) const {
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.assign(total, std::numeric_limits<float>::infinity());
+    if (children.empty())
+        return;
+
+    std::vector<float> child_out;
+    for (const auto& child : children) {
+        if (!child)
+            continue;
+        child->get(begin, voxelSize, voxelCount, child_out);
+        const size_t count = std::min(out.size(), child_out.size());
+        for (size_t i = 0; i < count; ++i) {
+            out[i] = std::min(out[i], child_out[i]);
+        }
+    }
+}
+
+std::string SDF_Group::getInfo() const {
+    return "SDF_Group(" + std::to_string(children.size()) + " children)";
+}
+
+cJSON* SDF_Group::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "group");
+    cJSON* arr = cJSON_CreateArray();
+    for (const auto& child : children) {
+        if (child)
+            cJSON_AddItemToArray(arr, child->toJSON());
+    }
+    cJSON_AddItemToObject(obj, "children", arr);
+    return obj;
+}
+
+void SDF_Group::fromJSON(const cJSON* json) {
+    children.clear();
+    const cJSON* arr = cJSON_GetObjectItem(json, "children");
+    if (!arr)
+        return;
+    int count = cJSON_GetArraySize(arr);
+    children.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        const cJSON* item = cJSON_GetArrayItem(arr, i);
+        if (!item)
+            continue;
+        auto child = sdf_from_json(item);
+        if (child)
+            children.push_back(std::move(child));
+    }
+}
+
 // ============================================================
 // SDF_Translate
 // ============================================================
@@ -391,6 +466,11 @@ static bool _register_sdf_types = []() {
     });
     sdf_register_type("grid", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
         auto obj = std::make_shared<SDFGrid>();
+        obj->fromJSON(json);
+        return obj;
+    });
+    sdf_register_type("group", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
+        auto obj = std::make_shared<SDF_Group>(std::vector<std::shared_ptr<SDFBase>>());
         obj->fromJSON(json);
         return obj;
     });

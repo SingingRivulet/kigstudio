@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -82,6 +83,25 @@ std::shared_ptr<SDF_bool> sdf_intersection(std::shared_ptr<SDFBase> a,
                                            std::shared_ptr<SDFBase> b);
 std::shared_ptr<SDF_bool> sdf_subtraction(std::shared_ptr<SDFBase> a,
                                           std::shared_ptr<SDFBase> b);
+std::shared_ptr<SDFBase> sdf_group(std::vector<std::shared_ptr<SDFBase>> children);
+
+struct SDF_Group : public SDFBase {
+    std::vector<std::shared_ptr<SDFBase>> children;
+
+    SDF_Group() = default;
+    explicit SDF_Group(std::vector<std::shared_ptr<SDFBase>> children)
+        : children(std::move(children)) {}
+
+    float get(const Vec3f& p) const override;
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
+};
 
 struct SDF_Translate : public SDFBase {
     Vec3f offset;
