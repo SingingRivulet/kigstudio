@@ -8,6 +8,7 @@
 #include <vector>
 #include "kigstudio/utils/mat.h"
 #include "kigstudio/utils/vec3.h"
+#include "kigstudio/sdf/sdf_shape.h"
 
 namespace sinriv::kigstudio {
 namespace voxel::collision {
@@ -37,152 +38,31 @@ inline vec3f closestPointOnSegment(const vec3f& point,
     return start + segment * t;
 }
 
-struct Sphere {
-    vec3f center = {0.0f, 0.0f, 0.0f};
-    float radius = 0.0f;
-
+struct Sphere : public sinriv::kigstudio::sdf::SDF_Sphere {
+    using sinriv::kigstudio::sdf::SDF_Sphere::SDF_Sphere;
     inline bool contains(const vec3f& point) const {
-        return lengthSquared(point - center) <= radius * radius;
+        return get(point) <= 0.0f;
     }
 };
 
-struct Cylinder {
-    vec3f start = {0.0f, 0.0f, 0.0f};
-    vec3f end = {0.0f, 0.0f, 0.0f};
-    float radius = 0.0f;
-
+struct Cylinder : public sinriv::kigstudio::sdf::SDF_Cylinder {
+    using sinriv::kigstudio::sdf::SDF_Cylinder::SDF_Cylinder;
     inline bool contains(const vec3f& point) const {
-        const vec3f axis = end - start;
-        const float axis_length_sq = lengthSquared(axis);
-
-        if (axis_length_sq <= 0.0f) {
-            return lengthSquared(point - start) <= radius * radius;
-        }
-
-        const float t = (point - start).dot(axis) / axis_length_sq;
-        if (t < 0.0f || t > 1.0f) {
-            return false;
-        }
-
-        const vec3f closest = start + axis * t;
-        return lengthSquared(point - closest) <= radius * radius;
-    }
-    inline Cylinder(const vec3f& start, const vec3f& end, float radius)
-        : start(start), end(end), radius(radius) {}
-    inline Cylinder() = default;
-    inline Cylinder(const vec3f& p0,
-                    const vec3f& p1,
-                    const vec3f& p2,
-                    const vec3f& p3,
-                    const vec3f& p4) {
-        // --- Step 1: 底面圆拟合 (p0, p1, p2) ---
-        const vec3f v1 = p1 - p0;
-        const vec3f v2 = p2 - p0;
-
-        const vec3f normal = v1.cross(v2).normalize();
-
-        // 在平面内求圆心（用垂直平分线法）
-        const vec3f mid1 = (p0 + p1) * 0.5f;
-        const vec3f mid2 = (p0 + p2) * 0.5f;
-
-        const vec3f dir1 = normal.cross(v1).normalize();
-        const vec3f dir2 = normal.cross(v2).normalize();
-
-        // 解两条线交点: mid1 + t1 * dir1 = mid2 + t2 * dir2
-        const vec3f r = mid2 - mid1;
-
-        const float a = dir1.dot(dir1);
-        const float b = dir1.dot(dir2);
-        const float c = dir2.dot(dir2);
-        const float d = dir1.dot(r);
-        const float e = dir2.dot(r);
-
-        const float denom = a * c - b * b;
-
-        float t1 = 0.0f;
-        if (std::abs(denom) > 1e-6f) {
-            t1 = (d * c - b * e) / denom;
-        }
-
-        const vec3f center_bottom = mid1 + dir1 * t1;
-
-        // 半径
-        radius = sqrt(lengthSquared(p0 - center_bottom));
-
-        // --- Step 2: 顶部中心 ---
-        const vec3f center_top = (p3 + p4) * 0.5f;
-
-        start = center_bottom;
-        end = center_top;
+        return get(point) <= 0.0f;
     }
 };
 
-struct Capsule {
-    vec3f start = {0.0f, 0.0f, 0.0f};
-    vec3f end = {0.0f, 0.0f, 0.0f};
-    float radius = 0.0f;
-
-    inline Capsule(const vec3f& start, const vec3f& end, float radius)
-        : start(start), end(end), radius(radius) {}
-    inline Capsule() = default;
-    inline Capsule(const vec3f& p0,
-                   const vec3f& p1,
-                   const vec3f& p2,
-                   const vec3f& p3,
-                   const vec3f& p4) {
-        // --- Step 1: 底面圆拟合 (p0, p1, p2) ---
-        const vec3f v1 = p1 - p0;
-        const vec3f v2 = p2 - p0;
-
-        const vec3f normal = v1.cross(v2).normalize();
-
-        // 在平面内求圆心（用垂直平分线法）
-        const vec3f mid1 = (p0 + p1) * 0.5f;
-        const vec3f mid2 = (p0 + p2) * 0.5f;
-
-        const vec3f dir1 = normal.cross(v1).normalize();
-        const vec3f dir2 = normal.cross(v2).normalize();
-
-        // 解两条线交点: mid1 + t1 * dir1 = mid2 + t2 * dir2
-        const vec3f r = mid2 - mid1;
-
-        const float a = dir1.dot(dir1);
-        const float b = dir1.dot(dir2);
-        const float c = dir2.dot(dir2);
-        const float d = dir1.dot(r);
-        const float e = dir2.dot(r);
-
-        const float denom = a * c - b * b;
-
-        float t1 = 0.0f;
-        if (std::abs(denom) > 1e-6f) {
-            t1 = (d * c - b * e) / denom;
-        }
-
-        const vec3f center_bottom = mid1 + dir1 * t1;
-
-        // 半径
-        radius = sqrt(lengthSquared(p0 - center_bottom));
-
-        // --- Step 2: 顶部中心 ---
-        const vec3f center_top = (p3 + p4) * 0.5f;
-
-        start = center_bottom;
-        end = center_top;
-    }
+struct Capsule : public sinriv::kigstudio::sdf::SDF_Capsule {
+    using sinriv::kigstudio::sdf::SDF_Capsule::SDF_Capsule;
     inline bool contains(const vec3f& point) const {
-        const vec3f closest = closestPointOnSegment(point, start, end);
-        return lengthSquared(point - closest) <= radius * radius;
+        return get(point) <= 0.0f;
     }
 };
 
-struct Box {
-    vec3f half_extent = {0.0f, 0.0f, 0.0f};
-
+struct Box : public sinriv::kigstudio::sdf::SDF_Box {
+    using sinriv::kigstudio::sdf::SDF_Box::SDF_Box;
     inline bool contains(const vec3f& point) const {
-        return std::fabs(point.x) <= half_extent.x &&
-               std::fabs(point.y) <= half_extent.y &&
-               std::fabs(point.z) <= half_extent.z;
+        return get(point) <= 0.0f;
     }
 };
 

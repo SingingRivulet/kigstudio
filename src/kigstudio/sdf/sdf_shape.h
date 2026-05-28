@@ -38,7 +38,9 @@ inline float sdCappedCylinder(const Vec3f& p, float radius, float half_height) {
     return std::min(std::max(dx, dy), 0.0f) + std::sqrt(ax * ax + ay * ay);
 }
 
-inline float sdCappedCylinderX(const Vec3f& p, float radius, float half_height) {
+inline float sdCappedCylinderX(const Vec3f& p,
+                               float radius,
+                               float half_height) {
     float r = std::sqrt(p.y * p.y + p.z * p.z);
     float dx = r - radius;
     float dy = std::abs(p.x) - half_height;
@@ -54,9 +56,15 @@ inline float sdCone(const Vec3f& p, float angle_rad) {
     return r - p.z * std::tan(angle_rad);
 }
 
-inline float opUnion(float a, float b) { return std::min(a, b); }
-inline float opSubtraction(float a, float b) { return std::max(a, -b); }
-inline float opIntersection(float a, float b) { return std::max(a, b); }
+inline float opUnion(float a, float b) {
+    return std::min(a, b);
+}
+inline float opSubtraction(float a, float b) {
+    return std::max(a, -b);
+}
+inline float opIntersection(float a, float b) {
+    return std::max(a, b);
+}
 
 inline float sdFiniteCone(const Vec3f& p, float angle_rad, float height) {
     float cone = sdCone(p, angle_rad);
@@ -64,6 +72,130 @@ inline float sdFiniteCone(const Vec3f& p, float angle_rad, float height) {
     cone = opIntersection(cone, p.z - height);
     return cone;
 }
+
+inline float sdSphere(const Vec3f& p, float radius) {
+    return std::sqrt(dot(p, p)) - radius;
+}
+
+inline float sdSegment(const Vec3f& p, const Vec3f& a, const Vec3f& b) {
+    Vec3f ab = b - a;
+    float denom = dot(ab, ab);
+    float t = 0.0f;
+    if (denom > 0.0f) {
+        t = dot(p - a, ab) / denom;
+        t = std::max(0.0f, std::min(1.0f, t));
+    }
+    Vec3f closest = a + ab * t;
+    return std::sqrt(dot(p - closest, p - closest));
+}
+
+inline float sdCylinder(const Vec3f& p,
+                        const Vec3f& start,
+                        const Vec3f& end,
+                        float radius) {
+    return sdSegment(p, start, end) - radius;
+}
+
+inline float sdCapsule(const Vec3f& p,
+                       const Vec3f& start,
+                       const Vec3f& end,
+                       float radius) {
+    return sdSegment(p, start, end) - radius;
+}
+
+inline float sdBox(const Vec3f& p, const Vec3f& half_extent) {
+    Vec3f d(
+        std::fabs(p.x) - half_extent.x,
+        std::fabs(p.y) - half_extent.y,
+        std::fabs(p.z) - half_extent.z);
+    float outside = std::sqrt(
+        fmaxf(d.x, 0.0f) * fmaxf(d.x, 0.0f) +
+        fmaxf(d.y, 0.0f) * fmaxf(d.y, 0.0f) +
+        fmaxf(d.z, 0.0f) * fmaxf(d.z, 0.0f));
+    return fminf(fmaxf(d.x, fmaxf(d.y, d.z)), 0.0f) + outside;
+}
+
+struct SDF_Box : public SDFBase {
+    Vec3f half_extent;
+
+    inline SDF_Box() : half_extent(0.0f, 0.0f, 0.0f) {}
+    inline SDF_Box(const Vec3f& half_extent) : half_extent(half_extent) {}
+
+    float get(const Vec3f& p) const override;
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
+    inline bool contains(const Vec3f& p) const { return get(p) <= 0.0f; }
+};
+
+struct SDF_Sphere : public SDFBase {
+    Vec3f center;
+    float radius;
+
+    inline SDF_Sphere() : center(0.0f, 0.0f, 0.0f), radius(0.0f) {}
+    inline SDF_Sphere(const Vec3f& center, float radius)
+        : center(center), radius(radius) {}
+
+    float get(const Vec3f& p) const override;
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
+    inline bool contains(const Vec3f& p) const { return get(p) <= 0.0f; }
+};
+
+struct SDF_Cylinder : public SDFBase {
+    Vec3f start;
+    Vec3f end;
+    float radius;
+
+    inline SDF_Cylinder()
+        : start(0.0f, 0.0f, 0.0f), end(0.0f, 0.0f, 0.0f), radius(0.0f) {}
+    inline SDF_Cylinder(const Vec3f& start, const Vec3f& end, float radius)
+        : start(start), end(end), radius(radius) {}
+
+    float get(const Vec3f& p) const override;
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
+    inline bool contains(const Vec3f& p) const { return get(p) <= 0.0f; }
+};
+
+struct SDF_Capsule : public SDFBase {
+    Vec3f start;
+    Vec3f end;
+    float radius;
+
+    inline SDF_Capsule()
+        : start(0.0f, 0.0f, 0.0f), end(0.0f, 0.0f, 0.0f), radius(0.0f) {}
+    inline SDF_Capsule(const Vec3f& start, const Vec3f& end, float radius)
+        : start(start), end(end), radius(radius) {}
+
+    float get(const Vec3f& p) const override;
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
+    inline bool contains(const Vec3f& p) const { return get(p) <= 0.0f; }
+};
 
 struct SDF_FiniteCone final : public SDFBase {
     float angle_rad;

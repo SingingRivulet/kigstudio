@@ -2,6 +2,9 @@
 
 namespace sinriv::kigstudio::sdf {
 
+static cJSON* vec3_to_json(const Vec3f& v);
+static Vec3f json_to_vec3(const cJSON* json);
+
 float SDF_FiniteCone::get(const Vec3f& p) const {
     return sdFiniteCone(p, angle_rad, height);
 }
@@ -77,6 +80,218 @@ void SDF_CappedCylinderX::get(const Vec3f& begin,
                               const Vec3f& voxelSize,
                               const Vec3i& voxelCount,
                               std::vector<float>& out) const {
+    if (voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
+        out.clear();
+        return;
+    }
+
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    size_t i = 0;
+    for (int z = 0; z < voxelCount.z; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < voxelCount.y; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            for (int x = 0; x < voxelCount.x; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                out[i++] = get(Vec3f(wx, wy, wz));
+            }
+        }
+    }
+}
+
+float SDF_Sphere::get(const Vec3f& p) const {
+    return sdSphere(p - center, radius);
+}
+
+std::string SDF_Sphere::getInfo() const {
+    return "SDF_Sphere(center=(" + std::to_string(center.x) + "," +
+           std::to_string(center.y) + "," + std::to_string(center.z) +
+           "), radius=" + std::to_string(radius) + ")";
+}
+
+cJSON* SDF_Sphere::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "sphere");
+    cJSON_AddItemToObject(obj, "center", vec3_to_json(center));
+    cJSON_AddNumberToObject(obj, "radius", radius);
+    return obj;
+}
+
+void SDF_Sphere::fromJSON(const cJSON* json) {
+    const cJSON* center_json = cJSON_GetObjectItem(json, "center");
+    if (center_json) center = json_to_vec3(center_json);
+    radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "radius")));
+}
+
+void SDF_Sphere::get(const Vec3f& begin,
+                     const Vec3f& voxelSize,
+                     const Vec3i& voxelCount,
+                     std::vector<float>& out) const {
+    if (voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
+        out.clear();
+        return;
+    }
+
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    size_t i = 0;
+    for (int z = 0; z < voxelCount.z; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < voxelCount.y; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            for (int x = 0; x < voxelCount.x; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                out[i++] = get(Vec3f(wx, wy, wz));
+            }
+        }
+    }
+}
+
+float SDF_Cylinder::get(const Vec3f& p) const {
+    return sdCylinder(p, start, end, radius);
+}
+
+std::string SDF_Cylinder::getInfo() const {
+    return "SDF_Cylinder(start=(" + std::to_string(start.x) + "," +
+           std::to_string(start.y) + "," + std::to_string(start.z) +
+           "), end=(" + std::to_string(end.x) + "," +
+           std::to_string(end.y) + "," + std::to_string(end.z) +
+           "), radius=" + std::to_string(radius) + ")";
+}
+
+cJSON* SDF_Cylinder::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "cylinder");
+    cJSON_AddItemToObject(obj, "start", vec3_to_json(start));
+    cJSON_AddItemToObject(obj, "end", vec3_to_json(end));
+    cJSON_AddNumberToObject(obj, "radius", radius);
+    return obj;
+}
+
+void SDF_Cylinder::fromJSON(const cJSON* json) {
+    const cJSON* start_json = cJSON_GetObjectItem(json, "start");
+    if (start_json) start = json_to_vec3(start_json);
+    const cJSON* end_json = cJSON_GetObjectItem(json, "end");
+    if (end_json) end = json_to_vec3(end_json);
+    radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "radius")));
+}
+
+void SDF_Cylinder::get(const Vec3f& begin,
+                      const Vec3f& voxelSize,
+                      const Vec3i& voxelCount,
+                      std::vector<float>& out) const {
+    if (voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
+        out.clear();
+        return;
+    }
+
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    size_t i = 0;
+    for (int z = 0; z < voxelCount.z; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < voxelCount.y; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            for (int x = 0; x < voxelCount.x; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                out[i++] = get(Vec3f(wx, wy, wz));
+            }
+        }
+    }
+}
+
+float SDF_Capsule::get(const Vec3f& p) const {
+    return sdCapsule(p, start, end, radius);
+}
+
+std::string SDF_Capsule::getInfo() const {
+    return "SDF_Capsule(start=(" + std::to_string(start.x) + "," +
+           std::to_string(start.y) + "," + std::to_string(start.z) +
+           "), end=(" + std::to_string(end.x) + "," +
+           std::to_string(end.y) + "," + std::to_string(end.z) +
+           "), radius=" + std::to_string(radius) + ")";
+}
+
+cJSON* SDF_Capsule::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "capsule");
+    cJSON_AddItemToObject(obj, "start", vec3_to_json(start));
+    cJSON_AddItemToObject(obj, "end", vec3_to_json(end));
+    cJSON_AddNumberToObject(obj, "radius", radius);
+    return obj;
+}
+
+void SDF_Capsule::fromJSON(const cJSON* json) {
+    const cJSON* start_json = cJSON_GetObjectItem(json, "start");
+    if (start_json) start = json_to_vec3(start_json);
+    const cJSON* end_json = cJSON_GetObjectItem(json, "end");
+    if (end_json) end = json_to_vec3(end_json);
+    radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "radius")));
+}
+
+void SDF_Capsule::get(const Vec3f& begin,
+                      const Vec3f& voxelSize,
+                      const Vec3i& voxelCount,
+                      std::vector<float>& out) const {
+    if (voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
+        out.clear();
+        return;
+    }
+
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    size_t i = 0;
+    for (int z = 0; z < voxelCount.z; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < voxelCount.y; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            for (int x = 0; x < voxelCount.x; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                out[i++] = get(Vec3f(wx, wy, wz));
+            }
+        }
+    }
+}
+
+float SDF_Box::get(const Vec3f& p) const {
+    return sdBox(p, half_extent);
+}
+
+std::string SDF_Box::getInfo() const {
+    return "SDF_Box(half_extent=(" + std::to_string(half_extent.x) + "," +
+           std::to_string(half_extent.y) + "," + std::to_string(half_extent.z) +
+           "))";
+}
+
+cJSON* SDF_Box::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "box");
+    cJSON_AddItemToObject(obj, "half_extent", vec3_to_json(half_extent));
+    return obj;
+}
+
+void SDF_Box::fromJSON(const cJSON* json) {
+    const cJSON* half_extent_json = cJSON_GetObjectItem(json, "half_extent");
+    if (half_extent_json) half_extent = json_to_vec3(half_extent_json);
+}
+
+void SDF_Box::get(const Vec3f& begin,
+                  const Vec3f& voxelSize,
+                  const Vec3i& voxelCount,
+                  std::vector<float>& out) const {
     if (voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
         out.clear();
         return;
@@ -195,6 +410,21 @@ void SDF_FrameTransform::fromJSON(const cJSON* json) {
 }
 
 static bool _register_shape_types = []() {
+    sdf_register_type("sphere", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
+        auto obj = std::make_shared<SDF_Sphere>();
+        obj->fromJSON(json);
+        return obj;
+    });
+    sdf_register_type("cylinder", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
+        auto obj = std::make_shared<SDF_Cylinder>();
+        obj->fromJSON(json);
+        return obj;
+    });
+    sdf_register_type("capsule", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
+        auto obj = std::make_shared<SDF_Capsule>();
+        obj->fromJSON(json);
+        return obj;
+    });
     sdf_register_type("finite_cone", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
         auto obj = std::make_shared<SDF_FiniteCone>(0.0f, 0.0f);
         obj->fromJSON(json);
@@ -202,6 +432,11 @@ static bool _register_shape_types = []() {
     });
     sdf_register_type("capped_cylinder_x", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
         auto obj = std::make_shared<SDF_CappedCylinderX>(0.0f, 0.0f);
+        obj->fromJSON(json);
+        return obj;
+    });
+    sdf_register_type("box", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
+        auto obj = std::make_shared<SDF_Box>();
         obj->fromJSON(json);
         return obj;
     });
