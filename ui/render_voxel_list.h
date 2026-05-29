@@ -297,8 +297,25 @@ class RenderVoxelList {
                         {std::move(std::get<1>(res)), nullptr}};
             } else if (segment_mode == PLANE) {
                 auto res = voxel_grid_data.segment(plane);
-                return {{std::move(std::get<0>(res)), nullptr},
-                        {std::move(std::get<1>(res)), nullptr}};
+                sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;
+                sinriv::kigstudio::sdf::SDFBasePtr right_sdf = nullptr;
+                if (sdf_data) {
+                    // Create SDF for both split sides
+                    auto plane_sdf =
+                        std::shared_ptr<sinriv::kigstudio::sdf::SDF_Plane>(
+                            new sinriv::kigstudio::sdf::SDF_Plane(
+                                plane.A, plane.B, plane.C, plane.D));
+                    auto plane_sdf_neg =
+                        std::shared_ptr<sinriv::kigstudio::sdf::SDF_Plane>(
+                            new sinriv::kigstudio::sdf::SDF_Plane(
+                                -plane.A, -plane.B, -plane.C, -plane.D));
+                    left_sdf = sinriv::kigstudio::sdf::sdf_intersection(
+                        sdf_data, plane_sdf);
+                    right_sdf = sinriv::kigstudio::sdf::sdf_intersection(
+                        sdf_data, plane_sdf_neg);
+                }
+                return {{std::move(std::get<0>(res)), std::move(right_sdf)},
+                        {std::move(std::get<1>(res)), std::move(left_sdf)}};
             } else if (segment_mode == CONCAVE_CONE) {
                 auto res = voxel_grid_data.segment(concave_cone);
                 return {{std::move(std::get<0>(res)), nullptr},
@@ -318,8 +335,8 @@ class RenderVoxelList {
                 for (const auto& v : marked_voxels) {
                     seeds.push_back(v);
                 }
-                auto res = voxel_grid_data.bfsSplit(seeds, neighbor_max_distance,
-                                                    true);
+                auto res = voxel_grid_data.bfsSplit(
+                    seeds, neighbor_max_distance, true);
                 return {{std::move(std::get<0>(res)), nullptr},
                         {std::move(std::get<1>(res)), nullptr}};
             } else if (segment_mode == FILL_INTERIOR) {

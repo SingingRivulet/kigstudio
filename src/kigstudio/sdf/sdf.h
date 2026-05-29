@@ -140,6 +140,38 @@ struct SDF_Offset : public SDFBase {
     void fromJSON(const cJSON* json) override;
 };
 
+struct SDF_Plane : public SDFBase {
+    // Plane equation: Ax + By + Cz + D = 0 (A²+B²+C²=1, normalized normal)
+    // Signed distance = A*x + B*y + C*z + D (when normal is normalized)
+    float A, B, C, D;
+
+    SDF_Plane() : A(0), B(0), C(1), D(0) {}
+    SDF_Plane(float a, float b, float c, float d) : A(a), B(b), C(c), D(d) {
+        // Normalize the normal vector (A, B, C)
+        float len = std::sqrt(A * A + B * B + C * C);
+        if (len > 1e-6f) {
+            A /= len;
+            B /= len;
+            C /= len;
+            D /= len;
+        }
+    }
+
+    float get(const Vec3f& p) const override {
+        // Signed distance from point to plane
+        return A * p.x + B * p.y + C * p.z + D;
+    }
+
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
+};
+
 struct SDFGrid : public SDFBase {
     Vec3i min_bound;
     Vec3i max_bound;

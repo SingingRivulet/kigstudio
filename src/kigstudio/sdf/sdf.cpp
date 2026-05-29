@@ -336,6 +336,54 @@ void SDF_Offset::fromJSON(const cJSON* json) {
 }
 
 // ============================================================
+// SDF_Plane
+// ============================================================
+
+void SDF_Plane::get(const Vec3f& begin,
+                    const Vec3f& voxelSize,
+                    const Vec3i& voxelCount,
+                    std::vector<float>& out) const {
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    size_t i = 0;
+    for (int z = 0; z < voxelCount.z; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < voxelCount.y; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            for (int x = 0; x < voxelCount.x; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                out[i++] = A * wx + B * wy + C * wz + D;
+            }
+        }
+    }
+}
+
+std::string SDF_Plane::getInfo() const {
+    return "SDF_Plane(" + std::to_string(A) + "x + " + std::to_string(B) + 
+           "y + " + std::to_string(C) + "z + " + std::to_string(D) + ")";
+}
+
+cJSON* SDF_Plane::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "plane");
+    cJSON_AddNumberToObject(obj, "A", A);
+    cJSON_AddNumberToObject(obj, "B", B);
+    cJSON_AddNumberToObject(obj, "C", C);
+    cJSON_AddNumberToObject(obj, "D", D);
+    return obj;
+}
+
+void SDF_Plane::fromJSON(const cJSON* json) {
+    A = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "A")));
+    B = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "B")));
+    C = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "C")));
+    D = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "D")));
+}
+
+// ============================================================
 // SDFGrid
 // ============================================================
 
@@ -461,6 +509,11 @@ static bool _register_sdf_types = []() {
     });
     sdf_register_type("offset", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
         auto obj = std::make_shared<SDF_Offset>(0.0f, nullptr);
+        obj->fromJSON(json);
+        return obj;
+    });
+    sdf_register_type("plane", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
+        auto obj = std::make_shared<SDF_Plane>();
         obj->fromJSON(json);
         return obj;
     });
