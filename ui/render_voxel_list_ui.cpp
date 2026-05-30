@@ -138,55 +138,46 @@ void RenderVoxelList::render_ui() {
             ImGui::OpenPopup(get_locale_cstr("dialog.export_stl_all"));
             pending_open_export_stl_all_dialog = false;
         }
-        if (ImGui::BeginPopupModal(
-                get_locale_cstr("dialog.export_stl_all"),
-                nullptr,
-                ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (ImGui::BeginPopupModal(get_locale_cstr("dialog.export_stl_all"),
+                                   nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::TextUnformatted(
                 get_locale_cstr("dialog.choose_export_method"));
 
-            ImGui::RadioButton(
-                get_locale_cstr("label.export_mode_standard"),
-                &export_stl_mode, 0);
-            ImGui::RadioButton(
-                get_locale_cstr("label.export_mode_smooth"),
-                &export_stl_mode, 1);
+            ImGui::RadioButton(get_locale_cstr("label.export_mode_standard"),
+                               &export_stl_mode, 0);
+            ImGui::RadioButton(get_locale_cstr("label.export_mode_smooth"),
+                               &export_stl_mode, 1);
 
             ImGui::Separator();
 
-            ImGui::Checkbox(
-                get_locale_cstr("label.simplify_model"),
-                &export_stl_simplify);
+            ImGui::Checkbox(get_locale_cstr("label.simplify_model"),
+                            &export_stl_simplify);
             if (export_stl_simplify) {
                 ImGui::Indent();
                 ImGui::SliderFloat(
                     get_locale_cstr("label.simplification_ratio"),
-                    &export_stl_simplify_ratio, 0.01f, 1.0f,
-                    "%.2f");
+                    &export_stl_simplify_ratio, 0.01f, 1.0f, "%.2f");
                 ImGui::TextUnformatted(
                     get_locale_cstr("hint.simplification_ratio"));
                 ImGui::Unindent();
             }
-            
+
             if (export_stl_mode == 1) {
-                ImGui::SliderInt(
-                    get_locale_cstr("label.subdivisions_ratio"),
-                    &export_stl_subdivisions, 1, 8);
+                ImGui::SliderInt(get_locale_cstr("label.subdivisions_ratio"),
+                                 &export_stl_subdivisions, 1, 8);
             }
 
             ImGui::Separator();
 
-            if (ImGui::Button(
-                    get_locale_cstr("action.export_stl_all"))) {
+            if (ImGui::Button(get_locale_cstr("action.export_stl_all"))) {
                 ImGui::CloseCurrentPopup();
                 std::filesystem::path export_dir =
                     utf8_path(project_path) / "exported_stl";
-                queue_export_stl_all(
-                    path_to_utf8(export_dir),
-                    export_stl_mode,
-                    export_stl_simplify,
-                    export_stl_simplify_ratio,
-                    export_stl_subdivisions);
+                queue_export_stl_all(path_to_utf8(export_dir), export_stl_mode,
+                                     export_stl_simplify,
+                                     export_stl_simplify_ratio,
+                                     export_stl_subdivisions);
             }
             ImGui::SameLine();
             if (ImGui::Button(get_locale_cstr("action.cancel"))) {
@@ -281,7 +272,17 @@ void RenderVoxelList::render_ui() {
                              ImGuiWindowFlags_NoTitleBar |
                              ImGuiWindowFlags_NoBringToFrontOnFocus)) {
             ImGui::Text("%s", this->getQueueStatus().c_str());
-            ImGui::ProgressBar(this->getQueueProgress(), ImVec2(-1, 0));
+            const char* cancel_label = get_locale_cstr("action.cancel");
+            ImVec2 button_size = ImGui::CalcTextSize(cancel_label);
+            button_size.x += ImGui::GetStyle().FramePadding.x * 2;
+            button_size.y = 0;
+            float progress_width = ImGui::GetContentRegionAvail().x - button_size.x -
+                                   ImGui::GetStyle().ItemSpacing.x;
+            ImGui::ProgressBar(this->getQueueProgress(), ImVec2(progress_width, 0));
+            ImGui::SameLine();
+            if (ImGui::Button(cancel_label, button_size)) {
+                this->queue_should_continue = false;
+            }
         }
         ImGui::End();
     }
@@ -487,8 +488,7 @@ void RenderVoxelList::render_reload_stl_dialog() {
                     it->second->stl_voxel_size = reload_stl_voxel_size;
                     this->queue_reload_stl(reload_stl_item_id,
                                            reload_stl_voxel_size,
-                                           it->second->stl_path,
-                                           load_as_sdf);
+                                           it->second->stl_path, load_as_sdf);
                 }
             }
             show_reload_stl_dialog = false;

@@ -238,9 +238,9 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
             ImGui::CloseCurrentPopup();
             const char* filters[] = {"*.stl"};
             const char* file = tinyfd_saveFileDialog(
-                get_locale_cstr("dialog.save_voxel_as_stl"),
+                utf8_to_ansi(get_locale_cstr("dialog.save_voxel_as_stl")).c_str(),
                 "node_voxel.stl", 1, filters,
-                get_locale_cstr("dialog.stl_files"));
+                utf8_to_ansi(get_locale_cstr("dialog.stl_files")).c_str());
             if (file) {
                 queue_export_stl(
                     item.id, tinyfd_path_to_utf8(file),

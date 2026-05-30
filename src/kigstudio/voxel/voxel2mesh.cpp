@@ -77,7 +77,8 @@ Generator<std::tuple<Triangle, vec3f>> generateMesh(
     double isolevel,
     int& numTriangles,
     bool computeNormals,
-    float expand) {
+    float expand,
+    std::function<bool(const std::string&)> status_callback) {
     using Chunk = sinriv::kigstudio::voxel::Chunk;
     (void)isolevel;
 
@@ -92,8 +93,19 @@ Generator<std::tuple<Triangle, vec3f>> generateMesh(
     // 记录已处理的 cell，避免相邻 chunk 在边界处重复生成三角形
     std::set<std::tuple<int, int, int>> processed_cells;
 
+    int total_chunks = static_cast<int>(voxelData.chunks.size());
+    int chunk_count = 0;
+
     // ===== 遍历所有 chunk =====
     for (const auto& [key, chunk] : voxelData.chunks) {
+        chunk_count++;
+        if (status_callback) {
+            std::string status = get_locale_string("progress.mc.processing_chunk") +
+                "(" + std::to_string(chunk_count) + "/" + std::to_string(total_chunks) + ")";
+            if (!status_callback(status)) {
+                co_return;
+            }
+        }
         int cx, cy, cz;
         unpackChunkKey(key, cx, cy, cz);
 

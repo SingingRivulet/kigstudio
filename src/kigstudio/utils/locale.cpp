@@ -669,6 +669,9 @@ void init_locale_strings() {
     add_locale_string("progress.surface_nets.sdf_sample",
                         {{"en", "SDF sample"},
                          {"zh", "采样SDF"}});
+    add_locale_string("progress.mc.processing_chunk",
+                      {{"en", "processing chunk"},
+                       {"zh", "处理块"}});
 }
 
 const std::string& get_locale_string_ref(const std::string& key) {

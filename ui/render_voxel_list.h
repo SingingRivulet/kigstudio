@@ -170,7 +170,8 @@ class RenderVoxelList {
     std::mutex locker;
 
     std::atomic<float> queue_progress = 0;
-    bool queue_running = false;
+    std::atomic<bool> queue_running = false;
+    std::atomic<bool> queue_should_continue = true;
     std::string queue_status;
     std::mutex queue_status_mtx;
 

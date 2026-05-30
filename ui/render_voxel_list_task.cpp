@@ -1,7 +1,7 @@
 
 #include <sstream>
-#include "render_voxel_list.h"
 #include "kigstudio/cgal/mesh_simplification.h"
+#include "render_voxel_list.h"
 namespace sinriv::ui::render {
 
 void RenderVoxelList::process_queue_result() {
@@ -46,6 +46,17 @@ void RenderVoxelList::process_queue_result() {
 void RenderVoxelList::queue_thread() {
     std::cout << "Queue thread started" << std::endl;
     while (true) {
+        if (!queue_should_continue.load()) {
+            queue_running = false;
+            {
+                std::lock_guard<std::mutex> lock(queue_mutex);
+                std::queue<QueueTask> empty;
+                std::swap(queue, empty);
+            }
+            queue_should_continue = true;
+            continue;
+        }
+
         queue_mutex.lock();
         this->queue_num = queue.size();
         if (queue.empty()) {
@@ -92,10 +103,9 @@ void RenderVoxelList::queue_thread() {
                     std::cerr << "Error loading STL file: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_logf("log.queue.error_load_stl",
-                                      task.file_path.c_str(),
-                                      get_locale_string("log.queue.unknown_error")
-                                          .c_str());
+                    append_queue_logf(
+                        "log.queue.error_load_stl", task.file_path.c_str(),
+                        get_locale_string("log.queue.unknown_error").c_str());
                     std::cerr << "Unknown error loading STL file. "
                               << std::endl;
                 }
@@ -130,9 +140,9 @@ void RenderVoxelList::queue_thread() {
                     std::cerr << "Error reloading STL file: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_logf("log.queue.error_reload_stl", task.index,
-                                      get_locale_string("log.queue.unknown_error")
-                                          .c_str());
+                    append_queue_logf(
+                        "log.queue.error_reload_stl", task.index,
+                        get_locale_string("log.queue.unknown_error").c_str());
                     std::cerr << "Unknown error reloading STL file. "
                               << std::endl;
                 }
@@ -161,9 +171,9 @@ void RenderVoxelList::queue_thread() {
                     std::cerr << "Error doing segment: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_logf("log.queue.error_segment", task.index,
-                                      get_locale_string("log.queue.unknown_error")
-                                          .c_str());
+                    append_queue_logf(
+                        "log.queue.error_segment", task.index,
+                        get_locale_string("log.queue.unknown_error").c_str());
                     std::cerr << "Unknown error doing segment. " << std::endl;
                 }
                 queue_running = false;
@@ -179,7 +189,8 @@ void RenderVoxelList::queue_thread() {
                     auto it = items.find(task.index);
                     if (it == items.end() || it->second->write_count != 0) {
                         locker.unlock();
-                        append_queue_logf("log.queue.skip_item_busy", task.index);
+                        append_queue_logf("log.queue.skip_item_busy",
+                                          task.index);
                         break;
                     }
                     it->second->write_count++;
@@ -188,23 +199,31 @@ void RenderVoxelList::queue_thread() {
 
                     // 生成网格
                     std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
-                                           sinriv::kigstudio::voxel::vec3f>> mesh;
+                                           sinriv::kigstudio::voxel::vec3f>>
+                        mesh;
                     int numTriangles = 0;
                     for (auto tri : sinriv::kigstudio::voxel::generateMesh(
-                             item_ptr->voxel_grid_data, 0.5, numTriangles, true)) {
+                             item_ptr->voxel_grid_data, 0.5, numTriangles, true,
+                             0.0f, [&](const std::string&) {
+                                 return queue_should_continue.load() &&
+                                        queue_running.load();
+                             })) {
                         mesh.push_back(tri);
                     }
 
                     // 执行检测
                     queue_progress = 0.3f;
-                    auto edges = sinriv::kigstudio::voxel::checkNonManifoldEdges(mesh);
+                    auto edges =
+                        sinriv::kigstudio::voxel::checkNonManifoldEdges(mesh);
                     queue_progress = 0.9f;
 
                     // 输出结果到日志
                     if (edges.empty()) {
-                        append_queue_logf("log.queue.done_no_manifold", task.index);
+                        append_queue_logf("log.queue.done_no_manifold",
+                                          task.index);
                     } else {
-                        append_queue_logf("log.queue.found_manifold", task.index,
+                        append_queue_logf("log.queue.found_manifold",
+                                          task.index,
                                           static_cast<int>(edges.size()));
                         for (const auto& edge : edges) {
                             append_queue_logf("log.queue.manifold_edge",
@@ -224,8 +243,8 @@ void RenderVoxelList::queue_thread() {
 
                     queue_progress = 1.0f;
                 } catch (std::exception& e) {
-                    append_queue_logf("log.queue.error_check_manifold", task.index,
-                                      e.what());
+                    append_queue_logf("log.queue.error_check_manifold",
+                                      task.index, e.what());
                     locker.lock();
                     auto it = items.find(task.index);
                     if (it != items.end()) {
@@ -237,33 +256,37 @@ void RenderVoxelList::queue_thread() {
                 break;
             }
             case TASK_EXTRACT_SKELETON: {
-                append_queue_logf("log.queue.start_extract_skeleton", task.index);
+                append_queue_logf("log.queue.start_extract_skeleton",
+                                  task.index);
                 queue_running = true;
                 setQueueStatus(get_locale_string("status.extracting_skeleton"));
                 queue_progress = 0.0f;
                 try {
                     extract_skeleton(task.index);
-                    append_queue_logf("log.queue.done_extract_skeleton", task.index);
+                    append_queue_logf("log.queue.done_extract_skeleton",
+                                      task.index);
                 } catch (std::runtime_error& e) {
-                    append_queue_logf("log.queue.error_extract_skeleton", task.index,
-                                      e.what());
-                    std::cerr << "Runtime error extracting skeleton: " << e.what()
-                              << std::endl;
+                    append_queue_logf("log.queue.error_extract_skeleton",
+                                      task.index, e.what());
+                    std::cerr
+                        << "Runtime error extracting skeleton: " << e.what()
+                        << std::endl;
                 } catch (std::logic_error& e) {
-                    append_queue_logf("log.queue.error_extract_skeleton", task.index,
-                                      e.what());
+                    append_queue_logf("log.queue.error_extract_skeleton",
+                                      task.index, e.what());
                     std::cerr << "Logic error extracting skeleton: " << e.what()
                               << std::endl;
                 } catch (std::exception& e) {
-                    append_queue_logf("log.queue.error_extract_skeleton", task.index,
-                                      e.what());
+                    append_queue_logf("log.queue.error_extract_skeleton",
+                                      task.index, e.what());
                     std::cerr << "Error extracting skeleton: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_logf("log.queue.error_extract_skeleton", task.index,
-                                      get_locale_string("log.queue.unknown_error")
-                                          .c_str());
-                    std::cerr << "Unknown error extracting skeleton. " << std::endl;
+                    append_queue_logf(
+                        "log.queue.error_extract_skeleton", task.index,
+                        get_locale_string("log.queue.unknown_error").c_str());
+                    std::cerr << "Unknown error extracting skeleton. "
+                              << std::endl;
                 }
                 queue_running = false;
                 break;
@@ -271,7 +294,8 @@ void RenderVoxelList::queue_thread() {
             case TASK_GENERATE_THUMBNAIL_MESH: {
                 append_queue_logf("log.queue.start_thumbnail", task.index);
                 queue_running = true;
-                setQueueStatus(get_locale_string("status.generating_thumbnail"));
+                setQueueStatus(
+                    get_locale_string("status.generating_thumbnail"));
                 queue_progress = 0.0f;
 
                 try {
@@ -288,7 +312,11 @@ void RenderVoxelList::queue_thread() {
                     if (voxel_data.num_chunk() > 0) {
                         int num_triangles = 0;
                         auto generator = sinriv::kigstudio::voxel::generateMesh(
-                            voxel_data, 0.5, num_triangles, true);
+                            voxel_data, 0.5, num_triangles, true, 0.0f,
+                            [&](const std::string&) {
+                                return queue_should_continue.load() &&
+                                       queue_running.load();
+                            });
                         size_t processed_tris = 0;
                         size_t estimated_tris = voxel_data.num_chunk() * 200;
                         if (estimated_tris == 0)
@@ -347,9 +375,9 @@ void RenderVoxelList::queue_thread() {
                     std::cerr << "Error generating thumbnail mesh: " << e.what()
                               << std::endl;
                 } catch (...) {
-                    append_queue_logf("log.queue.error_thumbnail", task.index,
-                                      get_locale_string("log.queue.unknown_error")
-                                          .c_str());
+                    append_queue_logf(
+                        "log.queue.error_thumbnail", task.index,
+                        get_locale_string("log.queue.unknown_error").c_str());
                     std::cerr << "Unknown error generating thumbnail mesh. "
                               << std::endl;
                 }
@@ -371,7 +399,8 @@ void RenderVoxelList::queue_thread() {
                     auto it = items.find(task.index);
                     if (it == items.end() || it->second->write_count != 0) {
                         locker.unlock();
-                        append_queue_logf("log.queue.skip_item_busy", task.index);
+                        append_queue_logf("log.queue.skip_item_busy",
+                                          task.index);
                         break;
                     }
                     it->second->write_count++;
@@ -385,29 +414,40 @@ void RenderVoxelList::queue_thread() {
                     if (task.export_mode == 1) {
                         for (auto triangles : sinriv::kigstudio::voxel::
                                  generateSmoothMeshFromSDF(
-                                    item_ptr->voxel_grid_data,
-                                    numTriangles, 
-                                    [&](const std::string& status){
-                                        setQueueStatus(get_locale_string("status.exporting_stl") + " " + status);
-                                    },
-                                    true,
-                                    task.subdivisions,
-                                    item_ptr->sdf_data.get())) {
+                                     item_ptr->voxel_grid_data, numTriangles,
+                                     [&](const std::string& status) {
+                                         setQueueStatus(
+                                             get_locale_string(
+                                                 "status.exporting_stl") +
+                                             " " + status);
+                                         return queue_should_continue.load() &&
+                                                queue_running.load();
+                                     },
+                                     true, task.subdivisions,
+                                     item_ptr->sdf_data.get())) {
                             mesh.push_back(triangles);
                         }
                     } else {
                         for (auto triangles :
                              sinriv::kigstudio::voxel::generateMesh(
                                  item_ptr->voxel_grid_data, 0.5, numTriangles,
-                                 true)) {
+                                 true, 0.0f, [&](const std::string& status) {
+                                     setQueueStatus(
+                                         get_locale_string(
+                                             "status.exporting_stl") +
+                                         " " + status);
+                                     return queue_should_continue.load() &&
+                                            queue_running.load();
+                                 })) {
                             mesh.push_back(triangles);
                         }
                     }
                     queue_progress = 0.4f;
                     if (!mesh.empty()) {
                         setQueueStatus(
-                            get_locale_string("status.exporting_stl") + " " + 
-                            get_locale_string("status.exporting_stl.cleaning_mesh"));
+                            get_locale_string("status.exporting_stl") + " " +
+                            get_locale_string(
+                                "status.exporting_stl.cleaning_mesh"));
                         mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
                     }
                     queue_progress = 0.7f;
@@ -415,23 +455,26 @@ void RenderVoxelList::queue_thread() {
                     if (task.export_simplify && !mesh.empty()) {
                         size_t before = mesh.size();
                         setQueueStatus(
-                            get_locale_string("status.exporting_stl") + " " + 
-                            get_locale_string("status.exporting_stl.simplifying_mesh"));
+                            get_locale_string("status.exporting_stl") + " " +
+                            get_locale_string(
+                                "status.exporting_stl.simplifying_mesh"));
                         mesh = sinriv::kigstudio::cgal::simplifyMesh(
-                            mesh, static_cast<double>(task.export_simplify_ratio));
-                        append_queue_logf("log.queue.simplify_result", task.index,
-                                          static_cast<int>(before),
+                            mesh,
+                            static_cast<double>(task.export_simplify_ratio));
+                        append_queue_logf("log.queue.simplify_result",
+                                          task.index, static_cast<int>(before),
                                           static_cast<int>(mesh.size()));
                     }
                     queue_progress = 0.9f;
                     if (!mesh.empty()) {
                         setQueueStatus(
-                            get_locale_string("status.exporting_stl") + " " + 
-                            get_locale_string("status.exporting_stl.saveing_mesh"));
+                            get_locale_string("status.exporting_stl") + " " +
+                            get_locale_string(
+                                "status.exporting_stl.saveing_mesh"));
                         sinriv::kigstudio::voxel::saveMeshToASCIISTL(
                             mesh, task.file_path);
-                        append_queue_logf("log.queue.done_export_stl", task.index,
-                                          task.file_path.c_str());
+                        append_queue_logf("log.queue.done_export_stl",
+                                          task.index, task.file_path.c_str());
                     } else {
                         append_queue_logf("log.queue.error_export_stl_empty",
                                           task.index);
@@ -481,7 +524,8 @@ void RenderVoxelList::queue_thread() {
                     }
 
                     if (target_ids.empty()) {
-                        append_queue_logf("log.queue.error_export_stl_all_empty");
+                        append_queue_logf(
+                            "log.queue.error_export_stl_all_empty");
                         queue_progress = 1.0f;
                         queue_running = false;
                         break;
@@ -494,13 +538,20 @@ void RenderVoxelList::queue_thread() {
                     int total = static_cast<int>(target_ids.size());
                     int success = 0;
                     for (int i = 0; i < total; ++i) {
-                        int id = target_ids[i];
-                        queue_progress = static_cast<float>(i) / static_cast<float>(total);
+                        if (!queue_should_continue.load() ||
+                            !queue_running.load()) {
+                            break;
+                        }
+                        int id = (int)target_ids[i];
+                        queue_progress =
+                            static_cast<float>(i) / static_cast<float>(total);
                         std::string status_prefix;
                         {
-                            std::string fmt = get_locale_string("status.exporting_stl_all_item");
+                            std::string fmt = get_locale_string(
+                                "status.exporting_stl_all_item");
                             char buf[256];
-                            snprintf(buf, sizeof(buf), fmt.c_str(), id, i + 1, total);
+                            snprintf(buf, sizeof(buf), fmt.c_str(), id, i + 1,
+                                     total);
                             setQueueStatus(buf);
                             status_prefix = buf;
                         }
@@ -517,56 +568,72 @@ void RenderVoxelList::queue_thread() {
                         locker.unlock();
 
                         try {
-                            std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
-                                                   sinriv::kigstudio::voxel::vec3f>>
+                            std::vector<
+                                std::tuple<sinriv::kigstudio::voxel::Triangle,
+                                           sinriv::kigstudio::voxel::vec3f>>
                                 mesh;
                             int numTriangles = 0;
                             if (task.export_mode == 1) {
                                 for (auto triangles : sinriv::kigstudio::voxel::
                                          generateSmoothMeshFromSDF(
-                                            item_ptr->voxel_grid_data,
-                                            numTriangles,
-                                            [&](const std::string& status){
-                                                setQueueStatus(status_prefix + status);
-                                            },
-                                            true,
-                                            task.subdivisions,
-                                            item_ptr->sdf_data.get())) {
+                                             item_ptr->voxel_grid_data,
+                                             numTriangles,
+                                             [&](const std::string& status) {
+                                                 setQueueStatus(status_prefix +
+                                                                status);
+                                                 return queue_should_continue
+                                                            .load() &&
+                                                        queue_running.load();
+                                             },
+                                             true, task.subdivisions,
+                                             item_ptr->sdf_data.get())) {
                                     mesh.push_back(triangles);
                                 }
                             } else {
                                 for (auto triangles :
                                      sinriv::kigstudio::voxel::generateMesh(
                                          item_ptr->voxel_grid_data, 0.5,
-                                         numTriangles, true)) {
+                                         numTriangles, true, 0.0f,
+                                         [&](const std::string& status) {
+                                             setQueueStatus(status_prefix +
+                                                            status);
+                                             return queue_should_continue
+                                                        .load() &&
+                                                    queue_running.load();
+                                         })) {
                                     mesh.push_back(triangles);
                                 }
                             }
 
                             if (!mesh.empty()) {
                                 setQueueStatus(
-                                    status_prefix + " " + 
-                                    get_locale_string("status.exporting_stl.cleaning_mesh"));
-                                mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
+                                    status_prefix + " " +
+                                    get_locale_string(
+                                        "status.exporting_stl.cleaning_mesh"));
+                                mesh =
+                                    sinriv::kigstudio::voxel::cleanMesh(mesh);
                             }
 
                             if (task.export_simplify && !mesh.empty()) {
                                 size_t before = mesh.size();
                                 setQueueStatus(
-                                    status_prefix + " " + 
-                                    get_locale_string("status.exporting_stl.simplifying_mesh"));
+                                    status_prefix + " " +
+                                    get_locale_string("status.exporting_stl."
+                                                      "simplifying_mesh"));
                                 mesh = sinriv::kigstudio::cgal::simplifyMesh(
-                                    mesh,
-                                    static_cast<double>(task.export_simplify_ratio));
-                                append_queue_logf("log.queue.simplify_result", id,
-                                                  static_cast<int>(before),
-                                                  static_cast<int>(mesh.size()));
+                                    mesh, static_cast<double>(
+                                              task.export_simplify_ratio));
+                                append_queue_logf(
+                                    "log.queue.simplify_result", id,
+                                    static_cast<int>(before),
+                                    static_cast<int>(mesh.size()));
                             }
 
                             if (!mesh.empty()) {
                                 setQueueStatus(
-                                    status_prefix + " " + 
-                                    get_locale_string("status.exporting_stl.saveing_mesh"));
+                                    status_prefix + " " +
+                                    get_locale_string(
+                                        "status.exporting_stl.saveing_mesh"));
                                 std::string filename =
                                     "node_" + std::to_string(id) + ".stl";
                                 std::filesystem::path filepath =
@@ -706,7 +773,7 @@ void RenderVoxelList::queue_remove_item(int index) {
 }
 
 bool RenderVoxelList::isQueueRunning() {
-    return queue_running;
+    return queue_running.load();
 }
 
 std::string RenderVoxelList::getQueueStatus() {

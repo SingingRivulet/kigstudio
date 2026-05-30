@@ -50,7 +50,7 @@ class SmoothMeshGenerator {
 
     SmoothMeshGenerator(VoxelGrid& voxelData,
                         int& numTriangles,
-                        std::function<void(const std::string&)> status_callback,
+                        std::function<bool(const std::string&)> status_callback,
                         bool computeNormals,
                         int subdivisions,
                         const sdf::SDFBase* sdf_ptr)
@@ -79,14 +79,18 @@ class SmoothMeshGenerator {
                 get_locale_string("progress.surface_nets.processing_chunk") +
                 "(" + std::to_string(chunk_count) + "/" +
                 std::to_string(total_chunks) + ")";
-            status_callback_(current_status);
+            if (status_callback_ && !status_callback_(current_status)) {
+                return;
+            }
 
             int cx, cy, cz;
             unpackChunkKey(chunk_key, cx, cy, cz);
             processChunk(cx, cy, cz, callback);
         }
 
-        status_callback_(get_locale_string("progress.surface_nets.done"));
+        if (status_callback_) {
+            status_callback_(get_locale_string("progress.surface_nets.done"));
+        }
     }
 
    private:
@@ -96,7 +100,7 @@ class SmoothMeshGenerator {
 
     VoxelGrid& voxelData_;
     int& numTriangles_;
-    std::function<void(const std::string&)> status_callback_;
+    std::function<bool(const std::string&)> status_callback_;
     bool computeNormals_;
     int subdivisions_;
     const sdf::SDFBase* sdf_ptr_;
@@ -564,10 +568,12 @@ class SmoothMeshGenerator {
                     ++count;
                     if (count % update_interval == 0) {
                         int progress = static_cast<int>((count * 100) / total);
-                        status_callback_(
+                        if (status_callback_ && !status_callback_(
                             get_locale_string(
                                 "progress.surface_nets.building_faces") +
-                            " " + std::to_string(progress) + "%");
+                            " " + std::to_string(progress) + "%")) {
+                            return;
+                        }
                     }
                     int p = chunk_sdf.index(x, y, z);
                     if (chunk_grid_to_vertex[p] == UINT32_MAX)
@@ -618,7 +624,7 @@ class SmoothMeshGenerator {
 Generator<std::tuple<Triangle, vec3f>> generateSmoothMeshFromSDF(
     sinriv::kigstudio::voxel::VoxelGrid& voxelData,
     int& numTriangles,
-    std::function<void(const std::string&)> status_callback,
+    std::function<bool(const std::string&)> status_callback,
     bool computeNormals,
     int subdivisions,
     const sdf::SDFBase* sdf_ptr) {
