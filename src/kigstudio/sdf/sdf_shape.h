@@ -215,6 +215,27 @@ struct SDF_FiniteCone final : public SDFBase {
     void fromJSON(const cJSON* json) override;
 };
 
+struct SDF_PolyCone final : public SDFBase {
+    Vec3f apex;
+    std::vector<Vec3f> base_vertices;
+    mutable std::vector<Vec3f> plane_normals;
+
+    SDF_PolyCone() = default;
+    SDF_PolyCone(const Vec3f& apex, const std::vector<Vec3f>& base_vertices)
+        : apex(apex), base_vertices(base_vertices) {}
+
+    void buildNormals() const;
+    float get(const Vec3f& p) const override;
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
+
+    std::string getInfo() const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
+};
+
 struct SDF_CappedCylinderX final : public SDFBase {
     float radius;
     float half_height;

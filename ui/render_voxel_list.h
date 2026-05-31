@@ -319,8 +319,18 @@ class RenderVoxelList {
                         {std::move(std::get<1>(res)), std::move(left_sdf)}};
             } else if (segment_mode == CONCAVE_CONE) {
                 auto res = voxel_grid_data.segment(concave_cone);
-                return {{std::move(std::get<0>(res)), nullptr},
-                        {std::move(std::get<1>(res)), nullptr}};
+                sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;
+                sinriv::kigstudio::sdf::SDFBasePtr right_sdf = nullptr;
+                if (sdf_data) {
+                    auto cone_sdf =
+                        sinriv::kigstudio::sdf::to_sdf(concave_cone);
+                    left_sdf = sinriv::kigstudio::sdf::sdf_subtraction(
+                        sdf_data, cone_sdf);
+                    right_sdf = sinriv::kigstudio::sdf::sdf_intersection(
+                        sdf_data, cone_sdf);
+                }
+                return {{std::move(std::get<0>(res)), std::move(right_sdf)},
+                        {std::move(std::get<1>(res)), std::move(left_sdf)}};
             } else if (segment_mode == SPLIT_DISCONNECTED) {
                 auto splits = voxel_grid_data.splitDisconnected(true);
                 std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,

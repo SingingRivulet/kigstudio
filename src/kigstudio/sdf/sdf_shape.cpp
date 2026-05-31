@@ -1,4 +1,5 @@
 #include "kigstudio/sdf/sdf_shape.h"
+#include "kigstudio/voxel/concave.h"
 
 namespace sinriv::kigstudio::sdf {
 
@@ -50,6 +51,159 @@ void SDF_FiniteCone::get(const Vec3f& begin,
                 const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
                 out[i++] = get(Vec3f(wx, wy, wz));
             }
+        }
+    }
+}
+
+// ============================================================
+// SDF_PolyCone
+// ============================================================
+
+void SDF_PolyCone::buildNormals() const {
+    if (!plane_normals.empty())
+        return;
+    if (base_vertices.size() < 3)
+        return;
+
+    // Compute cone_dir (average of base directions)
+    Vec3f cone_dir{0, 0, 0};
+    for (const auto& v : base_vertices) {
+        Vec3f d = v - apex;
+        float len = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+        if (len > 1e-6f) {
+            cone_dir.x += d.x / len;
+            cone_dir.y += d.y / len;
+            cone_dir.z += d.z / len;
+        }
+    }
+    float cone_dir_len = std::sqrt(cone_dir.x * cone_dir.x + cone_dir.y * cone_dir.y + cone_dir.z * cone_dir.z);
+    if (cone_dir_len > 1e-6f) {
+        cone_dir.x /= cone_dir_len;
+        cone_dir.y /= cone_dir_len;
+        cone_dir.z /= cone_dir_len;
+    } else {
+        cone_dir = normalize(base_vertices[0] - apex);
+    }
+
+    int n = static_cast<int>(base_vertices.size());
+    plane_normals.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        Vec3f d0 = normalize(base_vertices[i] - apex);
+        Vec3f d1 = normalize(base_vertices[(i + 1) % n] - apex);
+
+        Vec3f n_i = cross(d0, d1);
+        float len = std::sqrt(n_i.x * n_i.x + n_i.y * n_i.y + n_i.z * n_i.z);
+        if (len < 1e-6f) {
+            plane_normals.push_back({0, 0, 0});
+            continue;
+        }
+        n_i.x /= len;
+        n_i.y /= len;
+        n_i.z /= len;
+
+        // Ensure outward normal: interior (cone_dir) should be on the negative side
+        if (dot(n_i, cone_dir) > 0.0f) {
+            n_i.x = -n_i.x;
+            n_i.y = -n_i.y;
+            n_i.z = -n_i.z;
+        }
+        plane_normals.push_back(n_i);
+    }
+}
+
+float SDF_PolyCone::get(const Vec3f& p) const {
+    if (base_vertices.size() < 3)
+        return std::numeric_limits<float>::infinity();
+
+    Vec3f offset = p - apex;
+    float offset_len_sq = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
+    if (offset_len_sq < 1e-12f)
+        return -1e6f;
+
+    buildNormals();
+
+    float max_dist = -1e6f;
+    for (const auto& n_i : plane_normals) {
+        float dist = dot(offset, n_i);
+        if (dist > max_dist)
+            max_dist = dist;
+    }
+    return max_dist;
+}
+
+void SDF_PolyCone::get(const Vec3f& begin,
+                       const Vec3f& voxelSize,
+                       const Vec3i& voxelCount,
+                       std::vector<float>& out) const {
+    if (voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
+        out.clear();
+        return;
+    }
+    if (base_vertices.size() < 3) {
+        out.assign(static_cast<size_t>(voxelCount.x) * voxelCount.y * voxelCount.z,
+                   std::numeric_limits<float>::infinity());
+        return;
+    }
+
+    buildNormals();
+
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    const int sx = voxelCount.x;
+    const int sy = voxelCount.y;
+    const int sz = voxelCount.z;
+
+#pragma omp parallel for
+    for (int z = 0; z < sz; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < sy; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            size_t base = static_cast<size_t>(z * sy + y) * sx;
+            for (int x = 0; x < sx; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                Vec3f offset(wx - apex.x, wy - apex.y, wz - apex.z);
+                float max_dist = -1e6f;
+                for (const auto& n_i : plane_normals) {
+                    float dist = offset.x * n_i.x + offset.y * n_i.y + offset.z * n_i.z;
+                    if (dist > max_dist)
+                        max_dist = dist;
+                }
+                out[base + x] = max_dist;
+            }
+        }
+    }
+}
+
+std::string SDF_PolyCone::getInfo() const {
+    return "SDF_PolyCone(apex=" + std::to_string(apex.x) + "," +
+           std::to_string(apex.y) + "," + std::to_string(apex.z) +
+           ", base_vertices=" + std::to_string(base_vertices.size()) + ")";
+}
+
+cJSON* SDF_PolyCone::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "poly_cone");
+    cJSON_AddItemToObject(obj, "apex", vec3_to_json(apex));
+    cJSON* arr = cJSON_CreateArray();
+    for (const auto& v : base_vertices) {
+        cJSON_AddItemToArray(arr, vec3_to_json(v));
+    }
+    cJSON_AddItemToObject(obj, "base_vertices", arr);
+    return obj;
+}
+
+void SDF_PolyCone::fromJSON(const cJSON* json) {
+    const cJSON* apex_json = cJSON_GetObjectItem(json, "apex");
+    if (apex_json) apex = json_to_vec3(apex_json);
+    base_vertices.clear();
+    const cJSON* arr = cJSON_GetObjectItem(json, "base_vertices");
+    if (arr) {
+        int count = cJSON_GetArraySize(arr);
+        for (int i = 0; i < count; ++i) {
+            base_vertices.push_back(json_to_vec3(cJSON_GetArrayItem(arr, i)));
         }
     }
 }
@@ -409,6 +563,13 @@ void SDF_FrameTransform::fromJSON(const cJSON* json) {
     if (cj) child = sdf_from_json(cj);
 }
 
+std::shared_ptr<SDFBase> to_sdf(
+    const sinriv::kigstudio::voxel::concave::Cone& cone) {
+    return std::make_shared<SDF_PolyCone>(
+        Vec3f(cone.apex.x, cone.apex.y, cone.apex.z),
+        std::vector<Vec3f>(cone.base_vertices.begin(), cone.base_vertices.end()));
+}
+
 static bool _register_shape_types = []() {
     sdf_register_type("sphere", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
         auto obj = std::make_shared<SDF_Sphere>();
@@ -427,6 +588,11 @@ static bool _register_shape_types = []() {
     });
     sdf_register_type("finite_cone", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
         auto obj = std::make_shared<SDF_FiniteCone>(0.0f, 0.0f);
+        obj->fromJSON(json);
+        return obj;
+    });
+    sdf_register_type("poly_cone", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
+        auto obj = std::make_shared<SDF_PolyCone>();
         obj->fromJSON(json);
         return obj;
     });

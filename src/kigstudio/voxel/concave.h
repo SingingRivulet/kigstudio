@@ -4,6 +4,7 @@
 #include <cmath>
 #include <utility>
 #include <variant>
+#include <memory>
 #include <vector>
 #include "kigstudio/utils/mat.h"
 #include "kigstudio/utils/vec3.h"
@@ -69,3 +70,9 @@ inline Cone from_json_cone(const cJSON* obj) {
 }
 
 }  // namespace sinriv::kigstudio::voxel::concave
+
+namespace sinriv::kigstudio::sdf {
+    struct SDFBase;
+    std::shared_ptr<SDFBase> to_sdf(
+        const sinriv::kigstudio::voxel::concave::Cone& cone);
+}
