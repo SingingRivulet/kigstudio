@@ -10,8 +10,9 @@ float SDF_FiniteCone::get(const Vec3f& p) const {
     return sdFiniteCone(p, angle_rad, height);
 }
 
-std::string SDF_FiniteCone::getInfo() const {
-    return "SDF_FiniteCone(angle=" + std::to_string(angle_rad) +
+std::string SDF_FiniteCone::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "SDF_FiniteCone(angle=" + std::to_string(angle_rad) +
            ", height=" + std::to_string(height) + ")";
 }
 
@@ -177,8 +178,9 @@ void SDF_PolyCone::get(const Vec3f& begin,
     }
 }
 
-std::string SDF_PolyCone::getInfo() const {
-    return "SDF_PolyCone(apex=" + std::to_string(apex.x) + "," +
+std::string SDF_PolyCone::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "SDF_PolyCone(apex=" + std::to_string(apex.x) + "," +
            std::to_string(apex.y) + "," + std::to_string(apex.z) +
            ", base_vertices=" + std::to_string(base_vertices.size()) + ")";
 }
@@ -212,8 +214,9 @@ float SDF_CappedCylinderX::get(const Vec3f& p) const {
     return sdCappedCylinderX(p, radius, half_height);
 }
 
-std::string SDF_CappedCylinderX::getInfo() const {
-    return "SDF_CappedCylinderX(radius=" + std::to_string(radius) +
+std::string SDF_CappedCylinderX::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "SDF_CappedCylinderX(radius=" + std::to_string(radius) +
            ", half_height=" + std::to_string(half_height) + ")";
 }
 
@@ -261,8 +264,9 @@ float SDF_Sphere::get(const Vec3f& p) const {
     return sdSphere(p - center, radius);
 }
 
-std::string SDF_Sphere::getInfo() const {
-    return "SDF_Sphere(center=(" + std::to_string(center.x) + "," +
+std::string SDF_Sphere::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "SDF_Sphere(center=(" + std::to_string(center.x) + "," +
            std::to_string(center.y) + "," + std::to_string(center.z) +
            "), radius=" + std::to_string(radius) + ")";
 }
@@ -312,8 +316,9 @@ float SDF_Cylinder::get(const Vec3f& p) const {
     return sdCylinder(p, start, end, radius);
 }
 
-std::string SDF_Cylinder::getInfo() const {
-    return "SDF_Cylinder(start=(" + std::to_string(start.x) + "," +
+std::string SDF_Cylinder::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "SDF_Cylinder(start=(" + std::to_string(start.x) + "," +
            std::to_string(start.y) + "," + std::to_string(start.z) +
            "), end=(" + std::to_string(end.x) + "," +
            std::to_string(end.y) + "," + std::to_string(end.z) +
@@ -368,8 +373,9 @@ float SDF_Capsule::get(const Vec3f& p) const {
     return sdCapsule(p, start, end, radius);
 }
 
-std::string SDF_Capsule::getInfo() const {
-    return "SDF_Capsule(start=(" + std::to_string(start.x) + "," +
+std::string SDF_Capsule::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "SDF_Capsule(start=(" + std::to_string(start.x) + "," +
            std::to_string(start.y) + "," + std::to_string(start.z) +
            "), end=(" + std::to_string(end.x) + "," +
            std::to_string(end.y) + "," + std::to_string(end.z) +
@@ -424,8 +430,9 @@ float SDF_Box::get(const Vec3f& p) const {
     return sdBox(p, half_extent);
 }
 
-std::string SDF_Box::getInfo() const {
-    return "SDF_Box(half_extent=(" + std::to_string(half_extent.x) + "," +
+std::string SDF_Box::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "SDF_Box(half_extent=(" + std::to_string(half_extent.x) + "," +
            std::to_string(half_extent.y) + "," + std::to_string(half_extent.z) +
            "))";
 }
@@ -543,9 +550,12 @@ void SDF_FrameTransform::get(const Vec3f& begin,
     }
 }
 
-std::string SDF_FrameTransform::getInfo() const {
-    return "SDF_FrameTransform(origin=" + std::to_string(frame.origin.x) + "," +
+std::string SDF_FrameTransform::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    std::string result = prefix + "SDF_FrameTransform(origin=" + std::to_string(frame.origin.x) + "," +
            std::to_string(frame.origin.y) + "," + std::to_string(frame.origin.z) + ")";
+    if (child) result += "\n" + child->getInfo(indent + 1);
+    return result;
 }
 
 cJSON* SDF_FrameTransform::toJSON() const {
@@ -561,6 +571,66 @@ void SDF_FrameTransform::fromJSON(const cJSON* json) {
     if (frame_json) frame = json_to_frame(frame_json);
     const cJSON* cj = cJSON_GetObjectItem(json, "child");
     if (cj) child = sdf_from_json(cj);
+}
+
+// ============================================================
+// SDF_AffineTransform
+// ============================================================
+
+float SDF_AffineTransform::get(const Vec3f& p) const {
+    if (!child) return 1e6f;
+    sinriv::kigstudio::mat::vec4<float> local =
+        inv_matrix * sinriv::kigstudio::mat::vec4<float>(p.x, p.y, p.z, 1.0f);
+    auto v3 = local.toVec3();
+    return child->get(Vec3f(v3.x, v3.y, v3.z));
+}
+
+void SDF_AffineTransform::get(const Vec3f& begin,
+                              const Vec3f& voxelSize,
+                              const Vec3i& voxelCount,
+                              std::vector<float>& out) const {
+    if (!child || voxelCount.x <= 0 || voxelCount.y <= 0 || voxelCount.z <= 0) {
+        out.clear();
+        return;
+    }
+
+    const size_t total = static_cast<size_t>(voxelCount.x) *
+                         static_cast<size_t>(voxelCount.y) *
+                         static_cast<size_t>(voxelCount.z);
+    out.resize(total);
+
+    size_t i = 0;
+    for (int z = 0; z < voxelCount.z; ++z) {
+        const float wz = begin.z + static_cast<float>(z) * voxelSize.z;
+        for (int y = 0; y < voxelCount.y; ++y) {
+            const float wy = begin.y + static_cast<float>(y) * voxelSize.y;
+            for (int x = 0; x < voxelCount.x; ++x) {
+                const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
+                sinriv::kigstudio::mat::vec4<float> local =
+                    inv_matrix *
+                    sinriv::kigstudio::mat::vec4<float>(wx, wy, wz, 1.0f);
+                auto v3 = local.toVec3();
+                out[i++] = child->get(Vec3f(v3.x, v3.y, v3.z));
+            }
+        }
+    }
+}
+
+std::string SDF_AffineTransform::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    std::string result = prefix + "SDF_AffineTransform";
+    if (child) result += "\n" + child->getInfo(indent + 1);
+    return result;
+}
+
+cJSON* SDF_AffineTransform::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "affine_transform");
+    return obj;
+}
+
+void SDF_AffineTransform::fromJSON(const cJSON* json) {
+    (void)json;
 }
 
 std::shared_ptr<SDFBase> to_sdf(

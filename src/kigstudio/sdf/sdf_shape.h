@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 #include "kigstudio/sdf/sdf.h"
+#include "kigstudio/utils/mat.h"
 #include "kigstudio/utils/vec3.h"
 
 namespace sinriv::kigstudio::sdf {
@@ -127,7 +128,7 @@ struct SDF_Box : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
     inline bool contains(const Vec3f& p) const { return get(p) <= 0.0f; }
@@ -147,7 +148,7 @@ struct SDF_Sphere : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
     inline bool contains(const Vec3f& p) const { return get(p) <= 0.0f; }
@@ -169,7 +170,7 @@ struct SDF_Cylinder : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
     inline bool contains(const Vec3f& p) const { return get(p) <= 0.0f; }
@@ -191,7 +192,7 @@ struct SDF_Capsule : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
     inline bool contains(const Vec3f& p) const { return get(p) <= 0.0f; }
@@ -210,7 +211,7 @@ struct SDF_FiniteCone final : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };
@@ -231,7 +232,7 @@ struct SDF_PolyCone final : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };
@@ -249,7 +250,7 @@ struct SDF_CappedCylinderX final : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };
@@ -268,7 +269,27 @@ struct SDF_FrameTransform final : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
+};
+
+struct SDF_AffineTransform final : public SDFBase {
+    sinriv::kigstudio::mat::matrix<float> inv_matrix;
+    std::shared_ptr<SDFBase> child;
+
+    inline SDF_AffineTransform(
+        const sinriv::kigstudio::mat::matrix<float>& inv_matrix,
+        std::shared_ptr<SDFBase> child)
+        : inv_matrix(inv_matrix), child(std::move(child)) {}
+
+    float get(const Vec3f& p) const override;
+    void get(const Vec3f& begin,
+             const Vec3f& voxelSize,
+             const Vec3i& voxelCount,
+             std::vector<float>& out) const override;
+
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };

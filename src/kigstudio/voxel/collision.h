@@ -437,6 +437,8 @@ class CollisionGroup {
         return containsImpl(point, false);
     }
 
+    std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> to_sdf() const;
+
    private:
     inline bool containsImpl(const vec3f& point, bool use_render_space) const {
         const mat4f global_matrix = use_render_space
@@ -480,6 +482,44 @@ inline bool pointIntersects(const vec3f& point, const CollisionGroup& group) {
 inline bool pointIntersectsWorld(const vec3f& point,
                                  const CollisionGroup& group) {
     return group.containsWorldPoint(point);
+}
+
+inline std::shared_ptr<sinriv::kigstudio::sdf::SDFBase>
+CollisionGroup::to_sdf() const {
+    using namespace sinriv::kigstudio::sdf;
+    std::vector<std::shared_ptr<SDFBase>> children;
+    children.reserve(geometries_.size());
+
+    const mat4f global_matrix = transform.getMatrix();
+
+    for (const auto& geometry : geometries_) {
+        const mat4f world_matrix =
+            geometry.transform.getMatrix() * global_matrix;
+        if (!isAffineInvertible(world_matrix)) {
+            continue;
+        }
+
+        mat4f inv_matrix = world_matrix;
+        inv_matrix.invert();
+
+        std::shared_ptr<SDFBase> shape_sdf = std::visit(
+            [](const auto& shape) -> std::shared_ptr<SDFBase> {
+                using ShapeType = std::decay_t<decltype(shape)>;
+                return std::make_shared<ShapeType>(shape);
+            },
+            geometry.geometry);
+
+        children.push_back(
+            std::make_shared<SDF_AffineTransform>(inv_matrix, shape_sdf));
+    }
+
+    if (children.empty()) {
+        return nullptr;
+    }
+    if (children.size() == 1) {
+        return children.front();
+    }
+    return sdf_group(std::move(children));
 }
 }  // namespace voxel::collision
 inline cJSON* to_json(const voxel::collision::Quaternion& q) {

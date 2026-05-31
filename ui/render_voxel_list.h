@@ -300,8 +300,17 @@ class RenderVoxelList {
         do_segment() {
             if (segment_mode == COLLISION) {
                 auto res = voxel_grid_data.segment(collision_group);
-                return {{std::move(std::get<0>(res)), nullptr},
-                        {std::move(std::get<1>(res)), nullptr}};
+                sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;
+                sinriv::kigstudio::sdf::SDFBasePtr right_sdf = nullptr;
+                if (sdf_data) {
+                    auto collision_sdf = collision_group.to_sdf();
+                    left_sdf = sinriv::kigstudio::sdf::sdf_subtraction(
+                        sdf_data, collision_sdf);
+                    right_sdf = sinriv::kigstudio::sdf::sdf_intersection(
+                        sdf_data, collision_sdf);
+                }
+                return {{std::move(std::get<0>(res)), std::move(right_sdf)},
+                        {std::move(std::get<1>(res)), std::move(left_sdf)}};
             } else if (segment_mode == PLANE) {
                 auto res = voxel_grid_data.segment(plane);
                 sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;

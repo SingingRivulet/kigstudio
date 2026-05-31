@@ -31,7 +31,7 @@ struct SDFBase {
                      const Vec3f& voxelSize,
                      const Vec3i& voxelCount,
                      std::vector<float>& out) const;
-    virtual std::string getInfo() const = 0;
+    virtual std::string getInfo(int indent = 0) const = 0;
     virtual cJSON* toJSON() const = 0;
     virtual void fromJSON(const cJSON* json) = 0;
 };
@@ -73,7 +73,7 @@ struct SDF_bool : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };
@@ -99,7 +99,7 @@ struct SDF_Group : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };
@@ -117,7 +117,7 @@ struct SDF_Translate : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };
@@ -135,7 +135,7 @@ struct SDF_Offset : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };
@@ -167,7 +167,7 @@ struct SDF_Plane : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };
@@ -205,7 +205,7 @@ struct SDFGrid : public SDFBase {
 
     float get(const Vec3f& p) const override;
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };

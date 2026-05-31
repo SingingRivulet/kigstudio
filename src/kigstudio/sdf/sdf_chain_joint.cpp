@@ -610,8 +610,9 @@ Frame json_to_frame(const cJSON* json) {
 // JointNegativeSDF
 // ============================================================
 
-std::string JointNegativeSDF::getInfo() const {
-    return "JointNegativeSDF(socket_cone_offset=" +
+std::string JointNegativeSDF::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "JointNegativeSDF(socket_cone_offset=" +
            std::to_string(socket_cone_offset) +
            ", head_cone_offset=" + std::to_string(head_cone_offset) + ")";
 }
@@ -652,8 +653,9 @@ void JointNegativeSDF::fromJSON(const cJSON* json) {
 // JointPositiveSDF
 // ============================================================
 
-std::string JointPositiveSDF::getInfo() const {
-    return "JointPositiveSDF(socket_support_offset=" +
+std::string JointPositiveSDF::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "JointPositiveSDF(socket_support_offset=" +
            std::to_string(socket_support_offset) +
            ", head_support_offset=" + std::to_string(head_support_offset) + ")";
 }

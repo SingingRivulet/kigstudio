@@ -339,8 +339,9 @@ void SDF_Mesh::get(const Vec3f& begin,
     impl->getBatch(begin, voxelSize, voxelCount, out);
 }
 
-std::string SDF_Mesh::getInfo() const {
-    return "SDF_Mesh(triangles=" + std::to_string(impl->triangles.size()) + ")";
+std::string SDF_Mesh::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "SDF_Mesh(triangles=" + std::to_string(impl->triangles.size()) + ")";
 }
 
 cJSON* SDF_Mesh::toJSON() const {

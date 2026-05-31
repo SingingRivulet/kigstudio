@@ -122,14 +122,18 @@ void SDF_bool::get(const Vec3f& begin,
     }
 }
 
-std::string SDF_bool::getInfo() const {
+std::string SDF_bool::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
     const char* op_name = "Unknown";
     switch (op) {
         case SDFBoolOp::Union: op_name = "Union"; break;
         case SDFBoolOp::Intersection: op_name = "Intersection"; break;
         case SDFBoolOp::Subtraction: op_name = "Subtraction"; break;
     }
-    return std::string("SDF_bool(") + op_name + ")";
+    std::string result = prefix + "SDF_bool(" + op_name + ")";
+    if (left) result += "\n" + left->getInfo(indent + 1);
+    if (right) result += "\n" + right->getInfo(indent + 1);
+    return result;
 }
 
 cJSON* SDF_bool::toJSON() const {
@@ -222,8 +226,13 @@ void SDF_Group::get(const Vec3f& begin,
     }
 }
 
-std::string SDF_Group::getInfo() const {
-    return "SDF_Group(" + std::to_string(children.size()) + " children)";
+std::string SDF_Group::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    std::string result = prefix + "SDF_Group(" + std::to_string(children.size()) + " children)";
+    for (const auto& child : children) {
+        if (child) result += "\n" + child->getInfo(indent + 1);
+    }
+    return result;
 }
 
 cJSON* SDF_Group::toJSON() const {
@@ -259,9 +268,12 @@ void SDF_Group::fromJSON(const cJSON* json) {
 // SDF_Translate
 // ============================================================
 
-std::string SDF_Translate::getInfo() const {
-    return "SDF_Translate(offset=" + std::to_string(offset.x) + "," +
+std::string SDF_Translate::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    std::string result = prefix + "SDF_Translate(offset=" + std::to_string(offset.x) + "," +
            std::to_string(offset.y) + "," + std::to_string(offset.z) + ")";
+    if (child) result += "\n" + child->getInfo(indent + 1);
+    return result;
 }
 
 void SDF_Translate::get(const Vec3f& begin,
@@ -302,8 +314,11 @@ void SDF_Translate::fromJSON(const cJSON* json) {
 // SDF_Offset
 // ============================================================
 
-std::string SDF_Offset::getInfo() const {
-    return "SDF_Offset(offset=" + std::to_string(offset) + ")";
+std::string SDF_Offset::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    std::string result = prefix + "SDF_Offset(offset=" + std::to_string(offset) + ")";
+    if (child) result += "\n" + child->getInfo(indent + 1);
+    return result;
 }
 
 void SDF_Offset::get(const Vec3f& begin,
@@ -361,8 +376,9 @@ void SDF_Plane::get(const Vec3f& begin,
     }
 }
 
-std::string SDF_Plane::getInfo() const {
-    return "SDF_Plane(" + std::to_string(A) + "x + " + std::to_string(B) + 
+std::string SDF_Plane::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "SDF_Plane(" + std::to_string(A) + "x + " + std::to_string(B) + 
            "y + " + std::to_string(C) + "z + " + std::to_string(D) + ")";
 }
 
@@ -431,8 +447,9 @@ float SDFGrid::get(const Vec3f& p) const {
     return c0 * (1.0f - fz) + c1 * fz;
 }
 
-std::string SDFGrid::getInfo() const {
-    return "SDFGrid(size=[" + std::to_string(sx) + "," + std::to_string(sy) +
+std::string SDFGrid::getInfo(int indent) const {
+    std::string prefix(indent * 2, ' ');
+    return prefix + "SDFGrid(size=[" + std::to_string(sx) + "," + std::to_string(sy) +
            "," + std::to_string(sz) + "], min_bound=[" + std::to_string(min_bound.x) +
            "," + std::to_string(min_bound.y) + "," + std::to_string(min_bound.z) + "])";
 }

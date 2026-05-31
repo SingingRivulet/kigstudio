@@ -112,7 +112,7 @@ class JointNegativeSDF : public sinriv::kigstudio::sdf::SDFBase {
 
     inline bool contains(const Vec3f& p) const { return get(p) <= 0.f; }
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };
@@ -154,7 +154,7 @@ class JointPositiveSDF : public sinriv::kigstudio::sdf::SDFBase {
 
     inline bool contains(const Vec3f& p) const { return get(p) <= 0.f; }
 
-    std::string getInfo() const override;
+    std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;
 };
