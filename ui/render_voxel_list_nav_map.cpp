@@ -73,7 +73,9 @@ void RenderVoxelList::render_nav_map() {
 
         bool first_icon = true;
         if (item->sdf_data && bgfx::isValid(icons.circles)) {
-            ImGui::Image(icons.circles, ImVec2(20.0f, 20.0f));
+            bool has_sdf_cache = !item->cached_mesh.empty();
+            ImGui::Image(has_sdf_cache ? icons.circles_white : icons.circles,
+                         ImVec2(20.0f, 20.0f));
             first_icon = false;
             if (ImGui::BeginItemTooltip()) {
                 ImGui::Text(get_locale_cstr("tooltip.sdf_resolution"), item->sdf_data->getInfo().c_str());

@@ -82,6 +82,8 @@ void RenderVoxelList::render_ui() {
                 if (ImGui::BeginMenu(get_locale_cstr("menu.body"))) {
                     ImGui::Checkbox(get_locale_cstr("label.show_mesh"),
                                     &showMesh);
+                    ImGui::Checkbox(get_locale_cstr("label.show_exported_mesh"),
+                                    &showExportedMesh);
                     ImGui::Checkbox(get_locale_cstr("label.show_collision"),
                                     &showCollision);
                     ImGui::Checkbox(get_locale_cstr("label.show_voxels"),
@@ -228,6 +230,22 @@ void RenderVoxelList::render_ui() {
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip(get_locale_cstr("tooltip.update_collision"));
         }
+        ImGui::SameLine();
+        if (mouse_world_pos_picked_auto_snapping) {
+            if (ImGui::Button(
+                    get_locale_cstr("action.pick_pos_auto_snapping_stop"))) {
+                mouse_world_pos_picked_auto_snapping = false;
+            }
+        } else {
+            if (ImGui::Button(
+                    get_locale_cstr("action.pick_pos_auto_snapping"))) {
+                mouse_world_pos_picked_auto_snapping = true;
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                get_locale_cstr("tooltip.pick_pos_auto_snapping"));
+        }
         menu_height = static_cast<int>(
             ImGui::CalcWindowNextAutoFitSize(ImGui::GetCurrentWindow()).y);
         ImGui::SetWindowSize(ImVec2((float)window_width, (float)menu_height));
@@ -276,9 +294,11 @@ void RenderVoxelList::render_ui() {
             ImVec2 button_size = ImGui::CalcTextSize(cancel_label);
             button_size.x += ImGui::GetStyle().FramePadding.x * 2;
             button_size.y = 0;
-            float progress_width = ImGui::GetContentRegionAvail().x - button_size.x -
+            float progress_width = ImGui::GetContentRegionAvail().x -
+                                   button_size.x -
                                    ImGui::GetStyle().ItemSpacing.x;
-            ImGui::ProgressBar(this->getQueueProgress(), ImVec2(progress_width, 0));
+            ImGui::ProgressBar(this->getQueueProgress(),
+                               ImVec2(progress_width, 0));
             ImGui::SameLine();
             if (ImGui::Button(cancel_label, button_size)) {
                 this->queue_should_continue = false;
@@ -366,6 +386,7 @@ void RenderVoxelList::render_ui() {
     this->setMeshAxisVisible(showMeshAxis);
     this->setVoxelAxisVisible(showVoxelAxis);
     this->setMeshVisible(showMesh);
+    this->setExportedMeshVisible(showExportedMesh);
     this->setVoxelsVisible(showVoxels);
     this->setCollisionVisible(showCollision);
     this->setCollisionBoundsVisible(showCollisionBounds);

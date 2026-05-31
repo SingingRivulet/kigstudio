@@ -767,6 +767,8 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.mesh_renderer.clear();
                 item.mesh_renderer.loadGeometry(
                     sinriv::kigstudio::voxel::readSTL(filename));
+                item.cached_mesh.clear();
+                item.cached_mesh_dirty = true;
                 item.voxel_renderer.clear();
                 item.voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
                                                          smooth_normals);
@@ -803,6 +805,8 @@ void RenderVoxelList::load_stl(std::string filename,
                   << " ref_count=" << item->ref_count.load() << std::endl;
         item->mesh_renderer.loadGeometry(
             sinriv::kigstudio::voxel::readSTL(filename));
+        item->cached_mesh.clear();
+        item->cached_mesh_dirty = true;
         item->voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
                                                   smooth_normals);
         item->voxel_grid_data = std::move(voxel_data);

@@ -58,7 +58,7 @@ void RenderVoxelList::queue_thread() {
         }
 
         queue_mutex.lock();
-        this->queue_num = queue.size();
+        this->queue_num = static_cast<int>(queue.size());
         if (queue.empty()) {
             queue_mutex.unlock();
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -467,14 +467,30 @@ void RenderVoxelList::queue_thread() {
                     }
                     queue_progress = 0.9f;
                     if (!mesh.empty()) {
-                        setQueueStatus(
-                            get_locale_string("status.exporting_stl") + " " +
-                            get_locale_string(
-                                "status.exporting_stl.saveing_mesh"));
-                        sinriv::kigstudio::voxel::saveMeshToASCIISTL(
-                            mesh, task.file_path);
-                        append_queue_logf("log.queue.done_export_stl",
-                                          task.index, task.file_path.c_str());
+                        // 缓存到 RenderVoxelItem
+                        {
+                            std::lock_guard<std::mutex> lock(locker);
+                            auto itc = items.find(task.index);
+                            if (itc != items.end()) {
+                                itc->second->cached_mesh = mesh;
+                                itc->second->cached_mesh_dirty = false;
+                            }
+                        }
+                        if (task.save_to_file && !task.file_path.empty()) {
+                            setQueueStatus(
+                                get_locale_string("status.exporting_stl") + " " +
+                                get_locale_string(
+                                    "status.exporting_stl.saveing_mesh"));
+                            sinriv::kigstudio::voxel::saveMeshToASCIISTL(
+                                mesh, task.file_path);
+                            append_queue_logf("log.queue.done_export_stl",
+                                              task.index,
+                                              task.file_path.c_str());
+                        } else {
+                            append_queue_logf(
+                                "log.queue.done_export_stl_cached",
+                                task.index);
+                        }
                     } else {
                         append_queue_logf("log.queue.error_export_stl_empty",
                                           task.index);
@@ -630,16 +646,27 @@ void RenderVoxelList::queue_thread() {
                             }
 
                             if (!mesh.empty()) {
-                                setQueueStatus(
-                                    status_prefix + " " +
-                                    get_locale_string(
-                                        "status.exporting_stl.saveing_mesh"));
-                                std::string filename =
-                                    "node_" + std::to_string(id) + ".stl";
-                                std::filesystem::path filepath =
-                                    export_dir / filename;
-                                sinriv::kigstudio::voxel::saveMeshToASCIISTL(
-                                    mesh, path_to_utf8(filepath));
+                                // 缓存到 RenderVoxelItem
+                                {
+                                    std::lock_guard<std::mutex> lock(locker);
+                                    auto itc = items.find(id);
+                                    if (itc != items.end()) {
+                                        itc->second->cached_mesh = mesh;
+                                        itc->second->cached_mesh_dirty = false;
+                                    }
+                                }
+                                if (task.save_to_file && !task.file_path.empty()) {
+                                    setQueueStatus(
+                                        status_prefix + " " +
+                                        get_locale_string(
+                                            "status.exporting_stl.saveing_mesh"));
+                                    std::string filename =
+                                        "node_" + std::to_string(id) + ".stl";
+                                    std::filesystem::path filepath =
+                                        export_dir / filename;
+                                    sinriv::kigstudio::voxel::saveMeshToASCIISTL(
+                                        mesh, path_to_utf8(filepath));
+                                }
                                 success++;
                             }
                         } catch (std::exception& e) {
@@ -803,7 +830,8 @@ void RenderVoxelList::queue_export_stl(int item_id,
                                        int mode,
                                        bool simplify,
                                        float ratio,
-                                       int subdivisions) {
+                                       int subdivisions,
+                                       bool save_to_file) {
     std::lock_guard<std::mutex> lock(queue_mutex);
     QueueTask task;
     task.type = TASK_EXPORT_STL;
@@ -813,6 +841,7 @@ void RenderVoxelList::queue_export_stl(int item_id,
     task.export_simplify = simplify;
     task.export_simplify_ratio = ratio;
     task.subdivisions = subdivisions;
+    task.save_to_file = save_to_file;
     queue.push(task);
     this->queue_num = static_cast<int>(queue.size());
 }
@@ -821,7 +850,8 @@ void RenderVoxelList::queue_export_stl_all(const std::string& export_dir,
                                            int mode,
                                            bool simplify,
                                            float ratio,
-                                           int subdivisions) {
+                                           int subdivisions,
+                                           bool save_to_file) {
     std::lock_guard<std::mutex> lock(queue_mutex);
     QueueTask task;
     task.type = TASK_EXPORT_STL_ALL;
@@ -830,6 +860,7 @@ void RenderVoxelList::queue_export_stl_all(const std::string& export_dir,
     task.export_simplify = simplify;
     task.export_simplify_ratio = ratio;
     task.subdivisions = subdivisions;
+    task.save_to_file = save_to_file;
     queue.push(task);
     this->queue_num = static_cast<int>(queue.size());
 }

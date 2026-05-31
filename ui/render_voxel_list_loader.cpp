@@ -45,6 +45,7 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     }
     cJSON_AddStringToObject(obj, "segment_mode", mode_str);
     cJSON_AddBoolToObject(obj, "show_mesh", item.showMesh);
+    cJSON_AddBoolToObject(obj, "show_exported_mesh", item.showExportedMesh);
     cJSON_AddBoolToObject(obj, "show_voxel", item.showVoxel);
     cJSON_AddBoolToObject(obj, "show_collision", item.showCollision);
     cJSON_AddBoolToObject(obj, "show_collision_bounds",
@@ -164,6 +165,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         item->segment_mode = RenderVoxelItem::COLLISION;
     }
     item->showMesh = cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_mesh"));
+    item->showExportedMesh =
+        cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_exported_mesh"));
     item->showVoxel = cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_voxel"));
     item->showCollision =
         cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_collision"));

@@ -56,6 +56,13 @@ void RenderVoxelList::setMeshVisible(bool visible) {
         it->second->showMesh = visible;
     }
 }
+void RenderVoxelList::setExportedMeshVisible(bool visible) {
+    std::lock_guard<std::mutex> lock(locker);
+    auto it = items.find(render_id);
+    if (it != items.end()) {
+        it->second->showExportedMesh = visible;
+    }
+}
 void RenderVoxelList::setVoxelsVisible(bool visible) {
     std::lock_guard<std::mutex> lock(locker);
     auto it = items.find(render_id);

@@ -56,6 +56,10 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     const float* transform,
     sinriv::ui::render::RenderMeshShader& mesh_shader) {
     if (showMesh) {
+        if (showExportedMesh && !cached_mesh_dirty && !cached_mesh.empty()) {
+            mesh_renderer.loadGeometry(cached_mesh);
+            cached_mesh_dirty = true;
+        }
         mesh_renderer.renderGBuffer(transform, mesh_shader);
     }
 

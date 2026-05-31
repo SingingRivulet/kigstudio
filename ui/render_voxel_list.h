@@ -209,6 +209,11 @@ class RenderVoxelList {
 
         std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> sdf_data;
 
+        std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
+                               sinriv::kigstudio::voxel::vec3f>>
+            cached_mesh;
+        bool cached_mesh_dirty = true;
+
         sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
         kigstudio::Plane<float> plane;
         kigstudio::voxel::concave::Cone concave_cone;
@@ -366,6 +371,7 @@ class RenderVoxelList {
         bool queue_release = false;
 
         bool showMesh = true;
+        bool showExportedMesh = true;
         bool showVoxel = true;
         bool showCollision = true;
         bool showCollisionBounds = false;
@@ -495,6 +501,7 @@ class RenderVoxelList {
     int menu_height = 0;
 
     bool showMesh = true;
+    bool showExportedMesh = true;
     bool showVoxels = true;
     bool showCollision = true;
 
@@ -608,6 +615,7 @@ class RenderVoxelList {
     struct Icons {
         bgfx::TextureHandle hexagon = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle circles = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle circles_white = BGFX_INVALID_HANDLE;
     } icons;
 
     void initIcons();
@@ -672,6 +680,7 @@ class RenderVoxelList {
     void setMeshAxisVisible(bool visible);
     void setVoxelAxisVisible(bool visible);
     void setMeshVisible(bool visible);
+    void setExportedMeshVisible(bool visible);
     void setVoxelsVisible(bool visible);
     void setCollisionVisible(bool visible);
     void setCollisionBoundsVisible(bool visible);
@@ -725,6 +734,7 @@ class RenderVoxelList {
         float export_simplify_ratio = 0.1f;
         bool load_as_sdf = false;
         int subdivisions = 3;
+        bool save_to_file = true;
     };
     std::queue<QueueTask> queue;
     std::mutex queue_mutex;
@@ -759,12 +769,14 @@ class RenderVoxelList {
                           int mode,
                           bool simplify,
                           float ratio,
-                          int subdivisions);
+                          int subdivisions,
+                          bool save_to_file = true);
     void queue_export_stl_all(const std::string& export_dir,
                               int mode,
                               bool simplify,
                               float ratio,
-                              int subdivisions);
+                              int subdivisions,
+                              bool save_to_file = true);
     bool isQueueRunning();
     std::string getQueueStatus();
     void setQueueStatus(const std::string& status);

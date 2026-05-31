@@ -256,22 +256,56 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
         ImGui::EndPopup();
     }
 
-    ImGui::SameLine();
-    if (mouse_world_pos_picked_auto_snapping) {
-        if (ImGui::Button(get_locale_cstr(
-                "action.pick_pos_auto_snapping_stop"))) {
-            mouse_world_pos_picked_auto_snapping = false;
+    // SDF 预览渲染按钮
+    if (item.sdf_data) {
+        ImGui::SameLine();
+        const std::string sdf_preview_popup_title =
+            localize_id("dialog.sdf_preview", item.id);
+        if (ImGui::Button(get_locale_cstr("action.render_sdf"))) {
+            ImGui::OpenPopup(sdf_preview_popup_title.c_str());
         }
-    } else {
-        if (ImGui::Button(
-                get_locale_cstr("action.pick_pos_auto_snapping"))) {
-            mouse_world_pos_picked_auto_snapping = true;
+        if (ImGui::BeginPopupModal(sdf_preview_popup_title.c_str(), nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted(
+                get_locale_cstr("dialog.sdf_preview_desc"));
+
+            ImGui::Separator();
+
+            // Simplification option
+            ImGui::Checkbox(get_locale_cstr("label.simplify_model"),
+                            &export_stl_simplify);
+            if (export_stl_simplify) {
+                ImGui::Indent();
+                ImGui::SliderFloat(
+                    get_locale_cstr("label.simplification_ratio"),
+                    &export_stl_simplify_ratio, 0.01f, 1.0f,
+                    "%.2f");
+                ImGui::TextUnformatted(
+                    get_locale_cstr("hint.simplification_ratio"));
+                ImGui::Unindent();
+            }
+
+            ImGui::SliderInt(
+                get_locale_cstr("label.subdivisions_ratio"),
+                &export_stl_subdivisions, 1, 8);
+
+            ImGui::Separator();
+
+            if (ImGui::Button(get_locale_cstr("action.render_sdf"))) {
+                ImGui::CloseCurrentPopup();
+                queue_export_stl(
+                    item.id, "", 1, export_stl_simplify,
+                    export_stl_simplify_ratio,
+                    export_stl_subdivisions, false);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(get_locale_cstr("action.cancel"))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
     }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip(
-            get_locale_cstr("tooltip.pick_pos_auto_snapping"));
-    }
+
 }
 
 void RenderVoxelList::render_object_editor_collision_tab_content(

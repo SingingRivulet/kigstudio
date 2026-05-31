@@ -78,7 +78,7 @@ static bgfx::TextureHandle createHexagonIcon() {
         BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP, mem);
 }
 
-static bgfx::TextureHandle createCirclesIcon() {
+static bgfx::TextureHandle createCirclesIcon(uint32_t color) {
     constexpr int S = 64;
     constexpr int cx = S / 2;
     constexpr int cy = S / 2;
@@ -93,7 +93,7 @@ static bgfx::TextureHandle createCirclesIcon() {
             float dist = std::sqrt(dx * dx + dy * dy);
             for (float radius : radii) {
                 if (std::abs(dist - radius) < 2.0f) {
-                    pixels[y * S + x] = 0xFF60A0FF;  // 浅蓝 (RGBA8)
+                    pixels[y * S + x] = color;
                     break;
                 }
             }
@@ -109,11 +109,14 @@ static bgfx::TextureHandle createCirclesIcon() {
 
 void RenderVoxelList::initIcons() {
     icons.hexagon = createHexagonIcon();
-    icons.circles = createCirclesIcon();
+    icons.circles = createCirclesIcon(0xFF60A0FF);      // 浅蓝
+    icons.circles_white = createCirclesIcon(0xFFFFFFFF); // 白色
     std::cerr << "[Icons] hexagon idx=" << icons.hexagon.idx
               << " valid=" << bgfx::isValid(icons.hexagon)
               << "; circles idx=" << icons.circles.idx
-              << " valid=" << bgfx::isValid(icons.circles) << "\n";
+              << " valid=" << bgfx::isValid(icons.circles)
+              << "; circles_white idx=" << icons.circles_white.idx
+              << " valid=" << bgfx::isValid(icons.circles_white) << "\n";
 }
 
 void RenderVoxelList::destroyIcons() {
@@ -124,6 +127,10 @@ void RenderVoxelList::destroyIcons() {
     if (bgfx::isValid(icons.circles)) {
         bgfx::destroy(icons.circles);
         icons.circles = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(icons.circles_white)) {
+        bgfx::destroy(icons.circles_white);
+        icons.circles_white = BGFX_INVALID_HANDLE;
     }
 }
 
