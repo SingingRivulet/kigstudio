@@ -164,14 +164,23 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
     } else {
         item->segment_mode = RenderVoxelItem::COLLISION;
     }
-    item->showMesh = cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_mesh"));
+    const cJSON* show_mesh_json = cJSON_GetObjectItem(obj, "show_mesh");
+    item->showMesh = show_mesh_json ? cJSON_IsTrue(show_mesh_json) : true;
+    const cJSON* show_exported_mesh_json =
+        cJSON_GetObjectItem(obj, "show_exported_mesh");
     item->showExportedMesh =
-        cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_exported_mesh"));
-    item->showVoxel = cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_voxel"));
+        show_exported_mesh_json ? cJSON_IsTrue(show_exported_mesh_json) : true;
+    const cJSON* show_voxel_json = cJSON_GetObjectItem(obj, "show_voxel");
+    item->showVoxel = show_voxel_json ? cJSON_IsTrue(show_voxel_json) : true;
+    const cJSON* show_collision_json =
+        cJSON_GetObjectItem(obj, "show_collision");
     item->showCollision =
-        cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_collision"));
-    item->showCollisionBounds =
-        cJSON_IsTrue(cJSON_GetObjectItem(obj, "show_collision_bounds"));
+        show_collision_json ? cJSON_IsTrue(show_collision_json) : true;
+    const cJSON* show_collision_bounds_json =
+        cJSON_GetObjectItem(obj, "show_collision_bounds");
+    item->showCollisionBounds = show_collision_bounds_json
+                                    ? cJSON_IsTrue(show_collision_bounds_json)
+                                    : true;
     const cJSON* auto_update_json =
         cJSON_GetObjectItem(obj, "auto_segment_update");
     if (auto_update_json) {

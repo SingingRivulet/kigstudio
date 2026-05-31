@@ -203,6 +203,7 @@ class RenderVoxelList {
         } segment_mode = COLLISION;
 
         sinriv::ui::render::RenderMesh mesh_renderer;
+        sinriv::ui::render::RenderMesh exported_mesh_renderer;
         sinriv::ui::render::RenderVoxel voxel_renderer;
         sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
         kdtree::KDTree mesh_kd_tree;  // 三角形顶点的kd树，用于实现自动吸附

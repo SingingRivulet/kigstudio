@@ -278,6 +278,8 @@ void init_locale_strings() {
                       {{"en", "Save as STL"}, {"zh", "另存为 STL"}});
     add_locale_string("action.export_stl_all",
                       {{"en", "Export All"}, {"zh", "全部导出"}});
+    add_locale_string("action.render_sdf",
+                      {{"en", "Render SDF"}, {"zh", "渲染 SDF"}});
     add_locale_string("label.export_mode_standard",
                       {{"en", "Standard"}, {"zh", "标准"}});
     add_locale_string("label.export_mode_smooth",
@@ -306,6 +308,8 @@ void init_locale_strings() {
 
     add_locale_string("label.show_mesh",
                       {{"en", "show mesh"}, {"zh", "显示网格"}});
+    add_locale_string("label.show_exported_mesh",
+                      {{"en", "show exported mesh"}, {"zh", "显示导出网格"}});
     add_locale_string("label.show_collision",
                       {{"en", "show collision"}, {"zh", "显示碰撞"}});
     add_locale_string("label.show_voxels",
@@ -574,6 +578,11 @@ void init_locale_strings() {
     add_locale_string("dialog.choose_export_method",
                       {{"en", "Choose STL export method"},
                        {"zh", "选择 STL 导出方式"}});
+    add_locale_string("dialog.sdf_preview",
+                      {{"en", "SDF Preview"}, {"zh", "SDF 预览"}});
+    add_locale_string("dialog.sdf_preview_desc",
+                      {{"en", "Generate mesh from SDF without saving to file"},
+                       {"zh", "从 SDF 生成网格，不保存到文件"}});
     add_locale_string("dialog.stl_files",
                       {{"en", "STL files"}, {"zh", "STL 文件"}});
     add_locale_string("dialog.export_stl_all",

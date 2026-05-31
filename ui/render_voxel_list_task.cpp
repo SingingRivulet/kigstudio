@@ -467,6 +467,10 @@ void RenderVoxelList::queue_thread() {
                     }
                     queue_progress = 0.9f;
                     if (!mesh.empty()) {
+                        std::cout << "[TASK_EXPORT_STL] item=" << task.index
+                                  << " mesh size=" << mesh.size()
+                                  << " save_to_file=" << task.save_to_file
+                                  << std::endl;
                         // 缓存到 RenderVoxelItem
                         {
                             std::lock_guard<std::mutex> lock(locker);
@@ -474,6 +478,8 @@ void RenderVoxelList::queue_thread() {
                             if (itc != items.end()) {
                                 itc->second->cached_mesh = mesh;
                                 itc->second->cached_mesh_dirty = false;
+                                std::cout << "[TASK_EXPORT_STL] cached_mesh saved"
+                                          << std::endl;
                             }
                         }
                         if (task.save_to_file && !task.file_path.empty()) {
