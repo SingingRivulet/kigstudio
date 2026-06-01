@@ -353,7 +353,8 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
         get_locale_cstr("mode.split_disconnected"),
         get_locale_cstr("mode.neighbor"),
         get_locale_cstr("mode.fill_interior"),
-        get_locale_cstr("mode.chain")};
+        get_locale_cstr("mode.chain"),
+        get_locale_cstr("mode.sdf_node_split")};
     const enum RenderVoxelItem::SegmentMode segment_modes[] = {
         RenderVoxelItem::COLLISION,
         RenderVoxelItem::PLANE,
@@ -361,7 +362,8 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
         RenderVoxelItem::SPLIT_DISCONNECTED,
         RenderVoxelItem::NEIGHBOR,
         RenderVoxelItem::FILL_INTERIOR,
-        RenderVoxelItem::CHAIN};
+        RenderVoxelItem::CHAIN,
+        RenderVoxelItem::SDF_NODE_SPLIT};
     int current_segment_mode =
         segment_modes[(int)item.segment_mode];
     if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
@@ -397,6 +399,9 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
             case RenderVoxelItem::CHAIN:
                 tooltip_key = "tooltip.mode.chain";
                 break;
+            case RenderVoxelItem::SDF_NODE_SPLIT:
+                tooltip_key = "tooltip.mode.sdf_node_split";
+                break;
         }
         if (tooltip_key) {
             ImGui::BeginTooltip();
@@ -427,6 +432,36 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
             get_locale_cstr("tooltip.mode.fill_interior"));
     } else if (item.segment_mode == RenderVoxelItem::CHAIN) {
         render_object_editor_chain_mode(item);
+    } else if (item.segment_mode == RenderVoxelItem::SDF_NODE_SPLIT) {
+        std::vector<std::pair<int, std::string>> candidates;
+        if (item.manager) {
+            for (auto& [other_id, other] : item.manager->items) {
+                if (other_id != item.id &&
+                    other->root_id != item.root_id &&
+                    other->sdf_data) {
+                    candidates.push_back(
+                        {other_id, "Node " + std::to_string(other_id)});
+                }
+            }
+        }
+        int current_target = item.sdf_split_target_id;
+        int selected_idx = -1;
+        std::vector<const char*> labels;
+        labels.push_back("<None>");
+        for (size_t i = 0; i < candidates.size(); ++i) {
+            labels.push_back(candidates[i].second.c_str());
+            if (candidates[i].first == current_target)
+                selected_idx = static_cast<int>(i);
+        }
+        int combo_idx = selected_idx >= 0 ? selected_idx + 1 : 0;
+        if (ImGui::Combo(get_locale_cstr("label.sdf_split_target"), &combo_idx,
+                         labels.data(), static_cast<int>(labels.size()))) {
+            push_undo_now(item.id, std::nullopt,
+                          get_locale_string("label.sdf_split_target"));
+            item.sdf_split_target_id = (combo_idx > 0)
+                ? candidates[combo_idx - 1].first
+                : -1;
+        }
     }
 }
 

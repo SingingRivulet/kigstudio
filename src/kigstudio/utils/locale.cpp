@@ -337,6 +337,8 @@ void init_locale_strings() {
                       {{"en", "Pick Range"}, {"zh", "选择范围"}});
     add_locale_string("label.neighbor_max_distance",
                       {{"en", "Max Distance"}, {"zh", "最大距离"}});
+    add_locale_string("label.sdf_split_target",
+                      {{"en", "Source Node"}, {"zh", "源节点"}});
     add_locale_string("action.save_marked_voxels",
                       {{"en", "Save Marked"}, {"zh", "保存标记"}});
     add_locale_string("action.load_marked_voxels",
@@ -530,6 +532,8 @@ void init_locale_strings() {
                       {{"en", "Fill Interior"}, {"zh", "填充内部"}});
     add_locale_string("mode.chain",
                       {{"en", "Chain"}, {"zh", "链条化"}});
+    add_locale_string("mode.sdf_node_split",
+                      {{"en", "SDF Node Split"}, {"zh", "SDF节点分割"}});
 
     add_locale_string("tooltip.mode.collision",
                       {{"en", "Use collision shapes to split the model. Voxels inside the shapes are separated from those outside."},
@@ -564,6 +568,9 @@ void init_locale_strings() {
     add_locale_string("tooltip.mode.chain",
                       {{"en", "Split the model into 3D-printable chains (e.g. for jointed dragon)."},
                        {"zh", "将物体切分为3D打印一体成形的链条（例如关节龙）。"}});
+    add_locale_string("tooltip.mode.sdf_node_split",
+                      {{"en", "Split current node using another node's SDF."},
+                       {"zh", "使用另一个节点的SDF分割当前节点。"}});
     add_locale_string("tooltip.update_collision",
                       {{"en", "Update collision shapes. This will clear all marked voxels. Proceed?"},
                        {"zh", "在当前节点上执行设置好的碰撞编辑器。"}});

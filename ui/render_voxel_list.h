@@ -144,6 +144,7 @@ struct CollisionEditorSnapshot {
     std::vector<int> concave_cone_expanded_vertices;
     int segment_mode;
     std::string description;
+    int sdf_split_target_id = -1;
 
     // Chain mode state
     int chain_min_radius = 1;
@@ -199,7 +200,8 @@ class RenderVoxelList {
             SPLIT_DISCONNECTED = 3,
             NEIGHBOR = 4,
             FILL_INTERIOR = 5,
-            CHAIN = 6
+            CHAIN = 6,
+            SDF_NODE_SPLIT = 7
         } segment_mode = COLLISION;
 
         sinriv::ui::render::RenderMesh mesh_renderer;
@@ -220,6 +222,7 @@ class RenderVoxelList {
         kigstudio::voxel::concave::Cone concave_cone;
         std::vector<int> concave_cone_expanded_vertices;
 
+        int sdf_split_target_id = -1;
         int chain_min_radius = 1;
         struct SurfaceSkeletonCacheEntry {
             sinriv::kigstudio::Vec3i surface_voxel;
@@ -283,6 +286,7 @@ class RenderVoxelList {
 
         inline void copy_segment_config_to(RenderVoxelItem& target) const {
             target.segment_mode = segment_mode;
+            target.sdf_split_target_id = sdf_split_target_id;
             target.collision_group = collision_group;
             target.plane = plane;
             target.concave_cone = concave_cone;
@@ -370,6 +374,45 @@ class RenderVoxelList {
                 return {{std::move(filled), nullptr}};
             } else if (segment_mode == CHAIN) {
                 return {do_segment_chain()};
+            } else if (segment_mode == SDF_NODE_SPLIT) {
+                if (sdf_split_target_id >= 0 && manager) {
+                    std::lock_guard<std::mutex> lock(manager->locker);
+                    auto target_it = manager->items.find(sdf_split_target_id);
+                    if (target_it != manager->items.end() &&
+                        target_it->second->sdf_data) {
+                        auto& target_sdf = target_it->second->sdf_data;
+
+                        sinriv::kigstudio::voxel::VoxelGrid outside;
+                        sinriv::kigstudio::voxel::VoxelGrid inside;
+                        outside.global_position = voxel_grid_data.global_position;
+                        outside.voxel_size = voxel_grid_data.voxel_size;
+                        inside.global_position = voxel_grid_data.global_position;
+                        inside.voxel_size = voxel_grid_data.voxel_size;
+
+                        for (const auto& voxel : voxel_grid_data) {
+                            auto world = voxel_grid_data.voxelCenterToWorld(voxel);
+                            bool in_target = target_sdf->get(world) <= 0.0f;
+                            if (in_target) {
+                                inside.insert(voxel.x, voxel.y, voxel.z);
+                            } else {
+                                outside.insert(voxel.x, voxel.y, voxel.z);
+                            }
+                        }
+
+                        sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;
+                        sinriv::kigstudio::sdf::SDFBasePtr right_sdf = nullptr;
+                        if (sdf_data) {
+                            left_sdf = sinriv::kigstudio::sdf::sdf_subtraction(
+                                sdf_data, target_sdf);
+                            right_sdf = sinriv::kigstudio::sdf::sdf_intersection(
+                                sdf_data, target_sdf);
+                        }
+
+                        return {{std::move(outside), std::move(left_sdf)},
+                                {std::move(inside), std::move(right_sdf)}};
+                    }
+                }
+                return {{voxel_grid_data, sdf_data}};
             } else {
                 throw std::runtime_error("Unknown method");
             }

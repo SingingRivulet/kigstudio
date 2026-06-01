@@ -9,6 +9,7 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.concave_cone_expanded_vertices,
             item.segment_mode,
             "",
+            item.sdf_split_target_id,
             item.chain_min_radius,
             item.use_cgal_skeleton,
             item.picked_skeleton_points,
@@ -24,6 +25,7 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
         snapshot.concave_cone_expanded_vertices;
     item.segment_mode =
         static_cast<RenderVoxelItem::SegmentMode>(snapshot.segment_mode);
+    item.sdf_split_target_id = snapshot.sdf_split_target_id;
     item.chain_min_radius = snapshot.chain_min_radius;
     item.use_cgal_skeleton = snapshot.use_cgal_skeleton;
     item.picked_skeleton_points = snapshot.picked_skeleton_points;

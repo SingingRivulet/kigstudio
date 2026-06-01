@@ -39,11 +39,16 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
         case RenderVoxelItem::CHAIN:
             mode_str = "chain";
             break;
+        case RenderVoxelItem::SDF_NODE_SPLIT:
+            mode_str = "sdf_node_split";
+            break;
         default:
             mode_str = "collision";
             break;
     }
     cJSON_AddStringToObject(obj, "segment_mode", mode_str);
+    cJSON_AddNumberToObject(obj, "sdf_split_target_id",
+                            item.sdf_split_target_id);
     cJSON_AddBoolToObject(obj, "show_mesh", item.showMesh);
     cJSON_AddBoolToObject(obj, "show_exported_mesh", item.showExportedMesh);
     cJSON_AddBoolToObject(obj, "show_voxel", item.showVoxel);
@@ -161,9 +166,15 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         item->segment_mode = RenderVoxelItem::FILL_INTERIOR;
     } else if (strcmp(mode_str, "chain") == 0) {
         item->segment_mode = RenderVoxelItem::CHAIN;
+    } else if (strcmp(mode_str, "sdf_node_split") == 0) {
+        item->segment_mode = RenderVoxelItem::SDF_NODE_SPLIT;
     } else {
         item->segment_mode = RenderVoxelItem::COLLISION;
     }
+    const cJSON* sdf_split_target_json =
+        cJSON_GetObjectItem(obj, "sdf_split_target_id");
+    item->sdf_split_target_id =
+        sdf_split_target_json ? sdf_split_target_json->valueint : -1;
     const cJSON* show_mesh_json = cJSON_GetObjectItem(obj, "show_mesh");
     item->showMesh = show_mesh_json ? cJSON_IsTrue(show_mesh_json) : true;
     const cJSON* show_exported_mesh_json =

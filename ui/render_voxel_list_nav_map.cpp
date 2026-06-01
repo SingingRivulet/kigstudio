@@ -24,6 +24,14 @@ void RenderVoxelList::render_nav_map() {
 
     ImNodes::BeginNodeEditor();
 
+    std::unordered_set<int> sdf_sources;
+    for (auto& [id, item] : this->items) {
+        if (item->segment_mode == RenderVoxelItem::SDF_NODE_SPLIT &&
+            item->sdf_split_target_id >= 0) {
+            sdf_sources.insert(item->sdf_split_target_id);
+        }
+    }
+
     int link_id = 0;
     for (auto& [id, item] : this->items) {
         // 设置节点固定坐标
@@ -58,6 +66,13 @@ void RenderVoxelList::render_nav_map() {
         ImNodes::BeginInputAttribute(id * 10 + 1, ImNodesPinShape_CircleFilled);
         ImGui::Text("");
         ImNodes::EndInputAttribute();
+
+        if (item->segment_mode == RenderVoxelItem::SDF_NODE_SPLIT) {
+            ImNodes::BeginInputAttribute(id * 1000 + 1,
+                                         ImNodesPinShape_CircleFilled);
+            ImGui::Text("SDF");
+            ImNodes::EndInputAttribute();
+        }
 
         // ImGui::Text(
         //     "%s",
@@ -103,6 +118,13 @@ void RenderVoxelList::render_nav_map() {
             ImNodes::EndOutputAttribute();
         }
 
+        if (sdf_sources.count(id)) {
+            ImNodes::BeginOutputAttribute(id * 1000 + 2,
+                                          ImNodesPinShape_CircleFilled);
+            ImGui::Text("");
+            ImNodes::EndOutputAttribute();
+        }
+
         ImNodes::EndNode();
 
         if (is_current) {
@@ -121,6 +143,18 @@ void RenderVoxelList::render_nav_map() {
                 int child_attr_id = child_id * 10 + 1;
                 ImNodes::Link(link_id++, parent_attr_id, child_attr_id);
             }
+        }
+    }
+
+    // 绘制 SDF 分割依赖线
+    for (auto& [id, item] : this->items) {
+        if (item->segment_mode == RenderVoxelItem::SDF_NODE_SPLIT &&
+            item->sdf_split_target_id >= 0 &&
+            this->items.find(item->sdf_split_target_id) !=
+                this->items.end()) {
+            int source_attr = item->sdf_split_target_id * 1000 + 2;
+            int target_attr = id * 1000 + 1;
+            ImNodes::Link(link_id++, source_attr, target_attr);
         }
     }
 
