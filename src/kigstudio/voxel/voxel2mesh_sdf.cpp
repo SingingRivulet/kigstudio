@@ -4,6 +4,7 @@
 #include <functional>
 #include <limits>
 #include <optional>
+#include <set>
 #include <unordered_map>
 #include <vector>
 
@@ -68,11 +69,49 @@ class SmoothMeshGenerator {
             return;
         }
 
+        // 计算存在 chunk 的包围盒
+        int min_cx = std::numeric_limits<int>::max();
+        int min_cy = std::numeric_limits<int>::max();
+        int min_cz = std::numeric_limits<int>::max();
+        int max_cx = std::numeric_limits<int>::min();
+        int max_cy = std::numeric_limits<int>::min();
+        int max_cz = std::numeric_limits<int>::min();
+        for (const auto& [chunk_key, chunk] : voxelData_.chunks) {
+            int cx, cy, cz;
+            unpackChunkKey(chunk_key, cx, cy, cz);
+            min_cx = std::min(min_cx, cx);
+            min_cy = std::min(min_cy, cy);
+            min_cz = std::min(min_cz, cz);
+            max_cx = std::max(max_cx, cx);
+            max_cy = std::max(max_cy, cy);
+            max_cz = std::max(max_cz, cz);
+        }
+
+        // 收集所有存在 chunk 及其 26-邻域（限制在包围盒范围内）
+        std::set<uint64_t> chunks_to_process;
+        for (const auto& [chunk_key, chunk] : voxelData_.chunks) {
+            chunks_to_process.insert(chunk_key);
+            int cx, cy, cz;
+            unpackChunkKey(chunk_key, cx, cy, cz);
+            for (int dx = -1; dx <= 1; ++dx) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dz = -1; dz <= 1; ++dz) {
+                        int nx = cx + dx, ny = cy + dy, nz = cz + dz;
+                        if (nx >= min_cx && nx <= max_cx &&
+                            ny >= min_cy && ny <= max_cy &&
+                            nz >= min_cz && nz <= max_cz) {
+                            chunks_to_process.insert(packChunkKey(nx, ny, nz));
+                        }
+                    }
+                }
+            }
+        }
+
         // 按chunk处理，生成每个chunk的mesh
-        int total_chunks = voxelData_.num_chunk();
+        int total_chunks = static_cast<int>(chunks_to_process.size());
         int chunk_count = 0;
 
-        for (const auto& [chunk_key, chunk] : voxelData_.chunks) {
+        for (uint64_t chunk_key : chunks_to_process) {
             chunk_count++;
             int progress = (chunk_count * 100) / total_chunks;
             current_status =

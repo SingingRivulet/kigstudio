@@ -426,22 +426,26 @@ struct triangle_bvh {
 // std::cout << "getSolidByFace by voxel_face_Z" << std::endl;
 #pragma omp for collapse(2)
             for (int i = 0; i < num_block_x; ++i) {
-                auto ray_ori = vec3<number_t>(colltest_min.x + i * voxelsizex,
-                                              colltest_min.y, colltest_min.z);
-                auto ray_end = vec3<number_t>(colltest_min.x + i * voxelsizex,
-                                              colltest_min.y, colltest_max.z);
-                ray<number_t> ray(ray_ori, ray_end);
-                // getSolid(ray, [&](auto start, auto end) {
-                getSolid_AxisAligned(
-                    ray, half_voxel_size, face, [&](auto start, auto end) {
-                        auto start_i = vec3<number_t>(
-                            start.x, start.y,
-                            round(start.z / voxelsizez) * voxelsizez);
-                        auto end_i = vec3<number_t>(
-                            end.x, end.y,
-                            round(end.z / voxelsizez) * voxelsizez);
-                        callback(start_i, end_i);
-                    });
+                for (int j = 0; j < num_block_y; ++j) {
+                    auto ray_ori = vec3<number_t>(
+                        colltest_min.x + i * voxelsizex,
+                        colltest_min.y + j * voxelsizey, colltest_min.z);
+                    auto ray_end = vec3<number_t>(
+                        colltest_min.x + i * voxelsizex,
+                        colltest_min.y + j * voxelsizey, colltest_max.z);
+                    ray<number_t> ray(ray_ori, ray_end);
+                    // getSolid(ray, [&](auto start, auto end) {
+                    getSolid_AxisAligned(
+                        ray, half_voxel_size, face, [&](auto start, auto end) {
+                            auto start_i = vec3<number_t>(
+                                start.x, start.y,
+                                round(start.z / voxelsizez) * voxelsizez);
+                            auto end_i = vec3<number_t>(
+                                end.x, end.y,
+                                round(end.z / voxelsizez) * voxelsizez);
+                            callback(start_i, end_i);
+                        });
+                }
             }
         }
     }
