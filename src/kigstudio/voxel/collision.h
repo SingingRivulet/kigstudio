@@ -490,11 +490,11 @@ CollisionGroup::to_sdf() const {
     std::vector<std::shared_ptr<SDFBase>> children;
     children.reserve(geometries_.size());
 
-    const mat4f global_matrix = transform.getMatrix();
+    const mat4f global_matrix = transform.getRenderMatrix();
 
     for (const auto& geometry : geometries_) {
         const mat4f world_matrix =
-            geometry.transform.getMatrix() * global_matrix;
+            geometry.transform.getRenderMatrix() * global_matrix;
         if (!isAffineInvertible(world_matrix)) {
             continue;
         }

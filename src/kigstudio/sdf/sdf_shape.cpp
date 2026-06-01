@@ -580,7 +580,7 @@ void SDF_FrameTransform::fromJSON(const cJSON* json) {
 float SDF_AffineTransform::get(const Vec3f& p) const {
     if (!child) return 1e6f;
     sinriv::kigstudio::mat::vec4<float> local =
-        inv_matrix * sinriv::kigstudio::mat::vec4<float>(p.x, p.y, p.z, 1.0f);
+        sinriv::kigstudio::mat::vec4<float>(p.x, p.y, p.z, 1.0f) * inv_matrix;
     auto v3 = local.toVec3();
     return child->get(Vec3f(v3.x, v3.y, v3.z));
 }
@@ -607,8 +607,8 @@ void SDF_AffineTransform::get(const Vec3f& begin,
             for (int x = 0; x < voxelCount.x; ++x) {
                 const float wx = begin.x + static_cast<float>(x) * voxelSize.x;
                 sinriv::kigstudio::mat::vec4<float> local =
-                    inv_matrix *
-                    sinriv::kigstudio::mat::vec4<float>(wx, wy, wz, 1.0f);
+                    sinriv::kigstudio::mat::vec4<float>(wx, wy, wz, 1.0f) *
+                    inv_matrix;
                 auto v3 = local.toVec3();
                 out[i++] = child->get(Vec3f(v3.x, v3.y, v3.z));
             }
