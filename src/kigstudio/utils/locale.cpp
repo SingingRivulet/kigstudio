@@ -322,6 +322,8 @@ void init_locale_strings() {
                       {{"en", "show collision axis"}, {"zh", "显示碰撞坐标轴"}});
     add_locale_string("label.show_collision_bounds",
                       {{"en", "show collision bounds"}, {"zh", "显示碰撞边界"}});
+    add_locale_string("label.show_voxel_chunk_bounds",
+                      {{"en", "show voxel chunk bounds"}, {"zh", "显示体素块边界"}});
     add_locale_string("label.disable_camera_on_pick",
                       {{"en", "disable camera on pick"},
                        {"zh", "拾取时禁用相机旋转"}});

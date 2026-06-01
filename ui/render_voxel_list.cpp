@@ -84,6 +84,13 @@ void RenderVoxelList::setCollisionBoundsVisible(bool visible) {
         it->second->showCollisionBounds = visible;
     }
 }
+void RenderVoxelList::setVoxelChunkBoundsVisible(bool visible) {
+    std::lock_guard<std::mutex> lock(locker);
+    auto it = items.find(render_id);
+    if (it != items.end()) {
+        it->second->showVoxelChunkBounds = visible;
+    }
+}
 
 // 交互
 

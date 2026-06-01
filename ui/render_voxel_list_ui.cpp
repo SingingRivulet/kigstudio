@@ -104,6 +104,9 @@ void RenderVoxelList::render_ui() {
                     ImGui::Checkbox(
                         get_locale_cstr("label.show_collision_bounds"),
                         &showCollisionBounds);
+                    ImGui::Checkbox(
+                        get_locale_cstr("label.show_voxel_chunk_bounds"),
+                        &showVoxelChunkBounds);
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
@@ -448,6 +451,7 @@ void RenderVoxelList::render_ui() {
     this->setVoxelsVisible(showVoxels);
     this->setCollisionVisible(showCollision);
     this->setCollisionBoundsVisible(showCollisionBounds);
+    this->setVoxelChunkBoundsVisible(showVoxelChunkBounds);
     this->update_nav_node_position();
 }
 

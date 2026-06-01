@@ -385,6 +385,7 @@ class RenderVoxelList {
         bool showVoxel = true;
         bool showCollision = true;
         bool showCollisionBounds = false;
+        bool showVoxelChunkBounds = false;
 
         bool auto_segment_update = true;
 
@@ -519,6 +520,7 @@ class RenderVoxelList {
     bool showVoxelAxis = false;
     bool showCollisionAxis = false;
     bool showCollisionBounds = true;
+    bool showVoxelChunkBounds = false;
 
     sinriv::kigstudio::voxel::collision::vec3f mouse_world_pos = {0, 0, 0};
     bool mouse_world_pos_valid = false;
@@ -694,6 +696,7 @@ class RenderVoxelList {
     void setVoxelsVisible(bool visible);
     void setCollisionVisible(bool visible);
     void setCollisionBoundsVisible(bool visible);
+    void setVoxelChunkBoundsVisible(bool visible);
 
     // 交互
     RenderVoxelItem* create_item();

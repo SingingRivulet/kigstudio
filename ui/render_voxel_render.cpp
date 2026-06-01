@@ -101,6 +101,73 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
     if (showVoxel) {
         voxel_renderer.renderOverlay(mesh_shader);
     }
+    if (showVoxelChunkBounds && !voxel_grid_data.chunks.empty()) {
+        if (mesh_shader.ensureLineProgram()) {
+            bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+            const uint32_t chunk_color = pack_abgr(0.0f, 1.0f, 1.0f, 1.0f);
+            std::vector<mesh_detail::ColorLineVertex> vertices;
+            vertices.reserve(voxel_grid_data.chunks.size() * 24);
+            for (const auto& [key, chunk] : voxel_grid_data.chunks) {
+                (void)chunk;
+                int cx, cy, cz;
+                sinriv::kigstudio::voxel::unpackChunkKey(key, cx, cy, cz);
+                float minx = voxel_grid_data.global_position.x +
+                             cx * sinriv::kigstudio::voxel::Chunk::SIZE *
+                                 voxel_grid_data.voxel_size.x;
+                float miny = voxel_grid_data.global_position.y +
+                             cy * sinriv::kigstudio::voxel::Chunk::SIZE *
+                                 voxel_grid_data.voxel_size.y;
+                float minz = voxel_grid_data.global_position.z +
+                             cz * sinriv::kigstudio::voxel::Chunk::SIZE *
+                                 voxel_grid_data.voxel_size.z;
+                float maxx = minx + sinriv::kigstudio::voxel::Chunk::SIZE *
+                                          voxel_grid_data.voxel_size.x;
+                float maxy = miny + sinriv::kigstudio::voxel::Chunk::SIZE *
+                                          voxel_grid_data.voxel_size.y;
+                float maxz = minz + sinriv::kigstudio::voxel::Chunk::SIZE *
+                                          voxel_grid_data.voxel_size.z;
+                float corners[8][3] = {
+                    {minx, miny, minz}, {maxx, miny, minz},
+                    {maxx, maxy, minz}, {minx, maxy, minz},
+                    {minx, miny, maxz}, {maxx, miny, maxz},
+                    {maxx, maxy, maxz}, {minx, maxy, maxz},
+                };
+                int edges[12][2] = {
+                    {0, 1}, {1, 2}, {2, 3}, {3, 0},
+                    {4, 5}, {5, 6}, {6, 7}, {7, 4},
+                    {0, 4}, {1, 5}, {2, 6}, {3, 7},
+                };
+                for (auto& e : edges) {
+                    vertices.push_back(
+                        {corners[e[0]][0], -corners[e[0]][1],
+                         corners[e[0]][2], chunk_color});
+                    vertices.push_back(
+                        {corners[e[1]][0], -corners[e[1]][1],
+                         corners[e[1]][2], chunk_color});
+                }
+            }
+            if (!vertices.empty() &&
+                bgfx::getAvailTransientVertexBuffer(
+                    static_cast<uint32_t>(vertices.size()),
+                    layout) >= vertices.size()) {
+                bgfx::TransientVertexBuffer tvb;
+                bgfx::allocTransientVertexBuffer(
+                    &tvb, static_cast<uint32_t>(vertices.size()),
+                    layout);
+                std::memcpy(
+                    tvb.data, vertices.data(),
+                    vertices.size() * sizeof(mesh_detail::ColorLineVertex));
+                bgfx::setTransform(model_transform);
+                bgfx::setVertexBuffer(0, &tvb);
+                bgfx::setState(BGFX_STATE_WRITE_RGB |
+                               BGFX_STATE_WRITE_A |
+                               BGFX_STATE_PT_LINES |
+                               BGFX_STATE_MSAA);
+                bgfx::submit(mesh_shader.overlay_view_id_,
+                             mesh_shader.line_program_);
+            }
+        }
+    }
     if (showCollision && segment_mode == COLLISION) {
         collision_renderer.render(collision_group, model_transform,
                                   model_transform_2, collision_shader,
