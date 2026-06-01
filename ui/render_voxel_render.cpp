@@ -101,12 +101,12 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
     if (showVoxel) {
         voxel_renderer.renderOverlay(mesh_shader);
     }
-    if (showCollision) {
+    if (showCollision && segment_mode == COLLISION) {
         collision_renderer.render(collision_group, model_transform,
                                   model_transform_2, collision_shader,
                                   cpu_model_matrix);
     }
-    if (showCollisionBounds) {
+    if (showCollisionBounds && segment_mode == COLLISION) {
         collision_renderer.renderBounds(collision_group, model_transform,
                                         model_transform_2, collision_shader,
                                         cpu_model_matrix);

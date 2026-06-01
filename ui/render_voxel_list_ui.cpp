@@ -150,11 +150,17 @@ void RenderVoxelList::render_ui() {
                                &export_stl_mode, 0);
             ImGui::RadioButton(get_locale_cstr("label.export_mode_smooth"),
                                &export_stl_mode, 1);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(get_locale_cstr("tooltip.export_mode_smooth"));
+            }
 
             ImGui::Separator();
 
             ImGui::Checkbox(get_locale_cstr("label.simplify_model"),
                             &export_stl_simplify);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(get_locale_cstr("tooltip.simplify_model"));
+            }
             if (export_stl_simplify) {
                 ImGui::Indent();
                 ImGui::SliderFloat(
@@ -269,6 +275,58 @@ void RenderVoxelList::render_ui() {
                     memory_peak / 1024.0f / 1024.0f);
         ImGui::SameLine();
         ImGui::Text(get_locale_cstr("label.current_fps"), fps);
+        ImGui::SameLine();
+        {
+            const char* labels[] = {
+                get_locale_cstr("label.show_mesh"),
+                get_locale_cstr("label.show_exported_mesh"),
+                get_locale_cstr("label.show_collision"),
+                get_locale_cstr("label.show_voxels")};
+            bool* states[] = {
+                &showMesh, &showExportedMesh, &showCollision,
+                &showVoxels};
+            float buttonSpacing = ImGui::GetStyle().ItemSpacing.x;
+            float totalWidth = 0;
+            for (int i = 0; i < 4; ++i) {
+                ImVec2 size = ImGui::CalcTextSize(labels[i]);
+                totalWidth +=
+                    size.x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                if (i < 3)
+                    totalWidth += buttonSpacing;
+            }
+            float windowWidth = ImGui::GetWindowSize().x;
+            ImGui::SetCursorPosX(windowWidth - totalWidth -
+                                 ImGui::GetStyle().WindowPadding.x);
+            for (int i = 0; i < 4; ++i) {
+                if (*states[i]) {
+                    ImGui::PushStyleColor(
+                        ImGuiCol_Button,
+                        ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+                    ImGui::PushStyleColor(
+                        ImGuiCol_ButtonHovered,
+                        ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+                    ImGui::PushStyleColor(
+                        ImGuiCol_ButtonActive,
+                        ImVec4(0.1f, 0.5f, 0.1f, 1.0f));
+                } else {
+                    ImGui::PushStyleColor(
+                        ImGuiCol_Button,
+                        ImVec4(0.4f, 0.4f, 0.4f, 1.0f));
+                    ImGui::PushStyleColor(
+                        ImGuiCol_ButtonHovered,
+                        ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+                    ImGui::PushStyleColor(
+                        ImGuiCol_ButtonActive,
+                        ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+                }
+                if (ImGui::SmallButton(labels[i])) {
+                    *states[i] = !*states[i];
+                }
+                ImGui::PopStyleColor(3);
+                if (i < 3)
+                    ImGui::SameLine();
+            }
+        }
 
         item_status_height =
             ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
@@ -423,6 +481,9 @@ void RenderVoxelList::render_file_loader() {
                     get_locale_cstr("label.no_file_selected"));
             }
             ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"), &load_as_sdf);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
+            }
             const float button_size = ImGui::GetFrameHeight();
             ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
             ImGui::SameLine();
@@ -472,6 +533,9 @@ void RenderVoxelList::render_reload_stl_dialog() {
                      ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted(get_locale_cstr("label.reload_stl_hint"));
         ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"), &load_as_sdf);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
+        }
         ImGui::Separator();
         ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
         ImGui::SameLine();

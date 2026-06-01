@@ -540,13 +540,25 @@ void init_locale_strings() {
                        {"zh", "使用凹锥从模型中挖出一个区域。"}});
     add_locale_string("tooltip.mode.split_disconnected",
                       {{"en", "Automatically split disconnected voxel regions into separate items."},
-                       {"zh", "自动将不连通的体素区域分割成独立的项目。"}});
+                       {"zh", "自动将不连通的体素区域分割成独立的项目。\n注意：此操作将丢失SDF数据"}});
     add_locale_string("tooltip.mode.neighbor",
                       {{"en", "Split voxels based on BFS distance from marked seed voxels.\nNote: This will lose SDF data."},
                        {"zh", "基于与标记种子体素的 BFS 距离来分割体素。\n注意：此操作将丢失SDF数据"}});
     add_locale_string("tooltip.mode.fill_interior",
                       {{"en", "Fill all enclosed hollow cavities inside the model with solid voxels. Produces a single child node."},
-                       {"zh", "用实体体素填满模型内部所有封闭的中空腔体。产生一个子节点。"}});
+                       {"zh", "用实体体素填满模型内部所有封闭的中空腔体。产生一个子节点。\n注意：此操作将丢失SDF数据"}});
+    add_locale_string("tooltip.load_as_sdf",
+                      {{"en", "Load STL file as signed distance field (SDF) for significantly improved model accuracy, but SDF data will be lost when using certain features (e.g. neighbor split)."},
+                       {"zh", "将 STL 文件作为有符号距离场 (SDF) 加载，这将显著提升模型精度，但是输出模型将消耗更长的时间。使用部分功能时会丢失 SDF 数据（例如邻近分割）。"}});
+    add_locale_string("tooltip.render_sdf",
+                      {{"en", "Render SDF as a 3D model. This will clear all marked voxels. Proceed?"},
+                       {"zh", "将SDF渲染为网格以供预览。注意：这可能需要较长时间。"}});
+    add_locale_string("tooltip.simplify_model",
+                      {{"en", "Simplify the model by merging redundant triangles.\nLower = more simplification (0.01=aggressive, 1.0=none).\nNote: This may take a long time."}, 
+                       {"zh", "合并多余的三角形以简化模型。\n数值越小简化越多（0.01=大量简化, 1.0=不简化）。\n注意：此操作可能会消耗较长时间。"}});
+    add_locale_string("tooltip.export_mode_smooth",
+                      {{"en", "Smooth the model on export (will attempt to use SDF data if available)."}, 
+                       {"zh", "导出时对物体进行平滑处理（将尝试使用SDF数据进行处理）"}});
     add_locale_string("tooltip.mode.chain",
                       {{"en", "Split the model into 3D-printable chains (e.g. for jointed dragon)."},
                        {"zh", "将物体切分为3D打印一体成形的链条（例如关节龙）。"}});

@@ -209,12 +209,18 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
                            &export_stl_mode, 0);
         ImGui::RadioButton(get_locale_cstr("label.export_mode_smooth"),
                            &export_stl_mode, 1);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(get_locale_cstr("tooltip.export_mode_smooth"));
+        }
 
         ImGui::Separator();
 
         // Simplification option
         ImGui::Checkbox(get_locale_cstr("label.simplify_model"),
                         &export_stl_simplify);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(get_locale_cstr("tooltip.simplify_model"));
+        }
         if (export_stl_simplify) {
             ImGui::Indent();
             ImGui::SliderFloat(
@@ -274,6 +280,9 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
             // Simplification option
             ImGui::Checkbox(get_locale_cstr("label.simplify_model"),
                             &export_stl_simplify);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(get_locale_cstr("tooltip.simplify_model"));
+            }
             if (export_stl_simplify) {
                 ImGui::Indent();
                 ImGui::SliderFloat(
@@ -303,6 +312,9 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
                 ImGui::CloseCurrentPopup();
             }
             ImGui::EndPopup();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(get_locale_cstr("tooltip.render_sdf"));
         }
     }
 

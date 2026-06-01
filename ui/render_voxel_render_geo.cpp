@@ -783,6 +783,8 @@ void RenderVoxelList::load_stl(std::string filename,
                     auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
                     mesh_sdf->loadSTL(filename);
                     item.sdf_data = std::move(mesh_sdf);
+                } else {
+                    item.sdf_data = nullptr;
                 }
                 // 重新分割 children
                 bool has_children = false;
@@ -822,6 +824,8 @@ void RenderVoxelList::load_stl(std::string filename,
             auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
             mesh_sdf->loadSTL(filename);
             item->sdf_data = std::move(mesh_sdf);
+        } else {
+            item->sdf_data = nullptr;
         }
         {
             std::lock_guard<std::mutex> lock(locker);
