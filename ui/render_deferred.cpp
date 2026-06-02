@@ -143,6 +143,13 @@ void RenderDeferred::prepareFrame() {
     bgfx::setViewClear(collision_fill_view_id_, BGFX_CLEAR_COLOR, 0x00000000);
     bgfx::touch(collision_fill_view_id_);
 
+    bgfx::setViewName(mesh_stencil_fill_view_id_, "MeshStencilMask");
+    bgfx::setViewFrameBuffer(mesh_stencil_fill_view_id_, mesh_stencil_fb_);
+    bgfx::setViewRect(mesh_stencil_fill_view_id_, 0, 0, width_, height_);
+    bgfx::setViewTransform(mesh_stencil_fill_view_id_, screen_view, screen_proj);
+    bgfx::setViewClear(mesh_stencil_fill_view_id_, BGFX_CLEAR_COLOR, 0x00000000);
+    bgfx::touch(mesh_stencil_fill_view_id_);
+
     bgfx::setViewName(lighting_view_id_, "DeferredLighting");
     bgfx::setViewFrameBuffer(lighting_view_id_, BGFX_INVALID_HANDLE);
     bgfx::setViewRect(lighting_view_id_, 0, 0, width_, height_);
@@ -297,7 +304,7 @@ void RenderDeferred::render() {
                 BGFX_STENCIL_OP_FAIL_S_KEEP |
                 BGFX_STENCIL_OP_FAIL_Z_KEEP |
                 BGFX_STENCIL_OP_PASS_Z_KEEP);
-        bgfx::submit(collision_fill_view_id_, collision_program_);
+        bgfx::submit(mesh_stencil_fill_view_id_, collision_program_);
     }
 
     // ===== Lighting Pass =====
@@ -310,6 +317,7 @@ void RenderDeferred::render() {
     bgfx::setTexture(2, s_world_pos_, world_pos_texture_);
     bgfx::setTexture(3, s_collision_status_, collision_body_texture_);
     bgfx::setTexture(4, s_volume_, collision_volume_texture_);
+    bgfx::setTexture(5, s_mesh_stencil_, mesh_stencil_body_texture_);
     bgfx::setUniform(u_light_dir_, light_dir_.data());
     bgfx::setUniform(u_space_div_, space_div.data());
     bgfx::setUniform(u_space_div_mix_, space_div_mix.data());
@@ -377,6 +385,10 @@ void RenderDeferred::release() {
     if (bgfx::isValid(s_volume_)) {
         bgfx::destroy(s_volume_);
         s_volume_ = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_mesh_stencil_)) {
+        bgfx::destroy(s_mesh_stencil_);
+        s_mesh_stencil_ = BGFX_INVALID_HANDLE;
     }
     destroyCollisionUniforms();
 }
@@ -464,6 +476,10 @@ void RenderDeferred::destroyFrameBuffer() {
         bgfx::destroy(collision_volume_fb_);
         collision_volume_fb_ = BGFX_INVALID_HANDLE;
     }
+    if (bgfx::isValid(mesh_stencil_fb_)) {
+        bgfx::destroy(mesh_stencil_fb_);
+        mesh_stencil_fb_ = BGFX_INVALID_HANDLE;
+    }
     if (bgfx::isValid(albedo_texture_)) {
         bgfx::destroy(albedo_texture_);
     }
@@ -479,12 +495,16 @@ void RenderDeferred::destroyFrameBuffer() {
     if (bgfx::isValid(collision_volume_texture_)) {
         bgfx::destroy(collision_volume_texture_);
     }
+    if (bgfx::isValid(mesh_stencil_body_texture_)) {
+        bgfx::destroy(mesh_stencil_body_texture_);
+    }
     if (bgfx::isValid(depth_texture_)) {
         bgfx::destroy(depth_texture_);
     }
     albedo_texture_ = BGFX_INVALID_HANDLE;
     collision_body_texture_ = BGFX_INVALID_HANDLE;
     collision_volume_texture_ = BGFX_INVALID_HANDLE;
+    mesh_stencil_body_texture_ = BGFX_INVALID_HANDLE;
     normal_texture_ = BGFX_INVALID_HANDLE;
     world_pos_texture_ = BGFX_INVALID_HANDLE;
     depth_texture_ = BGFX_INVALID_HANDLE;
@@ -621,6 +641,7 @@ bool RenderDeferred::ensureFrameBuffer() {
 
     if (bgfx::isValid(gbuffer_) && bgfx::isValid(collision_fb_) &&
         bgfx::isValid(collision_volume_fb_) &&
+        bgfx::isValid(mesh_stencil_fb_) &&
         width_ == fb_width_ && height_ == fb_height_) {
         return true;
     }
@@ -672,8 +693,19 @@ bool RenderDeferred::ensureFrameBuffer() {
         static_cast<uint8_t>(BX_COUNTOF(collision_volume_attachment)),
         collision_volume_attachment, false);
 
+    mesh_stencil_body_texture_ = bgfx::createTexture2D(
+        width_, height_, false, 1, bgfx::TextureFormat::BGRA8, kSamplerFlags);
+    bgfx::TextureHandle mesh_stencil_attachment[] = {
+        mesh_stencil_body_texture_,
+        depth_texture_,
+    };
+    mesh_stencil_fb_ = bgfx::createFrameBuffer(
+        static_cast<uint8_t>(BX_COUNTOF(mesh_stencil_attachment)),
+        mesh_stencil_attachment, false);
+
     return bgfx::isValid(gbuffer_) && bgfx::isValid(collision_fb_) &&
-           bgfx::isValid(collision_volume_fb_);
+           bgfx::isValid(collision_volume_fb_) &&
+           bgfx::isValid(mesh_stencil_fb_);
 }
 
 bool RenderDeferred::ensureProgram() {
@@ -699,6 +731,10 @@ bool RenderDeferred::ensureProgram() {
     if (!bgfx::isValid(s_volume_)) {
         s_volume_ =
             bgfx::createUniform("s_volume", bgfx::UniformType::Sampler);
+    }
+    if (!bgfx::isValid(s_mesh_stencil_)) {
+        s_mesh_stencil_ =
+            bgfx::createUniform("s_meshStencil", bgfx::UniformType::Sampler);
     }
     if (!bgfx::isValid(u_light_dir_)) {
         u_light_dir_ =

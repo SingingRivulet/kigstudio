@@ -173,6 +173,63 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                                   model_transform_2, collision_shader,
                                   cpu_model_matrix);
     }
+    if (segment_mode == SDF_NODE_SPLIT) {
+        if (sdf_split_target_id >= 0 && manager) {
+            auto target_it = manager->items.find(sdf_split_target_id);
+            if (target_it != manager->items.end() &&
+                !target_it->second->mesh_renderer.empty() &&
+                mesh_shader.ensureLineProgram()) {
+                auto [min_local, max_local] =
+                    target_it->second->mesh_renderer.getLocalBounds();
+                bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+                const uint32_t bounds_color = pack_abgr(0.0f, 1.0f, 0.0f, 1.0f);
+                std::vector<mesh_detail::ColorLineVertex> vertices;
+                vertices.reserve(24);
+                float corners[8][3] = {
+                    {min_local.x, min_local.y, min_local.z},
+                    {max_local.x, min_local.y, min_local.z},
+                    {max_local.x, max_local.y, min_local.z},
+                    {min_local.x, max_local.y, min_local.z},
+                    {min_local.x, min_local.y, max_local.z},
+                    {max_local.x, min_local.y, max_local.z},
+                    {max_local.x, max_local.y, max_local.z},
+                    {min_local.x, max_local.y, max_local.z},
+                };
+                int edges[12][2] = {
+                    {0, 1}, {1, 2}, {2, 3}, {3, 0},
+                    {4, 5}, {5, 6}, {6, 7}, {7, 4},
+                    {0, 4}, {1, 5}, {2, 6}, {3, 7},
+                };
+                for (auto& e : edges) {
+                    auto& a = corners[e[0]];
+                    auto& b = corners[e[1]];
+                    vertices.push_back(
+                        {a[0], -a[1], a[2], bounds_color});
+                    vertices.push_back(
+                        {b[0], -b[1], b[2], bounds_color});
+                }
+                if (!vertices.empty() &&
+                    bgfx::getAvailTransientVertexBuffer(
+                        static_cast<uint32_t>(vertices.size()),
+                        layout) >= vertices.size()) {
+                    bgfx::TransientVertexBuffer tvb;
+                    bgfx::allocTransientVertexBuffer(
+                        &tvb, static_cast<uint32_t>(vertices.size()), layout);
+                    std::memcpy(
+                        tvb.data, vertices.data(),
+                        vertices.size() * sizeof(mesh_detail::ColorLineVertex));
+                    bgfx::setTransform(model_transform);
+                    bgfx::setVertexBuffer(0, &tvb);
+                    bgfx::setState(BGFX_STATE_WRITE_RGB |
+                                   BGFX_STATE_WRITE_A |
+                                   BGFX_STATE_PT_LINES |
+                                   BGFX_STATE_MSAA);
+                    bgfx::submit(mesh_shader.overlay_view_id_,
+                                 mesh_shader.line_program_);
+                }
+            }
+        }
+    }
     if (showCollisionBounds && segment_mode == COLLISION) {
         collision_renderer.renderBounds(collision_group, model_transform,
                                         model_transform_2, collision_shader,

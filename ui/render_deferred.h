@@ -74,11 +74,13 @@ namespace sinriv::ui::render {
                                 bgfx::ViewId lighting_view_id = 3,
                                 bgfx::ViewId collision_view_id = 1,
                                 bgfx::ViewId collision_fill_view_id = 2,
+                                bgfx::ViewId mesh_stencil_fill_view_id = 5,
                                 std::string shader_dir = "shader/base/")
             : gbuffer_view_id_(gbuffer_view_id),
               lighting_view_id_(lighting_view_id),
               collision_view_id_(collision_view_id),
               collision_fill_view_id_(collision_fill_view_id),
+              mesh_stencil_fill_view_id_(mesh_stencil_fill_view_id),
               shader_dir_(std::move(shader_dir)) {
             bx::mtxIdentity(scene_view_);
             bx::mtxIdentity(scene_proj_);
@@ -91,15 +93,18 @@ namespace sinriv::ui::render {
         inline bgfx::ViewId getLightingViewId() const { return lighting_view_id_; }
         inline bgfx::ViewId getCollisionViewId() const { return collision_view_id_; }
         inline bgfx::ViewId getCollisionFillViewId() const { return collision_fill_view_id_; }
+        inline bgfx::ViewId getMeshStencilFillViewId() const { return mesh_stencil_fill_view_id_; }
 
         inline void setViewIds(bgfx::ViewId gbuffer_view_id,
                                bgfx::ViewId lighting_view_id,
                                bgfx::ViewId collision_view_id,
-                               bgfx::ViewId collision_fill_view_id) {
+                               bgfx::ViewId collision_fill_view_id,
+                               bgfx::ViewId mesh_stencil_fill_view_id = 5) {
             gbuffer_view_id_ = gbuffer_view_id;
             lighting_view_id_ = lighting_view_id;
             collision_view_id_ = collision_view_id;
             collision_fill_view_id_ = collision_fill_view_id;
+            mesh_stencil_fill_view_id_ = mesh_stencil_fill_view_id;
         }
 
         inline void setSceneViewProjection(const float* view, const float* proj) {
@@ -184,6 +189,7 @@ namespace sinriv::ui::render {
         bgfx::ViewId gbuffer_view_id_ = 0;
         bgfx::ViewId collision_view_id_ = 1;
         bgfx::ViewId collision_fill_view_id_ = 2;
+        bgfx::ViewId mesh_stencil_fill_view_id_ = 5;
         bgfx::ViewId lighting_view_id_ = 3;
         std::string shader_dir_ = "shader/base/";
         uint16_t width_ = 1;
@@ -212,11 +218,14 @@ namespace sinriv::ui::render {
         bgfx::VertexBufferHandle mesh_stencil_vbh_ = BGFX_INVALID_HANDLE;
         bgfx::IndexBufferHandle mesh_stencil_ibh_ = BGFX_INVALID_HANDLE;
         uint32_t mesh_stencil_index_count_ = 0;
+        bgfx::TextureHandle mesh_stencil_body_texture_ = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle mesh_stencil_fb_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_albedo_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_normal_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_world_pos_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_collision_status_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_volume_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle s_mesh_stencil_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_light_dir_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_shape_type_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_shape_data_0_ = BGFX_INVALID_HANDLE;

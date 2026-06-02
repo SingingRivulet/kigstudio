@@ -104,6 +104,7 @@ int main(int argc, char** argv) {
     constexpr bgfx::ViewId kCollisionFillView = 2;
     constexpr bgfx::ViewId kLightingView = 3;
     constexpr bgfx::ViewId kOverlayView = 4;
+    constexpr bgfx::ViewId kMeshStencilFillView = 5;
 
     bgfx::setViewClear(kOverlayView, 0, 0x00000000, 1.0f, 0);
     bgfx::setViewFrameBuffer(kOverlayView, BGFX_INVALID_HANDLE);
@@ -119,6 +120,7 @@ int main(int argc, char** argv) {
     bgfx::setViewRect(kLightingView, 0, 0, width, height);
     bgfx::setViewRect(kCollisionView, 0, 0, width, height);
     bgfx::setViewRect(kCollisionFillView, 0, 0, width, height);
+    bgfx::setViewRect(kMeshStencilFillView, 0, 0, width, height);
     bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
     sinriv::ui::render::RenderMeshShader mesh_render_shader(kGBufferView,
@@ -126,7 +128,8 @@ int main(int argc, char** argv) {
     sinriv::ui::render::RenderCollisionShader collision_render_shader(
         kGBufferView, kOverlayView);
     sinriv::ui::render::RenderDeferred deferred_renderer(
-        kGBufferView, kLightingView, kCollisionView, kCollisionFillView);
+        kGBufferView, kLightingView, kCollisionView, kCollisionFillView,
+        kMeshStencilFillView);
     sinriv::ui::render::RenderVoxelList render_items;
     sinriv::ui::render::RenderCollision collision_renderer{};
 
@@ -455,6 +458,7 @@ int main(int argc, char** argv) {
         bgfx::setViewRect(kLightingView, 0, 0, width, height);
         bgfx::setViewRect(kCollisionView, 0, 0, width, height);
         bgfx::setViewRect(kCollisionFillView, 0, 0, width, height);
+        bgfx::setViewRect(kMeshStencilFillView, 0, 0, width, height);
         bgfx::setViewRect(kOverlayView, 0, 0, width, height);
 
         float view_1[16];
