@@ -49,6 +49,15 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddStringToObject(obj, "segment_mode", mode_str);
     cJSON_AddNumberToObject(obj, "sdf_split_target_id",
                             item.sdf_split_target_id);
+    cJSON_AddItemToObject(
+        obj, "sdf_split_translation",
+        sinriv::kigstudio::to_json(item.sdf_split_translation));
+    cJSON_AddItemToObject(
+        obj, "sdf_split_rotation",
+        sinriv::kigstudio::to_json(item.sdf_split_rotation));
+    cJSON_AddItemToObject(
+        obj, "sdf_split_scale",
+        sinriv::kigstudio::to_json(item.sdf_split_scale));
     cJSON_AddBoolToObject(obj, "show_mesh", item.showMesh);
     cJSON_AddBoolToObject(obj, "show_exported_mesh", item.showExportedMesh);
     cJSON_AddBoolToObject(obj, "show_voxel", item.showVoxel);
@@ -175,6 +184,27 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         cJSON_GetObjectItem(obj, "sdf_split_target_id");
     item->sdf_split_target_id =
         sdf_split_target_json ? sdf_split_target_json->valueint : -1;
+    const cJSON* sdf_split_translation_json =
+        cJSON_GetObjectItem(obj, "sdf_split_translation");
+    if (sdf_split_translation_json) {
+        item->sdf_split_translation =
+            sinriv::kigstudio::vec3_from_json<vec3f>(
+                sdf_split_translation_json);
+    }
+    const cJSON* sdf_split_rotation_json =
+        cJSON_GetObjectItem(obj, "sdf_split_rotation");
+    if (sdf_split_rotation_json) {
+        item->sdf_split_rotation =
+            sinriv::kigstudio::vec3_from_json<vec3f>(
+                sdf_split_rotation_json);
+    }
+    const cJSON* sdf_split_scale_json =
+        cJSON_GetObjectItem(obj, "sdf_split_scale");
+    if (sdf_split_scale_json) {
+        item->sdf_split_scale =
+            sinriv::kigstudio::vec3_from_json<vec3f>(
+                sdf_split_scale_json);
+    }
     const cJSON* show_mesh_json = cJSON_GetObjectItem(obj, "show_mesh");
     item->showMesh = show_mesh_json ? cJSON_IsTrue(show_mesh_json) : true;
     const cJSON* show_exported_mesh_json =

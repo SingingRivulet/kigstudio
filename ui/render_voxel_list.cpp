@@ -1,9 +1,9 @@
 #include "render_voxel_list.h"
-#include "kigstudio/sdf/sdf_chain_joint.h"
 #include <bit>
 #include <chrono>
 #include <cstring>
 #include <limits>
+#include "kigstudio/sdf/sdf_chain_joint.h"
 namespace sinriv::ui::render {
 
 void RenderVoxelList::setViewportSize(int width, int height) {
@@ -124,12 +124,15 @@ void RenderVoxelList::setRenderId_unsafe(int id) {
 
 void RenderVoxelList::brush_marked_voxels(
     const sinriv::kigstudio::voxel::vec3f& world_pos,
-    float range, bool remove) {
+    float range,
+    bool remove) {
     std::lock_guard<std::mutex> lock(locker);
     auto it = items.find(render_id);
-    if (it == items.end()) return;
+    if (it == items.end())
+        return;
     auto& item = *it->second;
-    if (!item.voxel_picking_enabled || !item.surface_cache_ready) return;
+    if (!item.voxel_picking_enabled || !item.surface_cache_ready)
+        return;
 
     using clock = std::chrono::high_resolution_clock;
     using ms = std::chrono::duration<double, std::milli>;
@@ -176,19 +179,19 @@ void RenderVoxelList::brush_marked_voxels(
                 if (use_local_voxel_scan) {
                     const int min_lx =
                         std::max(0, center.x - voxel_radius - base_x);
-                    const int max_lx = std::min(
-                        sinriv::kigstudio::voxel::Chunk::SIZE - 1,
-                        center.x + voxel_radius - base_x);
+                    const int max_lx =
+                        std::min(sinriv::kigstudio::voxel::Chunk::SIZE - 1,
+                                 center.x + voxel_radius - base_x);
                     const int min_ly =
                         std::max(0, center.y - voxel_radius - base_y);
-                    const int max_ly = std::min(
-                        sinriv::kigstudio::voxel::Chunk::SIZE - 1,
-                        center.y + voxel_radius - base_y);
+                    const int max_ly =
+                        std::min(sinriv::kigstudio::voxel::Chunk::SIZE - 1,
+                                 center.y + voxel_radius - base_y);
                     const int min_lz =
                         std::max(0, center.z - voxel_radius - base_z);
-                    const int max_lz = std::min(
-                        sinriv::kigstudio::voxel::Chunk::SIZE - 1,
-                        center.z + voxel_radius - base_z);
+                    const int max_lz =
+                        std::min(sinriv::kigstudio::voxel::Chunk::SIZE - 1,
+                                 center.z + voxel_radius - base_z);
 
                     for (int lz = min_lz; lz <= max_lz; ++lz) {
                         for (int ly = min_ly; ly <= max_ly; ++ly) {
@@ -305,7 +308,8 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
         return;
 
     auto& item = *it->second;
-    const float pick_range = std::max(mouse_highlight_range, item.voxel_pick_range);
+    const float pick_range =
+        std::max(mouse_highlight_range, item.voxel_pick_range);
 
     // 优先使用 skeleton_order_cache + kd树 查询最近的骨架点
     if (!item.skeleton_order_cache.empty()) {
@@ -329,8 +333,7 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
                     const double dx = nearest_pos.x - mouse_world_pos.x;
                     const double dy = nearest_pos.y - mouse_world_pos.y;
                     const double dz = nearest_pos.z - mouse_world_pos.z;
-                    const double dist =
-                        std::sqrt(dx * dx + dy * dy + dz * dz);
+                    const double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
                     if (dist <= static_cast<double>(pick_range)) {
                         item.picked_skeleton_points.push_back(
                             item.skeleton_order_cache[nearest_idx]);
@@ -373,10 +376,190 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
     item.joint_wireframe_dirty = true;
 }
 
+std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
+                       sinriv::kigstudio::sdf::SDFBasePtr>>
+RenderVoxelList::RenderVoxelItem::do_segment() {
+    if (segment_mode == COLLISION) {
+        auto res = voxel_grid_data.segment(collision_group);
+        sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;
+        sinriv::kigstudio::sdf::SDFBasePtr right_sdf = nullptr;
+        if (sdf_data) {
+            auto collision_sdf = collision_group.to_sdf();
+            left_sdf = sinriv::kigstudio::sdf::sdf_subtraction(sdf_data,
+                                                               collision_sdf);
+            right_sdf = sinriv::kigstudio::sdf::sdf_intersection(sdf_data,
+                                                                 collision_sdf);
+        }
+        return {{std::move(std::get<0>(res)), std::move(right_sdf)},
+                {std::move(std::get<1>(res)), std::move(left_sdf)}};
+    } else if (segment_mode == PLANE) {
+        auto res = voxel_grid_data.segment(plane);
+        sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;
+        sinriv::kigstudio::sdf::SDFBasePtr right_sdf = nullptr;
+        if (sdf_data) {
+            // Create SDF for both split sides
+            auto plane_sdf = std::shared_ptr<sinriv::kigstudio::sdf::SDF_Plane>(
+                new sinriv::kigstudio::sdf::SDF_Plane(plane.A, plane.B, plane.C,
+                                                      plane.D));
+            auto plane_sdf_neg =
+                std::shared_ptr<sinriv::kigstudio::sdf::SDF_Plane>(
+                    new sinriv::kigstudio::sdf::SDF_Plane(-plane.A, -plane.B,
+                                                          -plane.C, -plane.D));
+            left_sdf =
+                sinriv::kigstudio::sdf::sdf_intersection(sdf_data, plane_sdf);
+            right_sdf = sinriv::kigstudio::sdf::sdf_intersection(sdf_data,
+                                                                 plane_sdf_neg);
+        }
+        return {{std::move(std::get<0>(res)), std::move(right_sdf)},
+                {std::move(std::get<1>(res)), std::move(left_sdf)}};
+    } else if (segment_mode == CONCAVE_CONE) {
+        auto res = voxel_grid_data.segment(concave_cone);
+        sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;
+        sinriv::kigstudio::sdf::SDFBasePtr right_sdf = nullptr;
+        if (sdf_data) {
+            auto cone_sdf = sinriv::kigstudio::sdf::to_sdf(concave_cone);
+            left_sdf =
+                sinriv::kigstudio::sdf::sdf_subtraction(sdf_data, cone_sdf);
+            right_sdf =
+                sinriv::kigstudio::sdf::sdf_intersection(sdf_data, cone_sdf);
+        }
+        return {{std::move(std::get<0>(res)), std::move(right_sdf)},
+                {std::move(std::get<1>(res)), std::move(left_sdf)}};
+    } else if (segment_mode == SPLIT_DISCONNECTED) {
+        auto splits = voxel_grid_data.splitDisconnected(true);
+        std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
+                               sinriv::kigstudio::sdf::SDFBasePtr>>
+            result;
+        result.reserve(splits.size());
+        for (auto& grid : splits) {
+            result.emplace_back(std::move(grid), nullptr);
+        }
+        return result;
+    } else if (segment_mode == NEIGHBOR) {
+        std::vector<sinriv::kigstudio::Vec3i> seeds;
+        for (const auto& v : marked_voxels) {
+            seeds.push_back(v);
+        }
+        auto res = voxel_grid_data.bfsSplit(seeds, neighbor_max_distance, true);
+        return {{std::move(std::get<0>(res)), nullptr},
+                {std::move(std::get<1>(res)), nullptr}};
+    } else if (segment_mode == FILL_INTERIOR) {
+        auto filled = voxel_grid_data.fillInterior(true);
+        return {{std::move(filled), nullptr}};
+    } else if (segment_mode == CHAIN) {
+        return {do_segment_chain()};
+    } else if (segment_mode == SDF_NODE_SPLIT) {
+        if (sdf_split_target_id >= 0 && manager) {
+            std::lock_guard<std::mutex> lock(manager->locker);
+            auto target_it = manager->items.find(sdf_split_target_id);
+            if (target_it != manager->items.end() &&
+                target_it->second->sdf_data) {
+                auto target_sdf =
+                    transformed_sdf_split_target(target_it->second->sdf_data);
+
+                sinriv::kigstudio::voxel::VoxelGrid outside;
+                sinriv::kigstudio::voxel::VoxelGrid inside;
+                outside.global_position = voxel_grid_data.global_position;
+                outside.voxel_size = voxel_grid_data.voxel_size;
+                inside.global_position = voxel_grid_data.global_position;
+                inside.voxel_size = voxel_grid_data.voxel_size;
+
+                for (const auto& voxel : voxel_grid_data) {
+                    auto world = voxel_grid_data.voxelCenterToWorld(voxel);
+                    bool in_target = target_sdf->get(world) <= 0.0f;
+                    if (in_target) {
+                        inside.insert(voxel.x, voxel.y, voxel.z);
+                    } else {
+                        outside.insert(voxel.x, voxel.y, voxel.z);
+                    }
+                }
+
+                sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;
+                sinriv::kigstudio::sdf::SDFBasePtr right_sdf = nullptr;
+                if (sdf_data) {
+                    left_sdf = sinriv::kigstudio::sdf::sdf_subtraction(
+                        sdf_data, target_sdf);
+                    right_sdf = sinriv::kigstudio::sdf::sdf_intersection(
+                        sdf_data, target_sdf);
+                }
+
+                return {{std::move(outside), std::move(left_sdf)},
+                        {std::move(inside), std::move(right_sdf)}};
+            }
+        }
+        return {{voxel_grid_data, sdf_data}};
+    } else {
+        throw std::runtime_error("Unknown method");
+    }
+}
+
+mat4f RenderVoxelList::RenderVoxelItem::sdf_split_transform_matrix() const {
+    // Build a proper affine matrix: translation * Rz * Ry * Rx * scale
+    // Also ensure all matrices are well-initialized to avoid
+    // garbage in unused elements (which can introduce projective
+    // components and cause the 'cone' distortion seen when only
+    // translation is non-zero).
+    constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
+
+    // Safe scale matrix (explicitly initialize elements)
+    mat4f scale;
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            scale[i][j] = 0.0f;
+    scale[0][0] = sdf_split_scale.x;
+    scale[1][1] = sdf_split_scale.y;
+    scale[2][2] = sdf_split_scale.z;
+    scale[3][3] = 1.0f;
+
+    // Rotations: rely on setRotation but clear potential stray
+    // elements (so bottom row/column are correct)
+    mat4f rx;
+    rx.setRotation(sdf_split_rotation.x * kDegToRad, 1.0f, 0.0f, 0.0f);
+    for (int i = 0; i < 3; ++i)
+        rx[i][3] = 0.0f;
+    for (int j = 0; j < 3; ++j)
+        rx[3][j] = 0.0f;
+    rx[3][3] = 1.0f;
+
+    mat4f ry;
+    ry.setRotation(sdf_split_rotation.y * kDegToRad, 0.0f, 1.0f, 0.0f);
+    for (int i = 0; i < 3; ++i)
+        ry[i][3] = 0.0f;
+    for (int j = 0; j < 3; ++j)
+        ry[3][j] = 0.0f;
+    ry[3][3] = 1.0f;
+
+    mat4f rz;
+    rz.setRotation(sdf_split_rotation.z * kDegToRad, 0.0f, 0.0f, 1.0f);
+    for (int i = 0; i < 3; ++i)
+        rz[i][3] = 0.0f;
+    for (int j = 0; j < 3; ++j)
+        rz[3][j] = 0.0f;
+    rz[3][3] = 1.0f;
+
+    // Translation: build as an identity with translation components
+    mat4f translation;
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            translation[i][j] = (i == j) ? 1.0f : 0.0f;
+    translation[0][3] = sdf_split_translation.x;
+    translation[1][3] = sdf_split_translation.y;
+    translation[2][3] = sdf_split_translation.z;
+
+    // Combine: translate, then rotations (Z Y X), then scale.
+    // Some subsystems expect the transposed layout/column-vectors,
+    // so return the transpose here as an experiment to match
+    // SDF usage conventions.
+    mat4f m = translation * rz * ry * rx * scale;
+    m.transpose();
+    return m;
+}
+
 void RenderVoxelList::RenderVoxelItem::rebuild_joint_wireframe() {
     joint_wireframe_vertices.clear();
     joint_wireframe_dirty = false;
-    if (picked_skeleton_points.empty()) return;
+    if (picked_skeleton_points.empty())
+        return;
 
     using Vec3f = sinriv::kigstudio::sdf::joint::Vec3f;
     using Frame = sinriv::kigstudio::sdf::joint::Frame;
@@ -439,7 +622,8 @@ void RenderVoxelList::RenderVoxelItem::rebuild_joint_wireframe() {
             frame = sinriv::kigstudio::sdf::joint::buildFrame(
                 start, end, params.rotation_angle);
         } else {
-            frame = sinriv::kigstudio::sdf::joint::buildFrameAlignedY(start, end);
+            frame =
+                sinriv::kigstudio::sdf::joint::buildFrameAlignedY(start, end);
         }
 
         sinriv::kigstudio::sdf::joint::JointNegativeSDF neg;
@@ -536,8 +720,8 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
             frame = sinriv::kigstudio::sdf::joint::buildFrame(
                 start, end, params.rotation_angle);
         } else {
-            frame = sinriv::kigstudio::sdf::joint::buildFrameAlignedY(
-                start, end);
+            frame =
+                sinriv::kigstudio::sdf::joint::buildFrameAlignedY(start, end);
         }
 
         sinriv::kigstudio::sdf::joint::JointNegativeSDF neg;
@@ -564,7 +748,8 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
                                         cy * Chunk::SIZE + ly,
                                         cz * Chunk::SIZE + lz);
                             auto world_pos = result.voxelCenterToWorld(voxel);
-                            Vec3f world_p(world_pos.x, world_pos.y, world_pos.z);
+                            Vec3f world_p(world_pos.x, world_pos.y,
+                                          world_pos.z);
                             if (neg.contains(world_p)) {
                                 to_remove.push_back(voxel);
                             }
@@ -590,8 +775,12 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
         pos.male_cylinder_offset = params.male_cylinder_offset;
         pos.male_cylinder_radius = params.male_cylinder_radius;
 
-        auto neg_ptr = std::make_shared<sinriv::kigstudio::sdf::joint::JointNegativeSDF>(neg);
-        auto pos_ptr = std::make_shared<sinriv::kigstudio::sdf::joint::JointPositiveSDF>(pos);
+        auto neg_ptr =
+            std::make_shared<sinriv::kigstudio::sdf::joint::JointNegativeSDF>(
+                neg);
+        auto pos_ptr =
+            std::make_shared<sinriv::kigstudio::sdf::joint::JointPositiveSDF>(
+                pos);
         if (result_sdf) {
             result_sdf = sinriv::kigstudio::sdf::sdf_union(
                 sinriv::kigstudio::sdf::sdf_subtraction(result_sdf, neg_ptr),
@@ -603,29 +792,28 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
                 pos.socket_support_radius / std::tan(pos.socket_support_angle);
             float head_sup_h =
                 pos.head_support_radius / std::tan(pos.head_support_angle);
-            float local_x_min = -std::max(
-                {pos.socket_support_radius, pos.head_support_radius,
-                 pos.effectiveHalfHeight()});
+            float local_x_min =
+                -std::max({pos.socket_support_radius, pos.head_support_radius,
+                           pos.effectiveHalfHeight()});
             float local_x_max = -local_x_min;
             float local_y_min = local_x_min;
             float local_y_max = local_x_max;
             float local_z_min =
                 std::min({pos.socket_support_offset, pos.head_support_offset,
                           pos.male_cylinder_offset - pos.male_cylinder_radius});
-            float local_z_max = std::max(
-                {pos.socket_support_offset + socket_sup_h,
-                 pos.head_support_offset + head_sup_h,
-                 pos.male_cylinder_offset + pos.male_cylinder_radius});
+            float local_z_max =
+                std::max({pos.socket_support_offset + socket_sup_h,
+                          pos.head_support_offset + head_sup_h,
+                          pos.male_cylinder_offset + pos.male_cylinder_radius});
 
-            Vec3f local_corners[8] = {
-                {local_x_min, local_y_min, local_z_min},
-                {local_x_min, local_y_min, local_z_max},
-                {local_x_min, local_y_max, local_z_min},
-                {local_x_min, local_y_max, local_z_max},
-                {local_x_max, local_y_min, local_z_min},
-                {local_x_max, local_y_min, local_z_max},
-                {local_x_max, local_y_max, local_z_min},
-                {local_x_max, local_y_max, local_z_max}};
+            Vec3f local_corners[8] = {{local_x_min, local_y_min, local_z_min},
+                                      {local_x_min, local_y_min, local_z_max},
+                                      {local_x_min, local_y_max, local_z_min},
+                                      {local_x_min, local_y_max, local_z_max},
+                                      {local_x_max, local_y_min, local_z_min},
+                                      {local_x_max, local_y_min, local_z_max},
+                                      {local_x_max, local_y_max, local_z_min},
+                                      {local_x_max, local_y_max, local_z_max}};
 
             Vec3f world_min = frame.localToWorld(local_corners[0]);
             Vec3f world_max = world_min;
@@ -651,7 +839,8 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
                         Vec3f world_p(world_pos.x, world_pos.y, world_pos.z);
                         if (pos.contains(world_p)) {
                             to_add.push_back(voxel);
-                            // std::cout << "Adding voxel " << voxel << " at " << world_p << std::endl;
+                            // std::cout << "Adding voxel " << voxel << " at "
+                            // << world_p << std::endl;
                         }
                     }
                 }
@@ -666,7 +855,8 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
 }
 
 void RenderVoxelList::begin_marked_edit(int item_id) {
-    if (pending_marked_undo.has_value() && pending_marked_undo->item_id == item_id) {
+    if (pending_marked_undo.has_value() &&
+        pending_marked_undo->item_id == item_id) {
         return;
     }
     pending_marked_undo.reset();
@@ -678,7 +868,8 @@ void RenderVoxelList::begin_marked_edit(int item_id) {
 }
 
 void RenderVoxelList::end_marked_edit(int item_id, const std::string& desc) {
-    if (!pending_marked_undo.has_value() || pending_marked_undo->item_id != item_id) {
+    if (!pending_marked_undo.has_value() ||
+        pending_marked_undo->item_id != item_id) {
         return;
     }
     auto it = items.find(item_id);
@@ -694,7 +885,8 @@ void RenderVoxelList::end_marked_edit(int item_id, const std::string& desc) {
                     changed = true;
                     break;
                 }
-                if (memcmp(chunk.data, ait->second.data, sizeof(chunk.data)) != 0) {
+                if (memcmp(chunk.data, ait->second.data, sizeof(chunk.data)) !=
+                    0) {
                     changed = true;
                     break;
                 }
@@ -722,9 +914,11 @@ void RenderVoxelList::end_marked_edit(int item_id, const std::string& desc) {
     pending_marked_undo.reset();
 }
 
-void RenderVoxelList::push_marked_undo_now(int item_id, const std::string& desc) {
+void RenderVoxelList::push_marked_undo_now(int item_id,
+                                           const std::string& desc) {
     auto it = items.find(item_id);
-    if (it == items.end()) return;
+    if (it == items.end())
+        return;
     it->second->marked_undo_stack.push_back(
         MarkedVoxelsSnapshot{it->second->marked_voxels, desc});
     it->second->marked_redo_stack.clear();
@@ -738,10 +932,12 @@ void RenderVoxelList::push_marked_undo_now(int item_id, const std::string& desc)
 
 void RenderVoxelList::undo_marked(int item_id) {
     auto it = items.find(item_id);
-    if (it == items.end() || it->second->marked_undo_stack.empty()) return;
+    if (it == items.end() || it->second->marked_undo_stack.empty())
+        return;
     it->second->marked_redo_stack.push_back(
         MarkedVoxelsSnapshot{it->second->marked_voxels, ""});
-    it->second->marked_voxels = it->second->marked_undo_stack.back().marked_voxels;
+    it->second->marked_voxels =
+        it->second->marked_undo_stack.back().marked_voxels;
     it->second->marked_undo_stack.pop_back();
     it->second->marked_voxels_dirty = true;
     it->second->dirty = true;
@@ -749,10 +945,12 @@ void RenderVoxelList::undo_marked(int item_id) {
 
 void RenderVoxelList::redo_marked(int item_id) {
     auto it = items.find(item_id);
-    if (it == items.end() || it->second->marked_redo_stack.empty()) return;
+    if (it == items.end() || it->second->marked_redo_stack.empty())
+        return;
     it->second->marked_undo_stack.push_back(
         MarkedVoxelsSnapshot{it->second->marked_voxels, ""});
-    it->second->marked_voxels = it->second->marked_redo_stack.back().marked_voxels;
+    it->second->marked_voxels =
+        it->second->marked_redo_stack.back().marked_voxels;
     it->second->marked_redo_stack.pop_back();
     it->second->marked_voxels_dirty = true;
     it->second->dirty = true;

@@ -50,6 +50,16 @@ void append_marker_circle(std::vector<mesh_detail::ColorLineVertex>& vertices,
         vertices.push_back({p1.x, -p1.y, p1.z, color});
     }
 }
+
+sinriv::kigstudio::voxel::vec3f transform_point(
+    const mat4f& matrix,
+    const sinriv::kigstudio::voxel::vec3f& point) {
+    sinriv::kigstudio::mat::vec4<float> transformed =
+        sinriv::kigstudio::mat::vec4<float>(point.x, point.y, point.z, 1.0f) *
+        matrix;
+    auto v3 = transformed.toVec3();
+    return {v3.x, v3.y, v3.z};
+}
 }  // namespace
 
 void RenderVoxelList::RenderVoxelItem::render_gbuffer(
@@ -185,7 +195,7 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 const uint32_t bounds_color = pack_abgr(0.0f, 1.0f, 0.0f, 1.0f);
                 std::vector<mesh_detail::ColorLineVertex> vertices;
                 vertices.reserve(24);
-                float corners[8][3] = {
+                sinriv::kigstudio::voxel::vec3f corners[8] = {
                     {min_local.x, min_local.y, min_local.z},
                     {max_local.x, min_local.y, min_local.z},
                     {max_local.x, max_local.y, min_local.z},
@@ -195,6 +205,11 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                     {max_local.x, max_local.y, max_local.z},
                     {min_local.x, max_local.y, max_local.z},
                 };
+                mat4f split_transform = sdf_split_transform_matrix();
+                // split_transform.transpose();
+                for (auto& corner : corners) {
+                    corner = transform_point(split_transform, corner);
+                }
                 int edges[12][2] = {
                     {0, 1}, {1, 2}, {2, 3}, {3, 0},
                     {4, 5}, {5, 6}, {6, 7}, {7, 4},
@@ -204,9 +219,9 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                     auto& a = corners[e[0]];
                     auto& b = corners[e[1]];
                     vertices.push_back(
-                        {a[0], -a[1], a[2], bounds_color});
+                        {a.x, -a.y, a.z, bounds_color});
                     vertices.push_back(
-                        {b[0], -b[1], b[2], bounds_color});
+                        {b.x, -b.y, b.z, bounds_color});
                 }
                 if (!vertices.empty() &&
                     bgfx::getAvailTransientVertexBuffer(
@@ -456,7 +471,13 @@ void RenderVoxelList::RenderVoxelItem::upload_collision(
             auto target_it = manager->items.find(sdf_split_target_id);
             if (target_it != manager->items.end()) {
                 const auto& mh = target_it->second->mesh_renderer.getMeshHandle();
-                render.submitMeshStencil(mh.vbh, mh.ibh, mh.index_count);
+                float split_transform_bgfx[16];
+                mat4f split_transform = sdf_split_transform_matrix();
+                split_transform.transpose();
+                sinriv::kigstudio::mat::toBGFXMat(split_transform,
+                                                  split_transform_bgfx);
+                render.submitMeshStencil(mh.vbh, mh.ibh, mh.index_count,
+                                         split_transform_bgfx);
             } else {
                 render.submitMeshStencil(
                     BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, 0);

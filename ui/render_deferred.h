@@ -149,7 +149,8 @@ namespace sinriv::ui::render {
 
         inline void submitMeshStencil(bgfx::VertexBufferHandle vbh,
                                       bgfx::IndexBufferHandle ibh,
-                                      uint32_t index_count) {
+                                      uint32_t index_count,
+                                      const float* local_transform = nullptr) {
             if (!bgfx::isValid(vbh) || !bgfx::isValid(ibh) || index_count == 0) {
                 has_mesh_stencil_ = false;
                 return;
@@ -157,6 +158,14 @@ namespace sinriv::ui::render {
             mesh_stencil_vbh_ = vbh;
             mesh_stencil_ibh_ = ibh;
             mesh_stencil_index_count_ = index_count;
+            if (local_transform) {
+                std::memcpy(mesh_stencil_local_mtx_, local_transform,
+                            sizeof(mesh_stencil_local_mtx_));
+                has_mesh_stencil_local_transform_ = true;
+            } else {
+                bx::mtxIdentity(mesh_stencil_local_mtx_);
+                has_mesh_stencil_local_transform_ = false;
+            }
             has_mesh_stencil_ = true;
         }
 
@@ -218,6 +227,8 @@ namespace sinriv::ui::render {
         bgfx::VertexBufferHandle mesh_stencil_vbh_ = BGFX_INVALID_HANDLE;
         bgfx::IndexBufferHandle mesh_stencil_ibh_ = BGFX_INVALID_HANDLE;
         uint32_t mesh_stencil_index_count_ = 0;
+        bool has_mesh_stencil_local_transform_ = false;
+        float mesh_stencil_local_mtx_[16]{};
         bgfx::TextureHandle mesh_stencil_body_texture_ = BGFX_INVALID_HANDLE;
         bgfx::FrameBufferHandle mesh_stencil_fb_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_albedo_ = BGFX_INVALID_HANDLE;

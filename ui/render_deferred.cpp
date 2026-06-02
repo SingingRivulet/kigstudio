@@ -273,7 +273,14 @@ void RenderDeferred::render() {
 
     // ===== Mesh Stencil Pass =====
     if (has_mesh_stencil_ && bgfx::isValid(mesh_stencil_program_)) {
-        bgfx::setTransform(scene_model_mtx_);
+        float mesh_stencil_model_mtx[16];
+        if (has_mesh_stencil_local_transform_) {
+            bx::mtxMul(mesh_stencil_model_mtx, mesh_stencil_local_mtx_,
+                       scene_model_mtx_);
+            bgfx::setTransform(mesh_stencil_model_mtx);
+        } else {
+            bgfx::setTransform(scene_model_mtx_);
+        }
         bgfx::setVertexBuffer(0, mesh_stencil_vbh_);
         bgfx::setIndexBuffer(mesh_stencil_ibh_);
         bgfx::setState(BGFX_STATE_MSAA);
