@@ -359,6 +359,10 @@ namespace sinriv::ui::render {
             resetBounds();
         }
 
+        inline const mesh_detail::MeshHandle& getMeshHandle() const {
+            return mesh_;
+        }
+
         void renderGBuffer(const float* transform, RenderMeshShader & shader) {
             if (!layout_initialized_) {
                 mesh_detail::PosNormalVertex_bgfx::init(layout_);

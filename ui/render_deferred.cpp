@@ -264,7 +264,44 @@ void RenderDeferred::render() {
         bgfx::submit(collision_fill_view_id_, collision_program_);
     }
 
+    // ===== Mesh Stencil Pass =====
+    if (has_mesh_stencil_ && bgfx::isValid(mesh_stencil_program_)) {
+        bgfx::setTransform(scene_model_mtx_);
+        bgfx::setVertexBuffer(0, mesh_stencil_vbh_);
+        bgfx::setIndexBuffer(mesh_stencil_ibh_);
+        bgfx::setState(BGFX_STATE_MSAA);
+        bgfx::setStencil(
+            BGFX_STENCIL_TEST_ALWAYS | BGFX_STENCIL_FUNC_REF(1) |
+                BGFX_STENCIL_FUNC_RMASK(0xff) |
+                BGFX_STENCIL_OP_FAIL_S_KEEP |
+                BGFX_STENCIL_OP_FAIL_Z_KEEP |
+                BGFX_STENCIL_OP_PASS_Z_INCR,
+            BGFX_STENCIL_TEST_ALWAYS | BGFX_STENCIL_FUNC_REF(1) |
+                BGFX_STENCIL_FUNC_RMASK(0xff) |
+                BGFX_STENCIL_OP_FAIL_S_KEEP |
+                BGFX_STENCIL_OP_FAIL_Z_KEEP |
+                BGFX_STENCIL_OP_PASS_Z_INCR);
+        bgfx::submit(collision_view_id_, mesh_stencil_program_);
+
+        bgfx::setTransform(identity_mtx_);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setIndexBuffer(&tib);
+        bgfx::setTexture(0, s_world_pos_, world_pos_texture_);
+        float type_vec[4] = {5.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_shape_type_, type_vec);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                       BGFX_STATE_MSAA | BGFX_STATE_BLEND_ADD);
+        bgfx::setStencil(
+            BGFX_STENCIL_TEST_NOTEQUAL | BGFX_STENCIL_FUNC_REF(0) |
+                BGFX_STENCIL_FUNC_RMASK(0xff) |
+                BGFX_STENCIL_OP_FAIL_S_KEEP |
+                BGFX_STENCIL_OP_FAIL_Z_KEEP |
+                BGFX_STENCIL_OP_PASS_Z_KEEP);
+        bgfx::submit(collision_fill_view_id_, collision_program_);
+    }
+
     // ===== Lighting Pass =====
+    bgfx::setStencil(BGFX_STENCIL_NONE);
     bgfx::setTransform(identity_mtx_);
     bgfx::setVertexBuffer(0, &tvb);
     bgfx::setIndexBuffer(&tib);
@@ -407,6 +444,10 @@ void RenderDeferred::destroyPrograms() {
     if (bgfx::isValid(volume_program_)) {
         bgfx::destroy(volume_program_);
         volume_program_ = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(mesh_stencil_program_)) {
+        bgfx::destroy(mesh_stencil_program_);
+        mesh_stencil_program_ = BGFX_INVALID_HANDLE;
     }
 }
 
@@ -724,10 +765,15 @@ bool RenderDeferred::ensureProgram() {
         deferred_detail::loadShader(shader_dir_ + "vs_volume_pos.bin");
     bgfx::ShaderHandle fs_volume =
         deferred_detail::loadShader(shader_dir_ + "fs_volume_mask.bin");
+    bgfx::ShaderHandle vs_mesh =
+        deferred_detail::loadShader(shader_dir_ + "vs_mesh_gbuffer.bin");
+    bgfx::ShaderHandle fs_mesh_stencil =
+        deferred_detail::loadShader(shader_dir_ + "fs_mesh_stencil.bin");
 
     if (!bgfx::isValid(vs) || !bgfx::isValid(fs_combine) ||
         !bgfx::isValid(fs_collision) || !bgfx::isValid(vs_volume) ||
-        !bgfx::isValid(fs_volume)) {
+        !bgfx::isValid(fs_volume) || !bgfx::isValid(vs_mesh) ||
+        !bgfx::isValid(fs_mesh_stencil)) {
         if (bgfx::isValid(vs)) {
             bgfx::destroy(vs);
         }
@@ -743,6 +789,12 @@ bool RenderDeferred::ensureProgram() {
         if (bgfx::isValid(fs_volume)) {
             bgfx::destroy(fs_volume);
         }
+        if (bgfx::isValid(vs_mesh)) {
+            bgfx::destroy(vs_mesh);
+        }
+        if (bgfx::isValid(fs_mesh_stencil)) {
+            bgfx::destroy(fs_mesh_stencil);
+        }
         std::cerr << "RenderDeferred shader load failed from " << shader_dir_
                   << std::endl;
         return false;
@@ -751,6 +803,7 @@ bool RenderDeferred::ensureProgram() {
     combine_program_ = bgfx::createProgram(vs, fs_combine, true);
     collision_program_ = bgfx::createProgram(vs, fs_collision, true);
     volume_program_ = bgfx::createProgram(vs_volume, fs_volume, true);
+    mesh_stencil_program_ = bgfx::createProgram(vs_mesh, fs_mesh_stencil, true);
 
     return bgfx::isValid(combine_program_) &&
            bgfx::isValid(collision_program_) && bgfx::isValid(volume_program_);

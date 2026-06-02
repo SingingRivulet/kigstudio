@@ -139,6 +139,20 @@ namespace sinriv::ui::render {
 
         inline void clearCollisionTint() {
             collision_items_.clear();
+            has_mesh_stencil_ = false;
+        }
+
+        inline void submitMeshStencil(bgfx::VertexBufferHandle vbh,
+                                      bgfx::IndexBufferHandle ibh,
+                                      uint32_t index_count) {
+            if (!bgfx::isValid(vbh) || !bgfx::isValid(ibh) || index_count == 0) {
+                has_mesh_stencil_ = false;
+                return;
+            }
+            mesh_stencil_vbh_ = vbh;
+            mesh_stencil_ibh_ = ibh;
+            mesh_stencil_index_count_ = index_count;
+            has_mesh_stencil_ = true;
         }
 
         void setCollisionGroup(const CollisionGroup& group);
@@ -193,6 +207,11 @@ namespace sinriv::ui::render {
         bgfx::ProgramHandle combine_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle collision_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle volume_program_ = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle mesh_stencil_program_ = BGFX_INVALID_HANDLE;
+        bool has_mesh_stencil_ = false;
+        bgfx::VertexBufferHandle mesh_stencil_vbh_ = BGFX_INVALID_HANDLE;
+        bgfx::IndexBufferHandle mesh_stencil_ibh_ = BGFX_INVALID_HANDLE;
+        uint32_t mesh_stencil_index_count_ = 0;
         bgfx::UniformHandle s_albedo_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_normal_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_world_pos_ = BGFX_INVALID_HANDLE;

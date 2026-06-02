@@ -392,7 +392,25 @@ void RenderVoxelList::RenderVoxelItem::render_concave_cone_overlay(
 
 void RenderVoxelList::RenderVoxelItem::upload_collision(
     sinriv::ui::render::RenderDeferred& render) {
-    if (showCollision) {
+    if (segment_mode == SDF_NODE_SPLIT) {
+        render.clearCollisionTint();
+        render.setSpaceDivVisible(false);
+        if (sdf_split_target_id >= 0 && manager) {
+            auto target_it = manager->items.find(sdf_split_target_id);
+            if (target_it != manager->items.end()) {
+                const auto& mh = target_it->second->mesh_renderer.getMeshHandle();
+                render.submitMeshStencil(mh.vbh, mh.ibh, mh.index_count);
+            } else {
+                render.submitMeshStencil(
+                    BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, 0);
+            }
+        } else {
+            render.submitMeshStencil(
+                BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, 0);
+        }
+    } else if (showCollision) {
+        render.submitMeshStencil(
+            BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, 0);
         if (segment_mode == COLLISION) {
             render.setCollisionGroup(collision_group);
             render.setSpaceDivVisible(false);
