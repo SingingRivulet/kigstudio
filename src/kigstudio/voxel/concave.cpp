@@ -1,10 +1,6 @@
 #include "concave.h"
 namespace sinriv::kigstudio::voxel::concave {
 
-struct vec2 {
-    float x, y;
-};
-
 inline std::vector<vec3f> computeDirections(const vec3f& vertex,
                                             const std::vector<vec3f>& base) {
     std::vector<vec3f> dirs;
@@ -43,10 +39,10 @@ inline void buildBasis(const vec3f& dir, vec3f& right, vec3f& up) {
     up = cross(dir, right);
 }
 
-inline std::vector<vec2> projectDirs(const std::vector<vec3f>& dirs,
-                                     const vec3f& right,
-                                     const vec3f& up) {
-    std::vector<vec2> proj(dirs.size());
+inline std::vector<vec2f> projectDirs(const std::vector<vec3f>& dirs,
+                                      const vec3f& right,
+                                      const vec3f& up) {
+    std::vector<vec2f> proj(dirs.size());
 
     for (int i = 0; i < dirs.size(); ++i) {
         proj[i] = {dot(dirs[i], right), dot(dirs[i], up)};
@@ -70,11 +66,11 @@ inline bool inSameHemisphere(const std::vector<vec3f>& dirs) {
                 return false;
     return true;
 }
-inline float cross2(vec2 a, vec2 b, vec2 c) {
+inline float cross2(vec2f a, vec2f b, vec2f c) {
     return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
 
-inline bool intersect2D(vec2 a1, vec2 a2, vec2 b1, vec2 b2) {
+inline bool intersect2D(vec2f a1, vec2f a2, vec2f b1, vec2f b2) {
     float d1 = cross2(a1, a2, b1);
     float d2 = cross2(a1, a2, b2);
     float d3 = cross2(b1, b2, a1);
@@ -82,7 +78,7 @@ inline bool intersect2D(vec2 a1, vec2 a2, vec2 b1, vec2 b2) {
 
     return (d1 * d2 < 0 && d3 * d4 < 0);
 }
-inline bool checkSelfIntersect(const std::vector<vec2>& poly) {
+inline bool checkSelfIntersect(const std::vector<vec2f>& poly) {
     int n = poly.size();
 
     for (int i = 0; i < n; ++i) {
@@ -99,7 +95,7 @@ inline bool checkSelfIntersect(const std::vector<vec2>& poly) {
     }
     return true;
 }
-inline bool checkAngleMonotonic(const std::vector<vec2>& proj) {
+inline bool checkAngleMonotonic(const std::vector<vec2f>& proj) {
     const float PI = 3.1415926f;
     const float eps = 1e-6f;
 
@@ -168,7 +164,7 @@ bool Cone::check(std::string& err) const {
     return true;
 }
 
-inline bool pointInPolygon(const std::vector<vec2>& poly, vec2 p) {
+inline bool pointInPolygon(const std::vector<vec2f>& poly, vec2f p) {
     bool inside = false;
 
     for (int i = 0, j = poly.size() - 1; i < poly.size(); j = i++) {
@@ -181,8 +177,10 @@ inline bool pointInPolygon(const std::vector<vec2>& poly, vec2 p) {
     return inside;
 }
 
-inline bool pointInTriangle2D(const vec2& p, const vec2& a, const vec2& b,
-                              const vec2& c) {
+inline bool pointInTriangle2D(const vec2f& p,
+                              const vec2f& a,
+                              const vec2f& b,
+                              const vec2f& c) {
     constexpr float eps = 1e-6f;
     const float c0 = cross2(a, b, p);
     const float c1 = cross2(b, c, p);
@@ -209,7 +207,7 @@ bool Cone::contains(const vec3f& p) const {
 
     auto proj = projectDirs(dirs, right, up);
 
-    vec2 pp = {dot(d, right), dot(d, up)};
+    vec2f pp = {dot(d, right), dot(d, up)};
 
     return pointInPolygon(proj, pp);
 }
@@ -295,8 +293,8 @@ void Cone::triangulate() {
 
     float area = 0.0f;
     for (int i = 0; i < n; ++i) {
-        const vec2& a = proj[order[i]];
-        const vec2& b = proj[order[(i + 1) % n]];
+        const vec2f& a = proj[order[i]];
+        const vec2f& b = proj[order[(i + 1) % n]];
         area += a.x * b.y - b.x * a.y;
     }
     if (area < 0.0f)
@@ -336,7 +334,9 @@ void Cone::triangulate() {
         indices.push_back(baseIndex + 0);
         indices.push_back(baseIndex + 1);
         indices.push_back(baseIndex + 2);
-        base_triangles.push_back({static_cast<uint32_t>(i0), static_cast<uint32_t>(i1), static_cast<uint32_t>(i2)});
+        base_triangles.push_back({static_cast<uint32_t>(i0),
+                                  static_cast<uint32_t>(i1),
+                                  static_cast<uint32_t>(i2)});
     };
 
     std::vector<int> remaining = order;

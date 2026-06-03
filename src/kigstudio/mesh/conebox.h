@@ -1,0 +1,68 @@
+#pragma once
+#include <CGAL/AABB_segment_primitive_2.h>
+#include <CGAL/AABB_traits_2.h>
+#include <CGAL/AABB_tree.h>
+#include <CGAL/Boolean_set_operations_2.h>
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Polygon_2.h>
+#include <CGAL/Polygon_triangulation_decomposition_2.h>
+#include <CGAL/Polygon_with_holes_2.h>
+#include <cJSON.h>
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <functional>
+#include <limits>
+#include <memory>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#include "kigstudio/utils/vec2.h"
+#include "kigstudio/utils/vec3.h"
+#include "kigstudio/voxel/voxel2mesh.h"
+
+namespace sinriv::kigstudio::mesh::conebox {
+
+using vec3f = sinriv::kigstudio::vec3<float>;
+using vec2f = sinriv::kigstudio::vec2<float>;
+using Triangle = sinriv::kigstudio::voxel::triangle_bvh<float>::triangle;
+
+using Kernel = CGAL::Exact_predicates_inexact_constructions_kernel;
+using Point2 = CGAL::Point_2<Kernel>;
+using Segment2 = CGAL::Segment_2<Kernel>;
+using Polygon_2 = CGAL::Polygon_2<Kernel>;
+using Polygon_with_holes_2 = CGAL::Polygon_with_holes_2<Kernel>;
+using SegmentPrimitive =
+    CGAL::AABB_segment_primitive_2<Kernel, std::vector<Segment2>::iterator>;
+using AABBTree = CGAL::AABB_tree<CGAL::AABB_traits_2<Kernel, SegmentPrimitive>>;
+using Clipper = CGAL::Polygon_triangulation_decomposition_2<Kernel>;
+
+struct Triangle_status {
+    Triangle triangle;
+    Triangle pos_in_face[6];  // 每个顶点投影到立方体上的位置，z轴是深度
+    void compute_projection(
+        const vec3f&
+            center);  // 输入立方体中心，计算每个顶点在立方体上的投影位置
+};
+// 透视逆变换
+vec3f perspective_inverse(const vec3f& pos, const vec3f& c, int face_index);
+
+struct Triangle_group {
+    std::vector<Triangle_status> triangles;
+    std::array<std::vector<size_t>, 6> face_triangle_indices;
+    std::array<std::vector<Segment2>, 6> face_segments;
+    std::array<std::vector<size_t>, 6> face_segment_triangle_ids;
+    std::array<AABBTree, 6> face_trees;
+    vec3f center;
+
+    void add_triangle(const Triangle_status& status);
+    void build_face_trees();
+    std::tuple<std::vector<std::array<Point2, 3>>,
+               std::vector<std::vector<Point2>>>
+    compute_visible_triangulation(size_t triangle_id, int face_id) const;
+    std::vector<Triangle> compute_visible_mesh_from_outside() const;
+};
+
+}  // namespace sinriv::kigstudio::mesh::conebox

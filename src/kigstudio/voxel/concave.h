@@ -8,10 +8,12 @@
 #include <vector>
 #include "kigstudio/utils/mat.h"
 #include "kigstudio/utils/vec3.h"
+#include "kigstudio/utils/vec2.h"
 
 namespace sinriv::kigstudio::voxel::concave {
 
 using vec3f = sinriv::kigstudio::vec3<float>;
+using vec2f = sinriv::kigstudio::vec2<float>;
 using mat4f = sinriv::kigstudio::mat::matrix<float>;
 using vec4f = sinriv::kigstudio::mat::vec4<float>;
 

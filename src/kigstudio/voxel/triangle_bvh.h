@@ -1,5 +1,6 @@
 #pragma once
 #include <iomanip>
+#include <tuple>
 #include "kigstudio/utils/dbvt3d.h"
 #include "kigstudio/utils/vec3.h"
 

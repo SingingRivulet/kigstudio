@@ -20,7 +20,7 @@ namespace sinriv::kigstudio::mesh::conebvh {
  * 最终输出的是类似SDF的距离查询接口，返回点到最近四面体的距离（负数表示在四面体内部）
  */
 
-typedef ::sinriv::kigstudio::vec3<float> vec3f;
+using vec3f = sinriv::kigstudio::vec3<float>;
 struct Cone {
     vec3f direction;  // 圆锥的轴向单位向量，指向圆锥的开口
     float angle;      // 圆锥的半顶角，单位为弧度
