@@ -63,6 +63,7 @@ struct Triangle_group {
                std::vector<std::vector<Point2>>>
     compute_visible_triangulation(size_t triangle_id, int face_id) const;
     std::vector<Triangle> compute_visible_mesh_from_outside() const;
+    std::vector<Triangle> compute_visible_mesh_with_cone_sides() const;
 };
 
 }  // namespace sinriv::kigstudio::mesh::conebox

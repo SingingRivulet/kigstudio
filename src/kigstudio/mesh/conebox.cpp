@@ -495,6 +495,69 @@ std::vector<Triangle> Triangle_group::compute_visible_mesh_from_outside()
     return visible_mesh;
 }
 
+std::vector<Triangle> Triangle_group::compute_visible_mesh_with_cone_sides()
+    const {
+    auto visible_mesh = compute_visible_mesh_from_outside();
+    std::unordered_set<Triangle, TriangleHash> seen;
+
+    // 初始化seen集合，防止重复添加已有的三角形
+    for (const auto& tri : visible_mesh) {
+        seen.insert(tri);
+    }
+
+    // 遍历所有6个面，生成侧面
+    for (int face = 0; face < 6; ++face) {
+        // 收集该面的所有可见边界
+        for (size_t tid : face_triangle_indices[face]) {
+            auto [visible_tris, polygons] =
+                compute_visible_triangulation(tid, face);
+
+            // 对于每个可见的多边形
+            for (const auto& polygon : polygons) {
+                // 遍历多边形的每条边
+                for (size_t i = 0; i < polygon.size(); ++i) {
+                    const auto& p1_2d = polygon[i];
+                    const auto& p2_2d = polygon[(i + 1) % polygon.size()];
+
+                    // 转换到3D坐标
+                    vec3f v1 = face_plane_point(p1_2d, face, center);
+                    vec3f v2 = face_plane_point(p2_2d, face, center);
+
+                    // 计算两个顶点到中心的方向向量
+                    vec3f dir1 = v1 - center;
+                    vec3f dir2 = v2 - center;
+                    float len1 = dir1.length();
+                    float len2 = dir2.length();
+
+                    // 如果任意一个点太靠近中心，跳过
+                    if (len1 < 1e-8f || len2 < 1e-8f)
+                        continue;
+
+                    // 标准化方向向量
+                    dir1 = dir1 / len1;
+                    dir2 = dir2 / len2;
+
+                    // 计算叉积判断是否共线
+                    vec3f cross = dir1.cross(dir2);
+                    float cross_len = cross.length();
+
+                    // 如果不共线（叉积足够大），生成侧面三角形
+                    if (cross_len >= 1e-6f) {
+                        // 生成从边界到中心的三角形
+                        Triangle tri{v1, v2, center};
+                        if (seen.insert(tri).second) {
+                            visible_mesh.push_back(tri);
+                        }
+                    }
+                    // 如果共线，不生成侧面，防止非流形边
+                }
+            }
+        }
+    }
+
+    return visible_mesh;
+}
+
 void Triangle_group::build_face_trees() {
     for (int face = 0; face < 6; ++face) {
         if (!face_segments[face].empty()) {
