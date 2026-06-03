@@ -140,16 +140,15 @@ void ConeBVHTree::build(const std::vector<Cone>& cones, const vec3f& apex) {
     auto build_node = [&](auto&& self, int begin, int end) -> int {
         int node_index = (int)nodes.size();
         nodes.emplace_back();
-        Node& node = nodes.back();
 
-        node.bound = entries[begin].bound;
+        nodes[node_index].bound = entries[begin].bound;
         for (int i = begin + 1; i < end; ++i)
-            merge(node.bound, entries[i].bound, node.bound);
+            merge(nodes[node_index].bound, entries[i].bound, nodes[node_index].bound);
 
         const int count = end - begin;
         if (count <= 4) {
-            node.first = (int)primitive_indices.size();
-            node.count = count;
+            nodes[node_index].first = (int)primitive_indices.size();
+            nodes[node_index].count = count;
             for (int i = begin; i < end; ++i)
                 primitive_indices.push_back(entries[i].primitive_index);
             return node_index;
@@ -185,10 +184,10 @@ void ConeBVHTree::build(const std::vector<Cone>& cones, const vec3f& apex) {
                   });
 
         int mid = begin + count / 2;
-        node.left = self(self, begin, mid);
-        node.right = self(self, mid, end);
-        node.bound = nodes[node.left].bound;
-        merge(node.bound, nodes[node.right].bound, node.bound);
+        nodes[node_index].left = self(self, begin, mid);
+        nodes[node_index].right = self(self, mid, end);
+        nodes[node_index].bound = nodes[nodes[node_index].left].bound;
+        merge(nodes[node_index].bound, nodes[nodes[node_index].right].bound, nodes[node_index].bound);
         return node_index;
     };
 
@@ -430,16 +429,39 @@ bool TetraConeBVHTree::point_in_tetra(const vec3f& p,
                                       const vec3f& b,
                                       const vec3f& c,
                                       const vec3f& d) {
-    auto same_side = [&](const vec3f& p1, const vec3f& p2, const vec3f& v0,
-                         const vec3f& v1, const vec3f& v2) {
-        vec3f n = (v1 - v0).cross(v2 - v0);
-        float d1 = n.dot(p1 - v0);
-        float d2 = n.dot(p2 - v0);
-        return d1 * d2 >= 0.0f;
+    auto orient3d = [](const vec3f& a, const vec3f& b, const vec3f& c,
+                       const vec3f& d) {
+        double bax = double(b.x) - a.x;
+        double bay = double(b.y) - a.y;
+        double baz = double(b.z) - a.z;
+
+        double cax = double(c.x) - a.x;
+        double cay = double(c.y) - a.y;
+        double caz = double(c.z) - a.z;
+
+        double dax = double(d.x) - a.x;
+        double day = double(d.y) - a.y;
+        double daz = double(d.z) - a.z;
+
+        return (bay * caz - baz * cay) * dax + (baz * cax - bax * caz) * day +
+               (bax * cay - bay * cax) * daz;
     };
 
-    return same_side(p, d, a, b, c) && same_side(p, c, a, b, d) &&
-           same_side(p, b, a, c, d) && same_side(p, a, b, c, d);
+    float s = orient3d(a, b, c, d);
+
+    if (std::abs(s) < 1e-20f)
+        return false;
+
+    float s0 = orient3d(a, b, c, p);
+    float s1 = orient3d(a, b, p, d);
+    float s2 = orient3d(a, p, c, d);
+    float s3 = orient3d(p, b, c, d);
+
+    if (s > 0.0f) {
+        return s0 >= 0 && s1 >= 0 && s2 >= 0 && s3 >= 0;
+    } else {
+        return s0 <= 0 && s1 <= 0 && s2 <= 0 && s3 <= 0;
+    }
 }
 
 float TetraConeBVHTree::signed_distance_to_tetra(const vec3f& p,
@@ -514,17 +536,112 @@ bool TetraConeBVHTree::query_nearest_tetra_k(
         });
     return !outTetraDistances.empty();
 }
+struct QueueItem {
+    float lowerBound;
+    int nodeIndex;
 
-float TetraConeBVHTree::get_distance(const vec3f& p, int k) const {
-    if (k <= 0)
+    bool operator<(const QueueItem& rhs) const {
+        // priority_queue 默认大顶堆
+        return lowerBound > rhs.lowerBound;
+    }
+};
+bool TetraConeBVHTree::query_exact_nearest_tetra(
+    const vec3f& p,
+    int& outTetraIndex,
+    float& outSignedDistance) const {
+    if (root < 0 || nodes.empty())
+        return false;
+
+    std::priority_queue<QueueItem> pq;
+
+    float rootBound = std::abs(ConeGroup::get_distance(nodes[root].bound, p));
+
+    pq.push({rootBound, root});
+
+    outTetraIndex = -1;
+    outSignedDistance = std::numeric_limits<float>::infinity();
+
+    while (!pq.empty()) {
+        QueueItem item = pq.top();
+        pq.pop();
+
+        float currentBest = std::abs(outSignedDistance);
+
+        //
+        // 提前结束
+        //
+        if (outTetraIndex >= 0 && item.lowerBound >= currentBest) {
+            break;
+        }
+
+        const Node& node = nodes[item.nodeIndex];
+
+        //
+        // 叶节点
+        //
+        if (node.isLeaf()) {
+            for (int i = 0; i < node.count; ++i) {
+                int primIdx = node.first + i;
+
+                if (!primitive_indices.empty())
+                    primIdx = primitive_indices[primIdx];
+
+                if (primIdx < 0 || primIdx >= (int)tetra_bases.size())
+                    continue;
+
+                const auto& tri = tetra_bases[primIdx];
+
+                float sdf = signed_distance_to_tetra(p, apex, std::get<0>(tri),
+                                                     std::get<1>(tri),
+                                                     std::get<2>(tri));
+
+                if (outTetraIndex < 0 ||
+                    std::abs(sdf) < std::abs(outSignedDistance)) {
+                    outSignedDistance = sdf;
+                    outTetraIndex = primIdx;
+                }
+            }
+
+            continue;
+        }
+
+        //
+        // 左子节点
+        //
+        if (node.left >= 0) {
+            float lb =
+                std::abs(ConeGroup::get_distance(nodes[node.left].bound, p));
+
+            if (outTetraIndex < 0 || lb < std::abs(outSignedDistance)) {
+                pq.push({lb, node.left});
+            }
+        }
+
+        //
+        // 右子节点
+        //
+        if (node.right >= 0) {
+            float lb =
+                std::abs(ConeGroup::get_distance(nodes[node.right].bound, p));
+
+            if (outTetraIndex < 0 || lb < std::abs(outSignedDistance)) {
+                pq.push({lb, node.right});
+            }
+        }
+    }
+
+    return outTetraIndex >= 0;
+}
+
+float TetraConeBVHTree::get_distance(const vec3f& p) const {
+    int idx;
+    float dist;
+
+    if (!query_exact_nearest_tetra(p, idx, dist)) {
         return std::numeric_limits<float>::infinity();
+    }
 
-    std::vector<std::pair<int, float>> tetraCandidates;
-    if (!query_nearest_tetra_k(p, k, tetraCandidates) ||
-        tetraCandidates.empty())
-        return std::numeric_limits<float>::infinity();
-
-    return tetraCandidates.front().second;
+    return dist;
 }
 
 }  // namespace sinriv::kigstudio::mesh::conebvh

@@ -109,12 +109,17 @@ class TetraConeBVHTree : public ConeBVHTree {
                                           const vec3f& c,
                                           const vec3f& d);
 
+    bool query_exact_nearest_tetra(const vec3f& p,
+                                   int& outTetraIndex,
+                                   float& outSignedDistance)
+        const;  // 计算点到最近四面体的距离，负数表示在四面体内部
+
     bool query_nearest_tetra_k(
         const vec3f& p,
         int k,
         std::vector<std::pair<int, float>>& outTetraDistances) const;
 
-    float get_distance(const vec3f& p, int k = 3)
+    float get_distance(const vec3f& p)
         const;  // 计算点到最近四面体的距离，负数表示在四面体内部
 };
 
