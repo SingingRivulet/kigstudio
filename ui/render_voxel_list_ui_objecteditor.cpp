@@ -13,10 +13,10 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
-#include "kigstudio/sdf/sdf_chain_joint.h"
 #include "kigstudio/cgal/mesh_simplification.h"
-#include "kigstudio/utils/vec3.h"
+#include "kigstudio/sdf/sdf_chain_joint.h"
 #include "kigstudio/utils/locale.h"
+#include "kigstudio/utils/vec3.h"
 #include "render_voxel_list.h"
 #include "tinyfiledialogs.h"
 namespace sinriv::ui::render {
@@ -41,9 +41,9 @@ bool autoDetectJointRadius(RenderVoxelList::RenderVoxelItem& item,
     Vec3f start = get_pos(joint_index);
     Vec3f end;
     if (picked.use_custom_direction) {
-        end = Vec3f(picked.custom_direction_end.x,
-                    picked.custom_direction_end.y,
-                    picked.custom_direction_end.z);
+        end =
+            Vec3f(picked.custom_direction_end.x, picked.custom_direction_end.y,
+                  picked.custom_direction_end.z);
     } else {
         if (joint_index + 1 < item.picked_skeleton_points.size()) {
             end = get_pos(joint_index + 1);
@@ -75,8 +75,7 @@ bool autoDetectJointRadius(RenderVoxelList::RenderVoxelItem& item,
     for (const auto& voxel : item.voxel_grid_data) {
         const auto world = item.voxel_grid_data.voxelCenterToWorld(voxel);
         const Vec3f local = frame.worldToLocal({world.x, world.y, world.z});
-        const float radius =
-            std::sqrt(local.x * local.x + local.y * local.y);
+        const float radius = std::sqrt(local.x * local.x + local.y * local.y);
 
         if (std::abs(local.z - picked.socket_cone_offset) <= half_thickness) {
             socket_radius = std::max(socket_radius, radius);
@@ -89,12 +88,12 @@ bool autoDetectJointRadius(RenderVoxelList::RenderVoxelItem& item,
     bool changed = false;
     if (socket_radius > 0.0f &&
         std::abs(socket_radius - picked.socket_cone_radius) > 1e-4f) {
-        picked.socket_cone_radius = socket_radius*1.2f;
+        picked.socket_cone_radius = socket_radius * 1.2f;
         changed = true;
     }
     if (head_radius > 0.0f &&
         std::abs(head_radius - picked.head_cone_radius) > 1e-4f) {
-        picked.head_cone_radius = head_radius*1.2f;
+        picked.head_cone_radius = head_radius * 1.2f;
         changed = true;
     }
 
@@ -140,11 +139,21 @@ void RenderVoxelList::render_object_editor() {
             if (ImGui::BeginTabBar("ObjectEditorTabs", ImGuiTabBarFlags_None)) {
                 ImGuiTabItemFlags flags_collision = 0;
                 ImGuiTabItemFlags flags_voxel = 0;
+                ImGuiTabItemFlags flags_file_status = 0;
                 if (last_object_editor_tab != object_editor_tab) {
+                    // 重置所有 Tab 的标志位
+                    flags_collision = 0;
+                    flags_voxel = 0;
+                    flags_file_status = 0;
+
+                    // 根据当前选中的 Tab 设置对应的选中标志
                     if (object_editor_tab == 0)
                         flags_collision = ImGuiTabItemFlags_SetSelected;
-                    else
+                    else if (object_editor_tab == 1)
                         flags_voxel = ImGuiTabItemFlags_SetSelected;
+                    else if (object_editor_tab == 2)
+                        flags_file_status = ImGuiTabItemFlags_SetSelected;
+
                     last_object_editor_tab = object_editor_tab;
                 }
 
@@ -170,6 +179,31 @@ void RenderVoxelList::render_object_editor() {
                 if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip(get_locale_cstr("tooltip.voxel_picking"));
                 }
+                if (item_it->second->root_id == item_it->second->id) {
+                    if (ImGui::BeginTabItem(get_locale_cstr("tab.file_status"),
+                                            nullptr, flags_file_status)) {
+                        object_editor_tab = 2;
+                        if (!item.stl_path.empty()) {
+                            if (ImGui::Button(
+                                    get_locale_cstr("action.reload_stl"))) {
+                                show_reload_stl_dialog = true;
+                                reload_stl_item_id = item.id;
+                                reload_stl_voxel_size = item.stl_voxel_size;
+                            }
+                        }
+                        /*
+                        * TODO
+                        * 独立渲染函数
+                        * 加入文本框，允许修改stl路径(修改时加入历史记录)
+                        * 加入选择框，允许修改加载模式（例如使用conebox加载、使用表面修复加载）
+                        * 菜单中引入直接添加空根节点的功能
+                        * 特殊功能：（长期计划）
+                        *   允许顶点滑移
+                        *   允许直接导入图片来引导顶点滑移
+                        */
+                        ImGui::EndTabItem();
+                    }
+                }
                 ImGui::EndTabBar();
             }
 
@@ -186,14 +220,6 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
         show_delete_confirm = true;
     }
     ImGui::SameLine();
-    if (!item.stl_path.empty()) {
-        if (ImGui::Button(get_locale_cstr("action.reload_stl"))) {
-            show_reload_stl_dialog = true;
-            reload_stl_item_id = item.id;
-            reload_stl_voxel_size = item.stl_voxel_size;
-        }
-        ImGui::SameLine();
-    }
     const std::string export_popup_title =
         localize_id("dialog.choose_export_method", item.id);
     if (ImGui::Button(get_locale_cstr("action.save_as_stl"))) {
@@ -201,8 +227,7 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
     }
     if (ImGui::BeginPopupModal(export_popup_title.c_str(), nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextUnformatted(
-            get_locale_cstr("dialog.choose_export_method"));
+        ImGui::TextUnformatted(get_locale_cstr("dialog.choose_export_method"));
 
         // Export mode selection
         ImGui::RadioButton(get_locale_cstr("label.export_mode_standard"),
@@ -223,19 +248,16 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
         }
         if (export_stl_simplify) {
             ImGui::Indent();
-            ImGui::SliderFloat(
-                get_locale_cstr("label.simplification_ratio"),
-                &export_stl_simplify_ratio, 0.01f, 1.0f,
-                "%.2f");
+            ImGui::SliderFloat(get_locale_cstr("label.simplification_ratio"),
+                               &export_stl_simplify_ratio, 0.01f, 1.0f, "%.2f");
             ImGui::TextUnformatted(
                 get_locale_cstr("hint.simplification_ratio"));
             ImGui::Unindent();
         }
-        
+
         if (export_stl_mode == 1) {
-            ImGui::SliderInt(
-                get_locale_cstr("label.subdivisions_ratio"),
-                &export_stl_subdivisions, 1, 8);
+            ImGui::SliderInt(get_locale_cstr("label.subdivisions_ratio"),
+                             &export_stl_subdivisions, 1, 8);
         }
 
         ImGui::Separator();
@@ -244,15 +266,15 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
             ImGui::CloseCurrentPopup();
             const char* filters[] = {"*.stl"};
             const char* file = tinyfd_saveFileDialog(
-                utf8_to_ansi(get_locale_cstr("dialog.save_voxel_as_stl")).c_str(),
+                utf8_to_ansi(get_locale_cstr("dialog.save_voxel_as_stl"))
+                    .c_str(),
                 "node_voxel.stl", 1, filters,
                 utf8_to_ansi(get_locale_cstr("dialog.stl_files")).c_str());
             if (file) {
-                queue_export_stl(
-                    item.id, tinyfd_path_to_utf8(file),
-                    export_stl_mode, export_stl_simplify,
-                    export_stl_simplify_ratio,
-                    export_stl_subdivisions);
+                queue_export_stl(item.id, tinyfd_path_to_utf8(file),
+                                 export_stl_mode, export_stl_simplify,
+                                 export_stl_simplify_ratio,
+                                 export_stl_subdivisions);
             }
         }
         ImGui::SameLine();
@@ -272,8 +294,7 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
         }
         if (ImGui::BeginPopupModal(sdf_preview_popup_title.c_str(), nullptr,
                                    ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::TextUnformatted(
-                get_locale_cstr("dialog.sdf_preview_desc"));
+            ImGui::TextUnformatted(get_locale_cstr("dialog.sdf_preview_desc"));
 
             ImGui::Separator();
 
@@ -287,25 +308,22 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
                 ImGui::Indent();
                 ImGui::SliderFloat(
                     get_locale_cstr("label.simplification_ratio"),
-                    &export_stl_simplify_ratio, 0.01f, 1.0f,
-                    "%.2f");
+                    &export_stl_simplify_ratio, 0.01f, 1.0f, "%.2f");
                 ImGui::TextUnformatted(
                     get_locale_cstr("hint.simplification_ratio"));
                 ImGui::Unindent();
             }
 
-            ImGui::SliderInt(
-                get_locale_cstr("label.subdivisions_ratio"),
-                &export_stl_subdivisions, 1, 8);
+            ImGui::SliderInt(get_locale_cstr("label.subdivisions_ratio"),
+                             &export_stl_subdivisions, 1, 8);
 
             ImGui::Separator();
 
             if (ImGui::Button(get_locale_cstr("action.render_sdf"))) {
                 ImGui::CloseCurrentPopup();
-                queue_export_stl(
-                    item.id, "", 1, export_stl_simplify,
-                    export_stl_simplify_ratio,
-                    export_stl_subdivisions, false);
+                queue_export_stl(item.id, "", 1, export_stl_simplify,
+                                 export_stl_simplify_ratio,
+                                 export_stl_subdivisions, false);
             }
             ImGui::SameLine();
             if (ImGui::Button(get_locale_cstr("action.cancel"))) {
@@ -317,7 +335,6 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
             ImGui::SetTooltip(get_locale_cstr("tooltip.render_sdf"));
         }
     }
-
 }
 
 void RenderVoxelList::render_object_editor_collision_tab_content(
@@ -342,9 +359,8 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
         ImGui::EndDisabled();
     ImGui::Separator();
 
-    ImGui::Checkbox(
-        get_locale_cstr("label.auto_segment_update"),
-        &item.auto_segment_update);
+    ImGui::Checkbox(get_locale_cstr("label.auto_segment_update"),
+                    &item.auto_segment_update);
 
     const char* segment_mode_names[] = {
         get_locale_cstr("mode.collision"),
@@ -356,16 +372,11 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
         get_locale_cstr("mode.chain"),
         get_locale_cstr("mode.sdf_node_split")};
     const enum RenderVoxelItem::SegmentMode segment_modes[] = {
-        RenderVoxelItem::COLLISION,
-        RenderVoxelItem::PLANE,
-        RenderVoxelItem::CONCAVE_CONE,
-        RenderVoxelItem::SPLIT_DISCONNECTED,
-        RenderVoxelItem::NEIGHBOR,
-        RenderVoxelItem::FILL_INTERIOR,
-        RenderVoxelItem::CHAIN,
-        RenderVoxelItem::SDF_NODE_SPLIT};
-    int current_segment_mode =
-        segment_modes[(int)item.segment_mode];
+        RenderVoxelItem::COLLISION,    RenderVoxelItem::PLANE,
+        RenderVoxelItem::CONCAVE_CONE, RenderVoxelItem::SPLIT_DISCONNECTED,
+        RenderVoxelItem::NEIGHBOR,     RenderVoxelItem::FILL_INTERIOR,
+        RenderVoxelItem::CHAIN,        RenderVoxelItem::SDF_NODE_SPLIT};
+    int current_segment_mode = segment_modes[(int)item.segment_mode];
     if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
                      &current_segment_mode, segment_mode_names,
                      IM_ARRAYSIZE(segment_mode_names))) {
@@ -405,10 +416,8 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
         }
         if (tooltip_key) {
             ImGui::BeginTooltip();
-            ImGui::PushTextWrapPos(ImGui::GetFontSize() *
-                                   35.0f);
-            ImGui::TextUnformatted(
-                get_locale_cstr(tooltip_key));
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+            ImGui::TextUnformatted(get_locale_cstr(tooltip_key));
             ImGui::PopTextWrapPos();
             ImGui::EndTooltip();
         }
@@ -416,28 +425,22 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
 
     if (item.segment_mode == RenderVoxelItem::PLANE) {
         render_plane_editor(item);
-    } else if (item.segment_mode ==
-               RenderVoxelItem::COLLISION) {
+    } else if (item.segment_mode == RenderVoxelItem::COLLISION) {
         render_collision_body_editor(item);
-    } else if (item.segment_mode ==
-               RenderVoxelItem::CONCAVE_CONE) {
+    } else if (item.segment_mode == RenderVoxelItem::CONCAVE_CONE) {
         render_concave_cone_editor(item);
     } else if (item.segment_mode == RenderVoxelItem::NEIGHBOR) {
-        ImGui::DragInt(
-            get_locale_cstr("label.neighbor_max_distance"),
-            &item.neighbor_max_distance, 1, 1, 100);
-    } else if (item.segment_mode ==
-               RenderVoxelItem::FILL_INTERIOR) {
-        ImGui::TextUnformatted(
-            get_locale_cstr("tooltip.mode.fill_interior"));
+        ImGui::DragInt(get_locale_cstr("label.neighbor_max_distance"),
+                       &item.neighbor_max_distance, 1, 1, 100);
+    } else if (item.segment_mode == RenderVoxelItem::FILL_INTERIOR) {
+        ImGui::TextUnformatted(get_locale_cstr("tooltip.mode.fill_interior"));
     } else if (item.segment_mode == RenderVoxelItem::CHAIN) {
         render_object_editor_chain_mode(item);
     } else if (item.segment_mode == RenderVoxelItem::SDF_NODE_SPLIT) {
         std::vector<std::pair<int, std::string>> candidates;
         if (item.manager) {
             for (auto& [other_id, other] : item.manager->items) {
-                if (other_id != item.id &&
-                    other->root_id != item.root_id &&
+                if (other_id != item.id && other->root_id != item.root_id &&
                     other->sdf_data) {
                     candidates.push_back(
                         {other_id, "Node " + std::to_string(other_id)});
@@ -458,33 +461,31 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
                          labels.data(), static_cast<int>(labels.size()))) {
             push_undo_now(item.id, std::nullopt,
                           get_locale_string("label.sdf_split_target"));
-            item.sdf_split_target_id = (combo_idx > 0)
-                ? candidates[combo_idx - 1].first
-                : -1;
+            item.sdf_split_target_id =
+                (combo_idx > 0) ? candidates[combo_idx - 1].first : -1;
         }
         ImGui::Separator();
         ImGui::TextUnformatted("Source Transform");
         auto before_transform = capture_snapshot(item);
         EditResult transform_edit_result;
-        auto translation_result = edit_vec3_stepper(
-            get_locale_cstr("label.position"), item.sdf_split_translation,
-            0.5f);
+        auto translation_result =
+            edit_vec3_stepper(get_locale_cstr("label.position"),
+                              item.sdf_split_translation, 0.5f);
         transform_edit_result.activated |= translation_result.activated;
         transform_edit_result.deactivated_after_edit |=
             translation_result.deactivated_after_edit;
-        transform_edit_result.value_changed |=
-            translation_result.value_changed;
+        transform_edit_result.value_changed |= translation_result.value_changed;
 
-        auto rotation_result = edit_vec3_stepper(
-            get_locale_cstr("label.rotation_deg"), item.sdf_split_rotation,
-            1.0f);
+        auto rotation_result =
+            edit_vec3_stepper(get_locale_cstr("label.rotation_deg"),
+                              item.sdf_split_rotation, 1.0f);
         transform_edit_result.activated |= rotation_result.activated;
         transform_edit_result.deactivated_after_edit |=
             rotation_result.deactivated_after_edit;
         transform_edit_result.value_changed |= rotation_result.value_changed;
 
-        auto scale_result = edit_vec3_stepper(
-            "Scale", item.sdf_split_scale, 0.1f);
+        auto scale_result =
+            edit_vec3_stepper("Scale", item.sdf_split_scale, 0.1f);
         transform_edit_result.activated |= scale_result.activated;
         transform_edit_result.deactivated_after_edit |=
             scale_result.deactivated_after_edit;
@@ -497,23 +498,19 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
             begin_edit(item.id);
         }
         if (transform_edit_result.deactivated_after_edit) {
-            end_edit(item.id,
-                     "Source Transform");
+            end_edit(item.id, "Source Transform");
         } else if (transform_edit_result.value_changed) {
-            push_undo_now(item.id, before_transform,
-                          "Source Transform");
+            push_undo_now(item.id, before_transform, "Source Transform");
         }
     }
 }
 
-void RenderVoxelList::render_object_editor_chain_mode(
-    RenderVoxelItem& item) {
+void RenderVoxelList::render_object_editor_chain_mode(RenderVoxelItem& item) {
     EditResult chain_edit_result;
 
     // chain_min_radius
-    ImGui::DragInt(
-        get_locale_cstr("label.chain_min_radius"),
-        &item.chain_min_radius, 1, 1, 20);
+    ImGui::DragInt(get_locale_cstr("label.chain_min_radius"),
+                   &item.chain_min_radius, 1, 1, 20);
     chain_edit_result.activated |= ImGui::IsItemActivated();
     chain_edit_result.deactivated_after_edit |=
         ImGui::IsItemDeactivatedAfterEdit();
@@ -521,16 +518,13 @@ void RenderVoxelList::render_object_editor_chain_mode(
     // use_cgal_skeleton
     if (!item.stl_path.empty()) {
         auto before = capture_snapshot(item);
-        if (ImGui::Checkbox(
-                get_locale_cstr("label.use_cgal_skeleton"),
-                &item.use_cgal_skeleton)) {
+        if (ImGui::Checkbox(get_locale_cstr("label.use_cgal_skeleton"),
+                            &item.use_cgal_skeleton)) {
             push_undo_now(item.id, before,
-                          get_locale_string(
-                              "label.use_cgal_skeleton"));
+                          get_locale_string("label.use_cgal_skeleton"));
         }
     }
-    if (ImGui::Button(
-            get_locale_cstr("action.extract_skeleton"))) {
+    if (ImGui::Button(get_locale_cstr("action.extract_skeleton"))) {
         queue_extract_skeleton(item.id);
     }
     ImGui::Separator();
@@ -540,9 +534,8 @@ void RenderVoxelList::render_object_editor_chain_mode(
     const std::string clear_picked_label =
         get_locale_string("action.clear_vertices") + "##PickedSkeletonPoints";
     if (ImGui::Button(clear_picked_label.c_str())) {
-        push_undo_now(
-            item.id, std::nullopt,
-            get_locale_string("action.clear_vertices"));
+        push_undo_now(item.id, std::nullopt,
+                      get_locale_string("action.clear_vertices"));
         item.picked_skeleton_points.clear();
         item.joint_wireframe_dirty = true;
     }
@@ -565,8 +558,7 @@ void RenderVoxelList::render_object_editor_chain_mode(
     int erase_picked_skeleton_index = -1;
     bool moved_picked_skeleton_point = false;
     static int pick_direction_index = -1;
-    for (size_t i = 0;
-         i < item.picked_skeleton_points.size(); ++i) {
+    for (size_t i = 0; i < item.picked_skeleton_points.size(); ++i) {
         auto& picked = item.picked_skeleton_points[i];
         const auto& p = picked.position;
         ImGui::PushID(static_cast<int>(i));
@@ -585,23 +577,19 @@ void RenderVoxelList::render_object_editor_chain_mode(
         }
         ImGui::SameLine();
         if (ImGui::Button("X")) {
-            push_undo_now(
-                item.id, std::nullopt,
-                get_locale_string("action.delete"));
-            erase_picked_skeleton_index =
-                static_cast<int>(i);
+            push_undo_now(item.id, std::nullopt,
+                          get_locale_string("action.delete"));
+            erase_picked_skeleton_index = static_cast<int>(i);
             item.joint_wireframe_dirty = true;
         }
         ImGui::SameLine();
-        ImGui::Text("#%d order=%d: %.3f, %.3f, %.3f",
-                    static_cast<int>(i), picked.order, p.x,
-                    p.y, p.z);
+        ImGui::Text("#%d order=%d: %.3f, %.3f, %.3f", static_cast<int>(i),
+                    picked.order, p.x, p.y, p.z);
 
         // ===== Joint Editor =====
         char joint_label[64];
         snprintf(joint_label, sizeof(joint_label), "%s #%d",
-                 get_locale_cstr("label.joint"),
-                 static_cast<int>(i));
+                 get_locale_cstr("label.joint"), static_cast<int>(i));
         if (ImGui::CollapsingHeader(joint_label)) {
             bool dirty = false;
 
@@ -619,21 +607,17 @@ void RenderVoxelList::render_object_editor_chain_mode(
             }
 
             // Custom direction
-            if (ImGui::Checkbox(
-                    get_locale_cstr(
-                        "label.custom_direction"),
-                    &picked.use_custom_direction)) {
+            if (ImGui::Checkbox(get_locale_cstr("label.custom_direction"),
+                                &picked.use_custom_direction)) {
                 dirty = true;
             }
-            chain_edit_result.activated |=
-                ImGui::IsItemActivated();
+            chain_edit_result.activated |= ImGui::IsItemActivated();
             chain_edit_result.deactivated_after_edit |=
                 ImGui::IsItemDeactivatedAfterEdit();
             if (picked.use_custom_direction) {
                 auto r = edit_local_position_stepper(
                     get_locale_cstr("label.direction_end"),
-                    picked.custom_direction_end, 0.1f,
-                    false, false);
+                    picked.custom_direction_end, 0.1f, false, false);
                 chain_edit_result.activated |= r.activated;
                 chain_edit_result.deactivated_after_edit |=
                     r.deactivated_after_edit;
@@ -641,175 +625,135 @@ void RenderVoxelList::render_object_editor_chain_mode(
                     dirty = true;
 
                 if (pick_direction_index == (int)i) {
-                    if (ImGui::Button(get_locale_cstr(
-                            "action.stop_picking_"
-                            "direction"))) {
+                    if (ImGui::Button(get_locale_cstr("action.stop_picking_"
+                                                      "direction"))) {
                         pick_direction_index = -1;
                     }
                 } else {
-                    if (ImGui::Button(get_locale_cstr(
-                            "action.pick_direction"))) {
+                    if (ImGui::Button(
+                            get_locale_cstr("action.pick_direction"))) {
                         pick_direction_index = (int)i;
                     }
                 }
             }
 
             // Socket cone
-            if (ImGui::CollapsingHeader(
-                    get_locale_cstr("label.socket_cone"))) {
+            if (ImGui::CollapsingHeader(get_locale_cstr("label.socket_cone"))) {
                 ImGui::PushID("SocketCone");
-                if (ImGui::DragFloat(
-                        get_locale_cstr("label.offset"),
-                        &picked.socket_cone_offset, 0.1f,
-                        0.0f, 100.0f))
+                if (ImGui::DragFloat(get_locale_cstr("label.offset"),
+                                     &picked.socket_cone_offset, 0.1f, 0.0f,
+                                     100.0f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
-                if (ImGui::DragFloat(
-                        get_locale_cstr("label.angle"),
-                        &picked.socket_cone_angle, 0.01f,
-                        0.01f, 1.5f))
+                if (ImGui::DragFloat(get_locale_cstr("label.angle"),
+                                     &picked.socket_cone_angle, 0.01f, 0.01f,
+                                     1.5f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
-                if (ImGui::DragFloat(
-                        get_locale_cstr("label.radius"),
-                        &picked.socket_cone_radius, 0.1f,
-                        0.1f, 50.0f))
+                if (ImGui::DragFloat(get_locale_cstr("label.radius"),
+                                     &picked.socket_cone_radius, 0.1f, 0.1f,
+                                     50.0f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
                 ImGui::PopID();
             }
 
             // Head cone
-            if (ImGui::CollapsingHeader(
-                    get_locale_cstr("label.head_cone"))) {
+            if (ImGui::CollapsingHeader(get_locale_cstr("label.head_cone"))) {
                 ImGui::PushID("HeadCone");
-                if (ImGui::DragFloat(
-                        get_locale_cstr("label.offset"),
-                        &picked.head_cone_offset, 0.1f,
-                        0.0f, 100.0f))
+                if (ImGui::DragFloat(get_locale_cstr("label.offset"),
+                                     &picked.head_cone_offset, 0.1f, 0.0f,
+                                     100.0f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
-                if (ImGui::DragFloat(
-                        get_locale_cstr("label.radius"),
-                        &picked.head_cone_radius, 0.1f,
-                        0.1f, 50.0f))
+                if (ImGui::DragFloat(get_locale_cstr("label.radius"),
+                                     &picked.head_cone_radius, 0.1f, 0.1f,
+                                     50.0f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
                 ImGui::PopID();
             }
 
             // Support cones
-            if (ImGui::CollapsingHeader(get_locale_cstr(
-                    "label.support_cones"))) {
+            if (ImGui::CollapsingHeader(
+                    get_locale_cstr("label.support_cones"))) {
                 if (ImGui::DragFloat(
-                        get_locale_cstr(
-                            "label.socket_support_offset"),
-                        &picked.socket_support_offset, 0.1f,
-                        0.0f, 100.0f))
+                        get_locale_cstr("label.socket_support_offset"),
+                        &picked.socket_support_offset, 0.1f, 0.0f, 100.0f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
                 if (ImGui::DragFloat(
-                        get_locale_cstr(
-                            "label.socket_support_radius"),
-                        &picked.socket_support_radius, 0.1f,
-                        0.1f, 50.0f))
+                        get_locale_cstr("label.socket_support_radius"),
+                        &picked.socket_support_radius, 0.1f, 0.1f, 50.0f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
                 if (ImGui::DragFloat(
-                        get_locale_cstr(
-                            "label.head_support_offset"),
-                        &picked.head_support_offset, 0.1f,
-                        0.0f, 100.0f))
+                        get_locale_cstr("label.head_support_offset"),
+                        &picked.head_support_offset, 0.1f, 0.0f, 100.0f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
                 if (ImGui::DragFloat(
-                        get_locale_cstr(
-                            "label.head_support_radius"),
-                        &picked.head_support_radius, 0.1f,
-                        0.1f, 50.0f))
+                        get_locale_cstr("label.head_support_radius"),
+                        &picked.head_support_radius, 0.1f, 0.1f, 50.0f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
             }
 
             // Cylinder
-            if (ImGui::CollapsingHeader(
-                    get_locale_cstr("label.cylinder"))) {
-                if (ImGui::DragFloat(
-                        get_locale_cstr(
-                            "label.cylinder_offset"),
-                        &picked.male_cylinder_offset, 0.1f,
-                        0.0f, 100.0f))
+            if (ImGui::CollapsingHeader(get_locale_cstr("label.cylinder"))) {
+                if (ImGui::DragFloat(get_locale_cstr("label.cylinder_offset"),
+                                     &picked.male_cylinder_offset, 0.1f, 0.0f,
+                                     100.0f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
-                if (ImGui::DragFloat(
-                        get_locale_cstr(
-                            "label.cylinder_radius"),
-                        &picked.male_cylinder_radius, 0.1f,
-                        0.1f, 50.0f))
+                if (ImGui::DragFloat(get_locale_cstr("label.cylinder_radius"),
+                                     &picked.male_cylinder_radius, 0.1f, 0.1f,
+                                     50.0f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
-                if (ImGui::DragFloat(
-                        get_locale_cstr("label.female_gap"),
-                        &picked.female_gap, 0.01f, 0.0f,
-                        10.0f))
+                if (ImGui::DragFloat(get_locale_cstr("label.female_gap"),
+                                     &picked.female_gap, 0.01f, 0.0f, 10.0f))
                     dirty = true;
-                chain_edit_result.activated |=
-                    ImGui::IsItemActivated();
+                chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=
                     ImGui::IsItemDeactivatedAfterEdit();
             }
 
             // Slot
-            if (ImGui::DragFloat(
-                    get_locale_cstr("label.slot_extra"),
-                    &picked.slot_extra, 0.1f, 0.0f, 10.0f))
+            if (ImGui::DragFloat(get_locale_cstr("label.slot_extra"),
+                                 &picked.slot_extra, 0.1f, 0.0f, 10.0f))
                 dirty = true;
-            chain_edit_result.activated |=
-                ImGui::IsItemActivated();
+            chain_edit_result.activated |= ImGui::IsItemActivated();
             chain_edit_result.deactivated_after_edit |=
                 ImGui::IsItemDeactivatedAfterEdit();
 
             // Rotation
-            if (ImGui::DragFloat(
-                    get_locale_cstr("label.rotation_angle"),
-                    &picked.rotation_angle, 0.01f, -3.14f,
-                    3.14f))
+            if (ImGui::DragFloat(get_locale_cstr("label.rotation_angle"),
+                                 &picked.rotation_angle, 0.01f, -3.14f, 3.14f))
                 dirty = true;
-            chain_edit_result.activated |=
-                ImGui::IsItemActivated();
+            chain_edit_result.activated |= ImGui::IsItemActivated();
             chain_edit_result.deactivated_after_edit |=
                 ImGui::IsItemDeactivatedAfterEdit();
 
@@ -827,29 +771,24 @@ void RenderVoxelList::render_object_editor_chain_mode(
 
     // Handle direction picking
     if (pick_direction_index >= 0 &&
-        pick_direction_index <
-            (int)item.picked_skeleton_points.size() &&
+        pick_direction_index < (int)item.picked_skeleton_points.size() &&
         mouse_world_pos_valid && mouse_world_pos_picked) {
-        auto& picked = item.picked_skeleton_points
-                           [pick_direction_index];
-        push_undo_now(
-            item.id, std::nullopt,
-            get_locale_string("label.pick_point_by_mouse"));
+        auto& picked = item.picked_skeleton_points[pick_direction_index];
+        push_undo_now(item.id, std::nullopt,
+                      get_locale_string("label.pick_point_by_mouse"));
         picked.custom_direction_end = mouse_world_pos;
         item.joint_wireframe_dirty = true;
         pick_direction_index = -1;
     }
     if (erase_picked_skeleton_index >= 0) {
-        item.picked_skeleton_points.erase(
-            item.picked_skeleton_points.begin() +
-            erase_picked_skeleton_index);
+        item.picked_skeleton_points.erase(item.picked_skeleton_points.begin() +
+                                          erase_picked_skeleton_index);
         item.sort_picked_skeleton_points();
         item.joint_wireframe_dirty = true;
     }
     if (mouse_world_pos_picked) {
-        push_undo_now(
-            item.id, std::nullopt,
-            get_locale_string("label.pick_point_by_mouse"));
+        push_undo_now(item.id, std::nullopt,
+                      get_locale_string("label.pick_point_by_mouse"));
         pick_skeleton_point_from_mouse();
         item.joint_wireframe_dirty = true;
     }
@@ -865,8 +804,7 @@ void RenderVoxelList::render_object_editor_voxel_tab_content(
     ImGui::Checkbox(get_locale_cstr("label.voxel_picking"),
                     &item.voxel_picking_enabled);
     if (item.voxel_picking_enabled) {
-        if (!item.surface_cache_ready &&
-            !item.surface_cache_computing) {
+        if (!item.surface_cache_ready && !item.surface_cache_computing) {
             item.surface_cache_computing = true;
             item.surface_cache_progress = 0.0f;
             // 在后台线程初始化表面缓存
@@ -875,8 +813,7 @@ void RenderVoxelList::render_object_editor_voxel_tab_content(
                 if (it == this->items.end())
                     return;
                 auto& target = *it->second;
-                auto surface =
-                    target.voxel_grid_data.getSurfaceVoxels();
+                auto surface = target.voxel_grid_data.getSurfaceVoxels();
                 target.surface_voxels = std::move(surface);
                 target.surface_cache_ready = true;
                 target.surface_cache_computing = false;
@@ -888,10 +825,8 @@ void RenderVoxelList::render_object_editor_voxel_tab_content(
         } else if (item.surface_cache_ready) {
             ImGui::TextUnformatted(
                 get_locale_cstr("label.surface_cache_ready"));
-            ImGui::DragFloat(
-                get_locale_cstr("label.pick_range"),
-                &item.voxel_pick_range, 0.1f, 0.1f, 20.0f,
-                "%.1f");
+            ImGui::DragFloat(get_locale_cstr("label.pick_range"),
+                             &item.voxel_pick_range, 0.1f, 0.1f, 20.0f, "%.1f");
         }
         ImGui::Separator();
 
@@ -915,43 +850,34 @@ void RenderVoxelList::render_object_editor_voxel_tab_content(
             ImGui::EndDisabled();
         ImGui::Separator();
 
-        if (ImGui::Button(
-                get_locale_cstr("action.save_marked_voxels"))) {
+        if (ImGui::Button(get_locale_cstr("action.save_marked_voxels"))) {
             const char* filters[] = {"*.vxgrid"};
             const char* file = tinyfd_saveFileDialog(
-                get_locale_cstr("dialog.save_marked_voxels"),
-                "marked.vxgrid", 1, filters,
-                get_locale_cstr("dialog.marked_voxels_file"));
+                get_locale_cstr("dialog.save_marked_voxels"), "marked.vxgrid",
+                1, filters, get_locale_cstr("dialog.marked_voxels_file"));
             if (file) {
                 std::string error;
-                if (!sinriv::kigstudio::save(
-                        file, item.marked_voxels, &error)) {
-                    tinyfd_messageBox(
-                        "Error",
-                        utf8_to_ansi(error.c_str()).c_str(),
-                        "ok", "error", 1);
+                if (!sinriv::kigstudio::save(file, item.marked_voxels,
+                                             &error)) {
+                    tinyfd_messageBox("Error",
+                                      utf8_to_ansi(error.c_str()).c_str(), "ok",
+                                      "error", 1);
                 }
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button(
-                get_locale_cstr("action.load_marked_voxels"))) {
+        if (ImGui::Button(get_locale_cstr("action.load_marked_voxels"))) {
             const char* filters[] = {"*.vxgrid"};
             const char* file = tinyfd_openFileDialog(
-                get_locale_cstr("dialog.load_marked_voxels"),
-                "", 1, filters,
-                get_locale_cstr("dialog.marked_voxels_file"),
-                0);
+                get_locale_cstr("dialog.load_marked_voxels"), "", 1, filters,
+                get_locale_cstr("dialog.marked_voxels_file"), 0);
             if (file) {
-                this->push_marked_undo_now(item.id,
-                                           "Load marked");
-                if (!sinriv::kigstudio::load(
-                        file, item.marked_voxels)) {
+                this->push_marked_undo_now(item.id, "Load marked");
+                if (!sinriv::kigstudio::load(file, item.marked_voxels)) {
                     tinyfd_messageBox(
                         "Error",
                         utf8_to_ansi(
-                            get_locale_cstr(
-                                "error.load_marked_failed"))
+                            get_locale_cstr("error.load_marked_failed"))
                             .c_str(),
                         "ok", "error", 1);
                 } else {
@@ -964,12 +890,10 @@ void RenderVoxelList::render_object_editor_voxel_tab_content(
             }
         }
     }
-    ImGui::Checkbox(
-        get_locale_cstr("label.disable_camera_on_pick"),
-        &disable_camera_on_pick);
-    ImGui::DragFloat(
-        get_locale_cstr("label.mouse_highlight_range"),
-        &mouse_highlight_range, 0.1f, 0.0f, 20.0f, "%.1f");
+    ImGui::Checkbox(get_locale_cstr("label.disable_camera_on_pick"),
+                    &disable_camera_on_pick);
+    ImGui::DragFloat(get_locale_cstr("label.mouse_highlight_range"),
+                     &mouse_highlight_range, 0.1f, 0.0f, 20.0f, "%.1f");
 }
 
 }  // namespace sinriv::ui::render

@@ -83,6 +83,8 @@ void init_locale_strings() {
                       {{"en", "Collision Edit"}, {"zh", "碰撞编辑"}});
     add_locale_string("tab.voxel_picking",
                       {{"en", "Voxel Picking"}, {"zh", "体素选择"}});
+    add_locale_string("tab.file_status",
+                      {{"en", "Voxel Picking"}, {"zh", "文件"}});
     add_locale_string("window.edit_segment_plane",
                       {{"en", "Edit Segment Plane"}, {"zh", "编辑分割平面"}});
     add_locale_string("window.nav_node_map",

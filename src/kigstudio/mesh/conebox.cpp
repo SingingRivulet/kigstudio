@@ -427,6 +427,7 @@ static bool ray_triangle_intersect(const vec3f& origin,
 }
 
 struct TriangleHash {
+    // TODO: 浮点有误差，需要考虑近似相等的情况
     static size_t hash_vec3(const vec3f& p) {
         size_t h = std::hash<float>()(p.x);
         h ^= std::hash<float>()(p.y) + 0x9e3779b97f4a7c15ULL + (h << 6) +
