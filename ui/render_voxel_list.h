@@ -168,6 +168,8 @@ struct CollisionEditorSnapshot {
     std::string stl_path;
     int stl_load_mode = 0;
     bool load_as_sdf = false;
+    bool conebox_auto_center = true;
+    vec3f conebox_center = {0.0f, 0.0f, 0.0f};
 };
 
 struct MarkedVoxelsSnapshot {
@@ -377,6 +379,8 @@ class RenderVoxelList {
         float stl_voxel_size = 1.0f;
         int stl_load_mode = 0;
         bool load_as_sdf = false;
+        bool conebox_auto_center = true;
+        vec3f conebox_center = {0.0f, 0.0f, 0.0f};
 
         // undo/redo stacks for collision editor
         std::vector<CollisionEditorSnapshot> undo_stack;

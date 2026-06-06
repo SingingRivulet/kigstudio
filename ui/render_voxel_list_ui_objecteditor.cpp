@@ -268,6 +268,30 @@ void RenderVoxelList::render_object_editor() {
                             }
                         }
 
+                        // ConeBox 中心设置
+                        if (item.stl_load_mode ==
+                            static_cast<int>(StlLoadMode::CONEBOX)) {
+                            bool auto_center = item.conebox_auto_center;
+                            if (ImGui::Checkbox(
+                                    get_locale_cstr(
+                                        "label.conebox_auto_center"),
+                                    &auto_center)) {
+                                push_undo_now(item.id, std::nullopt,
+                                              "ConeBox Auto Center");
+                                item.conebox_auto_center = auto_center;
+                            }
+                            if (ImGui::IsItemHovered()) {
+                                ImGui::SetTooltip(get_locale_cstr(
+                                    "tooltip.conebox_auto_center"));
+                            }
+                            if (!auto_center) {
+                                ImGui::DragFloat3(
+                                    get_locale_cstr("label.conebox_center"),
+                                    &item.conebox_center.x, 0.1f, 0.0f,
+                                    0.0f, "%.2f");
+                            }
+                        }
+
                         // SDF 勾选框
                         bool load_as_sdf = item.load_as_sdf;
                         if (ImGui::Checkbox(
@@ -281,7 +305,7 @@ void RenderVoxelList::render_object_editor() {
                             ImGui::SetTooltip(
                                 get_locale_cstr("tooltip.load_as_sdf"));
                         }
-
+                        
                         // Voxel Size（从弹窗移出）
                         ImGui::Separator();
                         ImGui::TextUnformatted(

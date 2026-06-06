@@ -593,11 +593,13 @@ void Triangle_group::build_face_trees() {
 }
 
 std::vector<Triangle> build_closed_mesh_from_triangles(
-    const std::vector<Triangle>& input_triangles) {
+    const std::vector<Triangle>& input_triangles,
+    bool auto_center,
+    const vec3f& manual_center) {
     if (input_triangles.empty())
         return {};
 
-    // 计算输入三角形的包围盒
+    // 计算输入三角形的包围盒（用于缩放）
     vec3f min_p = std::get<0>(input_triangles[0]);
     vec3f max_p = min_p;
     for (const auto& tri : input_triangles) {
@@ -613,7 +615,7 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
         }
     }
 
-    const vec3f center = (min_p + max_p) * 0.5f;
+    vec3f center = auto_center ? (min_p + max_p) * 0.5f : manual_center;
     const float half_x =
         std::max(std::abs(max_p.x - center.x), std::abs(center.x - min_p.x));
     const float half_y =

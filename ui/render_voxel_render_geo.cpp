@@ -702,8 +702,19 @@ void RenderVoxelList::load_stl(std::string filename,
     // Phase 1b: Optional preprocessing based on load mode
     std::vector<Triangle> source_triangles;
     if (load_mode == static_cast<int>(StlLoadMode::CONEBOX)) {
+        bool cb_auto_center = true;
+        vec3f cb_center{0.0f, 0.0f, 0.0f};
+        if (target_item_id >= 0) {
+            std::lock_guard<std::mutex> lock(locker);
+            auto it = items.find(target_item_id);
+            if (it != items.end()) {
+                cb_auto_center = it->second->conebox_auto_center;
+                cb_center = it->second->conebox_center;
+            }
+        }
         source_triangles = sinriv::kigstudio::mesh::conebox::
-            build_closed_mesh_from_triangles(raw_triangles);
+            build_closed_mesh_from_triangles(raw_triangles, cb_auto_center,
+                                             cb_center);
     } else {
         source_triangles = std::move(raw_triangles);
     }

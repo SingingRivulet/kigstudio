@@ -66,8 +66,11 @@ struct Triangle_group {
     std::vector<Triangle> compute_visible_mesh_with_cone_sides() const;
 };
 
-// 输入三角形数组，自动计算中心/缩放后利用 cone-box 算法生成封闭 mesh
+// 输入三角形数组，利用 cone-box 算法生成封闭 mesh
+// auto_center=true 时自动从包围盒计算中心，否则使用 manual_center
 std::vector<Triangle> build_closed_mesh_from_triangles(
-    const std::vector<Triangle>& triangles);
+    const std::vector<Triangle>& triangles,
+    bool auto_center = true,
+    const vec3f& manual_center = vec3f{0.0f, 0.0f, 0.0f});
 
 }  // namespace sinriv::kigstudio::mesh::conebox

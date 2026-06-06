@@ -234,6 +234,13 @@ void init_locale_strings() {
                       {{"en", "ConeBox"}, {"zh", "ConeBox"}});
     add_locale_string("action.browse",
                       {{"en", "Browse..."}, {"zh", "浏览..."}});
+    add_locale_string("label.conebox_auto_center",
+                      {{"en", "Auto Center"}, {"zh", "自动计算中心"}});
+    add_locale_string("label.conebox_center",
+                      {{"en", "Center"}, {"zh", "中心位置"}});
+    add_locale_string("tooltip.conebox_auto_center",
+                      {{"en", "Automatically calculate the center from the mesh bounding box."},
+                       {"zh", "从网格包围盒自动计算中心。"}});
 
     add_locale_string("menu.export_stl_all",
                       {{"en", "Export All STL"}, {"zh", "全部导出stl"}});
