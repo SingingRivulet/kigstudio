@@ -1,6 +1,8 @@
 #include "conebox.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <functional>
 #include <queue>
 #include <tuple>
 
@@ -427,13 +429,19 @@ static bool ray_triangle_intersect(const vec3f& origin,
 }
 
 struct TriangleHash {
-    // TODO: 浮点有误差，需要考虑近似相等的情况
+    // 使用空间网格量化，避免浮点误差导致相同顶点哈希不同
+    static constexpr float EPS = 1e-5f;
+
+    static int64_t quantize(float v) {
+        return static_cast<int64_t>(std::llround(v / EPS));
+    }
+
     static size_t hash_vec3(const vec3f& p) {
-        size_t h = std::hash<float>()(p.x);
-        h ^= std::hash<float>()(p.y) + 0x9e3779b97f4a7c15ULL + (h << 6) +
-             (h >> 2);
-        h ^= std::hash<float>()(p.z) + 0x9e3779b97f4a7c15ULL + (h << 6) +
-             (h >> 2);
+        size_t h = std::hash<int64_t>{}(quantize(p.x));
+        h ^= std::hash<int64_t>{}(quantize(p.y)) + 0x9e3779b97f4a7c15ULL +
+             (h << 6) + (h >> 2);
+        h ^= std::hash<int64_t>{}(quantize(p.z)) + 0x9e3779b97f4a7c15ULL +
+             (h << 6) + (h >> 2);
         return h;
     }
 
@@ -448,10 +456,26 @@ struct TriangleHash {
     }
 };
 
+struct TriangleEqual {
+    // 按距离判定：对应顶点距离小于 EPS 则认为三角形相同
+    static constexpr float EPS = 1e-5f;
+    static constexpr float EPS_SQ = EPS * EPS;
+
+    static bool near(const vec3f& a, const vec3f& b) {
+        return (a - b).length2() < EPS_SQ;
+    }
+
+    bool operator()(const Triangle& a, const Triangle& b) const noexcept {
+        return near(std::get<0>(a), std::get<0>(b)) &&
+               near(std::get<1>(a), std::get<1>(b)) &&
+               near(std::get<2>(a), std::get<2>(b));
+    }
+};
+
 std::vector<Triangle> Triangle_group::compute_visible_mesh_from_outside()
     const {
     std::vector<Triangle> visible_mesh;
-    std::unordered_set<Triangle, TriangleHash> seen;
+    std::unordered_set<Triangle, TriangleHash, TriangleEqual> seen;
 
     for (size_t triangle_id = 0; triangle_id < triangles.size();
          ++triangle_id) {
@@ -499,7 +523,7 @@ std::vector<Triangle> Triangle_group::compute_visible_mesh_from_outside()
 std::vector<Triangle> Triangle_group::compute_visible_mesh_with_cone_sides()
     const {
     auto visible_mesh = compute_visible_mesh_from_outside();
-    std::unordered_set<Triangle, TriangleHash> seen;
+    std::unordered_set<Triangle, TriangleHash, TriangleEqual> seen;
 
     // 初始化seen集合，防止重复添加已有的三角形
     for (const auto& tri : visible_mesh) {
@@ -566,6 +590,76 @@ void Triangle_group::build_face_trees() {
                                      face_segments[face].end());
         }
     }
+}
+
+std::vector<Triangle> build_closed_mesh_from_triangles(
+    const std::vector<Triangle>& input_triangles) {
+    if (input_triangles.empty())
+        return {};
+
+    // 计算输入三角形的包围盒
+    vec3f min_p = std::get<0>(input_triangles[0]);
+    vec3f max_p = min_p;
+    for (const auto& tri : input_triangles) {
+        const vec3f* verts[3] = {&std::get<0>(tri), &std::get<1>(tri),
+                                 &std::get<2>(tri)};
+        for (const auto* v : verts) {
+            min_p.x = std::min(min_p.x, v->x);
+            min_p.y = std::min(min_p.y, v->y);
+            min_p.z = std::min(min_p.z, v->z);
+            max_p.x = std::max(max_p.x, v->x);
+            max_p.y = std::max(max_p.y, v->y);
+            max_p.z = std::max(max_p.z, v->z);
+        }
+    }
+
+    const vec3f center = (min_p + max_p) * 0.5f;
+    const float half_x =
+        std::max(std::abs(max_p.x - center.x), std::abs(center.x - min_p.x));
+    const float half_y =
+        std::max(std::abs(max_p.y - center.y), std::abs(center.y - min_p.y));
+    const float half_z =
+        std::max(std::abs(max_p.z - center.z), std::abs(center.z - min_p.z));
+    const float min_half = std::min({half_x, half_y, half_z});
+
+    // 若模型太贴近中心，则统一缩放使其超出算法使用的 0.5 单位立方体
+    constexpr float target_half = 0.6f;
+    const float scale =
+        (min_half > 1e-8f && min_half < target_half) ? target_half / min_half
+                                                     : 1.0f;
+    const float inv_scale = 1.0f / scale;
+
+    const auto to_local = [&](const vec3f& v) { return (v - center) * scale; };
+    const auto to_world = [&](const vec3f& v) {
+        return v * inv_scale + center;
+    };
+
+    Triangle_group group;
+    group.center = vec3f{0.0f, 0.0f, 0.0f};
+
+    for (const auto& tri : input_triangles) {
+        Triangle_status status;
+        status.triangle =
+            std::make_tuple(to_local(std::get<0>(tri)),
+                            to_local(std::get<1>(tri)),
+                            to_local(std::get<2>(tri)));
+        status.compute_projection(group.center);
+        group.add_triangle(status);
+    }
+    group.build_face_trees();
+
+    const std::vector<Triangle> local_mesh =
+        group.compute_visible_mesh_with_cone_sides();
+
+    std::vector<Triangle> result;
+    result.reserve(local_mesh.size());
+    for (const auto& tri : local_mesh) {
+        result.emplace_back(std::make_tuple(
+            to_world(std::get<0>(tri)),
+            to_world(std::get<1>(tri)),
+            to_world(std::get<2>(tri))));
+    }
+    return result;
 }
 
 }  // namespace sinriv::kigstudio::mesh::conebox

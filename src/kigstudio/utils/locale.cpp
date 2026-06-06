@@ -222,6 +222,18 @@ void init_locale_strings() {
                       {{"en", "No log entries."}, {"zh", "暂无日志记录。"}});
     add_locale_string("label.load_as_sdf",
                       {{"en", "Load as SDF"}, {"zh", "加载SDF"}});
+    add_locale_string("label.stl_path",
+                      {{"en", "STL Path"}, {"zh", "STL 路径"}});
+    add_locale_string("label.stl_load_mode",
+                      {{"en", "Load Mode"}, {"zh", "加载模式"}});
+    add_locale_string("label.stl_load_mode.default",
+                      {{"en", "Default"}, {"zh", "默认"}});
+    add_locale_string("label.stl_load_mode.sdf",
+                      {{"en", "SDF"}, {"zh", "SDF"}});
+    add_locale_string("label.stl_load_mode.conebox",
+                      {{"en", "ConeBox"}, {"zh", "ConeBox"}});
+    add_locale_string("action.browse",
+                      {{"en", "Browse..."}, {"zh", "浏览..."}});
 
     add_locale_string("menu.export_stl_all",
                       {{"en", "Export All STL"}, {"zh", "全部导出stl"}});
@@ -558,6 +570,18 @@ void init_locale_strings() {
     add_locale_string("tooltip.load_as_sdf",
                       {{"en", "Load STL file as signed distance field (SDF) for significantly improved model accuracy, but SDF data will be lost when using certain features (e.g. neighbor split)."},
                        {"zh", "将 STL 文件作为有符号距离场 (SDF) 加载，这将显著提升模型精度，但是输出模型将消耗更长的时间。使用部分功能时会丢失 SDF 数据（例如邻近分割）。"}});
+    add_locale_string("tooltip.stl_load_mode",
+                      {{"en", "Choose how the STL file is processed before voxelization."},
+                       {"zh", "选择 STL 文件在体素化之前的处理方式。"}});
+    add_locale_string("tooltip.stl_load_mode.default",
+                      {{"en", "Load triangles directly without preprocessing."},
+                       {"zh", "直接加载三角形，不做预处理。"}});
+    add_locale_string("tooltip.stl_load_mode.sdf",
+                      {{"en", "Load as signed distance field for improved accuracy."},
+                       {"zh", "作为有符号距离场加载，以获得更高精度。"}});
+    add_locale_string("tooltip.stl_load_mode.conebox",
+                      {{"en", "Preprocess with cone-box closed mesh reconstruction."},
+                       {"zh", "使用 ConeBox 封闭网格重建进行预处理。"}});
     add_locale_string("tooltip.render_sdf",
                       {{"en", "Render SDF as a 3D model. This will clear all marked voxels. Proceed?"},
                        {"zh", "将SDF渲染为网格以供预览。注意：这可能需要较长时间。"}});

@@ -371,7 +371,6 @@ void RenderVoxelList::render_ui() {
     render_nav_map();
     render_object_editor();
     render_file_loader();
-    render_reload_stl_dialog();
     render_save_dialog();
     render_load_dialog();
     render_import_vxgrid_dialog();
@@ -458,6 +457,8 @@ void RenderVoxelList::render_ui() {
 void RenderVoxelList::render_file_loader() {
     static std::string stl_file_path;
     static float voxel_size = 1.0f;
+    static int file_loader_load_mode = 0;
+    static bool file_loader_load_as_sdf = false;
     if (show_file_loader) {
         ImGuiViewport* vp = ImGui::GetMainViewport();
         ImVec2 center = vp->GetCenter();
@@ -484,7 +485,18 @@ void RenderVoxelList::render_file_loader() {
                 ImGui::TextUnformatted(
                     get_locale_cstr("label.no_file_selected"));
             }
-            ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"), &load_as_sdf);
+            const char* load_mode_names[] = {
+                get_locale_cstr("label.stl_load_mode.default"),
+                get_locale_cstr("label.stl_load_mode.conebox"),
+            };
+            ImGui::Combo(get_locale_cstr("label.stl_load_mode"),
+                         &file_loader_load_mode, load_mode_names,
+                         IM_ARRAYSIZE(load_mode_names));
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(get_locale_cstr("tooltip.stl_load_mode"));
+            }
+            ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"),
+                            &file_loader_load_as_sdf);
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
             }
@@ -512,7 +524,9 @@ void RenderVoxelList::render_file_loader() {
             }
             ImGui::BeginDisabled(stl_file_path.empty());
             if (ImGui::Button(get_locale_cstr("action.open"))) {
-                this->queue_load_stl(stl_file_path, voxel_size, load_as_sdf);
+                this->queue_load_stl(stl_file_path, voxel_size,
+                                     file_loader_load_mode,
+                                     file_loader_load_as_sdf);
                 show_file_loader = false;
             }
             ImGui::EndDisabled();
@@ -525,70 +539,6 @@ void RenderVoxelList::render_file_loader() {
     }
 }
 
-void RenderVoxelList::render_reload_stl_dialog() {
-    if (!show_reload_stl_dialog)
-        return;
-
-    ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImVec2 center = vp->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Once, ImVec2(0.5f, 0.5f));
-    if (ImGui::Begin(get_locale_cstr("window.reload_stl"),
-                     &show_reload_stl_dialog,
-                     ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextUnformatted(get_locale_cstr("label.reload_stl_hint"));
-        ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"), &load_as_sdf);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
-        }
-        ImGui::Separator();
-        ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
-        ImGui::SameLine();
-        const float button_size = ImGui::GetFrameHeight();
-        if (ImGui::Button("-##reload", ImVec2(button_size, 0))) {
-            auto tmp = reload_stl_voxel_size / 2.0f;
-            if (tmp >= 0.0001f) {
-                reload_stl_voxel_size = tmp;
-            }
-        }
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(80.0f);
-        ImGui::DragFloat("##ReloadVoxelSize", &reload_stl_voxel_size, 0.1f,
-                         0.0f, 0.0f, "%.4f");
-        ImGui::SameLine();
-        if (ImGui::Button("+##reload", ImVec2(button_size, 0))) {
-            reload_stl_voxel_size = reload_stl_voxel_size * 2.0f;
-            if (reload_stl_voxel_size > 1000.0f) {
-                reload_stl_voxel_size = 1000.0f;
-            }
-        }
-        ImGui::Separator();
-        {
-            std::lock_guard<std::mutex> lock(locker);
-            auto it = items.find(reload_stl_item_id);
-            if (it != items.end()) {
-                it->second->stl_voxel_size = reload_stl_voxel_size;
-            }
-        }
-        if (ImGui::Button(get_locale_cstr("action.apply"))) {
-            {
-                std::lock_guard<std::mutex> lock(locker);
-                auto it = items.find(reload_stl_item_id);
-                if (it != items.end()) {
-                    it->second->stl_voxel_size = reload_stl_voxel_size;
-                    this->queue_reload_stl(reload_stl_item_id,
-                                           reload_stl_voxel_size,
-                                           it->second->stl_path, load_as_sdf);
-                }
-            }
-            show_reload_stl_dialog = false;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button(get_locale_cstr("action.cancel"))) {
-            show_reload_stl_dialog = false;
-        }
-    }
-    ImGui::End();
-}
 
 void RenderVoxelList::render_collision_body_editor(RenderVoxelItem& item) {
     auto before = capture_snapshot(item);

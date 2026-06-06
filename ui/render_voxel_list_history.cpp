@@ -16,7 +16,10 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.chain_min_radius,
             item.use_cgal_skeleton,
             item.picked_skeleton_points,
-            item.skeleton_lines};
+            item.skeleton_lines,
+            item.stl_path,
+            item.stl_load_mode,
+            item.load_as_sdf};
 }
 
 void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
@@ -36,6 +39,9 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.use_cgal_skeleton = snapshot.use_cgal_skeleton;
     item.picked_skeleton_points = snapshot.picked_skeleton_points;
     item.skeleton_lines = snapshot.skeleton_lines;
+    item.stl_path = snapshot.stl_path;
+    item.stl_load_mode = snapshot.stl_load_mode;
+    item.load_as_sdf = snapshot.load_as_sdf;
     item.joint_wireframe_dirty = true;
 }
 

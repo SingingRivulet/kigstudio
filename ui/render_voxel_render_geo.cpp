@@ -1,6 +1,8 @@
 #include "render_voxel_list.h"
 #include "kigstudio/cgal/skeleton_extraction.h"
+#include "kigstudio/mesh/conebox.h"
 #include "kigstudio/sdf/sdf_mesh.h"
+#include "kigstudio/utils/generator.h"
 #include <cmath>
 #include <cstdint>
 #include <unordered_map>
@@ -346,6 +348,34 @@ buildSkeletonOrderCache(
 
     return ordered;
 }
+
+sinriv::kigstudio::Generator<
+    std::tuple<std::tuple<sinriv::kigstudio::vec3<float>,
+                          sinriv::kigstudio::vec3<float>,
+                          sinriv::kigstudio::vec3<float>>,
+               sinriv::kigstudio::vec3<float>>>
+triangle_generator_with_normals(
+    const std::vector<std::tuple<sinriv::kigstudio::vec3<float>,
+                                 sinriv::kigstudio::vec3<float>,
+                                 sinriv::kigstudio::vec3<float>>>& triangles) {
+    using Triangle =
+        std::tuple<sinriv::kigstudio::vec3<float>,
+                   sinriv::kigstudio::vec3<float>,
+                   sinriv::kigstudio::vec3<float>>;
+    using vec3f = sinriv::kigstudio::vec3<float>;
+    for (const auto& tri : triangles) {
+        const auto& v0 = std::get<0>(tri);
+        const auto& v1 = std::get<1>(tri);
+        const auto& v2 = std::get<2>(tri);
+        vec3f normal = (v1 - v0).cross(v2 - v0);
+        const float len = normal.length();
+        if (len > 1e-8f)
+            normal = normal / len;
+        else
+            normal = vec3f{0.0f, 0.0f, 0.0f};
+        co_yield std::make_tuple(tri, normal);
+    }
+}
 }  // namespace
 
 std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
@@ -645,6 +675,7 @@ void RenderVoxelList::load_stl(std::string filename,
                                double isolevel,
                                bool smooth_normals,
                                int target_item_id,
+                               int load_mode,
                                bool load_as_sdf) {
     using namespace sinriv::kigstudio::voxel;
     using MeshData = mesh_detail::AsyncVoxelMeshData;
@@ -655,12 +686,30 @@ void RenderVoxelList::load_stl(std::string filename,
     triangle_bvh<float> bvh;
     size_t tri_count = 0;
     kdtree::pointVec kdtree_points;
-    std::vector<Triangle> source_triangles;
-    source_triangles.reserve(1024);
+    std::vector<Triangle> raw_triangles;
+    raw_triangles.reserve(1024);
     for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(filename)) {
         (void)n;
+        raw_triangles.push_back(tri);
+        ++tri_count;
+        if (tri_count % 1000 == 0) {
+            queue_progress =
+                (0.05f + 0.08f * std::min(1.0f, static_cast<float>(tri_count) /
+                                                    50000.0f));
+        }
+    }
+
+    // Phase 1b: Optional preprocessing based on load mode
+    std::vector<Triangle> source_triangles;
+    if (load_mode == static_cast<int>(StlLoadMode::CONEBOX)) {
+        source_triangles = sinriv::kigstudio::mesh::conebox::
+            build_closed_mesh_from_triangles(raw_triangles);
+    } else {
+        source_triangles = std::move(raw_triangles);
+    }
+
+    for (const auto& tri : source_triangles) {
         bvh.insert(tri);
-        source_triangles.push_back(tri);
         kdtree_points.push_back({static_cast<double>(std::get<0>(tri).x),
                                  static_cast<double>(std::get<0>(tri).y),
                                  static_cast<double>(std::get<0>(tri).z)});
@@ -670,12 +719,6 @@ void RenderVoxelList::load_stl(std::string filename,
         kdtree_points.push_back({static_cast<double>(std::get<2>(tri).x),
                                  static_cast<double>(std::get<2>(tri).y),
                                  static_cast<double>(std::get<2>(tri).z)});
-        ++tri_count;
-        if (tri_count % 1000 == 0) {
-            queue_progress =
-                (0.05f + 0.08f * std::min(1.0f, static_cast<float>(tri_count) /
-                                                    50000.0f));
-        }
     }
 
     // Phase 2: Voxelize
@@ -765,8 +808,13 @@ void RenderVoxelList::load_stl(std::string filename,
             if (it != items.end()) {
                 auto& item = *it->second;
                 item.mesh_renderer.clear();
-                item.mesh_renderer.loadGeometry(
-                    sinriv::kigstudio::voxel::readSTL(filename));
+                if (load_mode == static_cast<int>(StlLoadMode::CONEBOX)) {
+                    item.mesh_renderer.loadGeometry(
+                        triangle_generator_with_normals(source_triangles));
+                } else {
+                    item.mesh_renderer.loadGeometry(
+                        sinriv::kigstudio::voxel::readSTL(filename));
+                }
                 item.exported_mesh_renderer.clear();
                 item.cached_mesh.clear();
                 item.cached_mesh_dirty = true;
@@ -777,6 +825,8 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.source_triangles = std::move(source_triangles);
                 item.stl_path = filename;
                 item.stl_voxel_size = voxel_size;
+                item.stl_load_mode = load_mode;
+                item.load_as_sdf = load_as_sdf;
                 item.thumbnail_dirty = true;
                 item.dirty = true;
                 if (load_as_sdf) {
@@ -806,8 +856,13 @@ void RenderVoxelList::load_stl(std::string filename,
         std::cout << "[load_stl] new item id=" << item->id
                   << " write_count=" << item->write_count.load()
                   << " ref_count=" << item->ref_count.load() << std::endl;
-        item->mesh_renderer.loadGeometry(
-            sinriv::kigstudio::voxel::readSTL(filename));
+        if (load_mode == static_cast<int>(StlLoadMode::CONEBOX)) {
+            item->mesh_renderer.loadGeometry(
+                triangle_generator_with_normals(source_triangles));
+        } else {
+            item->mesh_renderer.loadGeometry(
+                sinriv::kigstudio::voxel::readSTL(filename));
+        }
         item->exported_mesh_renderer.clear();
         item->cached_mesh.clear();
         item->cached_mesh_dirty = true;
@@ -819,6 +874,8 @@ void RenderVoxelList::load_stl(std::string filename,
         item->dirty = true;
         item->stl_path = filename;
         item->stl_voxel_size = voxel_size;
+        item->stl_load_mode = load_mode;
+        item->load_as_sdf = load_as_sdf;
         item->mesh_kd_tree = kdtree::KDTree(kdtree_points);
         if (load_as_sdf) {
             auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();

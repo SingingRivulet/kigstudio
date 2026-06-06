@@ -183,24 +183,143 @@ void RenderVoxelList::render_object_editor() {
                     if (ImGui::BeginTabItem(get_locale_cstr("tab.file_status"),
                                             nullptr, flags_file_status)) {
                         object_editor_tab = 2;
+                        // STL 路径编辑
+                        static char stl_path_buf[1024] = {};
+                        static int last_path_item_id = -1;
+                        if (last_path_item_id != item.id) {
+                            strncpy(stl_path_buf, item.stl_path.c_str(),
+                                    sizeof(stl_path_buf) - 1);
+                            stl_path_buf[sizeof(stl_path_buf) - 1] = '\0';
+                            last_path_item_id = item.id;
+                        }
+
+                        ImGui::TextUnformatted(
+                            get_locale_cstr("label.stl_path"));
+                        ImGui::SetNextItemWidth(
+                            ImGui::GetContentRegionAvail().x -
+                            ImGui::GetFrameHeight() -
+                            ImGui::GetStyle().ItemSpacing.x);
+                        if (ImGui::InputText("##stl_path", stl_path_buf,
+                                             sizeof(stl_path_buf),
+                                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+                            const std::string new_path = stl_path_buf;
+                            if (new_path != item.stl_path) {
+                                push_undo_now(item.id, std::nullopt,
+                                              "STL Path");
+                                item.stl_path = new_path;
+                            }
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button(
+                                get_locale_cstr("action.browse"))) {
+                            const char* filters[] = {"*.stl"};
+                            const char* file = tinyfd_openFileDialog(
+                                utf8_to_ansi(get_locale_cstr(
+                                                 "dialog.open_stl_title"))
+                                    .c_str(),
+                                "", 1, filters,
+                                utf8_to_ansi(
+                                    get_locale_cstr("dialog.stl_file"))
+                                    .c_str(),
+                                0);
+                            if (file) {
+                                const std::string new_path =
+                                    tinyfd_path_to_utf8(file);
+                                if (new_path != item.stl_path) {
+                                    push_undo_now(item.id, std::nullopt,
+                                                  "STL Path");
+                                    item.stl_path = new_path;
+                                    strncpy(stl_path_buf, new_path.c_str(),
+                                            sizeof(stl_path_buf) - 1);
+                                    stl_path_buf[sizeof(stl_path_buf) - 1] =
+                                        '\0';
+                                }
+                            }
+                        }
+
+                        // 加载模式选择
+                        const char* load_mode_names[] = {
+                            get_locale_cstr("label.stl_load_mode.default"),
+                            get_locale_cstr("label.stl_load_mode.conebox"),
+                        };
+                        int load_mode = item.stl_load_mode;
+                        if (ImGui::Combo(get_locale_cstr("label.stl_load_mode"),
+                                         &load_mode, load_mode_names,
+                                         IM_ARRAYSIZE(load_mode_names))) {
+                            push_undo_now(item.id, std::nullopt,
+                                          "STL Load Mode");
+                            item.stl_load_mode = load_mode;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            const char* tooltip_key = nullptr;
+                            switch (load_mode) {
+                                case static_cast<int>(StlLoadMode::DEFAULT):
+                                    tooltip_key =
+                                        "tooltip.stl_load_mode.default";
+                                    break;
+                                case static_cast<int>(StlLoadMode::CONEBOX):
+                                    tooltip_key =
+                                        "tooltip.stl_load_mode.conebox";
+                                    break;
+                            }
+                            if (tooltip_key) {
+                                ImGui::SetTooltip(
+                                    get_locale_cstr(tooltip_key));
+                            }
+                        }
+
+                        // SDF 勾选框
+                        bool load_as_sdf = item.load_as_sdf;
+                        if (ImGui::Checkbox(
+                                get_locale_cstr("label.load_as_sdf"),
+                                &load_as_sdf)) {
+                            push_undo_now(item.id, std::nullopt,
+                                          "Load as SDF");
+                            item.load_as_sdf = load_as_sdf;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip(
+                                get_locale_cstr("tooltip.load_as_sdf"));
+                        }
+
+                        // Voxel Size（从弹窗移出）
+                        ImGui::Separator();
+                        ImGui::TextUnformatted(
+                            get_locale_cstr("label.voxel_size"));
+                        ImGui::SameLine();
+                        const float button_size = ImGui::GetFrameHeight();
+                        if (ImGui::Button("-##voxelsize",
+                                          ImVec2(button_size, 0))) {
+                            auto tmp = item.stl_voxel_size / 2.0f;
+                            if (tmp >= 0.0001f) {
+                                item.stl_voxel_size = tmp;
+                            }
+                        }
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(80.0f);
+                        ImGui::DragFloat("##VoxelSize", &item.stl_voxel_size,
+                                         0.1f, 0.0f, 0.0f, "%.4f");
+                        ImGui::SameLine();
+                        if (ImGui::Button("+##voxelsize",
+                                          ImVec2(button_size, 0))) {
+                            item.stl_voxel_size = item.stl_voxel_size * 2.0f;
+                            if (item.stl_voxel_size > 1000.0f) {
+                                item.stl_voxel_size = 1000.0f;
+                            }
+                        }
+
+                        // 重新加载按钮
+                        ImGui::Separator();
                         if (!item.stl_path.empty()) {
                             if (ImGui::Button(
                                     get_locale_cstr("action.reload_stl"))) {
-                                show_reload_stl_dialog = true;
-                                reload_stl_item_id = item.id;
-                                reload_stl_voxel_size = item.stl_voxel_size;
+                                queue_reload_stl(item.id,
+                                                 item.stl_voxel_size,
+                                                 item.stl_path,
+                                                 item.stl_load_mode,
+                                                 item.load_as_sdf);
                             }
                         }
-                        /*
-                        * TODO
-                        * 独立渲染函数
-                        * 加入文本框，允许修改stl路径(修改时加入历史记录)
-                        * 加入选择框，允许修改加载模式（例如使用conebox加载、使用表面修复加载）
-                        * 菜单中引入直接添加空根节点的功能
-                        * 特殊功能：（长期计划）
-                        *   允许顶点滑移
-                        *   允许直接导入图片来引导顶点滑移
-                        */
                         ImGui::EndTabItem();
                     }
                 }

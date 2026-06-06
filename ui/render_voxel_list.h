@@ -138,6 +138,12 @@ const char* geometry_type_name(const GeometryInstance& instance);
 EditResult edit_geometry_shape(GeometryInstance& instance);
 void add_collision_geometry(CollisionGroup& group, int type_index);
 
+enum class StlLoadMode : int {
+    DEFAULT = 0,
+    CONEBOX = 1,
+    COUNT
+};
+
 struct CollisionEditorSnapshot {
     sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
     sinriv::kigstudio::Plane<float> plane;
@@ -157,6 +163,11 @@ struct CollisionEditorSnapshot {
     std::vector<std::pair<sinriv::kigstudio::voxel::vec3f,
                           sinriv::kigstudio::voxel::vec3f>>
         skeleton_lines;
+
+    // STL source state
+    std::string stl_path;
+    int stl_load_mode = 0;
+    bool load_as_sdf = false;
 };
 
 struct MarkedVoxelsSnapshot {
@@ -364,6 +375,8 @@ class RenderVoxelList {
         bool use_cgal_skeleton = true;
         std::string voxel_path;
         float stl_voxel_size = 1.0f;
+        int stl_load_mode = 0;
+        bool load_as_sdf = false;
 
         // undo/redo stacks for collision editor
         std::vector<CollisionEditorSnapshot> undo_stack;
@@ -499,7 +512,7 @@ class RenderVoxelList {
     void render_concave_cone_editor(RenderVoxelItem& item);
     void render_nav_map();
     void render_file_loader();
-    void render_reload_stl_dialog();
+
     void render_save_dialog();
     void render_load_dialog();
     void render_import_vxgrid_dialog();
@@ -507,10 +520,7 @@ class RenderVoxelList {
     bool show_edit_segment_plane = false;
     bool show_file_loader = false;
     bool show_import_vxgrid_dialog = false;
-    bool show_reload_stl_dialog = false;
-    int reload_stl_item_id = -1;
-    float reload_stl_voxel_size = 1.0f;
-    bool load_as_sdf = false;
+
     bool show_save_dialog = false;
     bool show_save_as_dialog = false;
     bool show_load_dialog = false;
@@ -664,6 +674,7 @@ class RenderVoxelList {
                   double isolevel = 0.5,
                   bool smooth_normals = true,
                   int target_item_id = -1,
+                  int load_mode = 0,
                   bool load_as_sdf = false);
 
     // 后台队列
@@ -700,6 +711,7 @@ class RenderVoxelList {
         int export_mode = 0;
         bool export_simplify = false;
         float export_simplify_ratio = 0.1f;
+        int load_mode = 0;
         bool load_as_sdf = false;
         int subdivisions = 3;
         bool save_to_file = true;
@@ -721,10 +733,12 @@ class RenderVoxelList {
     size_t get_num_items();
     void queue_load_stl(const std::string& file_path,
                         float voxel_size,
+                        int load_mode = 0,
                         bool load_as_sdf = false);
     void queue_reload_stl(int item_id,
                           float voxel_size,
                           const std::string& stl_path,
+                          int load_mode = 0,
                           bool load_as_sdf = false);
     void queue_do_segment(int index);
     void queue_do_segment();

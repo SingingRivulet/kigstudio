@@ -78,6 +78,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddStringToObject(obj, "stl_path", item.stl_path.c_str());
     cJSON_AddStringToObject(obj, "voxel_path", item.voxel_path.c_str());
     cJSON_AddNumberToObject(obj, "stl_voxel_size", item.stl_voxel_size);
+    cJSON_AddNumberToObject(obj, "stl_load_mode", item.stl_load_mode);
+    cJSON_AddBoolToObject(obj, "load_as_sdf", item.load_as_sdf);
     cJSON_AddStringToObject(obj, "err_info", item.err_info.c_str());
     cJSON_AddItemToObject(obj, "collision_group",
                           sinriv::kigstudio::to_json(item.collision_group));
@@ -234,6 +236,16 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
     if (stl_voxel_size_json) {
         item->stl_voxel_size =
             static_cast<float>(stl_voxel_size_json->valuedouble);
+    }
+    const cJSON* stl_load_mode_json =
+        cJSON_GetObjectItem(obj, "stl_load_mode");
+    if (stl_load_mode_json) {
+        item->stl_load_mode = stl_load_mode_json->valueint;
+    }
+    const cJSON* load_as_sdf_json =
+        cJSON_GetObjectItem(obj, "load_as_sdf");
+    if (load_as_sdf_json) {
+        item->load_as_sdf = cJSON_IsTrue(load_as_sdf_json);
     }
     item->err_info = cJSON_GetObjectItem(obj, "err_info")->valuestring;
     item->collision_group = sinriv::kigstudio::from_json_collision_group(
