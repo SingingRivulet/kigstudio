@@ -1,245 +1,268 @@
-// #include "kigstudio/mesh/conebox.h"
-// #include "kigstudio/utils/vec3.h"
-// #include <iostream>
-// #include <iomanip>
-// #include <cmath>
+#include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <vector>
 
-// using namespace sinriv::kigstudio::mesh::conebox;
-// using namespace sinriv::kigstudio;
+#include "kigstudio/mesh/conebox.h"
+#include "kigstudio/voxel/voxel2mesh.h"
 
-// // 简单的测试：创建一个在立方体一个面外的三角形，验证侧面生成
-// void test_simple_triangle_with_cone_sides() {
-//     std::cout << "\n=== Test: Simple Triangle with Cone Sides ===" << std::endl;
-    
-//     // 立方体中心
-//     vec3<float> center(0.0f, 0.0f, 0.0f);
-    
-//     // 创建一个在+Z面外的三角形
-//     // 立方体上表面在 z = 0.5
-//     // 三角形在 z = 1.0（在立方体外）
-//     Triangle_status status;
-//     status.triangle = {
-//         vec3<float>(-0.2f, -0.2f, 1.0f),
-//         vec3<float>(0.2f, -0.2f, 1.0f),
-//         vec3<float>(0.0f, 0.2f, 1.0f)
-//     };
-    
-//     // 计算投影
-//     status.compute_projection(center);
-    
-//     // 创建Triangle_group并添加三角形
-//     Triangle_group group;
-//     group.center = center;
-//     group.add_triangle(status);
-//     group.build_face_trees();
-    
-//     // 获取基础可见网格
-//     auto visible_mesh = group.compute_visible_mesh_from_outside();
-//     std::cout << "Base visible mesh triangles: " << visible_mesh.size() << std::endl;
-    
-//     // 获取带有锥体侧面的网格
-//     auto mesh_with_sides = group.compute_visible_mesh_with_cone_sides();
-//     std::cout << "Mesh with cone sides triangles: " << mesh_with_sides.size() << std::endl;
-    
-//     // 验证
-//     if (mesh_with_sides.size() > visible_mesh.size()) {
-//         std::cout << "✓ Successfully added " 
-//                   << (mesh_with_sides.size() - visible_mesh.size()) 
-//                   << " side triangles" << std::endl;
-//     } else {
-//         std::cout << "✗ No side triangles were added" << std::endl;
-//     }
-// }
+using namespace sinriv::kigstudio::mesh::conebox;
+using namespace sinriv::kigstudio;
 
-// // 测试：多个三角形的情况
-// void test_multiple_triangles_with_cone_sides() {
-//     std::cout << "\n=== Test: Multiple Triangles with Cone Sides ===" << std::endl;
-    
-//     vec3<float> center(0.0f, 0.0f, 0.0f);
-//     Triangle_group group;
-//     group.center = center;
-    
-//     // 添加3个三角形，分别在不同的面外
-//     Triangle_status triangles[3];
-    
-//     // 第一个三角形：在+Z面外
-//     triangles[0].triangle = {
-//         vec3<float>(-0.15f, -0.15f, 1.0f),
-//         vec3<float>(0.15f, -0.15f, 1.0f),
-//         vec3<float>(0.0f, 0.15f, 1.0f)
-//     };
-    
-//     // 第二个三角形：在+X面外
-//     triangles[1].triangle = {
-//         vec3<float>(1.0f, -0.15f, -0.15f),
-//         vec3<float>(1.0f, 0.15f, -0.15f),
-//         vec3<float>(1.0f, 0.0f, 0.15f)
-//     };
-    
-//     // 第三个三角形：在+Y面外
-//     triangles[2].triangle = {
-//         vec3<float>(-0.15f, 1.0f, -0.15f),
-//         vec3<float>(0.15f, 1.0f, -0.15f),
-//         vec3<float>(0.0f, 1.0f, 0.15f)
-//     };
-    
-//     for (auto& tri : triangles) {
-//         tri.compute_projection(center);
-//         group.add_triangle(tri);
-//     }
-//     group.build_face_trees();
-    
-//     auto visible_mesh = group.compute_visible_mesh_from_outside();
-//     auto mesh_with_sides = group.compute_visible_mesh_with_cone_sides();
-    
-//     std::cout << "Base visible mesh triangles: " << visible_mesh.size() << std::endl;
-//     std::cout << "Mesh with cone sides triangles: " << mesh_with_sides.size() << std::endl;
-    
-//     if (mesh_with_sides.size() > visible_mesh.size()) {
-//         std::cout << "✓ Successfully added " 
-//                   << (mesh_with_sides.size() - visible_mesh.size()) 
-//                   << " side triangles" << std::endl;
-//     }
-// }
+static void expect(bool condition, const char* message) {
+    if (!condition) {
+        std::cerr << "FAILED: " << message << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+}
 
-// // 测试：共线边界的处理（防止非流形边）
-// void test_collinear_boundary_handling() {
-//     std::cout << "\n=== Test: Collinear Boundary Handling ===" << std::endl;
-    
-//     vec3<float> center(0.0f, 0.0f, 0.0f);
-//     Triangle_group group;
-//     group.center = center;
-    
-//     // 创建一个三角形，其一条边的两个端点到中心的方向相同
-//     // 这模拟了一条共线的边
-//     Triangle_status status;
-    
-//     // 三个顶点都在从中心出发的同一条射线上
-//     float r = 1.0f;  // 距离
-//     status.triangle = {
-//         vec3<float>(r * 0.6f, 0.0f, 0.8f),
-//         vec3<float>(r * 0.75f, 0.0f, 0.66f),
-//         vec3<float>(0.0f, 0.0f, 1.0f)
-//     };
-    
-//     // 标准化以满足共线条件
-//     for (auto& v : {status.triangle.get<0>(), status.triangle.get<1>(), status.triangle.get<2>()}) {
-//         auto dir = v - center;
-//         float len = dir.length();
-//         if (len > 1e-6f) {
-//             v = center + (dir / len) * r;  // 放置在同一条射线上
-//         }
-//     }
-    
-//     status.compute_projection(center);
-//     group.add_triangle(status);
-//     group.build_face_trees();
-    
-//     auto visible_mesh = group.compute_visible_mesh_from_outside();
-//     auto mesh_with_sides = group.compute_visible_mesh_with_cone_sides();
-    
-//     std::cout << "Base visible mesh triangles: " << visible_mesh.size() << std::endl;
-//     std::cout << "Mesh with cone sides triangles: " << mesh_with_sides.size() << std::endl;
-//     std::cout << "✓ Collinear boundary handling test completed" << std::endl;
-// }
+static bool vec3_near(const vec3f& a, const vec3f& b, float eps = 1e-4f) {
+    return (a - b).length2() < eps * eps;
+}
 
-// // 测试：去重检查
-// void test_deduplication() {
-//     std::cout << "\n=== Test: Deduplication ===" << std::endl;
-    
-//     vec3<float> center(0.0f, 0.0f, 0.0f);
-//     Triangle_group group;
-//     group.center = center;
-    
-//     // 创建一个简单的三角形
-//     Triangle_status status;
-//     status.triangle = {
-//         vec3<float>(-0.1f, -0.1f, 1.0f),
-//         vec3<float>(0.1f, -0.1f, 1.0f),
-//         vec3<float>(0.0f, 0.1f, 1.0f)
-//     };
-    
-//     status.compute_projection(center);
-//     group.add_triangle(status);
-//     group.build_face_trees();
-    
-//     // 调用两次，检查是否有重复的三角形
-//     auto mesh1 = group.compute_visible_mesh_with_cone_sides();
-//     auto mesh2 = group.compute_visible_mesh_with_cone_sides();
-    
-//     std::cout << "First call: " << mesh1.size() << " triangles" << std::endl;
-//     std::cout << "Second call: " << mesh2.size() << " triangles" << std::endl;
-    
-//     if (mesh1.size() == mesh2.size()) {
-//         std::cout << "✓ Deduplication working correctly" << std::endl;
-//     }
-// }
+static bool has_vertex_near(const std::vector<Triangle>& mesh,
+                            const vec3f& target,
+                            float eps = 1e-4f) {
+    for (const auto& tri : mesh) {
+        if (vec3_near(std::get<0>(tri), target, eps) ||
+            vec3_near(std::get<1>(tri), target, eps) ||
+            vec3_near(std::get<2>(tri), target, eps)) {
+            return true;
+        }
+    }
+    return false;
+}
 
-// // 测试：侧面三角形的几何有效性
-// void test_cone_triangle_geometry() {
-//     std::cout << "\n=== Test: Cone Triangle Geometry ===" << std::endl;
-    
-//     vec3<float> center(0.0f, 0.0f, 0.0f);
-//     Triangle_group group;
-//     group.center = center;
-    
-//     Triangle_status status;
-//     status.triangle = {
-//         vec3<float>(-0.2f, -0.2f, 1.0f),
-//         vec3<float>(0.2f, -0.2f, 1.0f),
-//         vec3<float>(0.0f, 0.2f, 1.0f)
-//     };
-    
-//     status.compute_projection(center);
-//     group.add_triangle(status);
-//     group.build_face_trees();
-    
-//     auto mesh = group.compute_visible_mesh_with_cone_sides();
-    
-//     // 检查所有三角形中是否有中心点
-//     int side_triangles_with_center = 0;
-//     const float epsilon = 1e-6f;
-    
-//     for (const auto& tri : mesh) {
-//         const auto& v0 = std::get<0>(tri);
-//         const auto& v1 = std::get<1>(tri);
-//         const auto& v2 = std::get<2>(tri);
-        
-//         // 检查是否有顶点等于中心（允许浮点误差）
-//         auto is_center = [&](const vec3<float>& v) {
-//             return (std::abs(v.x - center.x) < epsilon &&
-//                     std::abs(v.y - center.y) < epsilon &&
-//                     std::abs(v.z - center.z) < epsilon);
-//         };
-        
-//         if (is_center(v0) || is_center(v1) || is_center(v2)) {
-//             side_triangles_with_center++;
-//         }
-//     }
-    
-//     std::cout << "Total triangles: " << mesh.size() << std::endl;
-//     std::cout << "Side triangles containing center: " << side_triangles_with_center << std::endl;
-    
-//     if (side_triangles_with_center > 0) {
-//         std::cout << "✓ Cone triangles have correct geometry (connected to center)" << std::endl;
-//     }
-// }
+static bool all_vertices_finite(const std::vector<Triangle>& mesh) {
+    for (const auto& tri : mesh) {
+        for (const auto& v :
+             {std::get<0>(tri), std::get<1>(tri), std::get<2>(tri)}) {
+            if (!std::isfinite(v.x) || !std::isfinite(v.y) ||
+                !std::isfinite(v.z))
+                return false;
+        }
+    }
+    return true;
+}
 
+// ------------------------------------------------------------------
+// 1. 空输入返回空
+static void test_empty_input() {
+    std::vector<Triangle> input;
+    auto output = build_closed_mesh_from_triangles(input);
+    expect(output.empty(), "empty input should produce empty output");
+}
+
+// 2. 单个三角形 + 手动中心（自动中心会把单三角放在立方体内部导致无输出）
+static void test_single_triangle() {
+    std::vector<Triangle> input = {
+        std::make_tuple(vec3f(-0.2f, -0.2f, 1.0f),
+                        vec3f(0.2f, -0.2f, 1.0f),
+                        vec3f(0.0f, 0.2f, 1.0f))};
+    vec3f center(0.0f, 10.0f, 0.0f);
+    auto output = build_closed_mesh_from_triangles(input, false, center);
+    expect(!output.empty(),
+           "single triangle should produce non-empty mesh");
+    expect(all_vertices_finite(output),
+           "all output vertices should be finite");
+    expect(has_vertex_near(output, center),
+           "output should contain the center vertex");
+}
+
+// 3. 小模型自动缩放（min_half < 0.6）
+static void test_auto_scale_small_mesh() {
+    std::vector<Triangle> input = {
+        std::make_tuple(vec3f(0.05f, 0.05f, 0.05f),
+                        vec3f(0.05f, -0.05f, -0.05f),
+                        vec3f(-0.05f, 0.05f, -0.05f)),
+        std::make_tuple(vec3f(0.05f, 0.05f, 0.05f),
+                        vec3f(0.05f, -0.05f, -0.05f),
+                        vec3f(-0.05f, -0.05f, 0.05f)),
+        std::make_tuple(vec3f(0.05f, 0.05f, 0.05f),
+                        vec3f(-0.05f, 0.05f, -0.05f),
+                        vec3f(-0.05f, -0.05f, 0.05f)),
+        std::make_tuple(vec3f(0.05f, -0.05f, -0.05f),
+                        vec3f(-0.05f, 0.05f, -0.05f),
+                        vec3f(-0.05f, -0.05f, 0.05f)),
+    };
+    auto output = build_closed_mesh_from_triangles(input);
+    expect(!output.empty(),
+           "small mesh should be auto-scaled and produce output");
+    expect(all_vertices_finite(output),
+           "all output vertices should be finite after auto-scaling");
+}
+
+// 4. 手动指定中心（偏移到非原点）
+static void test_manual_center() {
+    std::vector<Triangle> input = {
+        std::make_tuple(vec3f(10.2f, 10.2f, 10.0f),
+                        vec3f(9.8f, 10.2f, 10.0f),
+                        vec3f(10.0f, 9.8f, 10.0f))};
+    vec3f manual_center(10.0f, 10.0f, 9.0f);
+    auto output =
+        build_closed_mesh_from_triangles(input, false, manual_center);
+    expect(!output.empty(),
+           "manual center should produce non-empty mesh");
+    expect(all_vertices_finite(output),
+           "all output vertices should be finite with manual center");
+    expect(has_vertex_near(output, manual_center),
+           "output should contain the manual center vertex");
+}
+
+// 5. 近重复三角形去重（不应崩溃）
+static void test_near_duplicate_deduplication() {
+    // 两个几乎相同的四面体，验证去重不会崩溃且输出正常
+    std::vector<Triangle> input = {
+        std::make_tuple(vec3f(1.0f, 1.0f, 1.0f),
+                        vec3f(1.0f, -1.0f, -1.0f),
+                        vec3f(-1.0f, 1.0f, -1.0f)),
+        std::make_tuple(vec3f(1.0f, 1.0f, 1.0f),
+                        vec3f(1.0f, -1.0f, -1.0f),
+                        vec3f(-1.0f, -1.0f, 1.0f)),
+        std::make_tuple(vec3f(1.0f, 1.0f, 1.0f),
+                        vec3f(-1.0f, 1.0f, -1.0f),
+                        vec3f(-1.0f, -1.0f, 1.0f)),
+        std::make_tuple(vec3f(1.0f, -1.0f, -1.0f),
+                        vec3f(-1.0f, 1.0f, -1.0f),
+                        vec3f(-1.0f, -1.0f, 1.0f)),
+        // 第二个几乎相同的四面体，顶点微移
+        std::make_tuple(vec3f(1.0000001f, 1.0000001f, 1.0000001f),
+                        vec3f(1.0000001f, -1.0f, -1.0f),
+                        vec3f(-1.0f, 1.0000001f, -1.0f)),
+        std::make_tuple(vec3f(1.0000001f, 1.0000001f, 1.0000001f),
+                        vec3f(1.0000001f, -1.0f, -1.0f),
+                        vec3f(-1.0f, -1.0f, 1.0000001f)),
+        std::make_tuple(vec3f(1.0000001f, 1.0000001f, 1.0000001f),
+                        vec3f(-1.0f, 1.0000001f, -1.0f),
+                        vec3f(-1.0f, -1.0f, 1.0000001f)),
+        std::make_tuple(vec3f(1.0000001f, -1.0f, -1.0f),
+                        vec3f(-1.0f, 1.0000001f, -1.0f),
+                        vec3f(-1.0f, -1.0f, 1.0000001f)),
+    };
+    auto output = build_closed_mesh_from_triangles(input);
+    expect(!output.empty(),
+           "near-duplicate triangles should be handled");
+    expect(all_vertices_finite(output),
+           "all output vertices should be finite with near-duplicates");
+}
+
+// 6. 封闭四面体
+static void test_closed_tetrahedron() {
+    std::vector<Triangle> input = {
+        std::make_tuple(vec3f(1.0f, 1.0f, 1.0f),
+                        vec3f(1.0f, -1.0f, -1.0f),
+                        vec3f(-1.0f, 1.0f, -1.0f)),
+        std::make_tuple(vec3f(1.0f, 1.0f, 1.0f),
+                        vec3f(1.0f, -1.0f, -1.0f),
+                        vec3f(-1.0f, -1.0f, 1.0f)),
+        std::make_tuple(vec3f(1.0f, 1.0f, 1.0f),
+                        vec3f(-1.0f, 1.0f, -1.0f),
+                        vec3f(-1.0f, -1.0f, 1.0f)),
+        std::make_tuple(vec3f(1.0f, -1.0f, -1.0f),
+                        vec3f(-1.0f, 1.0f, -1.0f),
+                        vec3f(-1.0f, -1.0f, 1.0f)),
+    };
+    auto output = build_closed_mesh_from_triangles(input);
+    expect(!output.empty(),
+           "closed tetrahedron should produce non-empty mesh");
+    expect(all_vertices_finite(output),
+           "all output vertices should be finite for tetrahedron");
+}
+
+// 7. 四棱锥（多个三角形组成的封闭体）
+static void test_square_pyramid() {
+    std::vector<Triangle> input = {
+        // 侧面
+        std::make_tuple(vec3f(0.0f, 2.0f, 0.0f),
+                        vec3f(1.0f, 0.0f, 1.0f),
+                        vec3f(-1.0f, 0.0f, 1.0f)),
+        std::make_tuple(vec3f(0.0f, 2.0f, 0.0f),
+                        vec3f(-1.0f, 0.0f, 1.0f),
+                        vec3f(-1.0f, 0.0f, -1.0f)),
+        std::make_tuple(vec3f(0.0f, 2.0f, 0.0f),
+                        vec3f(-1.0f, 0.0f, -1.0f),
+                        vec3f(1.0f, 0.0f, -1.0f)),
+        std::make_tuple(vec3f(0.0f, 2.0f, 0.0f),
+                        vec3f(1.0f, 0.0f, -1.0f),
+                        vec3f(1.0f, 0.0f, 1.0f)),
+        // 底面
+        std::make_tuple(vec3f(1.0f, 0.0f, 1.0f),
+                        vec3f(-1.0f, 0.0f, 1.0f),
+                        vec3f(-1.0f, 0.0f, -1.0f)),
+        std::make_tuple(vec3f(1.0f, 0.0f, 1.0f),
+                        vec3f(-1.0f, 0.0f, -1.0f),
+                        vec3f(1.0f, 0.0f, -1.0f)),
+    };
+    auto output = build_closed_mesh_from_triangles(input);
+    expect(!output.empty(),
+           "square pyramid should produce non-empty mesh");
+    expect(all_vertices_finite(output),
+           "all output vertices should be finite for square pyramid");
+}
+
+// 8. 加载 assets/test/block.stl 进行真实文件测试
+static void test_load_block_stl() {
+    // 尝试多个可能的相对路径（不同构建系统/运行目录）
+    std::vector<std::string> candidates = {
+        "assets/test/block.stl",
+        "../assets/test/block.stl",
+        "../../assets/test/block.stl",
+    };
+    std::vector<Triangle> input;
+    std::string path;
+    for (const auto& c : candidates) {
+        input.clear();
+        bool ok = false;
+        try {
+            for (auto [tri, normal] : sinriv::kigstudio::voxel::readSTL(c)) {
+                input.push_back(tri);
+                ok = true;
+            }
+        } catch (...) {
+            ok = false;
+        }
+        if (ok && !input.empty()) {
+            path = c;
+            break;
+        }
+    }
+    expect(!input.empty(), "block.stl should contain triangles");
+
+    auto output = build_closed_mesh_from_triangles(input, false, vec3f(0.0f, 10.0f, 0.0f));
+    expect(!output.empty(),
+           "block.stl should produce non-empty mesh after cone-box");
+    expect(all_vertices_finite(output),
+           "all output vertices should be finite for block.stl");
+}
+
+// ------------------------------------------------------------------
 int main() {
-//     std::cout << std::fixed << std::setprecision(4);
-//     std::cout << "========================================" << std::endl;
-//     std::cout << "   Test: compute_visible_mesh_with_cone_sides" << std::endl;
-//     std::cout << "========================================" << std::endl;
-    
-//     test_simple_triangle_with_cone_sides();
-//     test_multiple_triangles_with_cone_sides();
-//     test_collinear_boundary_handling();
-//     test_deduplication();
-//     test_cone_triangle_geometry();
-    
-//     std::cout << "\n========================================" << std::endl;
-//     std::cout << "   All tests completed" << std::endl;
-//     std::cout << "========================================" << std::endl;
-    
-//     return 0;
+    std::cout << "Running conebox tests..." << std::endl;
+
+    test_empty_input();
+    std::cout << "  [PASS] empty_input" << std::endl;
+
+    test_single_triangle();
+    std::cout << "  [PASS] single_triangle" << std::endl;
+
+    test_auto_scale_small_mesh();
+    std::cout << "  [PASS] auto_scale_small_mesh" << std::endl;
+
+    test_manual_center();
+    std::cout << "  [PASS] manual_center" << std::endl;
+
+    test_near_duplicate_deduplication();
+    std::cout << "  [PASS] near_duplicate_deduplication" << std::endl;
+
+    test_closed_tetrahedron();
+    std::cout << "  [PASS] closed_tetrahedron" << std::endl;
+
+    test_square_pyramid();
+    std::cout << "  [PASS] square_pyramid" << std::endl;
+
+    test_load_block_stl();
+    std::cout << "  [PASS] load_block_stl" << std::endl;
+
+    std::cout << "All tests passed!" << std::endl;
+    return 0;
 }

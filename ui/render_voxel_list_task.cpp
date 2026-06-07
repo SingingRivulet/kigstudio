@@ -2,7 +2,14 @@
 #include <sstream>
 #include "kigstudio/cgal/mesh_simplification.h"
 #include "render_voxel_list.h"
+#include "utils.h"
 namespace sinriv::ui::render {
+
+#ifdef _DEBUG
+#define TRACE_STACK() sinriv::print_stacktrace(std::cerr)
+#else
+#define TRACE_STACK() ((void)0)
+#endif
 
 void RenderVoxelList::process_queue_result() {
     // 在 UI 线程中安全释放被后台线程移入的 item
@@ -92,22 +99,26 @@ void RenderVoxelList::queue_thread() {
                                       task.file_path.c_str(), e.what());
                     std::cerr << "Runtime error loading STL file: " << e.what()
                               << std::endl;
+                    TRACE_STACK();
                 } catch (std::logic_error& e) {
                     append_queue_logf("log.queue.error_load_stl",
                                       task.file_path.c_str(), e.what());
                     std::cerr << "Logic error loading STL file: " << e.what()
                               << std::endl;
+                    TRACE_STACK();
                 } catch (std::exception& e) {
                     append_queue_logf("log.queue.error_load_stl",
                                       task.file_path.c_str(), e.what());
                     std::cerr << "Error loading STL file: " << e.what()
                               << std::endl;
+                    TRACE_STACK();
                 } catch (...) {
                     append_queue_logf(
                         "log.queue.error_load_stl", task.file_path.c_str(),
                         get_locale_string("log.queue.unknown_error").c_str());
                     std::cerr << "Unknown error loading STL file. "
                               << std::endl;
+                    TRACE_STACK();
                 }
 
                 queue_running = false;
@@ -129,22 +140,26 @@ void RenderVoxelList::queue_thread() {
                     std::cerr
                         << "Runtime error reloading STL file: " << e.what()
                         << std::endl;
+                    TRACE_STACK();
                 } catch (std::logic_error& e) {
                     append_queue_logf("log.queue.error_reload_stl", task.index,
                                       e.what());
                     std::cerr << "Logic error reloading STL file: " << e.what()
                               << std::endl;
+                    TRACE_STACK();
                 } catch (std::exception& e) {
                     append_queue_logf("log.queue.error_reload_stl", task.index,
                                       e.what());
                     std::cerr << "Error reloading STL file: " << e.what()
                               << std::endl;
+                    TRACE_STACK();
                 } catch (...) {
                     append_queue_logf(
                         "log.queue.error_reload_stl", task.index,
                         get_locale_string("log.queue.unknown_error").c_str());
                     std::cerr << "Unknown error reloading STL file. "
                               << std::endl;
+                    TRACE_STACK();
                 }
                 queue_running = false;
                 break;
@@ -160,21 +175,25 @@ void RenderVoxelList::queue_thread() {
                                       e.what());
                     std::cerr << "Runtime error doing segment: " << e.what()
                               << std::endl;
+                    TRACE_STACK();
                 } catch (std::logic_error& e) {
                     append_queue_logf("log.queue.error_segment", task.index,
                                       e.what());
                     std::cerr << "Logic error doing segment: " << e.what()
                               << std::endl;
+                    TRACE_STACK();
                 } catch (std::exception& e) {
                     append_queue_logf("log.queue.error_segment", task.index,
                                       e.what());
                     std::cerr << "Error doing segment: " << e.what()
                               << std::endl;
+                    TRACE_STACK();
                 } catch (...) {
                     append_queue_logf(
                         "log.queue.error_segment", task.index,
                         get_locale_string("log.queue.unknown_error").c_str());
                     std::cerr << "Unknown error doing segment. " << std::endl;
+                    TRACE_STACK();
                 }
                 queue_running = false;
                 break;
@@ -271,16 +290,19 @@ void RenderVoxelList::queue_thread() {
                     std::cerr
                         << "Runtime error extracting skeleton: " << e.what()
                         << std::endl;
+                    TRACE_STACK();
                 } catch (std::logic_error& e) {
                     append_queue_logf("log.queue.error_extract_skeleton",
                                       task.index, e.what());
                     std::cerr << "Logic error extracting skeleton: " << e.what()
                               << std::endl;
+                    TRACE_STACK();
                 } catch (std::exception& e) {
                     append_queue_logf("log.queue.error_extract_skeleton",
                                       task.index, e.what());
                     std::cerr << "Error extracting skeleton: " << e.what()
                               << std::endl;
+                    TRACE_STACK();
                 } catch (...) {
                     append_queue_logf(
                         "log.queue.error_extract_skeleton", task.index,
@@ -363,23 +385,27 @@ void RenderVoxelList::queue_thread() {
                                       e.what());
                     std::cerr << "Runtime error generating thumbnail mesh: "
                               << e.what() << std::endl;
+                    TRACE_STACK();
                 } catch (std::logic_error& e) {
                     append_queue_logf("log.queue.error_thumbnail", task.index,
                                       e.what());
                     std::cerr
                         << "Logic error generating thumbnail mesh: " << e.what()
                         << std::endl;
+                    TRACE_STACK();
                 } catch (std::exception& e) {
                     append_queue_logf("log.queue.error_thumbnail", task.index,
                                       e.what());
                     std::cerr << "Error generating thumbnail mesh: " << e.what()
                               << std::endl;
+                    TRACE_STACK();
                 } catch (...) {
                     append_queue_logf(
                         "log.queue.error_thumbnail", task.index,
                         get_locale_string("log.queue.unknown_error").c_str());
                     std::cerr << "Unknown error generating thumbnail mesh. "
                               << std::endl;
+                    TRACE_STACK();
                 }
 
                 queue_progress = 1.0f;
@@ -678,6 +704,7 @@ void RenderVoxelList::queue_thread() {
                         } catch (std::exception& e) {
                             append_queue_logf("log.queue.error_export_stl", id,
                                               e.what());
+                            TRACE_STACK();
                         }
 
                         locker.lock();
@@ -694,6 +721,7 @@ void RenderVoxelList::queue_thread() {
                 } catch (std::exception& e) {
                     append_queue_logf("log.queue.error_export_stl_all",
                                       e.what());
+                    TRACE_STACK();
                 }
                 queue_running = false;
                 break;

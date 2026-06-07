@@ -3,10 +3,19 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <iostream>
 #include <queue>
 #include <tuple>
 
 namespace sinriv::kigstudio::mesh::conebox {
+
+#define CONEBOX_DEBUG 1
+
+#if CONEBOX_DEBUG
+    #define CB_DBG(x) std::cout << "[conebox] " << x << std::endl
+#else
+    #define CB_DBG(x)
+#endif
 
 void Triangle_status::compute_projection(const vec3f& center) {
     const auto& [v0, v1, v2] = triangle;
@@ -168,9 +177,7 @@ void Triangle_group::add_triangle(const Triangle_status& status) {
             case 0:
                 break;
             case 1:
-                face_segments[face].emplace_back(projected_points[0],
-                                                 projected_points[0]);
-                face_segment_triangle_ids[face].push_back(index);
+                // 不生成零长度线段，避免 CGAL AABB 树退化
                 break;
             case 2:
                 face_segments[face].emplace_back(projected_points[0],
@@ -206,43 +213,197 @@ static float average_projected_depth(const Triangle_status& status, int face) {
     return count > 0 ? sum / count : 0.0f;
 }
 
+static bool point2_near(const Point2& a, const Point2& b) {
+    const double dx = CGAL::to_double(a.x() - b.x());
+    const double dy = CGAL::to_double(a.y() - b.y());
+    return dx * dx + dy * dy < 1e-12;  // ~1e-6 距离
+}
+
+static Point2 snap_point2(const Point2& p) {
+    constexpr double SCALE = 1e5;  // 1e-5 网格
+    const double x = CGAL::to_double(p.x());
+    const double y = CGAL::to_double(p.y());
+    Point2 sp(std::round(x * SCALE) / SCALE,
+              std::round(y * SCALE) / SCALE);
+    return sp;
+}
+
+static Polygon_2 cleanup_polygon(const Polygon_2& poly) {
+    if (poly.size() < 3)
+        return Polygon_2();
+
+    std::vector<Point2> verts;
+    verts.reserve(poly.size());
+    for (auto it = poly.vertices_begin(); it != poly.vertices_end(); ++it) {
+        Point2 sp = snap_point2(*it);
+        if (verts.empty() || !point2_near(sp, verts.back()))
+            verts.push_back(sp);
+    }
+    while (verts.size() > 1 && point2_near(verts.front(), verts.back()))
+        verts.pop_back();
+    if (verts.size() < 3)
+        return Polygon_2();
+
+    // 移除共线中间点
+    std::vector<Point2> cleaned;
+    cleaned.reserve(verts.size());
+    for (size_t i = 0; i < verts.size(); ++i) {
+        const auto& prev = verts[(i + verts.size() - 1) % verts.size()];
+        const auto& curr = verts[i];
+        const auto& next = verts[(i + 1) % verts.size()];
+        const double cross = CGAL::to_double(
+            (curr.x() - prev.x()) * (next.y() - prev.y()) -
+            (curr.y() - prev.y()) * (next.x() - prev.x()));
+        if (std::abs(cross) > 1e-12)
+            cleaned.push_back(curr);
+    }
+    if (cleaned.size() < 3)
+        return Polygon_2();
+
+    CB_DBG("cleanup_polygon: " << poly.size() << " -> " << cleaned.size());
+    return Polygon_2(cleaned.begin(), cleaned.end());
+}
+
+static Polygon_with_holes_2 cleanup_polygon_with_holes(
+    const Polygon_with_holes_2& pwh) {
+    Polygon_2 outer = cleanup_polygon(pwh.outer_boundary());
+    if (outer.size() < 3)
+        return Polygon_with_holes_2();
+
+    Polygon_with_holes_2 result(outer);
+    int hole_count = 0;
+    for (auto hit = pwh.holes_begin(); hit != pwh.holes_end(); ++hit) {
+        Polygon_2 h = cleanup_polygon(*hit);
+        if (h.size() >= 3) {
+            result.add_hole(h);
+            ++hole_count;
+        }
+    }
+    CB_DBG("cleanup_pwh: outer=" << outer.size() << " holes=" << hole_count);
+    return result;
+}
+
 static Polygon_2 make_face_polygon(const Triangle_status& status, int face) {
     const auto& [p0, p1, p2] = status.pos_in_face[face];
-    std::vector<Point2> vertices;
-    vertices.reserve(3);
+    CB_DBG("make_face_polygon face=" << face
+           << " raw=" << p0.x << "," << p0.y << "," << p0.z
+           << " " << p1.x << "," << p1.y << "," << p1.z
+           << " " << p2.x << "," << p2.y << "," << p2.z);
+    std::vector<Point2> raw;
+    raw.reserve(3);
     if (p0.z > 0.0f)
-        vertices.emplace_back(p0.x, p0.y);
+        raw.emplace_back(p0.x, p0.y);
     if (p1.z > 0.0f)
-        vertices.emplace_back(p1.x, p1.y);
+        raw.emplace_back(p1.x, p1.y);
     if (p2.z > 0.0f)
-        vertices.emplace_back(p2.x, p2.y);
+        raw.emplace_back(p2.x, p2.y);
 
-    if (vertices.size() < 3)
+    if (raw.size() < 3) {
+        CB_DBG("  -> rejected: only " << raw.size() << " valid verts");
         return Polygon_2();
+    }
+
+    // Snap + 去重：移除过近的投影点，避免 CGAL 退化
+    std::vector<Point2> vertices;
+    vertices.reserve(raw.size());
+    for (const auto& p : raw) {
+        Point2 sp = snap_point2(p);
+        bool dup = false;
+        for (const auto& q : vertices) {
+            if (point2_near(sp, q)) {
+                dup = true;
+                break;
+            }
+        }
+        if (!dup)
+            vertices.push_back(sp);
+    }
+    if (vertices.size() < 3) {
+        CB_DBG("  -> rejected: dedup left " << vertices.size());
+        return Polygon_2();
+    }
+
+    // 检查是否有实际面积（不共线）
+    bool has_area = false;
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        const auto& a = vertices[i];
+        const auto& b = vertices[(i + 1) % vertices.size()];
+        const auto& c = vertices[(i + 2) % vertices.size()];
+        const double cross =
+            CGAL::to_double((b.x() - a.x()) * (c.y() - a.y()) -
+                            (b.y() - a.y()) * (c.x() - a.x()));
+        if (std::abs(cross) > 1e-12) {
+            has_area = true;
+            break;
+        }
+    }
+    if (!has_area) {
+        CB_DBG("  -> rejected: no area");
+        return Polygon_2();
+    }
 
     Polygon_2 polygon(vertices.begin(), vertices.end());
     if (!polygon.is_counterclockwise_oriented())
         polygon.reverse_orientation();
 
+    CB_DBG("  -> ok size=" << polygon.size());
     return polygon;
 }
 
-static bool polygon_overlaps_triangle(const Polygon_2& polygon,
-                                      const Polygon_2& other) {
-    if (polygon.is_empty() || other.is_empty())
+static bool polygon_overlaps_triangle(const Polygon_2& a,
+                                      const Polygon_2& b) {
+    if (a.is_empty() || b.is_empty())
         return false;
-    if (CGAL::do_intersect(polygon, other))
-        return true;
 
-    for (auto it = polygon.vertices_begin(); it != polygon.vertices_end();
-         ++it) {
-        if (other.bounded_side(*it) != CGAL::ON_UNBOUNDED_SIDE)
-            return true;
+    // AABB 快速排除
+    auto aabb = [](const Polygon_2& p, double& min_x, double& max_x,
+                   double& min_y, double& max_y) {
+        min_x = max_x = CGAL::to_double(p[0].x());
+        min_y = max_y = CGAL::to_double(p[0].y());
+        for (size_t i = 1; i < p.size(); ++i) {
+            double x = CGAL::to_double(p[i].x());
+            double y = CGAL::to_double(p[i].y());
+            if (x < min_x) min_x = x;
+            if (x > max_x) max_x = x;
+            if (y < min_y) min_y = y;
+            if (y > max_y) max_y = y;
+        }
+    };
+
+    double a_min_x, a_max_x, a_min_y, a_max_y;
+    double b_min_x, b_max_x, b_min_y, b_max_y;
+    aabb(a, a_min_x, a_max_x, a_min_y, a_max_y);
+    aabb(b, b_min_x, b_max_x, b_min_y, b_max_y);
+    if (a_max_x < b_min_x || a_min_x > b_max_x || a_max_y < b_min_y ||
+        a_min_y > b_max_y)
+        return false;
+
+    CB_DBG("polygon_overlaps: aabb ok, checking edges...");
+
+    // 边相交检测（Segment2 do_intersect 是纯 predicate，EPICK 安全）
+    for (auto e1 = a.edges_begin(); e1 != a.edges_end(); ++e1) {
+        for (auto e2 = b.edges_begin(); e2 != b.edges_end(); ++e2) {
+            if (CGAL::do_intersect(*e1, *e2)) {
+                CB_DBG("  -> edge intersect true");
+                return true;
+            }
+        }
     }
-    for (auto it = other.vertices_begin(); it != other.vertices_end(); ++it) {
-        if (polygon.bounded_side(*it) != CGAL::ON_UNBOUNDED_SIDE)
+
+    // 顶点严格在另一多边形内部
+    for (auto it = a.vertices_begin(); it != a.vertices_end(); ++it) {
+        if (b.bounded_side(*it) == CGAL::ON_BOUNDED_SIDE) {
+            CB_DBG("  -> vertex inside true");
             return true;
+        }
     }
+    for (auto it = b.vertices_begin(); it != b.vertices_end(); ++it) {
+        if (a.bounded_side(*it) == CGAL::ON_BOUNDED_SIDE) {
+            CB_DBG("  -> vertex inside true");
+            return true;
+        }
+    }
+    CB_DBG("  -> false");
     return false;
 }
 
@@ -255,12 +416,19 @@ Triangle_group::compute_visible_triangulation(size_t triangle_id,
     if (triangle_id >= triangles.size() || face_id < 0 || face_id >= 6)
         return {out_triangles, polygon_vertices};
 
+    CB_DBG("=== compute_visible_triangulation tri=" << triangle_id
+           << " face=" << face_id);
+
     const Triangle_status& target_status = triangles[triangle_id];
     Polygon_2 target_polygon = make_face_polygon(target_status, face_id);
-    if (target_polygon.size() < 3)
+    if (target_polygon.size() < 3) {
+        CB_DBG("  target_polygon empty, skip");
         return {out_triangles, polygon_vertices};
+    }
 
     const float target_depth = average_projected_depth(target_status, face_id);
+    CB_DBG("  target_depth=" << target_depth);
+
     std::unordered_set<size_t> candidate_ids;
     candidate_ids.reserve(16);
 
@@ -284,6 +452,8 @@ Triangle_group::compute_visible_triangulation(size_t triangle_id,
         }
     }
 
+    CB_DBG("  aabb candidates=" << candidate_ids.size());
+
     for (size_t other_id : face_triangle_indices[face_id]) {
         if (other_id == triangle_id)
             continue;
@@ -297,6 +467,8 @@ Triangle_group::compute_visible_triangulation(size_t triangle_id,
         if (polygon_overlaps_triangle(target_polygon, other_polygon))
             candidate_ids.insert(other_id);
     }
+
+    CB_DBG("  total candidates=" << candidate_ids.size());
 
     struct Occluder {
         size_t id;
@@ -323,6 +495,8 @@ Triangle_group::compute_visible_triangulation(size_t triangle_id,
             Occluder{other_id, other_depth, std::move(other_polygon)});
     }
 
+    CB_DBG("  occluders=" << occluders.size());
+
     std::sort(
         occluders.begin(), occluders.end(),
         [](const Occluder& a, const Occluder& b) { return a.depth < b.depth; });
@@ -331,30 +505,97 @@ Triangle_group::compute_visible_triangulation(size_t triangle_id,
     current_regions.emplace_back(target_polygon);
     std::vector<Polygon_with_holes_2> next_regions;
 
+    auto polygon_covers = [](const Polygon_2& outer,
+                             const Polygon_2& inner) -> bool {
+        for (auto it = inner.vertices_begin(); it != inner.vertices_end();
+             ++it) {
+            if (outer.bounded_side(*it) == CGAL::ON_UNBOUNDED_SIDE)
+                return false;
+        }
+        return true;
+    };
+
+    auto has_strictly_inside_vertex = [](const Polygon_2& container,
+                                         const Polygon_2& contained)
+        -> bool {
+        for (auto it = contained.vertices_begin();
+             it != contained.vertices_end(); ++it) {
+            if (container.bounded_side(*it) == CGAL::ON_BOUNDED_SIDE)
+                return true;
+        }
+        return false;
+    };
+
+    int occluder_idx = 0;
     for (const auto& occluder : occluders) {
+        CB_DBG("  applying occluder " << occluder_idx
+               << " id=" << occluder.id << " depth=" << occluder.depth
+               << " poly_size=" << occluder.polygon.size());
         next_regions.clear();
+        int region_idx = 0;
         for (const auto& region : current_regions) {
+            CB_DBG("    diff with region " << region_idx
+                   << " outer=" << region.outer_boundary().size());
+
+            const auto& reg_poly = region.outer_boundary();
+
+            // 如果遮挡物完全覆盖当前区域，直接清空该区域
+            if (polygon_covers(occluder.polygon, reg_poly)) {
+                CB_DBG("    -> occluder fully covers region, skip");
+                ++region_idx;
+                continue;
+            }
+
+            // 如果两者只有边界接触（没有顶点严格在对方内部），
+            // difference 结果不变，跳过以避免 CGAL 退化
+            bool region_in_occluder =
+                has_strictly_inside_vertex(occluder.polygon, reg_poly);
+            bool occluder_in_region =
+                has_strictly_inside_vertex(reg_poly, occluder.polygon);
+            if (!region_in_occluder && !occluder_in_region) {
+                CB_DBG("    -> edge contact only, skip diff");
+                next_regions.push_back(region);
+                ++region_idx;
+                continue;
+            }
+
             CGAL::difference(region, occluder.polygon,
                              std::back_inserter(next_regions));
+            ++region_idx;
         }
-        current_regions.swap(next_regions);
+        // 清理 difference 产生的退化顶点，再进入下一轮/Clipper
+        current_regions.clear();
+        for (auto& r : next_regions) {
+            auto cleaned = cleanup_polygon_with_holes(r);
+            if (cleaned.outer_boundary().size() >= 3)
+                current_regions.push_back(std::move(cleaned));
+        }
+        CB_DBG("    after cleanup regions=" << current_regions.size());
         if (current_regions.empty())
             break;
+        ++occluder_idx;
     }
+
+    CB_DBG("  final regions=" << current_regions.size());
 
     Clipper clipper;
     std::vector<Polygon_2> triangles_out;
     for (const auto& region : current_regions) {
+        auto cleaned = cleanup_polygon_with_holes(region);
+        if (cleaned.outer_boundary().size() < 3)
+            continue;
+
         std::vector<Point2> outer_vertices;
-        outer_vertices.reserve(region.outer_boundary().size());
-        for (auto vit = region.outer_boundary().vertices_begin();
-             vit != region.outer_boundary().vertices_end(); ++vit) {
+        outer_vertices.reserve(cleaned.outer_boundary().size());
+        for (auto vit = cleaned.outer_boundary().vertices_begin();
+             vit != cleaned.outer_boundary().vertices_end(); ++vit) {
             outer_vertices.push_back(*vit);
         }
         if (!outer_vertices.empty())
             polygon_vertices.push_back(std::move(outer_vertices));
 
-        clipper(region, std::back_inserter(triangles_out));
+        CB_DBG("  clipper region outer=" << cleaned.outer_boundary().size());
+        clipper(cleaned, std::back_inserter(triangles_out));
     }
 
     for (const auto& triangle : triangles_out) {
@@ -599,6 +840,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
     if (input_triangles.empty())
         return {};
 
+    CB_DBG("build_closed_mesh: input=" << input_triangles.size());
+
     // 计算输入三角形的包围盒（用于缩放）
     vec3f min_p = std::get<0>(input_triangles[0]);
     vec3f max_p = min_p;
@@ -624,12 +867,19 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
         std::max(std::abs(max_p.z - center.z), std::abs(center.z - min_p.z));
     const float min_half = std::min({half_x, half_y, half_z});
 
+    CB_DBG("  bbox min=" << min_p.x << "," << min_p.y << "," << min_p.z
+           << " max=" << max_p.x << "," << max_p.y << "," << max_p.z);
+    CB_DBG("  center=" << center.x << "," << center.y << "," << center.z
+           << " min_half=" << min_half);
+
     // 若模型太贴近中心，则统一缩放使其超出算法使用的 0.5 单位立方体
     constexpr float target_half = 0.6f;
     const float scale =
         (min_half > 1e-8f && min_half < target_half) ? target_half / min_half
                                                      : 1.0f;
     const float inv_scale = 1.0f / scale;
+
+    CB_DBG("  scale=" << scale);
 
     const auto to_local = [&](const vec3f& v) { return (v - center) * scale; };
     const auto to_world = [&](const vec3f& v) {
@@ -650,8 +900,12 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
     }
     group.build_face_trees();
 
+    CB_DBG("  group triangles=" << group.triangles.size());
+
     const std::vector<Triangle> local_mesh =
         group.compute_visible_mesh_with_cone_sides();
+
+    CB_DBG("  local_mesh size=" << local_mesh.size());
 
     std::vector<Triangle> result;
     result.reserve(local_mesh.size());
