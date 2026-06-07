@@ -13,6 +13,12 @@ struct SDF_Mesh : public SDFBase {
 
     bool loadSTL(const std::string& filename);
 
+    using Triangle = std::tuple<
+        sinriv::kigstudio::vec3<float>,
+        sinriv::kigstudio::vec3<float>,
+        sinriv::kigstudio::vec3<float>>;
+    bool loadTriangles(const std::vector<Triangle>& triangles);
+
     float get(const Vec3f& p) const override;
     void get(const Vec3f& begin,
              const Vec3f& voxelSize,

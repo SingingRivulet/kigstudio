@@ -4,12 +4,15 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <queue>
 #include <tuple>
 
+#include "kigstudio/utils/dbvt3d.h"
+
 namespace sinriv::kigstudio::mesh::conebox {
 
-#define CONEBOX_DEBUG 1
+#define CONEBOX_DEBUG 0
 
 #if CONEBOX_DEBUG
     #define CB_DBG(x) std::cout << "[conebox] " << x << std::endl
@@ -914,6 +917,213 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
             to_world(std::get<0>(tri)),
             to_world(std::get<1>(tri)),
             to_world(std::get<2>(tri))));
+    }
+    return result;
+}
+
+std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
+    const std::vector<Triangle>& input_triangles,
+    const vec3f& center) {
+    if (input_triangles.empty())
+        return {};
+
+    // 1. 构建 DBVT 加速射线查询
+    using BVH = sinriv::kigstudio::dbvt3d<float, int>;
+    BVH bvh;
+    std::vector<BVH::AABB*> aabbs;
+    std::vector<int> indices;
+    aabbs.reserve(input_triangles.size());
+    indices.reserve(input_triangles.size());
+
+    for (int i = 0; i < static_cast<int>(input_triangles.size()); ++i) {
+        const auto& tri = input_triangles[i];
+        const auto& v0 = std::get<0>(tri);
+        const auto& v1 = std::get<1>(tri);
+        const auto& v2 = std::get<2>(tri);
+        vec3f mn(v0.x, v0.y, v0.z);
+        vec3f mx(v0.x, v0.y, v0.z);
+        mn.x = std::min(mn.x, std::min(v1.x, v2.x));
+        mn.y = std::min(mn.y, std::min(v1.y, v2.y));
+        mn.z = std::min(mn.z, std::min(v1.z, v2.z));
+        mx.x = std::max(mx.x, std::max(v1.x, v2.x));
+        mx.y = std::max(mx.y, std::max(v1.y, v2.y));
+        mx.z = std::max(mx.z, std::max(v1.z, v2.z));
+        indices.push_back(i);
+        aabbs.push_back(bvh.add(mn, mx, &indices.back()));
+    }
+
+    // 2. 计算 mesh 最大范围，用于确定射线长度
+    float max_dist = 0.0f;
+    for (const auto& tri : input_triangles) {
+        for (const auto& v :
+             {std::get<0>(tri), std::get<1>(tri), std::get<2>(tri)}) {
+            max_dist = std::max(max_dist, (v - center).length());
+        }
+    }
+    max_dist = std::max(max_dist, 1.0f) * 3.0f;
+
+    // 3. 对每个三角形发射射线，找最远交点
+    std::vector<int> visible_flags(input_triangles.size(), 0);
+
+    for (int i = 0; i < static_cast<int>(input_triangles.size()); ++i) {
+        const auto& tri = input_triangles[i];
+        const auto& v0 = std::get<0>(tri);
+        const auto& v1 = std::get<1>(tri);
+        const auto& v2 = std::get<2>(tri);
+        const vec3f centroid = (v0 + v1 + v2) * (1.0f / 3.0f);
+        const vec3f dir = centroid - center;
+        const float dir_len = dir.length();
+        if (dir_len < 1e-8f)
+            continue;
+        const vec3f dir_n = dir * (1.0f / dir_len);
+
+        float farthest_t = -1.0f;
+        int farthest_idx = -1;
+
+        bvh.rayTest(
+            sinriv::kigstudio::ray<float>(center, center + dir_n * max_dist),
+            [&](const BVH::AABB* node) {
+                int idx = *node->data;
+                if (idx < 0 || idx >= static_cast<int>(input_triangles.size()))
+                    return;
+                const auto& t2 = input_triangles[idx];
+                vec3f hit;
+                if (ray_triangle_intersect(center, dir_n,
+                                           std::get<0>(t2), std::get<1>(t2),
+                                           std::get<2>(t2), hit)) {
+                    float t = (hit - center).length();
+                    if (t > farthest_t) {
+                        farthest_t = t;
+                        farthest_idx = idx;
+                    }
+                }
+            });
+
+        if (farthest_idx >= 0) {
+            visible_flags[farthest_idx] = 1;
+        }
+    }
+
+    // 收集可见三角形
+    std::vector<Triangle> visible_tris;
+    for (int i = 0; i < static_cast<int>(input_triangles.size()); ++i) {
+        if (visible_flags[i]) {
+            visible_tris.push_back(input_triangles[i]);
+        }
+    }
+
+    if (visible_tris.empty()) {
+        for (auto* aabb : aabbs) {
+            bvh.remove(aabb);
+            bvh.delAABB(aabb);
+        }
+        return {};
+    }
+
+    // 4. 提取边界边（只被一个可见三角形共享的边）
+    struct EdgeKey {
+        vec3f a, b;
+        EdgeKey(const vec3f& v0, const vec3f& v1) {
+            if (v0.x < v1.x || (v0.x == v1.x && v0.y < v1.y) ||
+                (v0.x == v1.x && v0.y == v1.y && v0.z < v1.z)) {
+                a = v0;
+                b = v1;
+            } else {
+                a = v1;
+                b = v0;
+            }
+        }
+        bool operator<(const EdgeKey& o) const {
+            if (a.x != o.a.x) return a.x < o.a.x;
+            if (a.y != o.a.y) return a.y < o.a.y;
+            if (a.z != o.a.z) return a.z < o.a.z;
+            if (b.x != o.b.x) return b.x < o.b.x;
+            if (b.y != o.b.y) return b.y < o.b.y;
+            return b.z < o.b.z;
+        }
+    };
+
+    std::map<EdgeKey, int> edge_count;
+    for (const auto& tri : visible_tris) {
+        const auto& v0 = std::get<0>(tri);
+        const auto& v1 = std::get<1>(tri);
+        const auto& v2 = std::get<2>(tri);
+        edge_count[EdgeKey(v0, v1)]++;
+        edge_count[EdgeKey(v1, v2)]++;
+        edge_count[EdgeKey(v2, v0)]++;
+    }
+
+    std::vector<std::pair<vec3f, vec3f>> boundary_edges;
+    for (const auto& kv : edge_count) {
+        if (kv.second == 1) {
+            boundary_edges.push_back({kv.first.a, kv.first.b});
+        }
+    }
+
+    // 5. 调整可见面法线方向：使法线背离 center（从外部可见）
+    for (auto& tri : visible_tris) {
+        auto& v0 = std::get<0>(tri);
+        auto& v1 = std::get<1>(tri);
+        auto& v2 = std::get<2>(tri);
+        vec3f n = (v1 - v0).cross(v2 - v0);
+        vec3f centroid = (v0 + v1 + v2) * (1.0f / 3.0f);
+        if (n.dot(centroid - center) < 0.0f) {
+            std::swap(v1, v2);
+        }
+    }
+
+    // 预计算可见面法线（用于侧面朝向判断）
+    std::vector<vec3f> visible_normals;
+    visible_normals.reserve(visible_tris.size());
+    for (const auto& tri : visible_tris) {
+        const auto& v0 = std::get<0>(tri);
+        const auto& v1 = std::get<1>(tri);
+        const auto& v2 = std::get<2>(tri);
+        visible_normals.push_back((v1 - v0).cross(v2 - v0));
+    }
+
+    // 6. 生成侧面并调整法线：侧面法线应与邻接可见面法线同向（都朝外）
+    std::vector<Triangle> result;
+    result.reserve(visible_tris.size() + boundary_edges.size());
+    result.insert(result.end(), visible_tris.begin(), visible_tris.end());
+
+    const float EDGE_EPS_SQ = 1e-10f;
+    auto edge_eq = [&](const vec3f& a, const vec3f& b) {
+        return (a - b).length2() < EDGE_EPS_SQ;
+    };
+
+    for (const auto& e : boundary_edges) {
+        vec3f n_F;
+        bool found = false;
+        for (size_t j = 0; j < visible_tris.size(); ++j) {
+            const auto& tri = visible_tris[j];
+            const auto& v0 = std::get<0>(tri);
+            const auto& v1 = std::get<1>(tri);
+            const auto& v2 = std::get<2>(tri);
+            if ((edge_eq(v0, e.first) && edge_eq(v1, e.second)) ||
+                (edge_eq(v1, e.first) && edge_eq(v2, e.second)) ||
+                (edge_eq(v2, e.first) && edge_eq(v0, e.second)) ||
+                (edge_eq(v0, e.second) && edge_eq(v1, e.first)) ||
+                (edge_eq(v1, e.second) && edge_eq(v2, e.first)) ||
+                (edge_eq(v2, e.second) && edge_eq(v0, e.first))) {
+                n_F = visible_normals[j];
+                found = true;
+                break;
+            }
+        }
+
+        vec3f a = e.first, b = e.second;
+        vec3f n_T = (b - a).cross(center - a);
+        if (found && n_T.dot(n_F) < 0.0f) {
+            std::swap(a, b);
+        }
+        result.emplace_back(std::make_tuple(a, b, center));
+    }
+
+    // 清理 DBVT
+    for (auto* aabb : aabbs) {
+        bvh.remove(aabb);
+        bvh.delAABB(aabb);
     }
     return result;
 }

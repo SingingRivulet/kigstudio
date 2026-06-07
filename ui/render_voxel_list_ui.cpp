@@ -488,6 +488,7 @@ void RenderVoxelList::render_file_loader() {
             const char* load_mode_names[] = {
                 get_locale_cstr("label.stl_load_mode.default"),
                 get_locale_cstr("label.stl_load_mode.conebox"),
+                get_locale_cstr("label.stl_load_mode.silhouette"),
             };
             ImGui::Combo(get_locale_cstr("label.stl_load_mode"),
                          &file_loader_load_mode, load_mode_names,

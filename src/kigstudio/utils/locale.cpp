@@ -232,12 +232,16 @@ void init_locale_strings() {
                       {{"en", "SDF"}, {"zh", "SDF"}});
     add_locale_string("label.stl_load_mode.conebox",
                       {{"en", "ConeBox"}, {"zh", "ConeBox"}});
+    add_locale_string("label.stl_load_mode.silhouette",
+                      {{"en", "Silhouette"}, {"zh", "轮廓"}});
     add_locale_string("action.browse",
                       {{"en", "Browse..."}, {"zh", "浏览..."}});
     add_locale_string("label.conebox_auto_center",
                       {{"en", "Auto Center"}, {"zh", "自动计算中心"}});
     add_locale_string("label.conebox_center",
                       {{"en", "Center"}, {"zh", "中心位置"}});
+    add_locale_string("label.silhouette_center",
+                      {{"en", "Silhouette Center"}, {"zh", "轮廓中心"}});
     add_locale_string("tooltip.conebox_auto_center",
                       {{"en", "Automatically calculate the center from the mesh bounding box."},
                        {"zh", "从网格包围盒自动计算中心。"}});
@@ -589,6 +593,9 @@ void init_locale_strings() {
     add_locale_string("tooltip.stl_load_mode.conebox",
                       {{"en", "Preprocess with cone-box closed mesh reconstruction."},
                        {"zh", "使用 ConeBox 封闭网格重建进行预处理。"}});
+    add_locale_string("tooltip.stl_load_mode.silhouette",
+                      {{"en", "Preprocess with silhouette-based closed mesh reconstruction (keeps farthest faces from center)."},
+                       {"zh", "使用基于轮廓的封闭网格重建进行预处理（保留离中心最远的面）。"}});
     add_locale_string("tooltip.render_sdf",
                       {{"en", "Render SDF as a 3D model. This will clear all marked voxels. Proceed?"},
                        {"zh", "将SDF渲染为网格以供预览。注意：这可能需要较长时间。"}});

@@ -310,6 +310,26 @@ bool SDF_Mesh::loadSTL(const std::string& filename) {
     return true;
 }
 
+bool SDF_Mesh::loadTriangles(const std::vector<Triangle>& triangles) {
+    path.clear();
+    impl->clear();
+
+    for (const auto& tri : triangles) {
+        const auto& a = std::get<0>(tri);
+        const auto& b = std::get<1>(tri);
+        const auto& c = std::get<2>(tri);
+        impl->triangles.emplace_back(Point_3(a.x, a.y, a.z),
+                                     Point_3(b.x, b.y, b.z),
+                                     Point_3(c.x, c.y, c.z));
+    }
+
+    if (impl->triangles.empty()) {
+        return false;
+    }
+    impl->rebuild();
+    return true;
+}
+
 float SDF_Mesh::get(const Vec3f& p) const {
     if (impl->triangles.empty()) {
         return 1e6f;

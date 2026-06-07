@@ -241,6 +241,7 @@ void RenderVoxelList::render_object_editor() {
                         const char* load_mode_names[] = {
                             get_locale_cstr("label.stl_load_mode.default"),
                             get_locale_cstr("label.stl_load_mode.conebox"),
+                            get_locale_cstr("label.stl_load_mode.silhouette"),
                         };
                         int load_mode = item.stl_load_mode;
                         if (ImGui::Combo(get_locale_cstr("label.stl_load_mode"),
@@ -260,6 +261,10 @@ void RenderVoxelList::render_object_editor() {
                                 case static_cast<int>(StlLoadMode::CONEBOX):
                                     tooltip_key =
                                         "tooltip.stl_load_mode.conebox";
+                                    break;
+                                case static_cast<int>(StlLoadMode::SILHOUETTE):
+                                    tooltip_key =
+                                        "tooltip.stl_load_mode.silhouette";
                                     break;
                             }
                             if (tooltip_key) {
@@ -290,6 +295,15 @@ void RenderVoxelList::render_object_editor() {
                                     &item.conebox_center.x, 0.1f, 0.0f,
                                     0.0f, "%.2f");
                             }
+                        }
+
+                        // Silhouette 中心设置
+                        if (item.stl_load_mode ==
+                            static_cast<int>(StlLoadMode::SILHOUETTE)) {
+                            ImGui::DragFloat3(
+                                get_locale_cstr("label.silhouette_center"),
+                                &item.silhouette_center.x, 0.1f, 0.0f,
+                                0.0f, "%.2f");
                         }
 
                         // SDF 勾选框

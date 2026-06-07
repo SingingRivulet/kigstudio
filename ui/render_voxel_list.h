@@ -141,6 +141,7 @@ void add_collision_geometry(CollisionGroup& group, int type_index);
 enum class StlLoadMode : int {
     DEFAULT = 0,
     CONEBOX = 1,
+    SILHOUETTE = 2,
     COUNT
 };
 
@@ -381,6 +382,7 @@ class RenderVoxelList {
         bool load_as_sdf = false;
         bool conebox_auto_center = true;
         vec3f conebox_center = {0.0f, 0.0f, 0.0f};
+        vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
 
         // undo/redo stacks for collision editor
         std::vector<CollisionEditorSnapshot> undo_stack;
