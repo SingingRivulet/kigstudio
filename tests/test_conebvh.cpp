@@ -1,3 +1,4 @@
+#include "test_common.h"
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -15,6 +16,7 @@ static void expect(bool condition, const char* message) {
 }
 
 int main() {
+    setup_test_environment();
     const vec3f apex(0.0f, 0.0f, 0.0f);
     constexpr float pi = 3.14159265358979323846f;
     std::vector<Cone> cones;

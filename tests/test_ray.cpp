@@ -1,3 +1,4 @@
+#include "test_common.h"
 #include "kigstudio/voxel/triangle_bvh.h"
 #include "kigstudio/voxel/voxel2mesh.h"
 
@@ -101,6 +102,7 @@ void test_triangle_coll() {
     }
 }
 int main() {
+    setup_test_environment();
     test_bvh();
     // test_triangle_coll();
     return 0;

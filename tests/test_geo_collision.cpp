@@ -1,3 +1,4 @@
+#include "test_common.h"
 #include "kigstudio/voxel/collision.h"
 #include <iostream>
 
@@ -161,6 +162,7 @@ bool testCollisionGroupAxisAngleAndScale() {
 }  // namespace
 
 int main() {
+    setup_test_environment();
     bool ok = true;
     ok &= testSphere();
     ok &= testCylinder();

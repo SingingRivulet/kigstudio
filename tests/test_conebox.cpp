@@ -1,3 +1,4 @@
+#include "test_common.h"
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -237,6 +238,7 @@ static void test_load_block_stl() {
 
 // ------------------------------------------------------------------
 int main() {
+    setup_test_environment();
     std::cout << "Running conebox tests..." << std::endl;
 
     test_empty_input();

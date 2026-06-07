@@ -1,3 +1,4 @@
+#include "test_common.h"
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <SDL_syswm.h>
@@ -61,6 +62,7 @@ struct Callback : public bgfx::CallbackI {
 static Callback s_callback;
 
 int main(int argc, char** argv) {
+    setup_test_environment();
     std::cout << "Initializing SDL" << std::endl;
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;

@@ -1,7 +1,9 @@
+#include "test_common.h"
 #include <vector>
 #include <cassert>
 #include "kigstudio/voxel/voxel2mesh.h"
 int main() {
+    setup_test_environment();
     sinriv::kigstudio::voxel::VoxelGrid voxelData;
     for (int i = 0; i < 2;++i) {
         for (int j = 0; j < 2; ++j) {

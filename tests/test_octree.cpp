@@ -1,3 +1,4 @@
+#include "test_common.h"
 #include "kigstudio/voxel/octree.h"
 #include "kigstudio/utils/vec3.h"
 
@@ -36,7 +37,7 @@ using Vec3i = sinriv::kigstudio::Vec3i;
 // }
 
 int main() {
-    
+    setup_test_environment();
     Octree tree1(16);
     Octree tree2(16);
 

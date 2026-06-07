@@ -1,6 +1,8 @@
+#include "test_common.h"
 #include "kigstudio/voxel/voxelizer_svo.h"
 
 int main() {
+    setup_test_environment();
     sinriv::kigstudio::voxel::VoxelGrid voxelData;
     // for(auto point:sinriv::kigstudio::voxel::draw_triangle(
     //     sinriv::kigstudio::voxel::Triangle({5,0,0},{0,5,0},{0,0,5}),

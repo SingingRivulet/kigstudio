@@ -1,7 +1,8 @@
-
+#include "test_common.h"
 #include "kigstudio/utils/dbvt3d.h"
 
 int main() {
+    setup_test_environment();
     sinriv::kigstudio::dbvt3d<float, int> dbvt;
     int id[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
     dbvt.add(sinriv::kigstudio::dbvt3d<float, int>::vec3_n(0, 0, 0),
