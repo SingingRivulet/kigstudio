@@ -282,7 +282,16 @@ struct SDF_Mesh::Impl {
 #pragma omp parallel for
         for (int64_t i = 0; i < static_cast<int64_t>(total); ++i) {
             if (inside_votes[static_cast<size_t>(i)] >= 2) {
-                out[static_cast<size_t>(i)] = -out[static_cast<size_t>(i)];
+                int x = static_cast<int>(i % sx);
+                int y = static_cast<int>((i / sx) % sy);
+                int z = static_cast<int>(i / (static_cast<int64_t>(sx) * sy));
+
+                Point_3 query(begin.x + static_cast<float>(x) * voxelSize.x,
+                              begin.y + static_cast<float>(y) * voxelSize.y,
+                              begin.z + static_cast<float>(z) * voxelSize.z);
+                if ((*side_tester)(query) == CGAL::ON_BOUNDED_SIDE) {
+                    out[static_cast<size_t>(i)] = -out[static_cast<size_t>(i)];
+                }
             }
         }
     }
