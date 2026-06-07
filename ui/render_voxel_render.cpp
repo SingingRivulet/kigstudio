@@ -359,6 +359,45 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
             }
         }
     }
+    if (showSilhouetteCenter &&
+        stl_load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+        if (mesh_shader.ensureLineProgram()) {
+            bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+            const uint32_t center_color = pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);
+            const float radius = 2.0f;
+            std::vector<mesh_detail::ColorLineVertex> vertices;
+            vertices.reserve(48 * 6);
+            append_marker_circle(vertices, silhouette_center,
+                                 {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
+                                 radius, center_color);
+            append_marker_circle(vertices, silhouette_center,
+                                 {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                 radius, center_color);
+            append_marker_circle(vertices, silhouette_center,
+                                 {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                 radius, center_color);
+            if (!vertices.empty() &&
+                bgfx::getAvailTransientVertexBuffer(
+                    static_cast<uint32_t>(vertices.size()),
+                    layout) >= vertices.size()) {
+                bgfx::TransientVertexBuffer tvb;
+                bgfx::allocTransientVertexBuffer(
+                    &tvb, static_cast<uint32_t>(vertices.size()),
+                    layout);
+                std::memcpy(tvb.data, vertices.data(),
+                            vertices.size() *
+                                sizeof(mesh_detail::ColorLineVertex));
+                bgfx::setTransform(model_transform);
+                bgfx::setVertexBuffer(0, &tvb);
+                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                               BGFX_STATE_WRITE_Z |
+                               BGFX_STATE_DEPTH_TEST_LESS |
+                               BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+                bgfx::submit(mesh_shader.overlay_view_id_,
+                             mesh_shader.line_program_);
+            }
+        }
+    }
 }
 
 void RenderVoxelList::RenderVoxelItem::render_concave_cone_overlay(
@@ -530,7 +569,7 @@ void RenderVoxelList::upload_collision(
         render.pos_hightlight_[i][0] = std::get<0>(hightlight_pos[i]).x;
         render.pos_hightlight_[i][1] = std::get<0>(hightlight_pos[i]).y;
         render.pos_hightlight_[i][2] = std::get<0>(hightlight_pos[i]).z;
-        render.pos_hightlight_[i][3] = 1.0f;
+        render.pos_hightlight_[i][3] = std::get<2>(hightlight_pos[i]);
 
         render.pos_hightlight_color_[i][0] = std::get<1>(hightlight_pos[i]).x;
         render.pos_hightlight_color_[i][1] = std::get<1>(hightlight_pos[i]).y;

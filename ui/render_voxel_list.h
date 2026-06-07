@@ -140,8 +140,7 @@ void add_collision_geometry(CollisionGroup& group, int type_index);
 
 enum class StlLoadMode : int {
     DEFAULT = 0,
-    CONEBOX = 1,
-    SILHOUETTE = 2,
+    SILHOUETTE = 1,
     COUNT
 };
 
@@ -169,8 +168,8 @@ struct CollisionEditorSnapshot {
     std::string stl_path;
     int stl_load_mode = 0;
     bool load_as_sdf = false;
-    bool conebox_auto_center = true;
-    vec3f conebox_center = {0.0f, 0.0f, 0.0f};
+    vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
+    bool show_silhouette_center = false;
 };
 
 struct MarkedVoxelsSnapshot {
@@ -380,9 +379,8 @@ class RenderVoxelList {
         float stl_voxel_size = 1.0f;
         int stl_load_mode = 0;
         bool load_as_sdf = false;
-        bool conebox_auto_center = true;
-        vec3f conebox_center = {0.0f, 0.0f, 0.0f};
         vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
+        bool showSilhouetteCenter = false;
 
         // undo/redo stacks for collision editor
         std::vector<CollisionEditorSnapshot> undo_stack;
@@ -429,7 +427,9 @@ class RenderVoxelList {
                                            true, expand);
         }
     };
-    inline RenderVoxelList() {}
+    inline RenderVoxelList() {
+        current_model_matrix.setIdentity();
+    }
     inline ~RenderVoxelList() { release(); }
 
     std::map<int, std::unique_ptr<RenderVoxelItem>> items;
@@ -510,6 +510,7 @@ class RenderVoxelList {
     int last_object_editor_tab = -1;
     void render_object_editor();
     void render_object_editor_toolbar(RenderVoxelItem& item);
+    void render_file_status_tab(RenderVoxelItem& item);
     void render_object_editor_collision_tab_content(RenderVoxelItem& item);
     void render_object_editor_chain_mode(RenderVoxelItem& item);
     void render_object_editor_voxel_tab_content(RenderVoxelItem& item);
@@ -649,7 +650,8 @@ class RenderVoxelList {
     }
 
     std::vector<std::tuple<sinriv::kigstudio::voxel::collision::vec3f,
-                           sinriv::kigstudio::voxel::collision::vec3f>>
+                           sinriv::kigstudio::voxel::collision::vec3f,
+                           float>>
         hightlight_pos;
 
     void upload_collision(sinriv::ui::render::RenderDeferred& render);
@@ -660,6 +662,8 @@ class RenderVoxelList {
     void setViewportSize(int width, int height);
     void setViewProjection(const float* view, const float* proj);
     void setModelMatrix(const mat4f& model_matrix);
+
+    mat4f current_model_matrix;
     void setMeshAxisVisible(bool visible);
     void setVoxelAxisVisible(bool visible);
     void setMeshVisible(bool visible);

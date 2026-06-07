@@ -290,7 +290,34 @@ static void test_silhouette_tetrahedron_internal_center() {
            "tetrahedron with internal center should produce 4 visible triangles, no sides needed");
 }
 
-// 8. silhouette 算法：block.stl + center=(0,10,0) 应得到房子形状
+// 8. silhouette 算法：部分遮挡 — 近三角形遮挡远三角形的一部分
+static void test_silhouette_partial_occlusion() {
+    // T1: 近三角形（小）
+    // T2: 远三角形（大，中间部分被 T1 遮挡）
+    // T1 在 z=1，T2 在 z=2，center 在 z=0，避免共面导致射线检测失败
+    std::vector<Triangle> input = {
+        std::make_tuple(vec3f(0.0f, 0.0f, 1.0f),
+                        vec3f(2.0f, 0.0f, 1.0f),
+                        vec3f(1.0f, 1.0f, 1.0f)),   // T1: 近
+        std::make_tuple(vec3f(-2.0f, 2.0f, 2.0f),
+                        vec3f(4.0f, 2.0f, 2.0f),
+                        vec3f(1.0f, 5.0f, 2.0f)),   // T2: 远
+    };
+    vec3f center(1.0f, -10.0f, 0.0f);
+    auto output = build_closed_mesh_from_triangles_silhouette(input, center);
+    expect(!output.empty(),
+           "partial occlusion should produce non-empty mesh");
+    expect(all_vertices_finite(output),
+           "all output vertices should be finite");
+
+    // 锥体裁剪把 T2 切成了多片，总输出应大于无裁剪时的 2 个可见面
+    std::cout << "  partial occlusion output triangles: " << output.size()
+              << std::endl;
+    expect(output.size() > 2,
+           "partial occlusion should produce more than 2 triangles");
+}
+
+// 9. silhouette 算法：block.stl + center=(0,10,0) 应得到房子形状
 static void test_silhouette_block_stl() {
     std::vector<std::string> candidates = {
         "assets/test/block.stl",
@@ -423,6 +450,9 @@ int main() {
 
     test_silhouette_tetrahedron_internal_center();
     std::cout << "  [PASS] silhouette_tetrahedron_internal_center" << std::endl;
+
+    test_silhouette_partial_occlusion();
+    std::cout << "  [PASS] silhouette_partial_occlusion" << std::endl;
 
     test_silhouette_block_stl();
     std::cout << "  [PASS] silhouette_block_stl" << std::endl;

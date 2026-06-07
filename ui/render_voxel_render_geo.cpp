@@ -701,21 +701,7 @@ void RenderVoxelList::load_stl(std::string filename,
 
     // Phase 1b: Optional preprocessing based on load mode
     std::vector<Triangle> source_triangles;
-    if (load_mode == static_cast<int>(StlLoadMode::CONEBOX)) {
-        bool cb_auto_center = true;
-        vec3f cb_center{0.0f, 0.0f, 0.0f};
-        if (target_item_id >= 0) {
-            std::lock_guard<std::mutex> lock(locker);
-            auto it = items.find(target_item_id);
-            if (it != items.end()) {
-                cb_auto_center = it->second->conebox_auto_center;
-                cb_center = it->second->conebox_center;
-            }
-        }
-        source_triangles = sinriv::kigstudio::mesh::conebox::
-            build_closed_mesh_from_triangles(raw_triangles, cb_auto_center,
-                                             cb_center);
-    } else if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+    if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
         vec3f cb_center{0.0f, 0.0f, 0.0f};
         if (target_item_id >= 0) {
             std::lock_guard<std::mutex> lock(locker);
@@ -831,8 +817,7 @@ void RenderVoxelList::load_stl(std::string filename,
             if (it != items.end()) {
                 auto& item = *it->second;
                 item.mesh_renderer.clear();
-                if (load_mode == static_cast<int>(StlLoadMode::CONEBOX) ||
-                    load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+                if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
                     item.mesh_renderer.loadGeometry(
                         triangle_generator_with_normals(source_triangles));
                 } else {
@@ -848,8 +833,7 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.voxel_grid_data = std::move(voxel_data);
                 if (load_as_sdf) {
                     auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
-                    if (load_mode == static_cast<int>(StlLoadMode::CONEBOX) ||
-                        load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+                    if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
                         mesh_sdf->loadTriangles(source_triangles);
                     } else {
                         mesh_sdf->loadSTL(filename);
@@ -885,8 +869,7 @@ void RenderVoxelList::load_stl(std::string filename,
         std::cout << "[load_stl] new item id=" << item->id
                   << " write_count=" << item->write_count.load()
                   << " ref_count=" << item->ref_count.load() << std::endl;
-        if (load_mode == static_cast<int>(StlLoadMode::CONEBOX) ||
-            load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+        if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
             item->mesh_renderer.loadGeometry(
                 triangle_generator_with_normals(source_triangles));
         } else {
@@ -901,8 +884,7 @@ void RenderVoxelList::load_stl(std::string filename,
         item->voxel_grid_data = std::move(voxel_data);
         if (load_as_sdf) {
             auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
-            if (load_mode == static_cast<int>(StlLoadMode::CONEBOX) ||
-                load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+            if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
                 mesh_sdf->loadTriangles(source_triangles);
             } else {
                 mesh_sdf->loadSTL(filename);

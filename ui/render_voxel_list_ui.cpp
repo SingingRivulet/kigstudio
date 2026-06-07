@@ -487,7 +487,6 @@ void RenderVoxelList::render_file_loader() {
             }
             const char* load_mode_names[] = {
                 get_locale_cstr("label.stl_load_mode.default"),
-                get_locale_cstr("label.stl_load_mode.conebox"),
                 get_locale_cstr("label.stl_load_mode.silhouette"),
             };
             ImGui::Combo(get_locale_cstr("label.stl_load_mode"),
@@ -742,12 +741,12 @@ void RenderVoxelList::render_plane_editor(RenderVoxelItem& item) {
                             mouse_world_pos_picked) {
                             plane_p3 = mouse_world_pos;
                         }
-                        hightlight_pos.push_back(
-                            {plane_p1, {0.8f, 0.0f, 0.5f}});
-                        hightlight_pos.push_back(
-                            {plane_p2, {0.8f, 0.0f, 0.7f}});
-                        hightlight_pos.push_back(
-                            {plane_p3, {0.8f, 0.0f, 0.9f}});
+                        hightlight_pos.emplace_back(
+                            plane_p1, vec3f(0.8f, 0.0f, 0.5f), 1.0f);
+                        hightlight_pos.emplace_back(
+                            plane_p2, vec3f(0.8f, 0.0f, 0.7f), 1.0f);
+                        hightlight_pos.emplace_back(
+                            plane_p3, vec3f(0.8f, 0.0f, 0.9f), 1.0f);
                         const vec3f v1 = plane_p2 - plane_p1;
                         const vec3f v2 = plane_p3 - plane_p1;
                         vec3f normal = v1.cross(v2);
@@ -798,11 +797,11 @@ void RenderVoxelList::render_plane_editor(RenderVoxelItem& item) {
                             plane_normal = sinriv::kigstudio::voxel::collision::
                                 safeNormalize(plane_normal);
                         }
-                        hightlight_pos.push_back(
-                            {plane_point, {0.8f, 0.0f, 0.5f}});
-                        hightlight_pos.push_back(
-                            {plane_point + plane_normal * 2.0f,
-                             {0.8f, 0.0f, 0.9f}});
+                        hightlight_pos.emplace_back(
+                            plane_point, vec3f(0.8f, 0.0f, 0.5f), 1.0f);
+                        hightlight_pos.emplace_back(
+                            plane_point + plane_normal * 2.0f,
+                            vec3f(0.8f, 0.0f, 0.9f), 1.0f);
                         try {
                             item.plane = Plane(plane_point, plane_normal);
                             plane_error_message.clear();

@@ -26,6 +26,7 @@ void RenderVoxelList::setViewProjection(const float* view, const float* proj) {
 
 void RenderVoxelList::setModelMatrix(const mat4f& model_matrix) {
     std::lock_guard<std::mutex> lock(locker);
+    current_model_matrix = model_matrix;
     auto it = items.find(render_id);
     if (it != items.end()) {
         it->second->mesh_renderer.setModelMatrix(model_matrix);

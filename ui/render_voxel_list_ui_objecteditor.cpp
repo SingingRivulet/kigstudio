@@ -17,6 +17,7 @@
 #include "kigstudio/sdf/sdf_chain_joint.h"
 #include "kigstudio/utils/locale.h"
 #include "kigstudio/utils/vec3.h"
+#include "kigstudio/voxel/voxel2mesh.h"
 #include "render_voxel_list.h"
 #include "tinyfiledialogs.h"
 namespace sinriv::ui::render {
@@ -183,181 +184,7 @@ void RenderVoxelList::render_object_editor() {
                     if (ImGui::BeginTabItem(get_locale_cstr("tab.file_status"),
                                             nullptr, flags_file_status)) {
                         object_editor_tab = 2;
-                        // STL 路径编辑
-                        static char stl_path_buf[1024] = {};
-                        static int last_path_item_id = -1;
-                        if (last_path_item_id != item.id) {
-                            strncpy(stl_path_buf, item.stl_path.c_str(),
-                                    sizeof(stl_path_buf) - 1);
-                            stl_path_buf[sizeof(stl_path_buf) - 1] = '\0';
-                            last_path_item_id = item.id;
-                        }
-
-                        ImGui::TextUnformatted(
-                            get_locale_cstr("label.stl_path"));
-                        ImGui::SetNextItemWidth(
-                            ImGui::GetContentRegionAvail().x -
-                            ImGui::GetFrameHeight() -
-                            ImGui::GetStyle().ItemSpacing.x);
-                        if (ImGui::InputText("##stl_path", stl_path_buf,
-                                             sizeof(stl_path_buf),
-                                             ImGuiInputTextFlags_EnterReturnsTrue)) {
-                            const std::string new_path = stl_path_buf;
-                            if (new_path != item.stl_path) {
-                                push_undo_now(item.id, std::nullopt,
-                                              "STL Path");
-                                item.stl_path = new_path;
-                            }
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::Button(
-                                get_locale_cstr("action.browse"))) {
-                            const char* filters[] = {"*.stl"};
-                            const char* file = tinyfd_openFileDialog(
-                                utf8_to_ansi(get_locale_cstr(
-                                                 "dialog.open_stl_title"))
-                                    .c_str(),
-                                "", 1, filters,
-                                utf8_to_ansi(
-                                    get_locale_cstr("dialog.stl_file"))
-                                    .c_str(),
-                                0);
-                            if (file) {
-                                const std::string new_path =
-                                    tinyfd_path_to_utf8(file);
-                                if (new_path != item.stl_path) {
-                                    push_undo_now(item.id, std::nullopt,
-                                                  "STL Path");
-                                    item.stl_path = new_path;
-                                    strncpy(stl_path_buf, new_path.c_str(),
-                                            sizeof(stl_path_buf) - 1);
-                                    stl_path_buf[sizeof(stl_path_buf) - 1] =
-                                        '\0';
-                                }
-                            }
-                        }
-
-                        // 加载模式选择
-                        const char* load_mode_names[] = {
-                            get_locale_cstr("label.stl_load_mode.default"),
-                            get_locale_cstr("label.stl_load_mode.conebox"),
-                            get_locale_cstr("label.stl_load_mode.silhouette"),
-                        };
-                        int load_mode = item.stl_load_mode;
-                        if (ImGui::Combo(get_locale_cstr("label.stl_load_mode"),
-                                         &load_mode, load_mode_names,
-                                         IM_ARRAYSIZE(load_mode_names))) {
-                            push_undo_now(item.id, std::nullopt,
-                                          "STL Load Mode");
-                            item.stl_load_mode = load_mode;
-                        }
-                        if (ImGui::IsItemHovered()) {
-                            const char* tooltip_key = nullptr;
-                            switch (load_mode) {
-                                case static_cast<int>(StlLoadMode::DEFAULT):
-                                    tooltip_key =
-                                        "tooltip.stl_load_mode.default";
-                                    break;
-                                case static_cast<int>(StlLoadMode::CONEBOX):
-                                    tooltip_key =
-                                        "tooltip.stl_load_mode.conebox";
-                                    break;
-                                case static_cast<int>(StlLoadMode::SILHOUETTE):
-                                    tooltip_key =
-                                        "tooltip.stl_load_mode.silhouette";
-                                    break;
-                            }
-                            if (tooltip_key) {
-                                ImGui::SetTooltip(
-                                    get_locale_cstr(tooltip_key));
-                            }
-                        }
-
-                        // ConeBox 中心设置
-                        if (item.stl_load_mode ==
-                            static_cast<int>(StlLoadMode::CONEBOX)) {
-                            bool auto_center = item.conebox_auto_center;
-                            if (ImGui::Checkbox(
-                                    get_locale_cstr(
-                                        "label.conebox_auto_center"),
-                                    &auto_center)) {
-                                push_undo_now(item.id, std::nullopt,
-                                              "ConeBox Auto Center");
-                                item.conebox_auto_center = auto_center;
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::SetTooltip(get_locale_cstr(
-                                    "tooltip.conebox_auto_center"));
-                            }
-                            if (!auto_center) {
-                                ImGui::DragFloat3(
-                                    get_locale_cstr("label.conebox_center"),
-                                    &item.conebox_center.x, 0.1f, 0.0f,
-                                    0.0f, "%.2f");
-                            }
-                        }
-
-                        // Silhouette 中心设置
-                        if (item.stl_load_mode ==
-                            static_cast<int>(StlLoadMode::SILHOUETTE)) {
-                            ImGui::DragFloat3(
-                                get_locale_cstr("label.silhouette_center"),
-                                &item.silhouette_center.x, 0.1f, 0.0f,
-                                0.0f, "%.2f");
-                        }
-
-                        // SDF 勾选框
-                        bool load_as_sdf = item.load_as_sdf;
-                        if (ImGui::Checkbox(
-                                get_locale_cstr("label.load_as_sdf"),
-                                &load_as_sdf)) {
-                            push_undo_now(item.id, std::nullopt,
-                                          "Load as SDF");
-                            item.load_as_sdf = load_as_sdf;
-                        }
-                        if (ImGui::IsItemHovered()) {
-                            ImGui::SetTooltip(
-                                get_locale_cstr("tooltip.load_as_sdf"));
-                        }
-                        
-                        // Voxel Size（从弹窗移出）
-                        ImGui::Separator();
-                        ImGui::TextUnformatted(
-                            get_locale_cstr("label.voxel_size"));
-                        ImGui::SameLine();
-                        const float button_size = ImGui::GetFrameHeight();
-                        if (ImGui::Button("-##voxelsize",
-                                          ImVec2(button_size, 0))) {
-                            auto tmp = item.stl_voxel_size / 2.0f;
-                            if (tmp >= 0.0001f) {
-                                item.stl_voxel_size = tmp;
-                            }
-                        }
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(80.0f);
-                        ImGui::DragFloat("##VoxelSize", &item.stl_voxel_size,
-                                         0.1f, 0.0f, 0.0f, "%.4f");
-                        ImGui::SameLine();
-                        if (ImGui::Button("+##voxelsize",
-                                          ImVec2(button_size, 0))) {
-                            item.stl_voxel_size = item.stl_voxel_size * 2.0f;
-                            if (item.stl_voxel_size > 1000.0f) {
-                                item.stl_voxel_size = 1000.0f;
-                            }
-                        }
-
-                        // 重新加载按钮
-                        ImGui::Separator();
-                        if (!item.stl_path.empty()) {
-                            if (ImGui::Button(
-                                    get_locale_cstr("action.reload_stl"))) {
-                                queue_reload_stl(item.id,
-                                                 item.stl_voxel_size,
-                                                 item.stl_path,
-                                                 item.stl_load_mode,
-                                                 item.load_as_sdf);
-                            }
-                        }
+                        render_file_status_tab(item);
                         ImGui::EndTabItem();
                     }
                 }
@@ -369,6 +196,156 @@ void RenderVoxelList::render_object_editor() {
         }
     }
     ImGui::End();
+}
+
+void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
+    item.showSilhouetteCenter = false;
+    // STL 路径编辑
+    static char stl_path_buf[1024] = {};
+    static int last_path_item_id = -1;
+    if (last_path_item_id != item.id) {
+        strncpy(stl_path_buf, item.stl_path.c_str(), sizeof(stl_path_buf) - 1);
+        stl_path_buf[sizeof(stl_path_buf) - 1] = '\0';
+        last_path_item_id = item.id;
+    }
+
+    ImGui::TextUnformatted(get_locale_cstr("label.stl_path"));
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x -
+                            ImGui::GetFrameHeight() -
+                            ImGui::GetStyle().ItemSpacing.x);
+    if (ImGui::InputText("##stl_path", stl_path_buf, sizeof(stl_path_buf),
+                         ImGuiInputTextFlags_EnterReturnsTrue)) {
+        const std::string new_path = stl_path_buf;
+        if (new_path != item.stl_path) {
+            push_undo_now(item.id, std::nullopt, "STL Path");
+            item.stl_path = new_path;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(get_locale_cstr("action.browse"))) {
+        const char* filters[] = {"*.stl"};
+        const char* file = tinyfd_openFileDialog(
+            utf8_to_ansi(get_locale_cstr("dialog.open_stl_title")).c_str(), "",
+            1, filters,
+            utf8_to_ansi(get_locale_cstr("dialog.stl_file")).c_str(), 0);
+        if (file) {
+            const std::string new_path = tinyfd_path_to_utf8(file);
+            if (new_path != item.stl_path) {
+                push_undo_now(item.id, std::nullopt, "STL Path");
+                item.stl_path = new_path;
+                strncpy(stl_path_buf, new_path.c_str(),
+                        sizeof(stl_path_buf) - 1);
+                stl_path_buf[sizeof(stl_path_buf) - 1] = '\0';
+            }
+        }
+    }
+
+    // 加载模式选择
+    const char* load_mode_names[] = {
+        get_locale_cstr("label.stl_load_mode.default"),
+        get_locale_cstr("label.stl_load_mode.silhouette"),
+    };
+    int load_mode = item.stl_load_mode;
+    if (ImGui::Combo(get_locale_cstr("label.stl_load_mode"), &load_mode,
+                     load_mode_names, IM_ARRAYSIZE(load_mode_names))) {
+        push_undo_now(item.id, std::nullopt, "STL Load Mode");
+        item.stl_load_mode = load_mode;
+    }
+    if (ImGui::IsItemHovered()) {
+        const char* tooltip_key = nullptr;
+        switch (load_mode) {
+            case static_cast<int>(StlLoadMode::DEFAULT):
+                tooltip_key = "tooltip.stl_load_mode.default";
+                break;
+            case static_cast<int>(StlLoadMode::SILHOUETTE):
+                tooltip_key = "tooltip.stl_load_mode.silhouette";
+                break;
+        }
+        if (tooltip_key) {
+            ImGui::SetTooltip(get_locale_cstr(tooltip_key));
+        }
+    }
+
+    // Silhouette 中心设置
+    if (item.stl_load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+        item.showSilhouetteCenter = true;
+        auto center_result =
+            edit_vec3_stepper(get_locale_cstr("label.silhouette_center"),
+                              item.silhouette_center, 0.1f);
+        if (center_result.deactivated_after_edit) {
+            push_undo_now(item.id, std::nullopt, "Silhouette Center");
+        }
+    }
+
+    // SDF 勾选框
+    bool load_as_sdf = item.load_as_sdf;
+    if (ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"), &load_as_sdf)) {
+        push_undo_now(item.id, std::nullopt, "Load as SDF");
+        item.load_as_sdf = load_as_sdf;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
+    }
+
+    // Voxel Size
+    ImGui::Separator();
+    ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
+    ImGui::SameLine();
+    const float button_size = ImGui::GetFrameHeight();
+    if (ImGui::Button("-##voxelsize", ImVec2(button_size, 0))) {
+        auto tmp = item.stl_voxel_size / 2.0f;
+        if (tmp >= 0.0001f) {
+            item.stl_voxel_size = tmp;
+        }
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80.0f);
+    ImGui::DragFloat("##VoxelSize", &item.stl_voxel_size, 0.1f, 0.0f, 0.0f,
+                     "%.4f");
+    ImGui::SameLine();
+    if (ImGui::Button("+##voxelsize", ImVec2(button_size, 0))) {
+        item.stl_voxel_size = item.stl_voxel_size * 2.0f;
+        if (item.stl_voxel_size > 1000.0f) {
+            item.stl_voxel_size = 1000.0f;
+        }
+    }
+
+    // 重新加载按钮
+    ImGui::Separator();
+    bool first = true;
+    if (!item.stl_path.empty()) {
+        if (ImGui::Button(get_locale_cstr("action.reload_stl"))) {
+            queue_reload_stl(item.id, item.stl_voxel_size, item.stl_path,
+                             item.stl_load_mode, item.load_as_sdf);
+        }
+        first = false;
+    }
+    if (!item.source_triangles.empty()) {
+        if (!first) {
+            ImGui::SameLine();
+        }
+        if (ImGui::Button(get_locale_cstr("action.export_source_stl"))) {
+            const char* filters[] = {"*.stl"};
+            const char* file = tinyfd_saveFileDialog(
+                utf8_to_ansi(get_locale_cstr("action.export_source_stl"))
+                    .c_str(),
+                "source.stl", 1, filters,
+                utf8_to_ansi(get_locale_cstr("dialog.stl_files")).c_str());
+            if (file) {
+                std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
+                                       sinriv::kigstudio::voxel::vec3f>>
+                    mesh_triangles;
+                mesh_triangles.reserve(item.source_triangles.size());
+                for (const auto& tri : item.source_triangles) {
+                    mesh_triangles.push_back(
+                        {tri,
+                         sinriv::kigstudio::voxel::calcTriangleNormal(tri)});
+                }
+                sinriv::kigstudio::voxel::saveMeshToASCIISTL(
+                    mesh_triangles, tinyfd_path_to_utf8(file));
+            }
+        }
+    }
 }
 
 void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {

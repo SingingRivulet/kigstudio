@@ -716,6 +716,141 @@ struct TriangleEqual {
     }
 };
 
+// ------------------------------------------------------------------
+// 精确 silhouette 裁剪：锥体切割辅助函数
+// ------------------------------------------------------------------
+
+struct ConePlanes {
+    vec3f n01, n12, n20;
+    float s01, s12, s20;
+};
+
+static ConePlanes build_cone_planes(const Triangle& tri,
+                                    const vec3f& center) {
+    const auto& v0 = std::get<0>(tri);
+    const auto& v1 = std::get<1>(tri);
+    const auto& v2 = std::get<2>(tri);
+    ConePlanes cp;
+    cp.n01 = (v1 - center).cross(v0 - center);
+    cp.n12 = (v2 - center).cross(v1 - center);
+    cp.n20 = (v0 - center).cross(v2 - center);
+    cp.s01 = cp.n01.dot(v2 - center);
+    cp.s12 = cp.n12.dot(v0 - center);
+    cp.s20 = cp.n20.dot(v1 - center);
+    return cp;
+}
+
+static void tri_aabb(const Triangle& tri, vec3f& out_min, vec3f& out_max) {
+    const auto& v0 = std::get<0>(tri);
+    const auto& v1 = std::get<1>(tri);
+    const auto& v2 = std::get<2>(tri);
+    out_min.x = std::min(v0.x, std::min(v1.x, v2.x));
+    out_min.y = std::min(v0.y, std::min(v1.y, v2.y));
+    out_min.z = std::min(v0.z, std::min(v1.z, v2.z));
+    out_max.x = std::max(v0.x, std::max(v1.x, v2.x));
+    out_max.y = std::max(v0.y, std::max(v1.y, v2.y));
+    out_max.z = std::max(v0.z, std::max(v1.z, v2.z));
+}
+
+static void cone_aabb(const Triangle& tri, const vec3f& center,
+                      vec3f& out_min, vec3f& out_max) {
+    const auto& v0 = std::get<0>(tri);
+    const auto& v1 = std::get<1>(tri);
+    const auto& v2 = std::get<2>(tri);
+    out_min.x = std::min(center.x, std::min(v0.x, std::min(v1.x, v2.x)));
+    out_min.y = std::min(center.y, std::min(v0.y, std::min(v1.y, v2.y)));
+    out_min.z = std::min(center.z, std::min(v0.z, std::min(v1.z, v2.z)));
+    out_max.x = std::max(center.x, std::max(v0.x, std::max(v1.x, v2.x)));
+    out_max.y = std::max(center.y, std::max(v0.y, std::max(v1.y, v2.y)));
+    out_max.z = std::max(center.z, std::max(v0.z, std::max(v1.z, v2.z)));
+}
+
+static vec3f tri_centroid(const Triangle& tri) {
+    const auto& v0 = std::get<0>(tri);
+    const auto& v1 = std::get<1>(tri);
+    const auto& v2 = std::get<2>(tri);
+    return (v0 + v1 + v2) * (1.0f / 3.0f);
+}
+
+static std::vector<vec3f> clip_by_plane(const std::vector<vec3f>& poly,
+                                        const vec3f& center,
+                                        const vec3f& normal,
+                                        float sign) {
+    std::vector<vec3f> out;
+    if (poly.empty()) return out;
+
+    if (std::abs(sign) < 1e-12f) sign = 1.0f;
+
+    const float EPS = 1e-5f;
+
+    for (size_t i = 0; i < poly.size(); ++i) {
+        const vec3f& curr = poly[i];
+        const vec3f& next = poly[(i + 1) % poly.size()];
+
+        float dc = normal.dot(curr - center) * sign;
+        float dn = normal.dot(next - center) * sign;
+
+        bool curr_out = dc <= EPS;
+        bool next_out = dn <= EPS;
+
+        if (curr_out && next_out) {
+            out.push_back(next);
+        } else if (curr_out && !next_out) {
+            float t = dc / (dc - dn);
+            out.push_back(curr + (next - curr) * t);
+        } else if (!curr_out && next_out) {
+            float t = dc / (dc - dn);
+            out.push_back(curr + (next - curr) * t);
+            out.push_back(next);
+        }
+    }
+
+    return out;
+}
+
+static std::vector<Triangle> clip_triangle_by_cone(
+    const Triangle& tri, const ConePlanes& cone, const vec3f& center) {
+    const auto& v0 = std::get<0>(tri);
+    const auto& v1 = std::get<1>(tri);
+    const auto& v2 = std::get<2>(tri);
+
+    std::vector<vec3f> poly = {v0, v1, v2};
+
+    poly = clip_by_plane(poly, center, cone.n01, cone.s01);
+    if (poly.size() < 3) return {};
+
+    poly = clip_by_plane(poly, center, cone.n12, cone.s12);
+    if (poly.size() < 3) return {};
+
+    poly = clip_by_plane(poly, center, cone.n20, cone.s20);
+    if (poly.size() < 3) return {};
+
+    // 去重相邻顶点
+    std::vector<vec3f> cleaned;
+    const float DUP_EPS_SQ = 1e-10f;
+    for (const auto& p : poly) {
+        if (cleaned.empty() ||
+            (p - cleaned.back()).length2() > DUP_EPS_SQ) {
+            cleaned.push_back(p);
+        }
+    }
+    if (cleaned.size() >= 3 &&
+        (cleaned.front() - cleaned.back()).length2() <= DUP_EPS_SQ) {
+        cleaned.pop_back();
+    }
+    if (cleaned.size() < 3) return {};
+
+    // 扇形分解
+    std::vector<Triangle> result;
+    for (size_t i = 1; i + 1 < cleaned.size(); ++i) {
+        result.emplace_back(
+            std::make_tuple(cleaned[0], cleaned[i], cleaned[i + 1]));
+    }
+    return result;
+}
+
+// ------------------------------------------------------------------
+
 std::vector<Triangle> Triangle_group::compute_visible_mesh_from_outside()
     const {
     std::vector<Triangle> visible_mesh;
@@ -927,16 +1062,157 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     if (input_triangles.empty())
         return {};
 
+    // =====================================================================
+    // Phase 0: 精确锥体裁剪 — 用每个三角形与 center 构成的三面锥去切割
+    //          被它遮挡的更远三角形，保留锥体外部（未遮挡区域）
+    // =====================================================================
+    std::vector<Triangle> fragments = input_triangles;
+    std::vector<int> frag_src(input_triangles.size());
+    std::iota(frag_src.begin(), frag_src.end(), 0);
+    std::vector<float> src_depths;
+    src_depths.reserve(input_triangles.size());
+    for (const auto& tri : input_triangles) {
+        src_depths.push_back((tri_centroid(tri) - center).length());
+    }
+
+    // 按原始三角形重心深度升序排序（近的优先处理）
+    std::vector<int> order(input_triangles.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        return src_depths[a] < src_depths[b];
+    });
+
+    std::vector<float> frag_depths = src_depths;
+
+    // 检测 center 是否在 mesh 内部：沿 +X 方向发射射线，数交点
+    bool center_inside = false;
+    {
+        vec3f ray_dir(1.0f, 0.0f, 0.0f);
+        float ray_max = 0.0f;
+        for (const auto& tri : input_triangles) {
+            for (const auto& v : {std::get<0>(tri), std::get<1>(tri),
+                                  std::get<2>(tri)}) {
+                ray_max = std::max(ray_max, std::abs(v.x - center.x));
+            }
+        }
+        ray_max += 1.0f;
+        std::vector<float> ts;
+        for (const auto& tri : input_triangles) {
+            vec3f hit;
+            if (ray_triangle_intersect(center, ray_dir,
+                                       std::get<0>(tri), std::get<1>(tri),
+                                       std::get<2>(tri), hit)) {
+                float t = (hit - center).dot(ray_dir);
+                if (t > 1e-6f && t < ray_max) {
+                    ts.push_back(t);
+                }
+            }
+        }
+        std::sort(ts.begin(), ts.end());
+        int intersect_count = 0;
+        for (size_t i = 0; i < ts.size(); ++i) {
+            if (i == 0 || std::abs(ts[i] - ts[i - 1]) > 1e-4f) {
+                ++intersect_count;
+            }
+        }
+        center_inside = (intersect_count % 2 == 1);
+    }
+
+    // 碎片数量上限，防止内存爆炸
+    const size_t MAX_FRAGMENTS =
+        std::max(input_triangles.size() * 20, size_t(10000));
+
+    // 若 center 在内部，不需要锥体裁剪（所有面都可见，无遮挡）
+    if (!center_inside) {
+        for (int src_idx : order) {
+        if (fragments.size() > MAX_FRAGMENTS)
+            break;
+
+        const auto& src_tri = input_triangles[src_idx];
+        ConePlanes cone = build_cone_planes(src_tri, center);
+
+        // 跳过退化锥体（三角形与 center 近似共面）
+        if (std::abs(cone.s01) < 1e-8f && std::abs(cone.s12) < 1e-8f &&
+            std::abs(cone.s20) < 1e-8f) {
+            continue;
+        }
+
+        vec3f cone_min, cone_max;
+        cone_aabb(src_tri, center, cone_min, cone_max);
+
+        std::vector<Triangle> new_fragments;
+        std::vector<int> new_frag_src;
+        std::vector<float> new_frag_depths;
+        new_fragments.reserve(fragments.size());
+        new_frag_src.reserve(fragments.size());
+        new_frag_depths.reserve(fragments.size());
+
+        for (size_t j = 0; j < fragments.size(); ++j) {
+            // 不切割自己
+            if (frag_src[j] == src_idx) {
+                new_fragments.push_back(fragments[j]);
+                new_frag_src.push_back(frag_src[j]);
+                new_frag_depths.push_back(frag_depths[j]);
+                continue;
+            }
+
+            // AABB 快速排斥
+            vec3f fmin, fmax;
+            tri_aabb(fragments[j], fmin, fmax);
+            if (fmax.x < cone_min.x || fmin.x > cone_max.x ||
+                fmax.y < cone_min.y || fmin.y > cone_max.y ||
+                fmax.z < cone_min.z || fmin.z > cone_max.z) {
+                new_fragments.push_back(fragments[j]);
+                new_frag_src.push_back(frag_src[j]);
+                new_frag_depths.push_back(frag_depths[j]);
+                continue;
+            }
+
+            // 碎片来自比 src 更近的原始三角形，不切割
+            if (frag_depths[j] < src_depths[src_idx] - 1e-4f) {
+                new_fragments.push_back(fragments[j]);
+                new_frag_src.push_back(frag_src[j]);
+                new_frag_depths.push_back(frag_depths[j]);
+                continue;
+            }
+
+            // 精确裁剪：保留锥体外部；若外部为空则保留原片
+            //（让 silhouette 步骤处理完全遮挡的情况）
+            auto clipped = clip_triangle_by_cone(fragments[j], cone, center);
+            if (clipped.empty()) {
+                new_fragments.push_back(fragments[j]);
+                new_frag_src.push_back(frag_src[j]);
+                new_frag_depths.push_back(frag_depths[j]);
+            } else {
+                for (const auto& ct : clipped) {
+                    new_fragments.push_back(ct);
+                    new_frag_src.push_back(frag_src[j]);
+                    new_frag_depths.push_back(
+                        (tri_centroid(ct) - center).length());
+                }
+            }
+        }
+
+        fragments = std::move(new_fragments);
+        frag_src = std::move(new_frag_src);
+        frag_depths = std::move(new_frag_depths);
+    }
+    }  // if (!center_inside)
+
+    // =====================================================================
+    // Phase 1+: 基于裁剪后的碎片运行 silhouette 算法
+    // =====================================================================
+
     // 1. 构建 DBVT 加速射线查询
     using BVH = sinriv::kigstudio::dbvt3d<float, int>;
     BVH bvh;
     std::vector<BVH::AABB*> aabbs;
     std::vector<int> indices;
-    aabbs.reserve(input_triangles.size());
-    indices.reserve(input_triangles.size());
+    aabbs.reserve(fragments.size());
+    indices.reserve(fragments.size());
 
-    for (int i = 0; i < static_cast<int>(input_triangles.size()); ++i) {
-        const auto& tri = input_triangles[i];
+    for (int i = 0; i < static_cast<int>(fragments.size()); ++i) {
+        const auto& tri = fragments[i];
         const auto& v0 = std::get<0>(tri);
         const auto& v1 = std::get<1>(tri);
         const auto& v2 = std::get<2>(tri);
@@ -954,7 +1230,7 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
 
     // 2. 计算 mesh 最大范围，用于确定射线长度
     float max_dist = 0.0f;
-    for (const auto& tri : input_triangles) {
+    for (const auto& tri : fragments) {
         for (const auto& v :
              {std::get<0>(tri), std::get<1>(tri), std::get<2>(tri)}) {
             max_dist = std::max(max_dist, (v - center).length());
@@ -962,11 +1238,11 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     }
     max_dist = std::max(max_dist, 1.0f) * 3.0f;
 
-    // 3. 对每个三角形发射射线，找最远交点
-    std::vector<int> visible_flags(input_triangles.size(), 0);
+    // 3. 对每个碎片发射射线，找最远交点
+    std::vector<int> visible_flags(fragments.size(), 0);
 
-    for (int i = 0; i < static_cast<int>(input_triangles.size()); ++i) {
-        const auto& tri = input_triangles[i];
+    for (int i = 0; i < static_cast<int>(fragments.size()); ++i) {
+        const auto& tri = fragments[i];
         const auto& v0 = std::get<0>(tri);
         const auto& v1 = std::get<1>(tri);
         const auto& v2 = std::get<2>(tri);
@@ -984,9 +1260,9 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
             sinriv::kigstudio::ray<float>(center, center + dir_n * max_dist),
             [&](const BVH::AABB* node) {
                 int idx = *node->data;
-                if (idx < 0 || idx >= static_cast<int>(input_triangles.size()))
+                if (idx < 0 || idx >= static_cast<int>(fragments.size()))
                     return;
-                const auto& t2 = input_triangles[idx];
+                const auto& t2 = fragments[idx];
                 vec3f hit;
                 if (ray_triangle_intersect(center, dir_n,
                                            std::get<0>(t2), std::get<1>(t2),
@@ -1004,11 +1280,11 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         }
     }
 
-    // 收集可见三角形
+    // 收集可见碎片
     std::vector<Triangle> visible_tris;
-    for (int i = 0; i < static_cast<int>(input_triangles.size()); ++i) {
+    for (int i = 0; i < static_cast<int>(fragments.size()); ++i) {
         if (visible_flags[i]) {
-            visible_tris.push_back(input_triangles[i]);
+            visible_tris.push_back(fragments[i]);
         }
     }
 
@@ -1021,16 +1297,26 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     }
 
     // 4. 提取边界边（只被一个可见三角形共享的边）
+    // 对顶点做 snap，避免浮点误差导致切割后的相邻碎片产生重叠边界边
     struct EdgeKey {
+        static float snap(float v) {
+            const float SNAP_EPS = 1e-4f;
+            return std::round(v / SNAP_EPS) * SNAP_EPS;
+        }
+        static vec3f snap_vec(const vec3f& v) {
+            return vec3f(snap(v.x), snap(v.y), snap(v.z));
+        }
         vec3f a, b;
         EdgeKey(const vec3f& v0, const vec3f& v1) {
-            if (v0.x < v1.x || (v0.x == v1.x && v0.y < v1.y) ||
-                (v0.x == v1.x && v0.y == v1.y && v0.z < v1.z)) {
-                a = v0;
-                b = v1;
+            vec3f s0 = snap_vec(v0);
+            vec3f s1 = snap_vec(v1);
+            if (s0.x < s1.x || (s0.x == s1.x && s0.y < s1.y) ||
+                (s0.x == s1.x && s0.y == s1.y && s0.z < s1.z)) {
+                a = s0;
+                b = s1;
             } else {
-                a = v1;
-                b = v0;
+                a = s1;
+                b = s0;
             }
         }
         bool operator<(const EdgeKey& o) const {

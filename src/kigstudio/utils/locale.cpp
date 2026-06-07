@@ -230,22 +230,16 @@ void init_locale_strings() {
                       {{"en", "Default"}, {"zh", "默认"}});
     add_locale_string("label.stl_load_mode.sdf",
                       {{"en", "SDF"}, {"zh", "SDF"}});
-    add_locale_string("label.stl_load_mode.conebox",
-                      {{"en", "ConeBox"}, {"zh", "ConeBox"}});
     add_locale_string("label.stl_load_mode.silhouette",
-                      {{"en", "Silhouette"}, {"zh", "轮廓"}});
+                      {{"en", "Silhouette"}, {"zh", "锥化"}});
     add_locale_string("action.browse",
                       {{"en", "Browse..."}, {"zh", "浏览..."}});
-    add_locale_string("label.conebox_auto_center",
-                      {{"en", "Auto Center"}, {"zh", "自动计算中心"}});
-    add_locale_string("label.conebox_center",
-                      {{"en", "Center"}, {"zh", "中心位置"}});
     add_locale_string("label.silhouette_center",
                       {{"en", "Silhouette Center"}, {"zh", "轮廓中心"}});
-    add_locale_string("tooltip.conebox_auto_center",
-                      {{"en", "Automatically calculate the center from the mesh bounding box."},
-                       {"zh", "从网格包围盒自动计算中心。"}});
-
+    add_locale_string("label.show_silhouette_center",
+                      {{"en", "Show Center"}, {"zh", "显示中心点"}});
+    add_locale_string("action.export_source_stl",
+                      {{"en", "Export Source as STL"}, {"zh", "导出源模型为STL"}});
     add_locale_string("menu.export_stl_all",
                       {{"en", "Export All STL"}, {"zh", "全部导出stl"}});
     add_locale_string("tooltip.export_stl_all_no_project",
@@ -590,9 +584,6 @@ void init_locale_strings() {
     add_locale_string("tooltip.stl_load_mode.sdf",
                       {{"en", "Load as signed distance field for improved accuracy."},
                        {"zh", "作为有符号距离场加载，以获得更高精度。"}});
-    add_locale_string("tooltip.stl_load_mode.conebox",
-                      {{"en", "Preprocess with cone-box closed mesh reconstruction."},
-                       {"zh", "使用 ConeBox 封闭网格重建进行预处理。"}});
     add_locale_string("tooltip.stl_load_mode.silhouette",
                       {{"en", "Preprocess with silhouette-based closed mesh reconstruction (keeps farthest faces from center)."},
                        {"zh", "使用基于轮廓的封闭网格重建进行预处理（保留离中心最远的面）。"}});

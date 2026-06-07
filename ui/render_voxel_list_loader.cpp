@@ -80,14 +80,11 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddNumberToObject(obj, "stl_voxel_size", item.stl_voxel_size);
     cJSON_AddNumberToObject(obj, "stl_load_mode", item.stl_load_mode);
     cJSON_AddBoolToObject(obj, "load_as_sdf", item.load_as_sdf);
-    cJSON_AddBoolToObject(obj, "conebox_auto_center",
-                          item.conebox_auto_center);
-    cJSON_AddItemToObject(
-        obj, "conebox_center",
-        sinriv::kigstudio::to_json(item.conebox_center));
     cJSON_AddItemToObject(
         obj, "silhouette_center",
         sinriv::kigstudio::to_json(item.silhouette_center));
+    cJSON_AddBoolToObject(obj, "show_silhouette_center",
+                          item.showSilhouetteCenter);
     cJSON_AddStringToObject(obj, "err_info", item.err_info.c_str());
     cJSON_AddItemToObject(obj, "collision_group",
                           sinriv::kigstudio::to_json(item.collision_group));
@@ -255,25 +252,18 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
     if (load_as_sdf_json) {
         item->load_as_sdf = cJSON_IsTrue(load_as_sdf_json);
     }
-    const cJSON* conebox_auto_center_json =
-        cJSON_GetObjectItem(obj, "conebox_auto_center");
-    if (conebox_auto_center_json) {
-        item->conebox_auto_center =
-            cJSON_IsTrue(conebox_auto_center_json);
-    }
-    const cJSON* conebox_center_json =
-        cJSON_GetObjectItem(obj, "conebox_center");
-    if (conebox_center_json) {
-        item->conebox_center =
-            sinriv::kigstudio::vec3_from_json<sinriv::kigstudio::vec3<float>>(
-                conebox_center_json);
-    }
     const cJSON* silhouette_center_json =
         cJSON_GetObjectItem(obj, "silhouette_center");
     if (silhouette_center_json) {
         item->silhouette_center =
             sinriv::kigstudio::vec3_from_json<sinriv::kigstudio::vec3<float>>(
                 silhouette_center_json);
+    }
+    const cJSON* show_silhouette_center_json =
+        cJSON_GetObjectItem(obj, "show_silhouette_center");
+    if (show_silhouette_center_json) {
+        item->showSilhouetteCenter =
+            cJSON_IsTrue(show_silhouette_center_json);
     }
     item->err_info = cJSON_GetObjectItem(obj, "err_info")->valuestring;
     item->collision_group = sinriv::kigstudio::from_json_collision_group(
