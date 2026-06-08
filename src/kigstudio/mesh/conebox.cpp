@@ -672,6 +672,47 @@ static bool ray_triangle_intersect(const vec3f& origin,
     return true;
 }
 
+// 判断点 p 是否在封闭 mesh 内部（三条射线投票，避免单条射线恰好过边/顶点）
+static bool is_inside_mesh(const vec3f& p,
+                           const std::vector<Triangle>& tris,
+                           float unique_eps = 1e-4f) {
+    const vec3f dirs[3] = {
+        vec3f(1.0f, 0.0f, 0.0f),
+        vec3f(0.0f, 1.0f, 0.0f),
+        vec3f(0.0f, 0.0f, 1.0f)
+    };
+    int inside_votes = 0;
+
+    for (int axis = 0; axis < 3; ++axis) {
+        const vec3f& dir = dirs[axis];
+        std::vector<float> ts;
+        ts.reserve(tris.size());
+        for (const auto& tri : tris) {
+            vec3f hit;
+            if (ray_triangle_intersect(p, dir,
+                                       std::get<0>(tri), std::get<1>(tri),
+                                       std::get<2>(tri), hit)) {
+                float t = (hit - p).dot(dir);
+                if (t > unique_eps) {
+                    ts.push_back(t);
+                }
+            }
+        }
+        std::sort(ts.begin(), ts.end());
+        int intersect_count = 0;
+        for (size_t i = 0; i < ts.size(); ++i) {
+            if (i == 0 || std::abs(ts[i] - ts[i - 1]) > unique_eps) {
+                ++intersect_count;
+            }
+        }
+        if (intersect_count % 2 == 1) {
+            ++inside_votes;
+        }
+    }
+    // 至少 2 轴认定为 inside 才算内部（与 sdf_mesh.cpp 一致）
+    return inside_votes >= 2;
+}
+
 struct TriangleHash {
     // 使用空间网格量化，避免浮点误差导致相同顶点哈希不同
     static constexpr float EPS = 1e-5f;
@@ -1346,14 +1387,19 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         }
     }
 
-    // 5. 调整可见面法线方向：使法线背离 center（从外部可见）
+    // 5. 调整可见面法线方向：使法线朝外（支持凹体，使用三条射线投票）
     for (auto& tri : visible_tris) {
         auto& v0 = std::get<0>(tri);
         auto& v1 = std::get<1>(tri);
         auto& v2 = std::get<2>(tri);
         vec3f n = (v1 - v0).cross(v2 - v0);
+        float n_len = n.length();
+        if (n_len < 1e-12f)
+            continue;
+        vec3f n_unit = n * (1.0f / n_len);
         vec3f centroid = (v0 + v1 + v2) * (1.0f / 3.0f);
-        if (n.dot(centroid - center) < 0.0f) {
+        vec3f p_test = centroid + n_unit * 1e-3f;
+        if (is_inside_mesh(p_test, input_triangles)) {
             std::swap(v1, v2);
         }
     }

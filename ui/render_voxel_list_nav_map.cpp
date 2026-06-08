@@ -16,7 +16,9 @@ void RenderVoxelList::render_nav_map() {
     std::lock_guard<std::mutex> lock(locker);
     ImGui::SetNextWindowPos(ImVec2(0.f, (float)menu_height), ImGuiCond_Always,
                             ImVec2(0.0f, 0.0f));
-    ImGui::SetNextWindowSize(ImVec2(300, 600), ImGuiCond_Once);
+    float nav_map_height =
+        (float)window_height - (float)menu_height - item_status_height;
+    ImGui::SetNextWindowSize(ImVec2(300, nav_map_height), ImGuiCond_Once);
     if (!ImGui::Begin(get_locale_cstr("window.nav_node_map"))) {
         ImGui::End();
         return;

@@ -717,6 +717,11 @@ void RenderVoxelList::load_stl(std::string filename,
         source_triangles = std::move(raw_triangles);
     }
 
+    // Surface-only mode does not support SDF
+    if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+        load_as_sdf = false;
+    }
+
     for (const auto& tri : source_triangles) {
         bvh.insert(tri);
         kdtree_points.push_back({static_cast<double>(std::get<0>(tri).x),
@@ -738,72 +743,87 @@ void RenderVoxelList::load_stl(std::string filename,
     voxel_data.voxel_size.x = voxel_size;
     voxel_data.voxel_size.y = voxel_size;
     voxel_data.voxel_size.z = voxel_size;
-    voxel_data.global_position.x = bvh.global_boundBox_min.x;
-    voxel_data.global_position.y = bvh.global_boundBox_min.y;
-    voxel_data.global_position.z = bvh.global_boundBox_min.z;
 
-    float minx = floor(bvh.global_boundBox_min.x / voxel_size) * voxel_size;
-    float miny = floor(bvh.global_boundBox_min.y / voxel_size) * voxel_size;
-    float minz = floor(bvh.global_boundBox_min.z / voxel_size) * voxel_size;
-    float maxx = ceil(bvh.global_boundBox_max.x / voxel_size) * voxel_size;
-    float maxy = ceil(bvh.global_boundBox_max.y / voxel_size) * voxel_size;
-    float maxz = ceil(bvh.global_boundBox_max.z / voxel_size) * voxel_size;
-    int num_block_x = static_cast<int>(floor((maxx - minx) / voxel_size)) + 1;
-    int num_block_y = static_cast<int>(floor((maxy - miny) / voxel_size)) + 1;
-    int num_block_z = static_cast<int>(floor((maxz - minz) / voxel_size)) + 1;
-    size_t total_rays = static_cast<size_t>(num_block_y) * num_block_z +
-                        static_cast<size_t>(num_block_x) * num_block_z +
-                        static_cast<size_t>(num_block_x) * num_block_y;
-    if (total_rays == 0)
-        total_rays = 1;
+    if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+        voxel_data.global_position.x = -0.5f * voxel_size;
+        voxel_data.global_position.y = -0.5f * voxel_size;
+        voxel_data.global_position.z = -0.5f * voxel_size;
+        float precision = voxel_size / 10.0f;
+        for (const auto& tri : source_triangles) {
+            for (auto point : sinriv::kigstudio::voxel::draw_triangle(
+                     tri, voxel_size, voxel_size, voxel_size, precision)) {
+                voxel_data.insert(voxel_data.worldToVoxel(point));
+            }
+        }
+        queue_progress = 0.50f;
+    } else {
+        voxel_data.global_position.x = bvh.global_boundBox_min.x;
+        voxel_data.global_position.y = bvh.global_boundBox_min.y;
+        voxel_data.global_position.z = bvh.global_boundBox_min.z;
 
-    std::mutex bvh_locker;
-    std::atomic<size_t> callback_count{0};
+        float minx = floor(bvh.global_boundBox_min.x / voxel_size) * voxel_size;
+        float miny = floor(bvh.global_boundBox_min.y / voxel_size) * voxel_size;
+        float minz = floor(bvh.global_boundBox_min.z / voxel_size) * voxel_size;
+        float maxx = ceil(bvh.global_boundBox_max.x / voxel_size) * voxel_size;
+        float maxy = ceil(bvh.global_boundBox_max.y / voxel_size) * voxel_size;
+        float maxz = ceil(bvh.global_boundBox_max.z / voxel_size) * voxel_size;
+        int num_block_x = static_cast<int>(floor((maxx - minx) / voxel_size)) + 1;
+        int num_block_y = static_cast<int>(floor((maxy - miny) / voxel_size)) + 1;
+        int num_block_z = static_cast<int>(floor((maxz - minz) / voxel_size)) + 1;
+        size_t total_rays = static_cast<size_t>(num_block_y) * num_block_z +
+                            static_cast<size_t>(num_block_x) * num_block_z +
+                            static_cast<size_t>(num_block_x) * num_block_y;
+        if (total_rays == 0)
+            total_rays = 1;
 
-    auto voxel_callback = [&](auto start, auto end) {
-        int start_x = static_cast<int>(
-            std::round((start.x - voxel_data.global_position.x) / voxel_size));
-        int start_y = static_cast<int>(
-            std::round((start.y - voxel_data.global_position.y) / voxel_size));
-        int start_z = static_cast<int>(
-            std::round((start.z - voxel_data.global_position.z) / voxel_size));
-        int end_x = static_cast<int>(
-            std::round((end.x - voxel_data.global_position.x) / voxel_size));
-        int end_y = static_cast<int>(
-            std::round((end.y - voxel_data.global_position.y) / voxel_size));
-        int end_z = static_cast<int>(
-            std::round((end.z - voxel_data.global_position.z) / voxel_size));
+        std::mutex bvh_locker;
+        std::atomic<size_t> callback_count{0};
 
-        bvh_locker.lock();
-        for (int i = start_x; i <= end_x; ++i) {
-            for (int j = start_y; j <= end_y; ++j) {
-                for (int k = start_z; k <= end_z; ++k) {
-                    if (i >= 0 && j >= 0 && k >= 0) {
-                        voxel_data.insert(i, j, k);
+        auto voxel_callback = [&](auto start, auto end) {
+            int start_x = static_cast<int>(
+                std::round((start.x - voxel_data.global_position.x) / voxel_size));
+            int start_y = static_cast<int>(
+                std::round((start.y - voxel_data.global_position.y) / voxel_size));
+            int start_z = static_cast<int>(
+                std::round((start.z - voxel_data.global_position.z) / voxel_size));
+            int end_x = static_cast<int>(
+                std::round((end.x - voxel_data.global_position.x) / voxel_size));
+            int end_y = static_cast<int>(
+                std::round((end.y - voxel_data.global_position.y) / voxel_size));
+            int end_z = static_cast<int>(
+                std::round((end.z - voxel_data.global_position.z) / voxel_size));
+
+            bvh_locker.lock();
+            for (int i = start_x; i <= end_x; ++i) {
+                for (int j = start_y; j <= end_y; ++j) {
+                    for (int k = start_z; k <= end_z; ++k) {
+                        if (i >= 0 && j >= 0 && k >= 0) {
+                            voxel_data.insert(i, j, k);
+                        }
                     }
                 }
             }
-        }
-        bvh_locker.unlock();
+            bvh_locker.unlock();
 
-        size_t cnt = callback_count.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (cnt % 100 == 0) {
-            float p =
-                0.15f +
-                0.35f * std::min(1.0f, static_cast<float>(cnt) /
-                                           static_cast<float>(total_rays * 2));
-            queue_progress = p;
-        }
-    };
+            size_t cnt = callback_count.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (cnt % 100 == 0) {
+                float p =
+                    0.15f +
+                    0.35f * std::min(1.0f, static_cast<float>(cnt) /
+                                               static_cast<float>(total_rays * 2));
+                queue_progress = p;
+            }
+        };
 
-    for (auto face :
-         {triangle_bvh<float>::voxel_face_X, triangle_bvh<float>::voxel_face_Y,
-          triangle_bvh<float>::voxel_face_Z}) {
-        bvh.getSolidByFace(voxel_size, voxel_size, voxel_size, face,
-                           voxel_callback);
+        for (auto face :
+             {triangle_bvh<float>::voxel_face_X, triangle_bvh<float>::voxel_face_Y,
+              triangle_bvh<float>::voxel_face_Z}) {
+            bvh.getSolidByFace(voxel_size, voxel_size, voxel_size, face,
+                               voxel_callback);
+        }
+
+        queue_progress = 0.50f;
     }
-
-    queue_progress = 0.50f;
 
     // Phase 3: Generate chunked mesh
     setQueueStatus("Generating mesh...");

@@ -141,6 +141,7 @@ void add_collision_geometry(CollisionGroup& group, int type_index);
 enum class StlLoadMode : int {
     DEFAULT = 0,
     SILHOUETTE = 1,
+    SURFACE_ONLY = 2,
     COUNT
 };
 
@@ -178,12 +179,22 @@ struct MarkedVoxelsSnapshot {
 };
 
 class RenderVoxelList {
-    // 用于显示一系列窗口
-    // 每个子对象由以下部分构成：
-    // * 一个mesh
-    // * 一个体素
-    // * 一个碰撞体，一个空间分割平面（二者只能启动一个）
-    // * 两个输出结果（被分割为两半）
+    /*
+     * 用于显示一系列窗口
+     * 每个子对象由以下部分构成：
+     * 一个mesh
+     * 一个体素
+     * 一个碰撞体，一个空间分割平面（二者只能启动一个）
+     * 两个输出结果（被分割为两半）
+     * 
+     * TODO:
+     * 允许添加空白根节点，根节点拥有专属的编辑模式：
+     *   合并：合并多个节点，每个节点可以调整位置、旋转，此操作可能导致大幅度调整递归分割算法。只有体素没有sdf的节点使用此模式可能降低质量。
+     *   快照：保存某个节点的体素、sdf、mesh，不会因为关联的节点变化而变化（有更新按钮）
+     * 加入分割树复制功能
+     * 加载stl流程化，不再只允许使用单一模式（方式未确定）
+    */
+
     std::atomic<int> current_id = 0;
     std::mutex locker;
 
@@ -484,6 +495,7 @@ class RenderVoxelList {
     int window_width;
     int window_height;
     int menu_height = 0;
+    float item_status_height = 0;
 
     bool showMesh = true;
     bool showExportedMesh = true;

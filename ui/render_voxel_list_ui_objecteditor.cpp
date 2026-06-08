@@ -244,12 +244,17 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
     const char* load_mode_names[] = {
         get_locale_cstr("label.stl_load_mode.default"),
         get_locale_cstr("label.stl_load_mode.silhouette"),
+        get_locale_cstr("label.stl_load_mode.surface_only"),
     };
     int load_mode = item.stl_load_mode;
     if (ImGui::Combo(get_locale_cstr("label.stl_load_mode"), &load_mode,
                      load_mode_names, IM_ARRAYSIZE(load_mode_names))) {
         push_undo_now(item.id, std::nullopt, "STL Load Mode");
         item.stl_load_mode = load_mode;
+        if (item.stl_load_mode ==
+            static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+            item.load_as_sdf = false;
+        }
     }
     if (ImGui::IsItemHovered()) {
         const char* tooltip_key = nullptr;
@@ -259,6 +264,9 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 break;
             case static_cast<int>(StlLoadMode::SILHOUETTE):
                 tooltip_key = "tooltip.stl_load_mode.silhouette";
+                break;
+            case static_cast<int>(StlLoadMode::SURFACE_ONLY):
+                tooltip_key = "tooltip.stl_load_mode.surface_only";
                 break;
         }
         if (tooltip_key) {
@@ -278,13 +286,16 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
     }
 
     // SDF 勾选框
-    bool load_as_sdf = item.load_as_sdf;
-    if (ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"), &load_as_sdf)) {
-        push_undo_now(item.id, std::nullopt, "Load as SDF");
-        item.load_as_sdf = load_as_sdf;
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
+    if (item.stl_load_mode !=
+        static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+        bool load_as_sdf = item.load_as_sdf;
+        if (ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"), &load_as_sdf)) {
+            push_undo_now(item.id, std::nullopt, "Load as SDF");
+            item.load_as_sdf = load_as_sdf;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
+        }
     }
 
     // Voxel Size

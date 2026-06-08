@@ -19,7 +19,7 @@ namespace sinriv::ui::render {
 
 void RenderVoxelList::render_ui() {
     processThumbnails();
-    float item_status_height = 0;
+    item_status_height = 0;
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.f);
     if (ImGui::Begin(get_locale_cstr("window.stl_loader"), nullptr,
@@ -485,6 +485,7 @@ void RenderVoxelList::render_file_loader() {
             const char* load_mode_names[] = {
                 get_locale_cstr("label.stl_load_mode.default"),
                 get_locale_cstr("label.stl_load_mode.silhouette"),
+                get_locale_cstr("label.stl_load_mode.surface_only"),
             };
             ImGui::Combo(get_locale_cstr("label.stl_load_mode"),
                          &file_loader_load_mode, load_mode_names,
@@ -498,15 +499,25 @@ void RenderVoxelList::render_file_loader() {
                     case 1:
                         tooltip_key = "tooltip.stl_load_mode.silhouette";
                         break;
+                    case 2:
+                        tooltip_key = "tooltip.stl_load_mode.surface_only";
+                        break;
                 }
                 if (tooltip_key) {
                     ImGui::SetTooltip(get_locale_cstr(tooltip_key));
                 }
             }
-            ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"),
-                            &file_loader_load_as_sdf);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
+            if (file_loader_load_mode ==
+                static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+                file_loader_load_as_sdf = false;
+            }
+            if (file_loader_load_mode !=
+                static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+                ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"),
+                                &file_loader_load_as_sdf);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
+                }
             }
             const float button_size = ImGui::GetFrameHeight();
             ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));

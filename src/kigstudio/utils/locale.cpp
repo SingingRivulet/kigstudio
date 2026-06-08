@@ -290,6 +290,8 @@ void init_locale_strings() {
                       {{"en", "SDF"}, {"zh", "SDF"}});
     add_locale_string("label.stl_load_mode.silhouette",
                       {{"en", "Silhouette"}, {"zh", "锥化"}});
+    add_locale_string("label.stl_load_mode.surface_only",
+                      {{"en", "Surface Only"}, {"zh", "表面体素化"}});
     add_locale_string("action.browse",
                       {{"en", "Browse..."}, {"zh", "浏览..."}});
     add_locale_string("label.silhouette_center",
@@ -680,6 +682,14 @@ void init_locale_strings() {
          {"zh",
           "选择一个中心点，计算每个三角形相对于中心点的锥体的几何，以达到封闭模"
           "型的效果。适用于单层薄片模型（例如用于来源于游戏官模的头发）。"}});
+    add_locale_string(
+        "tooltip.stl_load_mode.surface_only",
+        {{"en",
+          "Only load surface voxels, leaving interior empty. Suitable for thin "
+          "models or when you only care about the surface."},
+         {"zh",
+          "只加载表面体素，内部留空。适用于薄模型或仅关心表面的情况，也可结合“"
+          "内部填充”功能使用。"}});
     add_locale_string(
         "tooltip.render_sdf",
         {{"en",
