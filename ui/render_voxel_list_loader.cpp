@@ -80,6 +80,7 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddNumberToObject(obj, "stl_voxel_size", item.stl_voxel_size);
     cJSON_AddNumberToObject(obj, "stl_load_mode", item.stl_load_mode);
     cJSON_AddBoolToObject(obj, "load_as_sdf", item.load_as_sdf);
+    cJSON_AddBoolToObject(obj, "mesh_only", item.mesh_only);
     cJSON_AddItemToObject(
         obj, "silhouette_center",
         sinriv::kigstudio::to_json(item.silhouette_center));
@@ -251,6 +252,11 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         cJSON_GetObjectItem(obj, "load_as_sdf");
     if (load_as_sdf_json) {
         item->load_as_sdf = cJSON_IsTrue(load_as_sdf_json);
+    }
+    const cJSON* mesh_only_json =
+        cJSON_GetObjectItem(obj, "mesh_only");
+    if (mesh_only_json) {
+        item->mesh_only = cJSON_IsTrue(mesh_only_json);
     }
     const cJSON* silhouette_center_json =
         cJSON_GetObjectItem(obj, "silhouette_center");

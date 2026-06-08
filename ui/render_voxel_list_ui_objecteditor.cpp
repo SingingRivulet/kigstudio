@@ -245,6 +245,7 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         get_locale_cstr("label.stl_load_mode.default"),
         get_locale_cstr("label.stl_load_mode.silhouette"),
         get_locale_cstr("label.stl_load_mode.surface_only"),
+        get_locale_cstr("label.stl_load_mode.mesh_only"),
     };
     int load_mode = item.stl_load_mode;
     if (ImGui::Combo(get_locale_cstr("label.stl_load_mode"), &load_mode,
@@ -252,8 +253,16 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         push_undo_now(item.id, std::nullopt, "STL Load Mode");
         item.stl_load_mode = load_mode;
         if (item.stl_load_mode ==
-            static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+                static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
+            item.stl_load_mode ==
+                static_cast<int>(StlLoadMode::MESH_ONLY)) {
             item.load_as_sdf = false;
+        }
+        if (item.stl_load_mode ==
+            static_cast<int>(StlLoadMode::MESH_ONLY)) {
+            item.mesh_only = true;
+        } else {
+            item.mesh_only = false;
         }
     }
     if (ImGui::IsItemHovered()) {
@@ -267,6 +276,9 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 break;
             case static_cast<int>(StlLoadMode::SURFACE_ONLY):
                 tooltip_key = "tooltip.stl_load_mode.surface_only";
+                break;
+            case static_cast<int>(StlLoadMode::MESH_ONLY):
+                tooltip_key = "tooltip.stl_load_mode.mesh_only";
                 break;
         }
         if (tooltip_key) {
@@ -287,7 +299,9 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
 
     // SDF 勾选框
     if (item.stl_load_mode !=
-        static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+            static_cast<int>(StlLoadMode::SURFACE_ONLY) &&
+        item.stl_load_mode !=
+            static_cast<int>(StlLoadMode::MESH_ONLY)) {
         bool load_as_sdf = item.load_as_sdf;
         if (ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"), &load_as_sdf)) {
             push_undo_now(item.id, std::nullopt, "Load as SDF");
@@ -299,25 +313,27 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
     }
 
     // Voxel Size
-    ImGui::Separator();
-    ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
-    ImGui::SameLine();
-    const float button_size = ImGui::GetFrameHeight();
-    if (ImGui::Button("-##voxelsize", ImVec2(button_size, 0))) {
-        auto tmp = item.stl_voxel_size / 2.0f;
-        if (tmp >= 0.0001f) {
-            item.stl_voxel_size = tmp;
+    if (!item.mesh_only) {
+        ImGui::Separator();
+        ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
+        ImGui::SameLine();
+        const float button_size = ImGui::GetFrameHeight();
+        if (ImGui::Button("-##voxelsize", ImVec2(button_size, 0))) {
+            auto tmp = item.stl_voxel_size / 2.0f;
+            if (tmp >= 0.0001f) {
+                item.stl_voxel_size = tmp;
+            }
         }
-    }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(80.0f);
-    ImGui::DragFloat("##VoxelSize", &item.stl_voxel_size, 0.1f, 0.0f, 0.0f,
-                     "%.4f");
-    ImGui::SameLine();
-    if (ImGui::Button("+##voxelsize", ImVec2(button_size, 0))) {
-        item.stl_voxel_size = item.stl_voxel_size * 2.0f;
-        if (item.stl_voxel_size > 1000.0f) {
-            item.stl_voxel_size = 1000.0f;
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.0f);
+        ImGui::DragFloat("##VoxelSize", &item.stl_voxel_size, 0.1f, 0.0f, 0.0f,
+                         "%.4f");
+        ImGui::SameLine();
+        if (ImGui::Button("+##voxelsize", ImVec2(button_size, 0))) {
+            item.stl_voxel_size = item.stl_voxel_size * 2.0f;
+            if (item.stl_voxel_size > 1000.0f) {
+                item.stl_voxel_size = 1000.0f;
+            }
         }
     }
 
@@ -507,27 +523,39 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
     ImGui::Checkbox(get_locale_cstr("label.auto_segment_update"),
                     &item.auto_segment_update);
 
-    const char* segment_mode_names[] = {
-        get_locale_cstr("mode.collision"),
-        get_locale_cstr("mode.plane"),
-        get_locale_cstr("mode.concave_cone"),
-        get_locale_cstr("mode.split_disconnected"),
-        get_locale_cstr("mode.neighbor"),
-        get_locale_cstr("mode.fill_interior"),
-        get_locale_cstr("mode.chain"),
-        get_locale_cstr("mode.sdf_node_split")};
-    const enum RenderVoxelItem::SegmentMode segment_modes[] = {
-        RenderVoxelItem::COLLISION,    RenderVoxelItem::PLANE,
-        RenderVoxelItem::CONCAVE_CONE, RenderVoxelItem::SPLIT_DISCONNECTED,
-        RenderVoxelItem::NEIGHBOR,     RenderVoxelItem::FILL_INTERIOR,
-        RenderVoxelItem::CHAIN,        RenderVoxelItem::SDF_NODE_SPLIT};
-    int current_segment_mode = segment_modes[(int)item.segment_mode];
-    if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
-                     &current_segment_mode, segment_mode_names,
-                     IM_ARRAYSIZE(segment_mode_names))) {
-        push_undo_now(item.id, std::nullopt,
-                      get_locale_string("label.segment_mode"));
-        item.segment_mode = segment_modes[current_segment_mode];
+    if (item.mesh_only) {
+        if (item.segment_mode != RenderVoxelItem::PLANE) {
+            item.segment_mode = RenderVoxelItem::PLANE;
+        }
+        const char* plane_mode_name = get_locale_cstr("mode.plane");
+        int plane_mode = RenderVoxelItem::PLANE;
+        ImGui::BeginDisabled(true);
+        ImGui::Combo(get_locale_cstr("label.segment_mode"), &plane_mode,
+                     &plane_mode_name, 1);
+        ImGui::EndDisabled();
+    } else {
+        const char* segment_mode_names[] = {
+            get_locale_cstr("mode.collision"),
+            get_locale_cstr("mode.plane"),
+            get_locale_cstr("mode.concave_cone"),
+            get_locale_cstr("mode.split_disconnected"),
+            get_locale_cstr("mode.neighbor"),
+            get_locale_cstr("mode.fill_interior"),
+            get_locale_cstr("mode.chain"),
+            get_locale_cstr("mode.sdf_node_split")};
+        const enum RenderVoxelItem::SegmentMode segment_modes[] = {
+            RenderVoxelItem::COLLISION,    RenderVoxelItem::PLANE,
+            RenderVoxelItem::CONCAVE_CONE, RenderVoxelItem::SPLIT_DISCONNECTED,
+            RenderVoxelItem::NEIGHBOR,     RenderVoxelItem::FILL_INTERIOR,
+            RenderVoxelItem::CHAIN,        RenderVoxelItem::SDF_NODE_SPLIT};
+        int current_segment_mode = segment_modes[(int)item.segment_mode];
+        if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
+                         &current_segment_mode, segment_mode_names,
+                         IM_ARRAYSIZE(segment_mode_names))) {
+            push_undo_now(item.id, std::nullopt,
+                          get_locale_string("label.segment_mode"));
+            item.segment_mode = segment_modes[current_segment_mode];
+        }
     }
     ImGui::SameLine();
     ImGui::TextDisabled("(?)");

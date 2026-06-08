@@ -28,6 +28,11 @@ void RenderVoxelList::render_ui() {
                          ImGuiWindowFlags_NoBringToFrontOnFocus)) {
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu(get_locale_cstr("menu.file"))) {
+                if (ImGui::MenuItem(get_locale_cstr("menu.new_node"))) {
+                    auto item = create_item();
+                    setRenderId(item->id);
+                }
+                ImGui::Separator();
                 if (ImGui::BeginMenu(get_locale_cstr("menu.open_stl"))) {
                     if (ImGui::MenuItem(get_locale_cstr("menu.open_stl"))) {
                         show_file_loader = true;
@@ -486,6 +491,7 @@ void RenderVoxelList::render_file_loader() {
                 get_locale_cstr("label.stl_load_mode.default"),
                 get_locale_cstr("label.stl_load_mode.silhouette"),
                 get_locale_cstr("label.stl_load_mode.surface_only"),
+                get_locale_cstr("label.stl_load_mode.mesh_only"),
             };
             ImGui::Combo(get_locale_cstr("label.stl_load_mode"),
                          &file_loader_load_mode, load_mode_names,
@@ -502,43 +508,53 @@ void RenderVoxelList::render_file_loader() {
                     case 2:
                         tooltip_key = "tooltip.stl_load_mode.surface_only";
                         break;
+                    case 3:
+                        tooltip_key = "tooltip.stl_load_mode.mesh_only";
+                        break;
                 }
                 if (tooltip_key) {
                     ImGui::SetTooltip(get_locale_cstr(tooltip_key));
                 }
             }
             if (file_loader_load_mode ==
-                static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+                    static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
+                file_loader_load_mode ==
+                    static_cast<int>(StlLoadMode::MESH_ONLY)) {
                 file_loader_load_as_sdf = false;
             }
             if (file_loader_load_mode !=
-                static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+                    static_cast<int>(StlLoadMode::SURFACE_ONLY) &&
+                file_loader_load_mode !=
+                    static_cast<int>(StlLoadMode::MESH_ONLY)) {
                 ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"),
                                 &file_loader_load_as_sdf);
                 if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
                 }
             }
-            const float button_size = ImGui::GetFrameHeight();
-            ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
-            ImGui::SameLine();
-            if (ImGui::Button("-", ImVec2(button_size, 0))) {
-                auto voxel_size_tmp = voxel_size / 2.0f;
-                if (voxel_size_tmp >= 0.0001f) {
-                    voxel_size = voxel_size_tmp;
+            if (file_loader_load_mode !=
+                static_cast<int>(StlLoadMode::MESH_ONLY)) {
+                const float button_size = ImGui::GetFrameHeight();
+                ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
+                ImGui::SameLine();
+                if (ImGui::Button("-", ImVec2(button_size, 0))) {
+                    auto voxel_size_tmp = voxel_size / 2.0f;
+                    if (voxel_size_tmp >= 0.0001f) {
+                        voxel_size = voxel_size_tmp;
+                    }
                 }
-            }
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(80.0f);
-            ImGui::BeginDisabled(true);
-            ImGui::DragFloat("##Voxel Size", &voxel_size, 0.1f, 0.0f, 0.0f,
-                             "%.4f");
-            ImGui::EndDisabled();
-            ImGui::SameLine();
-            if (ImGui::Button("+", ImVec2(button_size, 0))) {
-                voxel_size = voxel_size * 2.0f;
-                if (voxel_size > 1000.0f) {
-                    voxel_size = 1000.0f;
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(80.0f);
+                ImGui::BeginDisabled(true);
+                ImGui::DragFloat("##Voxel Size", &voxel_size, 0.1f, 0.0f, 0.0f,
+                                 "%.4f");
+                ImGui::EndDisabled();
+                ImGui::SameLine();
+                if (ImGui::Button("+", ImVec2(button_size, 0))) {
+                    voxel_size = voxel_size * 2.0f;
+                    if (voxel_size > 1000.0f) {
+                        voxel_size = 1000.0f;
+                    }
                 }
             }
             ImGui::BeginDisabled(stl_file_path.empty());

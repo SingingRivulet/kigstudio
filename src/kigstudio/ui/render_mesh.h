@@ -375,6 +375,7 @@ namespace sinriv::ui::render {
             return mesh_;
         }
 
+        bool cull_backface = true;
         void renderGBuffer(const float* transform, RenderMeshShader & shader, bool exclude_from_tint = false) {
             if (!layout_initialized_) {
                 mesh_detail::PosNormalVertex_bgfx::init(layout_);
@@ -394,9 +395,13 @@ namespace sinriv::ui::render {
             bgfx::setUniform(shader.u_depth_bias_, depth_bias_vec);
             float exclude_vec[4] = {exclude_from_tint ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f};
             bgfx::setUniform(shader.u_exclude_from_tint_, exclude_vec);
-            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
-                           BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
-                           BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA);
+            uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                             BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                             BGFX_STATE_MSAA;
+            if (cull_backface) {
+                state |= BGFX_STATE_CULL_CCW;
+            }
+            bgfx::setState(state);
             bgfx::submit(shader.view_id_, shader.gbuffer_program_);
         }
 

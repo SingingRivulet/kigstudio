@@ -90,6 +90,7 @@ void init_locale_strings() {
                       {{"en", "nav node map"}, {"zh", "导航节点图"}});
 
     add_locale_string("menu.file", {{"en", "File"}, {"zh", "文件"}});
+    add_locale_string("menu.new_node", {{"en", "New Node"}, {"zh", "新建节点"}});
     add_locale_string("menu.view", {{"en", "View"}, {"zh", "视图"}});
     add_locale_string("menu.tools", {{"en", "Tools"}, {"zh", "工具"}});
     add_locale_string("menu.debug", {{"en", "Debug"}, {"zh", "调试"}});
@@ -292,6 +293,8 @@ void init_locale_strings() {
                       {{"en", "Silhouette"}, {"zh", "锥化"}});
     add_locale_string("label.stl_load_mode.surface_only",
                       {{"en", "Surface Only"}, {"zh", "表面体素化"}});
+    add_locale_string("label.stl_load_mode.mesh_only",
+                      {{"en", "Mesh Only"}, {"zh", "仅网格"}});
     add_locale_string("action.browse",
                       {{"en", "Browse..."}, {"zh", "浏览..."}});
     add_locale_string("label.silhouette_center",
@@ -690,6 +693,14 @@ void init_locale_strings() {
          {"zh",
           "只加载表面体素，内部留空。适用于薄模型或仅关心表面的情况，也可结合“"
           "内部填充”功能使用。"}});
+    add_locale_string(
+        "tooltip.stl_load_mode.mesh_only",
+        {{"en",
+          "Load only the mesh geometry without voxelization. Suitable for "
+          "direct mesh editing and plane-based mesh splitting."},
+         {"zh",
+          "仅加载网格几何体，不进行体素化。适用于直接编辑网格和基于平面的网格切"
+          "分。"}});
     add_locale_string(
         "tooltip.render_sdf",
         {{"en",

@@ -13,6 +13,70 @@ namespace sinriv::ui::render {
 namespace {
 using SkeletonPoint = sinriv::kigstudio::voxel::vec3f;
 using SkeletonLine = std::pair<SkeletonPoint, SkeletonPoint>;
+using Triangle = sinriv::kigstudio::voxel::triangle_bvh<float>::triangle;
+
+static std::vector<sinriv::kigstudio::vec3<float>> clip_polygon_by_plane(
+    const std::vector<sinriv::kigstudio::vec3<float>>& poly,
+    const sinriv::kigstudio::vec3<float>& point,
+    const sinriv::kigstudio::vec3<float>& normal,
+    float threshold) {
+    std::vector<sinriv::kigstudio::vec3<float>> out;
+    if (poly.empty()) return out;
+    const float EPS = 1e-5f;
+    for (size_t i = 0; i < poly.size(); ++i) {
+        const auto& curr = poly[i];
+        const auto& next = poly[(i + 1) % poly.size()];
+        float dc = normal.dot(curr - point) - threshold;
+        float dn = normal.dot(next - point) - threshold;
+        bool curr_in = dc >= -EPS;
+        bool next_in = dn >= -EPS;
+        if (curr_in && next_in) {
+            out.push_back(next);
+        } else if (curr_in && !next_in) {
+            float t = dc / (dc - dn);
+            out.push_back(curr + (next - curr) * t);
+        } else if (!curr_in && next_in) {
+            float t = dc / (dc - dn);
+            out.push_back(curr + (next - curr) * t);
+            out.push_back(next);
+        }
+    }
+    return out;
+}
+
+static std::pair<std::vector<Triangle>, std::vector<Triangle>>
+split_triangles_by_plane(
+    const std::vector<Triangle>& triangles,
+    const sinriv::kigstudio::Plane<float>& plane) {
+    std::vector<Triangle> positive;
+    std::vector<Triangle> negative;
+    sinriv::kigstudio::vec3<float> normal(plane.A, plane.B, plane.C);
+    float n_len = normal.length();
+    if (n_len < 1e-12f) {
+        return {triangles, {}};
+    }
+    sinriv::kigstudio::vec3<float> n_unit = normal * (1.0f / n_len);
+    float d = plane.D / n_len;
+    for (const auto& tri : triangles) {
+        std::vector<sinriv::kigstudio::vec3<float>> poly = {
+            std::get<0>(tri), std::get<1>(tri), std::get<2>(tri)};
+        std::vector<sinriv::kigstudio::vec3<float>> pos_poly =
+            clip_polygon_by_plane(poly, sinriv::kigstudio::vec3<float>{0, 0, 0},
+                                  n_unit, -d);
+        std::vector<sinriv::kigstudio::vec3<float>> neg_poly =
+            clip_polygon_by_plane(poly, sinriv::kigstudio::vec3<float>{0, 0, 0},
+                                  -n_unit, d);
+        for (size_t i = 1; i + 1 < pos_poly.size(); ++i) {
+            positive.emplace_back(
+                std::make_tuple(pos_poly[0], pos_poly[i], pos_poly[i + 1]));
+        }
+        for (size_t i = 1; i + 1 < neg_poly.size(); ++i) {
+            negative.emplace_back(
+                std::make_tuple(neg_poly[0], neg_poly[i], neg_poly[i + 1]));
+        }
+    }
+    return {std::move(positive), std::move(negative)};
+}
 
 struct SkeletonPointKey {
     int64_t x = 0;
@@ -399,11 +463,23 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
     std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
                            std::shared_ptr<sinriv::kigstudio::sdf::SDFBase>>>
         results;
+    std::vector<std::vector<Triangle>> mesh_split_results;
     std::cout << "[do_segment] start item=" << index
               << " mode=" << it->second->segment_mode
               << " write_count=" << it->second->write_count << std::endl;
     try {
-        results = it->second->do_segment();
+        if (it->second->mesh_only) {
+            auto split = split_triangles_by_plane(it->second->source_triangles,
+                                                  it->second->plane);
+            mesh_split_results.push_back(std::move(split.first));
+            mesh_split_results.push_back(std::move(split.second));
+            for (size_t i = 0; i < mesh_split_results.size(); ++i) {
+                sinriv::kigstudio::voxel::VoxelGrid dummy;
+                results.emplace_back(std::move(dummy), nullptr);
+            }
+        } else {
+            results = it->second->do_segment();
+        }
         queue_progress = 0.7f;
     } catch (const std::exception& e) {
         std::cerr << "[do_segment] exception: " << e.what() << std::endl;
@@ -502,6 +578,14 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
         }
         if (it->second->segment_mode == RenderVoxelItem::NEIGHBOR) {
             new_item->neighbor_max_distance = it->second->neighbor_max_distance;
+        }
+        if (it->second->mesh_only && i < mesh_split_results.size()) {
+            new_item->mesh_only = true;
+            new_item->source_triangles = std::move(mesh_split_results[i]);
+            if (!new_item->source_triangles.empty()) {
+                new_item->mesh_renderer.loadGeometry(
+                    triangle_generator_with_normals(new_item->source_triangles));
+            }
         }
         auto ptr = new_item.get();
         result_ptrs.push_back(ptr);
@@ -717,8 +801,9 @@ void RenderVoxelList::load_stl(std::string filename,
         source_triangles = std::move(raw_triangles);
     }
 
-    // Surface-only mode does not support SDF
-    if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+    // Surface-only and mesh-only modes do not support SDF
+    if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
+        load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
         load_as_sdf = false;
     }
 
@@ -755,6 +840,9 @@ void RenderVoxelList::load_stl(std::string filename,
                 voxel_data.insert(voxel_data.worldToVoxel(point));
             }
         }
+        queue_progress = 0.50f;
+    } else if (load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
+        // Mesh-only mode: skip voxelization entirely
         queue_progress = 0.50f;
     } else {
         voxel_data.global_position.x = bvh.global_boundBox_min.x;
@@ -847,20 +935,27 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.exported_mesh_renderer.clear();
                 item.cached_mesh.clear();
                 item.cached_mesh_dirty = true;
-                item.voxel_renderer.clear();
-                item.voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
-                                                         smooth_normals);
-                item.voxel_grid_data = std::move(voxel_data);
-                if (load_as_sdf) {
-                    auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
-                    if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
-                        mesh_sdf->loadTriangles(source_triangles);
-                    } else {
-                        mesh_sdf->loadSTL(filename);
-                    }
-                    item.sdf_data = std::move(mesh_sdf);
-                } else {
+                if (load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
+                    item.voxel_renderer.clear();
+                    item.voxel_grid_data.chunks.clear();
                     item.sdf_data = nullptr;
+                    item.mesh_only = true;
+                } else {
+                    item.voxel_renderer.clear();
+                    item.voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
+                                                             smooth_normals);
+                    item.voxel_grid_data = std::move(voxel_data);
+                    if (load_as_sdf) {
+                        auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
+                        if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+                            mesh_sdf->loadTriangles(source_triangles);
+                        } else {
+                            mesh_sdf->loadSTL(filename);
+                        }
+                        item.sdf_data = std::move(mesh_sdf);
+                    } else {
+                        item.sdf_data = nullptr;
+                    }
                 }
                 item.source_triangles = std::move(source_triangles);
                 item.stl_path = filename;
@@ -899,19 +994,25 @@ void RenderVoxelList::load_stl(std::string filename,
         item->exported_mesh_renderer.clear();
         item->cached_mesh.clear();
         item->cached_mesh_dirty = true;
-        item->voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
-                                                  smooth_normals);
-        item->voxel_grid_data = std::move(voxel_data);
-        if (load_as_sdf) {
-            auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
-            if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
-                mesh_sdf->loadTriangles(source_triangles);
-            } else {
-                mesh_sdf->loadSTL(filename);
-            }
-            item->sdf_data = std::move(mesh_sdf);
-        } else {
+        if (load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
+            item->mesh_only = true;
+            item->voxel_grid_data.chunks.clear();
             item->sdf_data = nullptr;
+        } else {
+            item->voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
+                                                      smooth_normals);
+            item->voxel_grid_data = std::move(voxel_data);
+            if (load_as_sdf) {
+                auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
+                if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+                    mesh_sdf->loadTriangles(source_triangles);
+                } else {
+                    mesh_sdf->loadSTL(filename);
+                }
+                item->sdf_data = std::move(mesh_sdf);
+            } else {
+                item->sdf_data = nullptr;
+            }
         }
         item->source_triangles = std::move(source_triangles);
         item->thumbnail_dirty = true;

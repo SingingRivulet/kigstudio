@@ -89,7 +89,7 @@ void RenderVoxelList::processThumbnails() {
 
             // 如果 voxel_renderer 为空但有 voxel_grid_data，先生成 mesh（放到
             // queue 线程）
-            if (item->voxel_renderer.empty() &&
+            if (!item->mesh_only && item->voxel_renderer.empty() &&
                 item->voxel_grid_data.num_chunk() > 0) {
                 // 检查是否已有生成结果
                 {
@@ -116,7 +116,12 @@ void RenderVoxelList::processThumbnails() {
                 }
             }
 
-            if (item->voxel_renderer.empty()) {
+            if (item->mesh_only) {
+                if (item->mesh_renderer.empty()) {
+                    thumbnail_queue.pop();
+                    return;
+                }
+            } else if (item->voxel_renderer.empty()) {
                 thumbnail_queue.pop();
                 return;
             }
@@ -126,7 +131,12 @@ void RenderVoxelList::processThumbnails() {
                 return;
             }
 
-            auto [min_b, max_b] = item->voxel_renderer.getLocalBounds();
+            sinriv::kigstudio::vec3<float> min_b, max_b;
+            if (item->mesh_only) {
+                std::tie(min_b, max_b) = item->mesh_renderer.getLocalBounds();
+            } else {
+                std::tie(min_b, max_b) = item->voxel_renderer.getLocalBounds();
+            }
             bx::Vec3 center((min_b.x + max_b.x) * 0.5f,
                             (min_b.y + max_b.y) * 0.5f,
                             (min_b.z + max_b.z) * 0.5f);
@@ -161,7 +171,15 @@ void RenderVoxelList::processThumbnails() {
 
             float identity[16];
             bx::mtxIdentity(identity);
-            item->voxel_renderer.renderGBuffer(identity, *thumb_shader_);
+            if (item->mesh_only) {
+                auto old_color = item->mesh_renderer.getBaseColor();
+                item->mesh_renderer.setBaseColor(0.55f, 0.55f, 0.55f, 1.0f);
+                item->mesh_renderer.renderGBuffer(identity, *thumb_shader_);
+                item->mesh_renderer.setBaseColor(
+                    old_color[0], old_color[1], old_color[2], old_color[3]);
+            } else {
+                item->voxel_renderer.renderGBuffer(identity, *thumb_shader_);
+            }
             bgfx::touch(kThumbView);
 
             // blit 到 item 的持久纹理

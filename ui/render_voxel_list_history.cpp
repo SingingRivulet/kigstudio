@@ -20,6 +20,7 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.stl_path,
             item.stl_load_mode,
             item.load_as_sdf,
+            item.mesh_only,
             item.silhouette_center,
             item.showSilhouetteCenter};
 }
@@ -44,6 +45,7 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.stl_path = snapshot.stl_path;
     item.stl_load_mode = snapshot.stl_load_mode;
     item.load_as_sdf = snapshot.load_as_sdf;
+    item.mesh_only = snapshot.mesh_only;
     item.silhouette_center = snapshot.silhouette_center;
     item.showSilhouetteCenter = snapshot.show_silhouette_center;
     item.joint_wireframe_dirty = true;

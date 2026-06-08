@@ -142,6 +142,7 @@ enum class StlLoadMode : int {
     DEFAULT = 0,
     SILHOUETTE = 1,
     SURFACE_ONLY = 2,
+    MESH_ONLY = 3,
     COUNT
 };
 
@@ -169,6 +170,7 @@ struct CollisionEditorSnapshot {
     std::string stl_path;
     int stl_load_mode = 0;
     bool load_as_sdf = false;
+    bool mesh_only = false;
     vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
     bool show_silhouette_center = false;
 };
@@ -390,6 +392,7 @@ class RenderVoxelList {
         float stl_voxel_size = 1.0f;
         int stl_load_mode = 0;
         bool load_as_sdf = false;
+        bool mesh_only = false;
         vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
         bool showSilhouetteCenter = false;
 
