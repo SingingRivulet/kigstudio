@@ -513,6 +513,7 @@ class RenderVoxelList {
     void render_file_status_tab(RenderVoxelItem& item);
     void render_object_editor_collision_tab_content(RenderVoxelItem& item);
     void render_object_editor_chain_mode(RenderVoxelItem& item);
+    void render_object_editor_sdf_node_split_mode(RenderVoxelItem& item);
     void render_object_editor_voxel_tab_content(RenderVoxelItem& item);
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);

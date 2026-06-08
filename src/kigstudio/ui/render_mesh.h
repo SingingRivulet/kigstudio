@@ -121,6 +121,10 @@ namespace sinriv::ui::render {
                 bgfx::destroy(u_depth_bias_);
                 u_depth_bias_ = BGFX_INVALID_HANDLE;
             }
+            if (bgfx::isValid(u_exclude_from_tint_)) {
+                bgfx::destroy(u_exclude_from_tint_);
+                u_exclude_from_tint_ = BGFX_INVALID_HANDLE;
+            }
         }
 
         inline void ensureUniforms() {
@@ -129,6 +133,9 @@ namespace sinriv::ui::render {
             }
             if (!bgfx::isValid(u_depth_bias_)) {
                 u_depth_bias_ = bgfx::createUniform("u_depthBias", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_exclude_from_tint_)) {
+                u_exclude_from_tint_ = bgfx::createUniform("u_excludeFromTint", bgfx::UniformType::Vec4);
             }
         }
 
@@ -195,6 +202,7 @@ namespace sinriv::ui::render {
         bgfx::ProgramHandle line_program_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_base_color_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_depth_bias_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_exclude_from_tint_ = BGFX_INVALID_HANDLE;
         float identity_mtx_[16]{};
     };
 
@@ -215,6 +223,10 @@ namespace sinriv::ui::render {
 
         inline void setBaseColor(float r, float g, float b, float a = 1.0f) {
             base_color_ = {r, g, b, a};
+        }
+
+        inline std::array<float, 4> getBaseColor() const {
+            return base_color_;
         }
 
         inline void setDepthBias(float bias) {
@@ -363,7 +375,7 @@ namespace sinriv::ui::render {
             return mesh_;
         }
 
-        void renderGBuffer(const float* transform, RenderMeshShader & shader) {
+        void renderGBuffer(const float* transform, RenderMeshShader & shader, bool exclude_from_tint = false) {
             if (!layout_initialized_) {
                 mesh_detail::PosNormalVertex_bgfx::init(layout_);
                 layout_initialized_ = true;
@@ -380,6 +392,8 @@ namespace sinriv::ui::render {
             bgfx::setUniform(shader.u_base_color_, base_color_.data());
             float depth_bias_vec[4] = {depth_bias_, 0.0f, 0.0f, 0.0f};
             bgfx::setUniform(shader.u_depth_bias_, depth_bias_vec);
+            float exclude_vec[4] = {exclude_from_tint ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f};
+            bgfx::setUniform(shader.u_exclude_from_tint_, exclude_vec);
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                            BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
                            BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA);

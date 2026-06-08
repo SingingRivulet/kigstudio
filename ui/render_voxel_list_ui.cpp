@@ -154,7 +154,8 @@ void RenderVoxelList::render_ui() {
             ImGui::RadioButton(get_locale_cstr("label.export_mode_smooth"),
                                &export_stl_mode, 1);
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(get_locale_cstr("tooltip.export_mode_smooth"));
+                ImGui::SetTooltip(
+                    get_locale_cstr("tooltip.export_mode_smooth"));
             }
 
             ImGui::Separator();
@@ -280,20 +281,17 @@ void RenderVoxelList::render_ui() {
         ImGui::Text(get_locale_cstr("label.current_fps"), fps);
         ImGui::SameLine();
         {
-            const char* labels[] = {
-                get_locale_cstr("label.show_mesh"),
-                get_locale_cstr("label.show_exported_mesh"),
-                get_locale_cstr("label.show_collision"),
-                get_locale_cstr("label.show_voxels")};
-            bool* states[] = {
-                &showMesh, &showExportedMesh, &showCollision,
-                &showVoxels};
+            const char* labels[] = {get_locale_cstr("label.show_mesh"),
+                                    get_locale_cstr("label.show_exported_mesh"),
+                                    get_locale_cstr("label.show_collision"),
+                                    get_locale_cstr("label.show_voxels")};
+            bool* states[] = {&showMesh, &showExportedMesh, &showCollision,
+                              &showVoxels};
             float buttonSpacing = ImGui::GetStyle().ItemSpacing.x;
             float totalWidth = 0;
             for (int i = 0; i < 4; ++i) {
                 ImVec2 size = ImGui::CalcTextSize(labels[i]);
-                totalWidth +=
-                    size.x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                totalWidth += size.x + ImGui::GetStyle().FramePadding.x * 2.0f;
                 if (i < 3)
                     totalWidth += buttonSpacing;
             }
@@ -302,25 +300,19 @@ void RenderVoxelList::render_ui() {
                                  ImGui::GetStyle().WindowPadding.x);
             for (int i = 0; i < 4; ++i) {
                 if (*states[i]) {
-                    ImGui::PushStyleColor(
-                        ImGuiCol_Button,
-                        ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
-                    ImGui::PushStyleColor(
-                        ImGuiCol_ButtonHovered,
-                        ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
-                    ImGui::PushStyleColor(
-                        ImGuiCol_ButtonActive,
-                        ImVec4(0.1f, 0.5f, 0.1f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button,
+                                          ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                          ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                                          ImVec4(0.1f, 0.5f, 0.1f, 1.0f));
                 } else {
-                    ImGui::PushStyleColor(
-                        ImGuiCol_Button,
-                        ImVec4(0.4f, 0.4f, 0.4f, 1.0f));
-                    ImGui::PushStyleColor(
-                        ImGuiCol_ButtonHovered,
-                        ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
-                    ImGui::PushStyleColor(
-                        ImGuiCol_ButtonActive,
-                        ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button,
+                                          ImVec4(0.4f, 0.4f, 0.4f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                          ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                                          ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
                 }
                 if (ImGui::SmallButton(labels[i])) {
                     *states[i] = !*states[i];
@@ -459,7 +451,12 @@ void RenderVoxelList::render_file_loader() {
     static float voxel_size = 1.0f;
     static int file_loader_load_mode = 0;
     static bool file_loader_load_as_sdf = false;
+    static bool last_show_file_loader = false;
     if (show_file_loader) {
+        if (!last_show_file_loader) {
+            stl_file_path.clear();
+        }
+        last_show_file_loader = true;
         ImGuiViewport* vp = ImGui::GetMainViewport();
         ImVec2 center = vp->GetCenter();
         ImGui::SetNextWindowPos(center, ImGuiCond_Once, ImVec2(0.5f, 0.5f));
@@ -493,7 +490,18 @@ void RenderVoxelList::render_file_loader() {
                          &file_loader_load_mode, load_mode_names,
                          IM_ARRAYSIZE(load_mode_names));
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(get_locale_cstr("tooltip.stl_load_mode"));
+                const char* tooltip_key = nullptr;
+                switch (file_loader_load_mode) {
+                    case 0:
+                        tooltip_key = "tooltip.stl_load_mode.default";
+                        break;
+                    case 1:
+                        tooltip_key = "tooltip.stl_load_mode.silhouette";
+                        break;
+                }
+                if (tooltip_key) {
+                    ImGui::SetTooltip(get_locale_cstr(tooltip_key));
+                }
             }
             ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"),
                             &file_loader_load_as_sdf);
@@ -536,9 +544,10 @@ void RenderVoxelList::render_file_loader() {
             }
         }
         ImGui::End();
+    } else {
+        last_show_file_loader = false;
     }
 }
-
 
 void RenderVoxelList::render_collision_body_editor(RenderVoxelItem& item) {
     auto before = capture_snapshot(item);

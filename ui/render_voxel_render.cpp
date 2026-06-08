@@ -1,4 +1,5 @@
 #include "render_voxel_list.h"
+#include <bx/math.h>
 namespace sinriv::ui::render {
 namespace {
 uint32_t pack_abgr(float r, float g, float b, float a) {
@@ -96,6 +97,29 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
             marked_mesh_renderer.renderGBuffer(transform, mesh_shader);
         }
     }
+
+    if (segment_mode == SDF_NODE_SPLIT && showCollision &&
+        sdf_split_target_id >= 0 && manager) {
+        auto target_it = manager->items.find(sdf_split_target_id);
+        if (target_it != manager->items.end() &&
+            !target_it->second->mesh_renderer.empty()) {
+            mat4f split_transform = sdf_split_transform_matrix();
+            split_transform.transpose();
+            float split_transform_bgfx[16];
+            sinriv::kigstudio::mat::toBGFXMat(split_transform,
+                                              split_transform_bgfx);
+            float combined_transform[16];
+            bx::mtxMul(combined_transform, split_transform_bgfx, transform);
+
+            auto old_color = target_it->second->mesh_renderer.getBaseColor();
+            target_it->second->mesh_renderer.setBaseColor(1.0f, 0.6f, 0.6f,
+                                                          1.0f);
+            target_it->second->mesh_renderer.renderGBuffer(
+                combined_transform, mesh_shader, true);
+            target_it->second->mesh_renderer.setBaseColor(
+                old_color[0], old_color[1], old_color[2], old_color[3]);
+        }
+    }
 }
 
 void RenderVoxelList::RenderVoxelItem::render_overlay(
@@ -183,7 +207,8 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                                   model_transform_2, collision_shader,
                                   cpu_model_matrix);
     }
-    if (segment_mode == SDF_NODE_SPLIT) {
+    if (showCollisionBounds &&
+        segment_mode == SDF_NODE_SPLIT) {
         if (sdf_split_target_id >= 0 && manager) {
             auto target_it = manager->items.find(sdf_split_target_id);
             if (target_it != manager->items.end() &&

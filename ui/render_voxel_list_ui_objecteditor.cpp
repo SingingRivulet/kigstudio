@@ -571,71 +571,76 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
     } else if (item.segment_mode == RenderVoxelItem::CHAIN) {
         render_object_editor_chain_mode(item);
     } else if (item.segment_mode == RenderVoxelItem::SDF_NODE_SPLIT) {
-        std::vector<std::pair<int, std::string>> candidates;
-        if (item.manager) {
-            for (auto& [other_id, other] : item.manager->items) {
-                if (other_id != item.id && other->root_id != item.root_id &&
-                    other->sdf_data) {
-                    candidates.push_back(
-                        {other_id, "Node " + std::to_string(other_id)});
-                }
+        render_object_editor_sdf_node_split_mode(item);
+    }
+}
+
+void RenderVoxelList::render_object_editor_sdf_node_split_mode(
+    RenderVoxelItem& item) {
+    std::vector<std::pair<int, std::string>> candidates;
+    if (item.manager) {
+        for (auto& [other_id, other] : item.manager->items) {
+            if (other_id != item.id && other->root_id != item.root_id &&
+                other->sdf_data) {
+                candidates.push_back(
+                    {other_id, "Node " + std::to_string(other_id)});
             }
         }
-        int current_target = item.sdf_split_target_id;
-        int selected_idx = -1;
-        std::vector<const char*> labels;
-        labels.push_back("<None>");
-        for (size_t i = 0; i < candidates.size(); ++i) {
-            labels.push_back(candidates[i].second.c_str());
-            if (candidates[i].first == current_target)
-                selected_idx = static_cast<int>(i);
-        }
-        int combo_idx = selected_idx >= 0 ? selected_idx + 1 : 0;
-        if (ImGui::Combo(get_locale_cstr("label.sdf_split_target"), &combo_idx,
-                         labels.data(), static_cast<int>(labels.size()))) {
-            push_undo_now(item.id, std::nullopt,
-                          get_locale_string("label.sdf_split_target"));
-            item.sdf_split_target_id =
-                (combo_idx > 0) ? candidates[combo_idx - 1].first : -1;
-        }
-        ImGui::Separator();
-        ImGui::TextUnformatted("Source Transform");
-        auto before_transform = capture_snapshot(item);
-        EditResult transform_edit_result;
-        auto translation_result =
-            edit_vec3_stepper(get_locale_cstr("label.position"),
-                              item.sdf_split_translation, 0.5f);
-        transform_edit_result.activated |= translation_result.activated;
-        transform_edit_result.deactivated_after_edit |=
-            translation_result.deactivated_after_edit;
-        transform_edit_result.value_changed |= translation_result.value_changed;
+    }
+    int current_target = item.sdf_split_target_id;
+    int selected_idx = -1;
+    std::vector<const char*> labels;
+    labels.push_back("<None>");
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        labels.push_back(candidates[i].second.c_str());
+        if (candidates[i].first == current_target)
+            selected_idx = static_cast<int>(i);
+    }
+    int combo_idx = selected_idx >= 0 ? selected_idx + 1 : 0;
+    if (ImGui::Combo(get_locale_cstr("label.sdf_split_target"), &combo_idx,
+                     labels.data(), static_cast<int>(labels.size()))) {
+        push_undo_now(item.id, std::nullopt,
+                      get_locale_string("label.sdf_split_target"));
+        item.sdf_split_target_id =
+            (combo_idx > 0) ? candidates[combo_idx - 1].first : -1;
+    }
+    ImGui::Separator();
+    ImGui::TextUnformatted("Source Transform");
+    auto before_transform = capture_snapshot(item);
+    EditResult transform_edit_result;
+    auto translation_result =
+        edit_vec3_stepper(get_locale_cstr("label.position"),
+                          item.sdf_split_translation, 0.5f);
+    transform_edit_result.activated |= translation_result.activated;
+    transform_edit_result.deactivated_after_edit |=
+        translation_result.deactivated_after_edit;
+    transform_edit_result.value_changed |= translation_result.value_changed;
 
-        auto rotation_result =
-            edit_vec3_stepper(get_locale_cstr("label.rotation_deg"),
-                              item.sdf_split_rotation, 1.0f);
-        transform_edit_result.activated |= rotation_result.activated;
-        transform_edit_result.deactivated_after_edit |=
-            rotation_result.deactivated_after_edit;
-        transform_edit_result.value_changed |= rotation_result.value_changed;
+    auto rotation_result =
+        edit_vec3_stepper(get_locale_cstr("label.rotation_deg"),
+                          item.sdf_split_rotation, 1.0f);
+    transform_edit_result.activated |= rotation_result.activated;
+    transform_edit_result.deactivated_after_edit |=
+        rotation_result.deactivated_after_edit;
+    transform_edit_result.value_changed |= rotation_result.value_changed;
 
-        auto scale_result =
-            edit_vec3_stepper("Scale", item.sdf_split_scale, 0.1f);
-        transform_edit_result.activated |= scale_result.activated;
-        transform_edit_result.deactivated_after_edit |=
-            scale_result.deactivated_after_edit;
-        transform_edit_result.value_changed |= scale_result.value_changed;
+    auto scale_result =
+        edit_vec3_stepper("Scale", item.sdf_split_scale, 0.1f);
+    transform_edit_result.activated |= scale_result.activated;
+    transform_edit_result.deactivated_after_edit |=
+        scale_result.deactivated_after_edit;
+    transform_edit_result.value_changed |= scale_result.value_changed;
 
-        item.sdf_split_scale.x = std::max(0.001f, item.sdf_split_scale.x);
-        item.sdf_split_scale.y = std::max(0.001f, item.sdf_split_scale.y);
-        item.sdf_split_scale.z = std::max(0.001f, item.sdf_split_scale.z);
-        if (transform_edit_result.activated) {
-            begin_edit(item.id);
-        }
-        if (transform_edit_result.deactivated_after_edit) {
-            end_edit(item.id, "Source Transform");
-        } else if (transform_edit_result.value_changed) {
-            push_undo_now(item.id, before_transform, "Source Transform");
-        }
+    item.sdf_split_scale.x = std::max(0.001f, item.sdf_split_scale.x);
+    item.sdf_split_scale.y = std::max(0.001f, item.sdf_split_scale.y);
+    item.sdf_split_scale.z = std::max(0.001f, item.sdf_split_scale.z);
+    if (transform_edit_result.activated) {
+        begin_edit(item.id);
+    }
+    if (transform_edit_result.deactivated_after_edit) {
+        end_edit(item.id, "Source Transform");
+    } else if (transform_edit_result.value_changed) {
+        push_undo_now(item.id, before_transform, "Source Transform");
     }
 }
 

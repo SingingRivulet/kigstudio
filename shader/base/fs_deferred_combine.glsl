@@ -30,7 +30,9 @@ void main()
 
     vec3 albedo = albedo_sample.rgb;
     vec3 normal = texture2D(s_normal, v_texcoord0).rgb * 2.0 - 1.0;
-    vec3 world_pos = texture2D(s_worldPos, v_texcoord0).xyz;
+    vec4 world_pos_sample = texture2D(s_worldPos, v_texcoord0);
+    vec3 world_pos = world_pos_sample.xyz;
+    bool exclude_from_tint = world_pos_sample.a < 0.5;
     // 判断在哪一面
     float face_side = world_pos.x * u_space_div.x + world_pos.y * u_space_div.y + world_pos.z * u_space_div.z + u_space_div.w;
     if (face_side < 0.0) {
@@ -56,8 +58,8 @@ void main()
     }
 
     // 必须反转y轴，bgfx中rt的y轴是反的
-    if (texture2D(s_meshStencil, vec2(v_texcoord0.x, v_texcoord0.y)).r > 0.5) {
-        color = mix(color, vec3(1.00, 0.00, 1.00), 0.65);
+    if (!exclude_from_tint && texture2D(s_meshStencil, vec2(v_texcoord0.x, v_texcoord0.y)).r > 0.5) {
+        color = mix(color, vec3(1.00, 0.80, 0.80), 0.45);
     }
 
     if (u_mouseHighlight.x > 0.5) {

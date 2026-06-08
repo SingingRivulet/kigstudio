@@ -56,8 +56,7 @@ std::string resolve_language_code(const std::string& lang) {
 
 void add_locale_string(
     const char* key,
-    std::initializer_list<std::pair<const char*, const char*>>
-        translations) {
+    std::initializer_list<std::pair<const char*, const char*>> translations) {
     TranslationMap& entry = locale_strings[key];
     for (const auto& [language, text] : translations) {
         entry[language] = text;
@@ -96,8 +95,9 @@ void init_locale_strings() {
     add_locale_string("menu.debug", {{"en", "Debug"}, {"zh", "调试"}});
     add_locale_string("menu.debug_voxel_picking",
                       {{"en", "Voxel Picking"}, {"zh", "体素拾取"}});
-    add_locale_string("menu.check_non_manifold",
-                      {{"en", "Check Non-Manifold Edges"}, {"zh", "检查非流形边"}});
+    add_locale_string(
+        "menu.check_non_manifold",
+        {{"en", "Check Non-Manifold Edges"}, {"zh", "检查非流形边"}});
     add_locale_string("menu.body", {{"en", "Body"}, {"zh", "主体"}});
     add_locale_string("menu.axis", {{"en", "Axis"}, {"zh", "坐标轴"}});
     add_locale_string("menu.bound", {{"en", "Bound"}, {"zh", "边界"}});
@@ -110,106 +110,164 @@ void init_locale_strings() {
                       {{"en", "VXGrid Files"}, {"zh", "VXGrid 文件"}});
     add_locale_string("menu.save_project",
                       {{"en", "Save (Ctrl+S)"}, {"zh", "保存 (Ctrl+S)"}});
-    add_locale_string("menu.save_project_as",
-                      {{"en", "Save As (Ctrl+Shift+S)"}, {"zh", "另存为 (Ctrl+Shift+S)"}});
+    add_locale_string(
+        "menu.save_project_as",
+        {{"en", "Save As (Ctrl+Shift+S)"}, {"zh", "另存为 (Ctrl+Shift+S)"}});
     add_locale_string("menu.load_project",
                       {{"en", "Load (Ctrl+O)"}, {"zh", "加载 (Ctrl+O)"}});
-    add_locale_string("menu.log",
-                      {{"en", "Log"},
-                       {"zh", "项目处理日志"}});
+    add_locale_string("menu.log", {{"en", "Log"}, {"zh", "项目处理日志"}});
 
     // Queue log messages
     add_locale_string("log.queue.stop",
                       {{"en", "[Queue] Stop"}, {"zh", "[队列] 停止"}});
     add_locale_string("log.queue.start_load_stl",
-                      {{"en", "[Queue] Start: Load STL \"%s\""}, {"zh", "[队列] 开始: 加载 STL \"%s\""}});
+                      {{"en", "[Queue] Start: Load STL \"%s\""},
+                       {"zh", "[队列] 开始: 加载 STL \"%s\""}});
     add_locale_string("log.queue.done_load_stl",
-                      {{"en", "[Queue] Done:  Load STL \"%s\""}, {"zh", "[队列] 完成: 加载 STL \"%s\""}});
+                      {{"en", "[Queue] Done:  Load STL \"%s\""},
+                       {"zh", "[队列] 完成: 加载 STL \"%s\""}});
     add_locale_string("log.queue.error_load_stl",
-                      {{"en", "[Queue] Error: Load STL \"%s\" - %s"}, {"zh", "[队列] 错误: 加载 STL \"%s\" - %s"}});
+                      {{"en", "[Queue] Error: Load STL \"%s\" - %s"},
+                       {"zh", "[队列] 错误: 加载 STL \"%s\" - %s"}});
     add_locale_string("log.queue.start_reload_stl",
-                      {{"en", "[Queue] Start: Reload STL item %d \"%s\""}, {"zh", "[队列] 开始: 重新加载 STL 项目 %d \"%s\""}});
+                      {{"en", "[Queue] Start: Reload STL item %d \"%s\""},
+                       {"zh", "[队列] 开始: 重新加载 STL 项目 %d \"%s\""}});
     add_locale_string("log.queue.done_reload_stl",
-                      {{"en", "[Queue] Done:  Reload STL item %d"}, {"zh", "[队列] 完成: 重新加载 STL 项目 %d"}});
+                      {{"en", "[Queue] Done:  Reload STL item %d"},
+                       {"zh", "[队列] 完成: 重新加载 STL 项目 %d"}});
     add_locale_string("log.queue.error_reload_stl",
-                      {{"en", "[Queue] Error: Reload STL item %d - %s"}, {"zh", "[队列] 错误: 重新加载 STL 项目 %d - %s"}});
+                      {{"en", "[Queue] Error: Reload STL item %d - %s"},
+                       {"zh", "[队列] 错误: 重新加载 STL 项目 %d - %s"}});
     add_locale_string("log.queue.start_segment",
-                      {{"en", "[Queue] Start: Segment item %d"}, {"zh", "[队列] 开始: 分割项目 %d"}});
+                      {{"en", "[Queue] Start: Segment item %d"},
+                       {"zh", "[队列] 开始: 分割项目 %d"}});
     add_locale_string("log.queue.done_segment",
-                      {{"en", "[Queue] Done:  Segment item %d"}, {"zh", "[队列] 完成: 分割项目 %d"}});
+                      {{"en", "[Queue] Done:  Segment item %d"},
+                       {"zh", "[队列] 完成: 分割项目 %d"}});
     add_locale_string("log.queue.error_segment",
-                      {{"en", "[Queue] Error: Segment item %d - %s"}, {"zh", "[队列] 错误: 分割项目 %d - %s"}});
-    add_locale_string("log.queue.start_check_manifold",
-                      {{"en", "[Queue] Start: Check non-manifold edges for item %d"}, {"zh", "[队列] 开始: 检查项目 %d 的非流形边"}});
+                      {{"en", "[Queue] Error: Segment item %d - %s"},
+                       {"zh", "[队列] 错误: 分割项目 %d - %s"}});
+    add_locale_string(
+        "log.queue.start_check_manifold",
+        {{"en", "[Queue] Start: Check non-manifold edges for item %d"},
+         {"zh", "[队列] 开始: 检查项目 %d 的非流形边"}});
     add_locale_string("log.queue.skip_item_busy",
-                      {{"en", "[Queue] Skip: Item %d is busy or not found"}, {"zh", "[队列] 跳过: 项目 %d 正忙或不存在"}});
-    add_locale_string("log.queue.done_no_manifold",
-                      {{"en", "[Queue] Done:  No non-manifold edges found in item %d"}, {"zh", "[队列] 完成: 项目 %d 中未找到非流形边"}});
-    add_locale_string("log.queue.found_manifold",
-                      {{"en", "[Queue] Found %d non-manifold edge(s) in item %d:"}, {"zh", "[队列] 在项目 %d 中找到 %d 条非流形边:"}});
-    add_locale_string("log.queue.manifold_edge",
-                      {{"en", "  Edge: (%.6f, %.6f, %.6f) -> (%.6f, %.6f, %.6f) [%d triangles]"}, {"zh", "  边: (%.6f, %.6f, %.6f) -> (%.6f, %.6f, %.6f) [%d 个三角形]"}});
+                      {{"en", "[Queue] Skip: Item %d is busy or not found"},
+                       {"zh", "[队列] 跳过: 项目 %d 正忙或不存在"}});
+    add_locale_string(
+        "log.queue.done_no_manifold",
+        {{"en", "[Queue] Done:  No non-manifold edges found in item %d"},
+         {"zh", "[队列] 完成: 项目 %d 中未找到非流形边"}});
+    add_locale_string(
+        "log.queue.found_manifold",
+        {{"en", "[Queue] Found %d non-manifold edge(s) in item %d:"},
+         {"zh", "[队列] 在项目 %d 中找到 %d 条非流形边:"}});
+    add_locale_string(
+        "log.queue.manifold_edge",
+        {{"en",
+          "  Edge: (%.6f, %.6f, %.6f) -> (%.6f, %.6f, %.6f) [%d triangles]"},
+         {"zh",
+          "  边: (%.6f, %.6f, %.6f) -> (%.6f, %.6f, %.6f) [%d 个三角形]"}});
     add_locale_string("log.queue.error_check_manifold",
-                      {{"en", "[Queue] Error: Check non-manifold item %d - %s"}, {"zh", "[队列] 错误: 检查项目 %d 的非流形边 - %s"}});
+                      {{"en", "[Queue] Error: Check non-manifold item %d - %s"},
+                       {"zh", "[队列] 错误: 检查项目 %d 的非流形边 - %s"}});
     add_locale_string("log.queue.start_extract_skeleton",
-                      {{"en", "[Queue] Start: Extract skeleton for item %d"}, {"zh", "[队列] 开始: 提取项目 %d 的骨架"}});
+                      {{"en", "[Queue] Start: Extract skeleton for item %d"},
+                       {"zh", "[队列] 开始: 提取项目 %d 的骨架"}});
     add_locale_string("log.queue.done_extract_skeleton",
-                      {{"en", "[Queue] Done: Extract skeleton for item %d"}, {"zh", "[队列] 完成: 提取项目 %d 的骨架"}});
+                      {{"en", "[Queue] Done: Extract skeleton for item %d"},
+                       {"zh", "[队列] 完成: 提取项目 %d 的骨架"}});
     add_locale_string("log.queue.error_extract_skeleton",
-                      {{"en", "[Queue] Error: Extract skeleton item %d - %s"}, {"zh", "[队列] 错误: 提取项目 %d 的骨架 - %s"}});
-    add_locale_string("log.queue.start_thumbnail",
-                      {{"en", "[Queue] Start: Generate thumbnail mesh for item %d"}, {"zh", "[队列] 开始: 为项目 %d 生成缩略图网格"}});
-    add_locale_string("log.queue.done_thumbnail",
-                      {{"en", "[Queue] Done:  Generate thumbnail mesh for item %d"}, {"zh", "[队列] 完成: 为项目 %d 生成缩略图网格"}});
-    add_locale_string("log.queue.error_thumbnail",
-                      {{"en", "[Queue] Error: Generate thumbnail mesh for item %d - %s"}, {"zh", "[队列] 错误: 为项目 %d 生成缩略图网格 - %s"}});
+                      {{"en", "[Queue] Error: Extract skeleton item %d - %s"},
+                       {"zh", "[队列] 错误: 提取项目 %d 的骨架 - %s"}});
+    add_locale_string(
+        "log.queue.start_thumbnail",
+        {{"en", "[Queue] Start: Generate thumbnail mesh for item %d"},
+         {"zh", "[队列] 开始: 为项目 %d 生成缩略图网格"}});
+    add_locale_string(
+        "log.queue.done_thumbnail",
+        {{"en", "[Queue] Done:  Generate thumbnail mesh for item %d"},
+         {"zh", "[队列] 完成: 为项目 %d 生成缩略图网格"}});
+    add_locale_string(
+        "log.queue.error_thumbnail",
+        {{"en", "[Queue] Error: Generate thumbnail mesh for item %d - %s"},
+         {"zh", "[队列] 错误: 为项目 %d 生成缩略图网格 - %s"}});
     add_locale_string("log.queue.start_fill_interior",
-                      {{"en", "[Queue] Start: Fill interior for item %d"}, {"zh", "[队列] 开始: 填充项目 %d 的内部"}});
+                      {{"en", "[Queue] Start: Fill interior for item %d"},
+                       {"zh", "[队列] 开始: 填充项目 %d 的内部"}});
     add_locale_string("log.queue.done_fill_interior",
-                      {{"en", "[Queue] Done:  Filled interior for item %d"}, {"zh", "[队列] 完成: 项目 %d 的内部已填充"}});
+                      {{"en", "[Queue] Done:  Filled interior for item %d"},
+                       {"zh", "[队列] 完成: 项目 %d 的内部已填充"}});
     add_locale_string("log.queue.error_fill_interior",
-                      {{"en", "[Queue] Error: Fill interior for item %d - %s"}, {"zh", "[队列] 错误: 填充项目 %d 的内部 - %s"}});
-    add_locale_string("log.queue.skip_check_busy",
-                      {{"en", "[Queue] Skip: Cannot check non-manifold edges - item busy or not found"}, {"zh", "[队列] 跳过: 无法检查非流形边 - 项目正忙或不存在"}});
+                      {{"en", "[Queue] Error: Fill interior for item %d - %s"},
+                       {"zh", "[队列] 错误: 填充项目 %d 的内部 - %s"}});
+    add_locale_string(
+        "log.queue.skip_check_busy",
+        {{"en",
+          "[Queue] Skip: Cannot check non-manifold edges - item busy or not "
+          "found"},
+         {"zh", "[队列] 跳过: 无法检查非流形边 - 项目正忙或不存在"}});
     add_locale_string("log.queue.unknown_error",
                       {{"en", "Unknown error"}, {"zh", "未知错误"}});
-    add_locale_string("log.queue.start_export_stl",
-                      {{"en", "[Queue] Start: Export STL for item %d to \"%s\""}, {"zh", "[队列] 开始: 导出节点 %d 的 STL 到 \"%s\""}});
-    add_locale_string("log.queue.done_export_stl",
-                      {{"en", "[Queue] Done:  Exported STL for item %d to \"%s\""}, {"zh", "[队列] 完成: 已导出节点 %d 的 STL 到 \"%s\""}});
+    add_locale_string(
+        "log.queue.start_export_stl",
+        {{"en", "[Queue] Start: Export STL for item %d to \"%s\""},
+         {"zh", "[队列] 开始: 导出节点 %d 的 STL 到 \"%s\""}});
+    add_locale_string(
+        "log.queue.done_export_stl",
+        {{"en", "[Queue] Done:  Exported STL for item %d to \"%s\""},
+         {"zh", "[队列] 完成: 已导出节点 %d 的 STL 到 \"%s\""}});
     add_locale_string("log.queue.error_export_stl",
-                      {{"en", "[Queue] Error: Export STL for item %d - %s"}, {"zh", "[队列] 错误: 导出节点 %d 的 STL - %s"}});
-    add_locale_string("log.queue.error_export_stl_empty",
-                      {{"en", "[Queue] Error: Export STL for item %d - empty mesh"}, {"zh", "[队列] 错误: 导出节点 %d 的 STL - 网格为空"}});
+                      {{"en", "[Queue] Error: Export STL for item %d - %s"},
+                       {"zh", "[队列] 错误: 导出节点 %d 的 STL - %s"}});
+    add_locale_string(
+        "log.queue.error_export_stl_empty",
+        {{"en", "[Queue] Error: Export STL for item %d - empty mesh"},
+         {"zh", "[队列] 错误: 导出节点 %d 的 STL - 网格为空"}});
     add_locale_string("log.queue.error_export_stl_all",
-                      {{"en", "[Queue] Error: Batch export STL - %s"}, {"zh", "[队列] 错误: 批量导出 STL - %s"}});
-    add_locale_string("log.queue.error_export_stl_all_empty",
-                      {{"en", "[Queue] Error: Batch export STL - no leaf nodes"}, {"zh", "[队列] 错误: 批量导出 STL - 没有叶子节点"}});
+                      {{"en", "[Queue] Error: Batch export STL - %s"},
+                       {"zh", "[队列] 错误: 批量导出 STL - %s"}});
+    add_locale_string(
+        "log.queue.error_export_stl_all_empty",
+        {{"en", "[Queue] Error: Batch export STL - no leaf nodes"},
+         {"zh", "[队列] 错误: 批量导出 STL - 没有叶子节点"}});
     add_locale_string("log.queue.simplify_result",
-                      {{"en", "[Queue] Simplify: %d -> %d triangles"}, {"zh", "[队列] 简化: %d -> %d 个三角形"}});
+                      {{"en", "[Queue] Simplify: %d -> %d triangles"},
+                       {"zh", "[队列] 简化: %d -> %d 个三角形"}});
     add_locale_string("log.queue.done_export_stl_all",
-                      {{"en", "[Queue] Done:  Exported %d/%d STL files"}, {"zh", "[队列] 完成: 已导出 %d/%d 个 STL 文件"}});
+                      {{"en", "[Queue] Done:  Exported %d/%d STL files"},
+                       {"zh", "[队列] 完成: 已导出 %d/%d 个 STL 文件"}});
     add_locale_string("log.extract_skeleton.result",
-                      {{"en", "[Extract Skeleton] Result: %d vertices"}, {"zh", "[骨架提取]处理成功，共%d个顶点"}});
+                      {{"en", "[Extract Skeleton] Result: %d vertices"},
+                       {"zh", "[骨架提取]处理成功，共%d个顶点"}});
     add_locale_string("log.extract_skeleton.buildDenseGrid.result",
-                      {{"en", "[Extract Skeleton] Dense grid size: (%d, %d, %d)->(%d, %d, %d) voxel_grid_data size: %d"}, 
-                       {"zh", "[骨架提取]体素覆盖范围: (%d, %d, %d)->(%d, %d, %d) 体素区块数量: %d"}});
+                      {{"en",
+                        "[Extract Skeleton] Dense grid size: (%d, %d, "
+                        "%d)->(%d, %d, %d) voxel_grid_data size: %d"},
+                       {"zh",
+                        "[骨架提取]体素覆盖范围: (%d, %d, %d)->(%d, %d, %d) "
+                        "体素区块数量: %d"}});
 
     // Status messages
     add_locale_string("status.checking_manifold",
-                      {{"en", "Checking non-manifold edges..."}, {"zh", "正在检查非流形边..."}});
-    add_locale_string("status.extracting_skeleton",
-                      {{"en", "Extracting skeleton..."}, {"zh", "正在提取骨架..."}});
+                      {{"en", "Checking non-manifold edges..."},
+                       {"zh", "正在检查非流形边..."}});
+    add_locale_string(
+        "status.extracting_skeleton",
+        {{"en", "Extracting skeleton..."}, {"zh", "正在提取骨架..."}});
     add_locale_string("status.generating_thumbnail",
-                      {{"en", "Generating thumbnail mesh..."}, {"zh", "正在生成缩略图网格..."}});
-    add_locale_string("status.filling_interior",
-                      {{"en", "Filling interior..."}, {"zh", "正在填充内部..."}});
+                      {{"en", "Generating thumbnail mesh..."},
+                       {"zh", "正在生成缩略图网格..."}});
+    add_locale_string("status.filling_interior", {{"en", "Filling interior..."},
+                                                  {"zh", "正在填充内部..."}});
     add_locale_string("status.exporting_stl",
                       {{"en", "Exporting STL: "}, {"zh", "正在导出 STL: "}});
-    add_locale_string("status.exporting_stl_all",
-                      {{"en", "Exporting all STL..."}, {"zh", "正在批量导出 STL..."}});
+    add_locale_string(
+        "status.exporting_stl_all",
+        {{"en", "Exporting all STL..."}, {"zh", "正在批量导出 STL..."}});
     add_locale_string("status.exporting_stl_all_item",
-                      {{"en", "Exporting item %d (%d/%d):"}, {"zh", "正在导出节点 %d (%d/%d):"}});
+                      {{"en", "Exporting item %d (%d/%d):"},
+                       {"zh", "正在导出节点 %d (%d/%d):"}});
     add_locale_string("status.exporting_stl.cleaning_mesh",
                       {{"en", "Cleaning mesh"}, {"zh", "模型去重"}});
     add_locale_string("status.exporting_stl.simplifying_mesh",
@@ -238,8 +296,9 @@ void init_locale_strings() {
                       {{"en", "Silhouette Center"}, {"zh", "轮廓中心"}});
     add_locale_string("label.show_silhouette_center",
                       {{"en", "Show Center"}, {"zh", "显示中心点"}});
-    add_locale_string("action.export_source_stl",
-                      {{"en", "Export Source as STL"}, {"zh", "导出源模型为STL"}});
+    add_locale_string(
+        "action.export_source_stl",
+        {{"en", "Export Source as STL"}, {"zh", "导出源模型为STL"}});
     add_locale_string("menu.export_stl_all",
                       {{"en", "Export All STL"}, {"zh", "全部导出stl"}});
     add_locale_string("tooltip.export_stl_all_no_project",
@@ -248,7 +307,7 @@ void init_locale_strings() {
     add_locale_string("tooltip.export_stl_all_empty",
                       {{"en", "No leaf nodes found to export."},
                        {"zh", "没有找到可导出的叶子节点。"}});
-    
+
     add_locale_string("action.update_collision",
                       {{"en", "update collision"}, {"zh", "更新碰撞"}});
     add_locale_string("action.extract_skeleton",
@@ -271,25 +330,23 @@ void init_locale_strings() {
                        {"zh", "添加顶点（在场景中点击...）"}});
     add_locale_string("action.clear_vertices",
                       {{"en", "clear vertices"}, {"zh", "清空顶点"}});
-    add_locale_string("action.init_all_joint_radii",
-                      {{"en", "Initialize All Radii"},
-                       {"zh", "初始化所有半径"}});
+    add_locale_string(
+        "action.init_all_joint_radii",
+        {{"en", "Initialize All Radii"}, {"zh", "初始化所有半径"}});
     add_locale_string("action.auto_detect_joint_radius",
-                      {{"en", "Auto Detect"},
-                       {"zh", "自动识别"}});
+                      {{"en", "Auto Detect"}, {"zh", "自动识别"}});
     add_locale_string("action.replace", {{"en", "replace"}, {"zh", "替换"}});
     add_locale_string("action.replace_picking",
                       {{"en", "replace (...)"}, {"zh", "替换 (...)"}});
     add_locale_string("action.insert_after",
                       {{"en", "insert after"}, {"zh", "向后插入"}});
     add_locale_string("action.insert_after_picking",
-                      {{"en", "insert after (...)"},
-                       {"zh", "向后插入 (...)"}});
+                      {{"en", "insert after (...)"}, {"zh", "向后插入 (...)"}});
     add_locale_string("action.insert_before",
                       {{"en", "insert before"}, {"zh", "向前插入"}});
-    add_locale_string("action.insert_before_picking",
-                      {{"en", "insert before (...)"},
-                       {"zh", "向前插入 (...)"}});
+    add_locale_string(
+        "action.insert_before_picking",
+        {{"en", "insert before (...)"}, {"zh", "向前插入 (...)"}});
     add_locale_string("action.edit_plane",
                       {{"en", "Edit plane"}, {"zh", "编辑平面"}});
     add_locale_string("action.close", {{"en", "Close"}, {"zh", "关闭"}});
@@ -309,21 +366,21 @@ void init_locale_strings() {
                       {{"en", "Simplification ratio"}, {"zh", "简化比例"}});
     add_locale_string("label.subdivisions_ratio",
                       {{"en", "Subdivisions ratio"}, {"zh", "细分比例"}});
-    add_locale_string("hint.simplification_ratio",
-                      {{"en", "Lower = more simplification (0.01=aggressive, 1.0=none)"}, {"zh", "数值越小简化越多 (0.01=大量简化, 1.0=不简化)"}});
-    add_locale_string("label.use_cgal_skeleton",
-                      {{"en", "Use CGAL mesh skeleton"}, {"zh", "使用 CGAL 网格骨架"}});
-    add_locale_string("action.reload",
-                      {{"en", "Reload"}, {"zh", "重新加载"}});
+    add_locale_string(
+        "hint.simplification_ratio",
+        {{"en", "Lower = more simplification (0.01=aggressive, 1.0=none)"},
+         {"zh", "数值越小简化越多 (0.01=大量简化, 1.0=不简化)"}});
+    add_locale_string(
+        "label.use_cgal_skeleton",
+        {{"en", "Use CGAL mesh skeleton"}, {"zh", "使用 CGAL 网格骨架"}});
+    add_locale_string("action.reload", {{"en", "Reload"}, {"zh", "重新加载"}});
     add_locale_string("action.reload_stl",
                       {{"en", "Reload STL"}, {"zh", "重新加载 STL"}});
-    add_locale_string("action.apply",
-                      {{"en", "Apply"}, {"zh", "应用"}});
+    add_locale_string("action.apply", {{"en", "Apply"}, {"zh", "应用"}});
     add_locale_string("action.pick_pos_auto_snapping",
                       {{"en", "auto snapping"}, {"zh", "自动吸附"}});
     add_locale_string("action.pick_pos_auto_snapping_stop",
                       {{"en", "stop auto snapping"}, {"zh", "取消自动吸附"}});
-
 
     add_locale_string("label.show_mesh",
                       {{"en", "show mesh"}, {"zh", "显示网格"}});
@@ -337,21 +394,25 @@ void init_locale_strings() {
                       {{"en", "show mesh axis"}, {"zh", "显示网格坐标轴"}});
     add_locale_string("label.show_voxel_axis",
                       {{"en", "show voxel axis"}, {"zh", "显示体素坐标轴"}});
-    add_locale_string("label.show_collision_axis",
-                      {{"en", "show collision axis"}, {"zh", "显示碰撞坐标轴"}});
-    add_locale_string("label.show_collision_bounds",
-                      {{"en", "show collision bounds"}, {"zh", "显示碰撞边界"}});
-    add_locale_string("label.show_voxel_chunk_bounds",
-                      {{"en", "show voxel chunk bounds"}, {"zh", "显示体素块边界"}});
-    add_locale_string("label.disable_camera_on_pick",
-                      {{"en", "disable camera on pick"},
-                       {"zh", "拾取时禁用相机旋转"}});
+    add_locale_string(
+        "label.show_collision_axis",
+        {{"en", "show collision axis"}, {"zh", "显示碰撞坐标轴"}});
+    add_locale_string(
+        "label.show_collision_bounds",
+        {{"en", "show collision bounds"}, {"zh", "显示碰撞边界"}});
+    add_locale_string(
+        "label.show_voxel_chunk_bounds",
+        {{"en", "show voxel chunk bounds"}, {"zh", "显示体素块边界"}});
+    add_locale_string(
+        "label.disable_camera_on_pick",
+        {{"en", "disable camera on pick"}, {"zh", "拾取时禁用相机旋转"}});
     add_locale_string("label.voxel_picking",
                       {{"en", "Voxel Picking"}, {"zh", "体素选择"}});
     add_locale_string("label.init_surface_cache",
                       {{"en", "Init Surface Cache"}, {"zh", "初始化表面缓存"}});
-    add_locale_string("label.surface_cache_ready",
-                      {{"en", "Surface cache ready"}, {"zh", "表面缓存已就绪"}});
+    add_locale_string(
+        "label.surface_cache_ready",
+        {{"en", "Surface cache ready"}, {"zh", "表面缓存已就绪"}});
     add_locale_string("label.pick_range",
                       {{"en", "Pick Range"}, {"zh", "选择范围"}});
     add_locale_string("label.neighbor_max_distance",
@@ -362,19 +423,17 @@ void init_locale_strings() {
                       {{"en", "Save Marked"}, {"zh", "保存标记"}});
     add_locale_string("action.load_marked_voxels",
                       {{"en", "Load Marked"}, {"zh", "加载标记"}});
-    add_locale_string("action.undo_marked",
-                      {{"en", "Undo"}, {"zh", "撤销"}});
-    add_locale_string("action.redo_marked",
-                      {{"en", "Redo"}, {"zh", "重做"}});
-    add_locale_string("label.history_marked_title",
-                      {{"en", "Marked Voxels History"}, {"zh", "标记体素历史"}});
-    add_locale_string("label.mouse_highlight_range",
-                      {{"en", "mouse highlight range"},
-                       {"zh", "鼠标高亮范围"}});
+    add_locale_string("action.undo_marked", {{"en", "Undo"}, {"zh", "撤销"}});
+    add_locale_string("action.redo_marked", {{"en", "Redo"}, {"zh", "重做"}});
+    add_locale_string(
+        "label.history_marked_title",
+        {{"en", "Marked Voxels History"}, {"zh", "标记体素历史"}});
+    add_locale_string(
+        "label.mouse_highlight_range",
+        {{"en", "mouse highlight range"}, {"zh", "鼠标高亮范围"}});
     add_locale_string("window.history",
                       {{"en", "History"}, {"zh", "历史记录"}});
-    add_locale_string("window.log",
-                      {{"en", "Log"}, {"zh", "日志"}});
+    add_locale_string("window.log", {{"en", "Log"}, {"zh", "日志"}});
     add_locale_string("window.debug_voxel_picking",
                       {{"en", "Voxel Picking Debug"}, {"zh", "体素拾取调试"}});
     add_locale_string("label.debug_step_world_to_voxel",
@@ -389,41 +448,41 @@ void init_locale_strings() {
                       {{"en", "Timings (ms)"}, {"zh", "耗时统计 (ms)"}});
 
     // Joint editor
-    add_locale_string("label.joint",
-                      {{"en", "Joint"}, {"zh", "关节"}});
-    add_locale_string("label.picked_skeleton_points",
-                      {{"en", "Picked skeleton points: %d"},
-                       {"zh", "已选骨架点：%d"}});
+    add_locale_string("label.joint", {{"en", "Joint"}, {"zh", "关节"}});
+    add_locale_string(
+        "label.picked_skeleton_points",
+        {{"en", "Picked skeleton points: %d"}, {"zh", "已选骨架点：%d"}});
     add_locale_string("label.custom_direction",
                       {{"en", "Custom Direction"}, {"zh", "自定义方向"}});
     add_locale_string("label.direction_end",
                       {{"en", "Direction End"}, {"zh", "方向终点"}});
     add_locale_string("action.pick_direction",
                       {{"en", "Pick Direction"}, {"zh", "拾取方向"}});
-    add_locale_string("action.stop_picking_direction",
-                      {{"en", "Stop Picking Direction"}, {"zh", "停止拾取方向"}});
+    add_locale_string(
+        "action.stop_picking_direction",
+        {{"en", "Stop Picking Direction"}, {"zh", "停止拾取方向"}});
     add_locale_string("label.socket_cone",
                       {{"en", "Socket Cone"}, {"zh", "关节窝圆锥"}});
     add_locale_string("label.head_cone",
                       {{"en", "Head Cone"}, {"zh", "关节头圆锥"}});
     add_locale_string("label.support_cones",
                       {{"en", "Support Cones"}, {"zh", "实体圆锥"}});
-    add_locale_string("label.cylinder",
-                      {{"en", "Cylinder"}, {"zh", "连接柱"}});
-    add_locale_string("label.offset",
-                      {{"en", "Offset"}, {"zh", "偏移"}});
-    add_locale_string("label.angle",
-                      {{"en", "Angle"}, {"zh", "角度"}});
-    add_locale_string("label.radius",
-                      {{"en", "Radius"}, {"zh", "半径"}});
-    add_locale_string("label.socket_support_offset",
-                      {{"en", "Socket Support Offset"}, {"zh", "关节窝实体偏移"}});
-    add_locale_string("label.socket_support_radius",
-                      {{"en", "Socket Support Radius"}, {"zh", "关节窝实体半径"}});
-    add_locale_string("label.head_support_offset",
-                      {{"en", "Head Support Offset"}, {"zh", "关节头实体偏移"}});
-    add_locale_string("label.head_support_radius",
-                      {{"en", "Head Support Radius"}, {"zh", "关节头实体半径"}});
+    add_locale_string("label.cylinder", {{"en", "Cylinder"}, {"zh", "连接柱"}});
+    add_locale_string("label.offset", {{"en", "Offset"}, {"zh", "偏移"}});
+    add_locale_string("label.angle", {{"en", "Angle"}, {"zh", "角度"}});
+    add_locale_string("label.radius", {{"en", "Radius"}, {"zh", "半径"}});
+    add_locale_string(
+        "label.socket_support_offset",
+        {{"en", "Socket Support Offset"}, {"zh", "关节窝实体偏移"}});
+    add_locale_string(
+        "label.socket_support_radius",
+        {{"en", "Socket Support Radius"}, {"zh", "关节窝实体半径"}});
+    add_locale_string(
+        "label.head_support_offset",
+        {{"en", "Head Support Offset"}, {"zh", "关节头实体偏移"}});
+    add_locale_string(
+        "label.head_support_radius",
+        {{"en", "Head Support Radius"}, {"zh", "关节头实体半径"}});
     add_locale_string("label.cylinder_offset",
                       {{"en", "Cylinder Offset"}, {"zh", "连接柱偏移"}});
     add_locale_string("label.cylinder_radius",
@@ -447,8 +506,8 @@ void init_locale_strings() {
                       {{"en", "Redo History"}, {"zh", "可重做历史"}});
     add_locale_string("label.history_current",
                       {{"en", "[Current State]"}, {"zh", "[当前状态]"}});
-    add_locale_string("label.history_empty",
-                      {{"en", "No history records."}, {"zh", "暂无历史记录。"}});
+    add_locale_string("label.history_empty", {{"en", "No history records."},
+                                              {"zh", "暂无历史记录。"}});
     add_locale_string("label.items_tasks",
                       {{"en", "items:%d tasks:%d"}, {"zh", "项目:%d 任务:%d"}});
     add_locale_string("label.mouse_world_pos",
@@ -478,8 +537,9 @@ void init_locale_strings() {
                       {{"en", "No collision shapes."}, {"zh", "无碰撞形状。"}});
     add_locale_string("label.concave_cone_apex",
                       {{"en", "concave cone apex"}, {"zh", "凹锥顶点"}});
-    add_locale_string("label.concave_cone_vertices",
-                      {{"en", "concave cone vertices"}, {"zh", "凹锥底面顶点"}});
+    add_locale_string(
+        "label.concave_cone_vertices",
+        {{"en", "concave cone vertices"}, {"zh", "凹锥底面顶点"}});
     add_locale_string("label.apex", {{"en", "apex"}, {"zh", "顶点"}});
     add_locale_string("label.vertex",
                       {{"en", "vertex %d##%d"}, {"zh", "顶点 %d##%d"}});
@@ -496,8 +556,9 @@ void init_locale_strings() {
                       {{"en", "Pick P3 by mouse"}, {"zh", "用鼠标拾取 P3"}});
     add_locale_string("label.pick_point_by_mouse",
                       {{"en", "Pick point by mouse"}, {"zh", "用鼠标拾取点"}});
-    add_locale_string("label.pick_normal_by_mouse",
-                      {{"en", "Pick normal by mouse"}, {"zh", "用鼠标拾取法线"}});
+    add_locale_string(
+        "label.pick_normal_by_mouse",
+        {{"en", "Pick normal by mouse"}, {"zh", "用鼠标拾取法线"}});
     add_locale_string("label.plane_editor_bound_other",
                       {{"en", "Plane editor is bound to another item."},
                        {"zh", "平面编辑器已绑定到其他项目。"}});
@@ -512,9 +573,8 @@ void init_locale_strings() {
     add_locale_string("label.updating",
                       {{"en", "Updating..."}, {"zh", "更新中..."}});
     add_locale_string("label.node", {{"en", "Node %d"}, {"zh", "节点 %d"}});
-    add_locale_string("label.node_updating",
-                      {{"en", "Node %d (updating...)"},
-                       {"zh", "节点 %d (更新中...)"}});
+    add_locale_string("label.node_updating", {{"en", "Node %d (updating...)"},
+                                              {"zh", "节点 %d (更新中...)"}});
     add_locale_string("label.position", {{"en", "Position"}, {"zh", "位置"}});
     add_locale_string("label.rotation_deg",
                       {{"en", "Rotation (deg)"}, {"zh", "旋转 (度)"}});
@@ -528,8 +588,7 @@ void init_locale_strings() {
     add_locale_string("label.normal", {{"en", "Normal"}, {"zh", "法线"}});
 
     add_locale_string("shape.sphere", {{"en", "Sphere"}, {"zh", "球体"}});
-    add_locale_string("shape.cylinder",
-                      {{"en", "Cylinder"}, {"zh", "圆柱体"}});
+    add_locale_string("shape.cylinder", {{"en", "Cylinder"}, {"zh", "圆柱体"}});
     add_locale_string("shape.capsule", {{"en", "Capsule"}, {"zh", "胶囊体"}});
     add_locale_string("shape.box", {{"en", "Box"}, {"zh", "长方体"}});
     add_locale_string("shape.unknown", {{"en", "Unknown"}, {"zh", "未知"}});
@@ -543,83 +602,135 @@ void init_locale_strings() {
     add_locale_string("mode.concave_cone",
                       {{"en", "Concave Cone"}, {"zh", "凹锥"}});
     add_locale_string("mode.split_disconnected",
-                      {{"en", "Split Disconnected"},
-                       {"zh", "分离不连通区域"}});
+                      {{"en", "Split Disconnected"}, {"zh", "分离不连通区域"}});
     add_locale_string("mode.neighbor",
                       {{"en", "Neighbor"}, {"zh", "临近分割"}});
     add_locale_string("mode.fill_interior",
                       {{"en", "Fill Interior"}, {"zh", "填充内部"}});
-    add_locale_string("mode.chain",
-                      {{"en", "Chain"}, {"zh", "链条化"}});
+    add_locale_string("mode.chain", {{"en", "Chain"}, {"zh", "链条化"}});
     add_locale_string("mode.sdf_node_split",
                       {{"en", "SDF Node Split"}, {"zh", "SDF节点分割"}});
 
-    add_locale_string("tooltip.mode.collision",
-                      {{"en", "Use collision shapes to split the model. Voxels inside the shapes are separated from those outside."},
-                       {"zh", "使用碰撞体形状分割模型。形状内部的体素与外部的体素被分离开。"}});
-    add_locale_string("tooltip.mode.plane",
-                      {{"en", "Use an infinite plane to split the model into two halves."},
-                       {"zh", "使用无限平面将模型分割成两半。"}});
-    add_locale_string("tooltip.mode.concave_cone",
-                      {{"en", "Use a concave cone to carve out a region from the model."},
-                       {"zh", "使用凹锥从模型中挖出一个区域。"}});
+    add_locale_string(
+        "tooltip.mode.collision",
+        {{"en",
+          "Use collision shapes to split the model. Voxels inside the shapes "
+          "are separated from those outside."},
+         {"zh",
+          "使用碰撞体形状分割模型。形状内部的体素与外部的体素被分离开。"}});
+    add_locale_string(
+        "tooltip.mode.plane",
+        {{"en", "Use an infinite plane to split the model into two halves."},
+         {"zh", "使用无限平面将模型分割成两半。"}});
+    add_locale_string(
+        "tooltip.mode.concave_cone",
+        {{"en", "Use a concave cone to carve out a region from the model."},
+         {"zh", "使用凹锥从模型中挖出一个区域。"}});
     add_locale_string("tooltip.mode.split_disconnected",
-                      {{"en", "Automatically split disconnected voxel regions into separate items."},
-                       {"zh", "自动将不连通的体素区域分割成独立的项目。\n注意：此操作将丢失SDF数据"}});
+                      {{"en",
+                        "Automatically split disconnected voxel regions into "
+                        "separate items."},
+                       {"zh",
+                        "自动将不连通的体素区域分割成独立的项目。\n注意：此操作"
+                        "将丢失SDF数据"}});
     add_locale_string("tooltip.mode.neighbor",
-                      {{"en", "Split voxels based on BFS distance from marked seed voxels.\nNote: This will lose SDF data."},
-                       {"zh", "基于与标记种子体素的 BFS 距离来分割体素。\n注意：此操作将丢失SDF数据"}});
+                      {{"en",
+                        "Split voxels based on BFS distance from marked seed "
+                        "voxels.\nNote: This will lose SDF data."},
+                       {"zh",
+                        "基于与标记种子体素的 BFS "
+                        "距离来分割体素。\n注意：此操作将丢失SDF数据"}});
     add_locale_string("tooltip.mode.fill_interior",
-                      {{"en", "Fill all enclosed hollow cavities inside the model with solid voxels. Produces a single child node."},
-                       {"zh", "用实体体素填满模型内部所有封闭的中空腔体。产生一个子节点。\n注意：此操作将丢失SDF数据"}});
-    add_locale_string("tooltip.load_as_sdf",
-                      {{"en", "Load STL file as signed distance field (SDF) for significantly improved model accuracy, but SDF data will be lost when using certain features (e.g. neighbor split)."},
-                       {"zh", "将 STL 文件作为有符号距离场 (SDF) 加载，这将显著提升模型精度，但是输出模型将消耗更长的时间。使用部分功能时会丢失 SDF 数据（例如邻近分割）。"}});
-    add_locale_string("tooltip.stl_load_mode",
-                      {{"en", "Choose how the STL file is processed before voxelization."},
-                       {"zh", "选择 STL 文件在体素化之前的处理方式。"}});
-    add_locale_string("tooltip.stl_load_mode.default",
-                      {{"en", "Load triangles directly without preprocessing."},
-                       {"zh", "直接加载三角形，不做预处理。"}});
-    add_locale_string("tooltip.stl_load_mode.sdf",
-                      {{"en", "Load as signed distance field for improved accuracy."},
-                       {"zh", "作为有符号距离场加载，以获得更高精度。"}});
-    add_locale_string("tooltip.stl_load_mode.silhouette",
-                      {{"en", "Preprocess with silhouette-based closed mesh reconstruction (keeps farthest faces from center)."},
-                       {"zh", "使用基于轮廓的封闭网格重建进行预处理（保留离中心最远的面）。"}});
-    add_locale_string("tooltip.render_sdf",
-                      {{"en", "Render SDF as a 3D model. This will clear all marked voxels. Proceed?"},
-                       {"zh", "将SDF渲染为网格以供预览。注意：这可能需要较长时间。"}});
-    add_locale_string("tooltip.simplify_model",
-                      {{"en", "Simplify the model by merging redundant triangles.\nLower = more simplification (0.01=aggressive, 1.0=none).\nNote: This may take a long time."}, 
-                       {"zh", "合并多余的三角形以简化模型。\n数值越小简化越多（0.01=大量简化, 1.0=不简化）。\n注意：此操作可能会消耗较长时间。"}});
-    add_locale_string("tooltip.export_mode_smooth",
-                      {{"en", "Smooth the model on export (will attempt to use SDF data if available)."}, 
-                       {"zh", "导出时对物体进行平滑处理（将尝试使用SDF数据进行处理）"}});
-    add_locale_string("tooltip.mode.chain",
-                      {{"en", "Split the model into 3D-printable chains (e.g. for jointed dragon)."},
-                       {"zh", "将物体切分为3D打印一体成形的链条（例如关节龙）。"}});
+                      {{"en",
+                        "Fill all enclosed hollow cavities inside the model "
+                        "with solid voxels. Produces a single child node."},
+                       {"zh",
+                        "用实体体素填满模型内部所有封闭的中空腔体。产生一个子节"
+                        "点。\n注意：此操作将丢失SDF数据"}});
+    add_locale_string(
+        "tooltip.load_as_sdf",
+        {{"en",
+          "Load STL file as signed distance field (SDF) for significantly "
+          "improved model accuracy, but SDF data will be lost when using "
+          "certain features (e.g. neighbor split)."},
+         {"zh",
+          "将 STL 文件作为有符号距离场 (SDF) "
+          "加载，这将显著提升模型精度，但是输出模型将消耗更长的时间。使用部分功"
+          "能时会丢失 SDF 数据（例如邻近分割）。"}});
+    add_locale_string(
+        "tooltip.stl_load_mode",
+        {{"en", "Choose how the STL file is processed before voxelization."},
+         {"zh", "选择 STL 文件在体素化之前的处理方式。"}});
+    add_locale_string(
+        "tooltip.stl_load_mode.default",
+        {{"en",
+          "Load model and perform voxelization (suitable for closed models)"},
+         {"zh", "使用加载模型并执行体素化（适合封闭模型）"}});
+    add_locale_string(
+        "tooltip.stl_load_mode.sdf",
+        {{"en", "Load as signed distance field for improved accuracy."},
+         {"zh", "作为有符号距离场加载，以获得更高精度。"}});
+    add_locale_string(
+        "tooltip.stl_load_mode.silhouette",
+        {{"en",
+          "Silhouette mode computes a cone geometry for each triangle relative "
+          "to a chosen center point, to achieve a closed model effect. "
+          "Suitable for single-layer thin models (e.g., hair from official "
+          "game models)."},
+         {"zh",
+          "选择一个中心点，计算每个三角形相对于中心点的锥体的几何，以达到封闭模"
+          "型的效果。适用于单层薄片模型（例如用于来源于游戏官模的头发）。"}});
+    add_locale_string(
+        "tooltip.render_sdf",
+        {{"en",
+          "Render SDF as a 3D model. This will clear all marked voxels. "
+          "Proceed?"},
+         {"zh", "将SDF渲染为网格以供预览。注意：这可能需要较长时间。"}});
+    add_locale_string(
+        "tooltip.simplify_model",
+        {{"en",
+          "Simplify the model by merging redundant triangles.\nLower = more "
+          "simplification (0.01=aggressive, 1.0=none).\nNote: This may take a "
+          "long time."},
+         {"zh",
+          "合并多余的三角形以简化模型。\n数值越小简化越多（0.01=大量简化, "
+          "1.0=不简化）。\n注意：此操作可能会消耗较长时间。"}});
+    add_locale_string(
+        "tooltip.export_mode_smooth",
+        {{"en",
+          "Smooth the model on export (will attempt to use SDF data if "
+          "available)."},
+         {"zh", "导出时对物体进行平滑处理（将尝试使用SDF数据进行处理）"}});
+    add_locale_string(
+        "tooltip.mode.chain",
+        {{"en",
+          "Split the model into 3D-printable chains (e.g. for jointed "
+          "dragon)."},
+         {"zh", "将物体切分为3D打印一体成形的链条（例如关节龙）。"}});
     add_locale_string("tooltip.mode.sdf_node_split",
                       {{"en", "Split current node using another node's SDF."},
                        {"zh", "使用另一个节点的SDF分割当前节点。"}});
     add_locale_string("tooltip.update_collision",
-                      {{"en", "Update collision shapes. This will clear all marked voxels. Proceed?"},
+                      {{"en",
+                        "Update collision shapes. This will clear all marked "
+                        "voxels. Proceed?"},
                        {"zh", "在当前节点上执行设置好的碰撞编辑器。"}});
-    add_locale_string("tooltip.pick_pos_auto_snapping",
-                      {{"en", "Pick position with auto-snapping to nearest voxel vertex"}, 
-                      {"zh", "鼠标会尝试吸附到附近的顶点上"}});
-    add_locale_string("tooltip.collision_edit",
-                      {{"en", "Edit collision shapes"}, 
-                      {"zh", "编辑当前项目的分割规则"}});
+    add_locale_string(
+        "tooltip.pick_pos_auto_snapping",
+        {{"en", "Pick position with auto-snapping to nearest voxel vertex"},
+         {"zh", "鼠标会尝试吸附到附近的顶点上"}});
+    add_locale_string(
+        "tooltip.collision_edit",
+        {{"en", "Edit collision shapes"}, {"zh", "编辑当前项目的分割规则"}});
     add_locale_string("tooltip.voxel_picking",
-                      {{"en", "Pick voxels"}, 
-                      {"zh", "从模型中选择体素"}});
+                      {{"en", "Pick voxels"}, {"zh", "从模型中选择体素"}});
     add_locale_string("label.chain_min_radius",
                       {{"en", "min radius"}, {"zh", "最小半径"}});
     add_locale_string("tooltip.sdf_resolution",
                       {{"en", "SDF:\n%s"}, {"zh", "此节点有SDF\n%s"}});
-    add_locale_string("tooltip.triangle_count",
-                      {{"en", "Triangles: %zu"}, {"zh", "此节点有STL模型\n三角形: %zu 个"}});
+    add_locale_string(
+        "tooltip.triangle_count",
+        {{"en", "Triangles: %zu"}, {"zh", "此节点有STL模型\n三角形: %zu 个"}});
 
     add_locale_string("dialog.open_stl_title",
                       {{"en", "Open STL"}, {"zh", "打开 STL"}});
@@ -627,9 +738,9 @@ void init_locale_strings() {
                       {{"en", "STL file"}, {"zh", "STL 文件"}});
     add_locale_string("dialog.save_voxel_as_stl",
                       {{"en", "Save Voxel as STL"}, {"zh", "保存体素为 STL"}});
-    add_locale_string("dialog.choose_export_method",
-                      {{"en", "Choose STL export method"},
-                       {"zh", "选择 STL 导出方式"}});
+    add_locale_string(
+        "dialog.choose_export_method",
+        {{"en", "Choose STL export method"}, {"zh", "选择 STL 导出方式"}});
     add_locale_string("dialog.sdf_preview",
                       {{"en", "SDF Preview"}, {"zh", "SDF 预览"}});
     add_locale_string("dialog.sdf_preview_desc",
@@ -642,11 +753,10 @@ void init_locale_strings() {
     add_locale_string("dialog.save_project_title",
                       {{"en", "Select Folder to Save Project"},
                        {"zh", "选择文件夹保存项目"}});
-    add_locale_string("dialog.load_project_title",
-                      {{"en", "Select Project Folder"},
-                       {"zh", "选择项目文件夹"}});
-    add_locale_string("dialog.info",
-                      {{"en", "Info"}, {"zh", "提示"}});
+    add_locale_string(
+        "dialog.load_project_title",
+        {{"en", "Select Project Folder"}, {"zh", "选择项目文件夹"}});
+    add_locale_string("dialog.info", {{"en", "Info"}, {"zh", "提示"}});
     add_locale_string("dialog.confirm_delete_title",
                       {{"en", "Confirm Delete"}, {"zh", "确认删除"}});
     add_locale_string("dialog.confirm_delete",
@@ -654,17 +764,19 @@ void init_locale_strings() {
                        {"zh", "确定要删除此节点吗？"}});
     add_locale_string("dialog.confirm_manual_update_title",
                       {{"en", "Confirm Update"}, {"zh", "确认更新"}});
-    add_locale_string("dialog.confirm_manual_update_message",
-                      {{"en", "Some child nodes have auto-update disabled. Proceed anyway?"},
-                       {"zh", "部分子节点已关闭自动更新，是否继续？"}});
+    add_locale_string(
+        "dialog.confirm_manual_update_message",
+        {{"en", "Some child nodes have auto-update disabled. Proceed anyway?"},
+         {"zh", "部分子节点已关闭自动更新，是否继续？"}});
     add_locale_string("dialog.confirm_update_clears_mark",
                       {{"en", "Update will clear marked voxels. Continue?"},
                        {"zh", "更新将清除标记的体素，是否继续？"}});
     add_locale_string("dialog.unsaved_changes_title",
                       {{"en", "Unsaved changes"}, {"zh", "未保存的更改"}});
-    add_locale_string("dialog.unsaved_changes_message",
-                      {{"en", "There are unsaved changes. Save before closing?"},
-                       {"zh", "存在未保存的更改。关闭前是否保存？"}});
+    add_locale_string(
+        "dialog.unsaved_changes_message",
+        {{"en", "There are unsaved changes. Save before closing?"},
+         {"zh", "存在未保存的更改。关闭前是否保存？"}});
     add_locale_string("dialog.save_marked_voxels",
                       {{"en", "Save Marked Voxels"}, {"zh", "保存标记体素"}});
     add_locale_string("dialog.load_marked_voxels",
@@ -678,61 +790,45 @@ void init_locale_strings() {
                       {{"en", "Failed to load marked voxels."},
                        {"zh", "加载标记体素失败。"}});
 
-    add_locale_string("error.three_points_collinear",
-                      {{"en", "Three points are collinear."},
-                       {"zh", "三个点共线。"}});
-    add_locale_string("error.save_failed",
-                      {{"en", "Failed to save project."},
-                       {"zh", "保存项目失败。"}});
-    add_locale_string("error.load_failed",
-                      {{"en", "Failed to load project."},
-                       {"zh", "加载项目失败。"}});
-                       
+    add_locale_string(
+        "error.three_points_collinear",
+        {{"en", "Three points are collinear."}, {"zh", "三个点共线。"}});
+    add_locale_string("error.save_failed", {{"en", "Failed to save project."},
+                                            {"zh", "保存项目失败。"}});
+    add_locale_string("error.load_failed", {{"en", "Failed to load project."},
+                                            {"zh", "加载项目失败。"}});
+
     add_locale_string("progress.extract_skeleton.buildDenseGrid",
-                      {{"en", "build dense grid"},
-                       {"zh", "构建稠密体素网格"}});
+                      {{"en", "build dense grid"}, {"zh", "构建稠密体素网格"}});
     add_locale_string("progress.extract_skeleton.computeEDT",
-                      {{"en", "compute EDT"},
-                       {"zh", "构建EDT"}});
+                      {{"en", "compute EDT"}, {"zh", "构建EDT"}});
     add_locale_string("progress.extract_skeleton.finalizeEDT",
-                      {{"en", "finalize EDT"},
-                       {"zh", "EDT后处理"}});
+                      {{"en", "finalize EDT"}, {"zh", "EDT后处理"}});
     add_locale_string("progress.extract_skeleton.extractCenterline",
-                      {{"en", "extract center line"},
-                       {"zh", "计算中心线"}});
-    add_locale_string("progress.surface_nets.building_dense_grid",
-                      {{"en", "building dense grid"},
-                       {"zh", "构建稠密体素网格"}});
+                      {{"en", "extract center line"}, {"zh", "计算中心线"}});
+    add_locale_string(
+        "progress.surface_nets.building_dense_grid",
+        {{"en", "building dense grid"}, {"zh", "构建稠密体素网格"}});
     add_locale_string("progress.surface_nets.processing_chunk",
-                      {{"en", "processing chunk"},
-                       {"zh", "处理块"}});
+                      {{"en", "processing chunk"}, {"zh", "处理块"}});
     add_locale_string("progress.extract_skeleton.extractCenterline",
-                      {{"en", "extract center line"},
-                       {"zh", "计算中心线"}});
+                      {{"en", "extract center line"}, {"zh", "计算中心线"}});
     add_locale_string("progress.surface_nets.extracting_vertices",
-                      {{"en", "extracting vertices"},
-                       {"zh", "提取顶点"}});
+                      {{"en", "extracting vertices"}, {"zh", "提取顶点"}});
     add_locale_string("progress.surface_nets.no_surface_found",
-                      {{"en", "no surface found"},
-                       {"zh", "未找到表面"}});
+                      {{"en", "no surface found"}, {"zh", "未找到表面"}});
     add_locale_string("progress.surface_nets.building_faces",
-                      {{"en", "building faces"},
-                       {"zh", "构建面"}});
+                      {{"en", "building faces"}, {"zh", "构建面"}});
     add_locale_string("progress.surface_nets.emitting_triangles",
-                      {{"en", "emitting triangles"},
-                       {"zh", "发射三角形"}});
+                      {{"en", "emitting triangles"}, {"zh", "发射三角形"}});
     add_locale_string("progress.surface_nets.done",
-                      {{"en", "done"},
-                       {"zh", "完成"}});
+                      {{"en", "done"}, {"zh", "完成"}});
     add_locale_string("progress.surface_nets.building_voxel_sdf",
-                      {{"en", "building voxel SDF"},
-                       {"zh", "构建体素SDF"}});
+                      {{"en", "building voxel SDF"}, {"zh", "构建体素SDF"}});
     add_locale_string("progress.surface_nets.sdf_sample",
-                        {{"en", "SDF sample"},
-                         {"zh", "采样SDF"}});
+                      {{"en", "SDF sample"}, {"zh", "采样SDF"}});
     add_locale_string("progress.mc.processing_chunk",
-                      {{"en", "processing chunk"},
-                       {"zh", "处理块"}});
+                      {{"en", "processing chunk"}, {"zh", "处理块"}});
 }
 
 const std::string& get_locale_string_ref(const std::string& key) {
@@ -836,11 +932,11 @@ std::string utf8_to_ansi(const char* str) {
     int alen = WideCharToMultiByte(CP_ACP, 0, w.c_str(), -1, nullptr, 0,
                                    nullptr, nullptr);
     std::string s(alen, 0);
-    WideCharToMultiByte(CP_ACP, 0, w.c_str(), -1, &s[0], alen,
-                        nullptr, nullptr);
+    WideCharToMultiByte(CP_ACP, 0, w.c_str(), -1, &s[0], alen, nullptr,
+                        nullptr);
     return s;
 #else
     return str ? std::string(str) : std::string();
 #endif
 }
-}  // namespace sinriv::ui::render
+}  // namespace sinriv::locale
