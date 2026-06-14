@@ -1170,32 +1170,57 @@ void RenderVoxelList::load_from_node(int target_item_id,
         target.voxel_grid_data = std::move(voxel_data);
     };
 
-    // Gather source mesh triangles if available
-    std::vector<Triangle> source_mesh = source.source_triangles;
-    if (source_mesh.empty() && source.sdf_data &&
-        !source.voxel_grid_data.chunks.empty()) {
-        std::vector<std::tuple<Triangle, vec3f>> mesh;
-        int numTriangles = 0;
-        for (auto tri : generateSmoothMeshFromSDF(
-                 source.voxel_grid_data, numTriangles,
-                 [&](const std::string& status) {
-                     setQueueStatus("SDF Mesh: " + status);
-                     return queue_should_continue.load() &&
-                            queue_running.load();
-                 },
-                 true, node_source_sdf_subdivisions, source.sdf_data.get())) {
-            mesh.push_back(tri);
+    // Gather source mesh triangles according to node_source_data_type
+    std::vector<Triangle> source_mesh;
+    if (node_source_data_type == 0) {
+        // Mesh
+        source_mesh = source.source_triangles;
+    } else if (node_source_data_type == 1) {
+        // SDF
+        if (source.sdf_data && !source.voxel_grid_data.chunks.empty()) {
+            std::vector<std::tuple<Triangle, vec3f>> mesh;
+            int numTriangles = 0;
+            for (auto tri : generateSmoothMeshFromSDF(
+                     source.voxel_grid_data, numTriangles,
+                     [&](const std::string& status) {
+                         setQueueStatus("SDF Mesh: " + status);
+                         return queue_should_continue.load() &&
+                                queue_running.load();
+                     },
+                     true, node_source_sdf_subdivisions,
+                     source.sdf_data.get())) {
+                mesh.push_back(tri);
+            }
+            if (!mesh.empty()) {
+                mesh = cleanMesh(mesh);
+            }
+            if (node_source_sdf_simplify && !mesh.empty()) {
+                mesh = sinriv::kigstudio::cgal::simplifyMesh(
+                    mesh,
+                    static_cast<double>(node_source_sdf_simplify_ratio));
+            }
+            source_mesh.reserve(mesh.size());
+            for (auto& [tri, n] : mesh) {
+                source_mesh.push_back(tri);
+            }
+        } else {
+            source_mesh = source.source_triangles;
         }
-        if (!mesh.empty()) {
-            mesh = cleanMesh(mesh);
-        }
-        if (node_source_sdf_simplify && !mesh.empty()) {
-            mesh = sinriv::kigstudio::cgal::simplifyMesh(
-                mesh, static_cast<double>(node_source_sdf_simplify_ratio));
-        }
-        source_mesh.reserve(mesh.size());
-        for (auto& [tri, n] : mesh) {
-            source_mesh.push_back(tri);
+    } else if (node_source_data_type == 2) {
+        // Voxel
+        if (!source.voxel_grid_data.chunks.empty()) {
+            std::vector<std::tuple<Triangle, vec3f>> mesh;
+            int numTriangles = 0;
+            for (auto tri : generateMesh(source.voxel_grid_data, 0.5,
+                                          numTriangles, true)) {
+                mesh.push_back(tri);
+            }
+            source_mesh.reserve(mesh.size());
+            for (auto& [tri, n] : mesh) {
+                source_mesh.push_back(tri);
+            }
+        } else {
+            source_mesh = source.source_triangles;
         }
     }
 

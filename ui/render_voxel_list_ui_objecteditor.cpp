@@ -438,32 +438,45 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         // 数据类型选择
         if (item.source_node_id >= 0) {
             ImGui::Separator();
+            bool has_mesh = false;
             bool has_sdf = false;
             bool has_voxel = false;
             if (item.manager) {
                 auto src_it = item.manager->items.find(item.source_node_id);
                 if (src_it != item.manager->items.end()) {
+                    has_mesh = !src_it->second->source_triangles.empty();
                     has_sdf = src_it->second->sdf_data != nullptr;
-                    has_voxel = !src_it->second->voxel_grid_data.chunks.empty();
+                    has_voxel =
+                        !src_it->second->voxel_grid_data.chunks.empty();
                 }
             }
 
-            // 如果当前选中的数据类型不可用，自动回退到 Mesh
+            // 如果当前选中的数据类型不可用，自动回退到第一个可用类型
+            if (item.node_source_data_type == 0 && !has_mesh) {
+                item.node_source_data_type = has_sdf ? 1 : (has_voxel ? 2 : 0);
+            }
             if (item.node_source_data_type == 1 && !has_sdf) {
-                item.node_source_data_type = 0;
+                item.node_source_data_type = has_mesh ? 0 : (has_voxel ? 2 : 0);
             }
             if (item.node_source_data_type == 2 && !has_voxel) {
-                item.node_source_data_type = 0;
+                item.node_source_data_type = has_mesh ? 0 : (has_sdf ? 1 : 0);
             }
 
+            bool any_data_available = has_mesh || has_sdf || has_voxel;
+
             int data_type = item.node_source_data_type;
-            if (ImGui::RadioButton(
-                    get_locale_cstr("label.source_data_mesh"), &data_type, 0)) {
-                push_undo_now(item.id, std::nullopt, "Node Source Data Type");
-                item.node_source_data_type = data_type;
+            if (has_mesh) {
+                if (ImGui::RadioButton(
+                        get_locale_cstr("label.source_data_mesh"), &data_type,
+                        0)) {
+                    push_undo_now(item.id, std::nullopt,
+                                  "Node Source Data Type");
+                    item.node_source_data_type = data_type;
+                }
             }
             if (has_sdf) {
-                ImGui::SameLine();
+                if (has_mesh)
+                    ImGui::SameLine();
                 if (ImGui::RadioButton(
                         get_locale_cstr("label.source_data_sdf"), &data_type,
                         1)) {
@@ -473,7 +486,8 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 }
             }
             if (has_voxel) {
-                ImGui::SameLine();
+                if (has_mesh || has_sdf)
+                    ImGui::SameLine();
                 if (ImGui::RadioButton(
                         get_locale_cstr("label.source_data_voxel"), &data_type,
                         2)) {
@@ -481,6 +495,12 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                                   "Node Source Data Type");
                     item.node_source_data_type = data_type;
                 }
+            }
+
+            if (!any_data_available) {
+                ImGui::TextColored(
+                    ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                    "Source node has no mesh/SDF/voxel data available.");
             }
 
             // SDF 细分比例与简化模型
@@ -506,6 +526,7 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
 
             // 重新加载按钮
             ImGui::Separator();
+            ImGui::BeginDisabled(!any_data_available);
             if (ImGui::Button(
                     get_locale_cstr("action.reload_from_node"))) {
                 queue_reload_stl(
@@ -516,6 +537,7 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                     item.node_source_sdf_simplify,
                     item.node_source_sdf_simplify_ratio);
             }
+            ImGui::EndDisabled();
         }
     }
 }
