@@ -850,6 +850,28 @@ void init_locale_strings() {
                       {{"en", "SDF sample"}, {"zh", "采样SDF"}});
     add_locale_string("progress.mc.processing_chunk",
                       {{"en", "processing chunk"}, {"zh", "处理块"}});
+
+    // Node source labels
+    add_locale_string("label.source_file",
+                      {{"en", "File"}, {"zh", "文件"}});
+    add_locale_string("label.source_node",
+                      {{"en", "Node"}, {"zh", "节点"}});
+    add_locale_string("label.source_node_id",
+                      {{"en", "Source Node"}, {"zh", "源节点"}});
+    add_locale_string("label.source_data_mesh",
+                      {{"en", "Mesh"}, {"zh", "网格"}});
+    add_locale_string("label.source_data_sdf",
+                      {{"en", "SDF"}, {"zh", "SDF"}});
+    add_locale_string("label.source_data_voxel",
+                      {{"en", "Voxel"}, {"zh", "体素"}});
+    add_locale_string("label.node_source_sdf_subdivisions",
+                      {{"en", "SDF Subdivisions"}, {"zh", "SDF 细分"}});
+    add_locale_string("label.node_source_sdf_simplify",
+                      {{"en", "Simplify"}, {"zh", "简化"}});
+    add_locale_string("label.node_source_sdf_simplify_ratio",
+                      {{"en", "Simplify Ratio"}, {"zh", "简化比例"}});
+    add_locale_string("action.reload_from_node",
+                      {{"en", "Reload from Node"}, {"zh", "从节点重新加载"}});
 }
 
 const std::string& get_locale_string_ref(const std::string& key) {

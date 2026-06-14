@@ -143,6 +143,7 @@ enum class StlLoadMode : int {
     SILHOUETTE = 1,
     SURFACE_ONLY = 2,
     MESH_ONLY = 3,
+    CONVEX_HULL = 4, // TODO：使用CGAL::convex_hull_3
     COUNT
 };
 
@@ -171,6 +172,12 @@ struct CollisionEditorSnapshot {
     int stl_load_mode = 0;
     bool load_as_sdf = false;
     bool mesh_only = false;
+    int source_type = 0;
+    int source_node_id = -1;
+    int node_source_data_type = 0;
+    int node_source_sdf_subdivisions = 2;
+    bool node_source_sdf_simplify = false;
+    float node_source_sdf_simplify_ratio = 0.1f;
     vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
     bool show_silhouette_center = false;
 };
@@ -234,6 +241,7 @@ class RenderVoxelList {
             SDF_NODE_SPLIT = 7
         } segment_mode = COLLISION;
 
+        sinriv::ui::render::RenderMesh origin_mesh_renderer; // TODO:用于显示原始mesh(使用蓝色，默认隐藏)
         sinriv::ui::render::RenderMesh mesh_renderer;
         sinriv::ui::render::RenderMesh exported_mesh_renderer;
         sinriv::ui::render::RenderVoxel voxel_renderer;
@@ -393,6 +401,12 @@ class RenderVoxelList {
         int stl_load_mode = 0;
         bool load_as_sdf = false;
         bool mesh_only = false;
+        int source_type = 0;
+        int source_node_id = -1;
+        int node_source_data_type = 0;
+        int node_source_sdf_subdivisions = 2;
+        bool node_source_sdf_simplify = false;
+        float node_source_sdf_simplify_ratio = 0.1f;
         vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
         bool showSilhouetteCenter = false;
 
@@ -702,6 +716,19 @@ class RenderVoxelList {
                   int target_item_id = -1,
                   int load_mode = 0,
                   bool load_as_sdf = false);
+    void load_from_node(int target_item_id,
+                        int source_node_id,
+                        int node_source_data_type,
+                        int node_source_sdf_subdivisions,
+                        bool node_source_sdf_simplify,
+                        float node_source_sdf_simplify_ratio,
+                        int load_mode = 0);
+
+    // Cache helpers for node sources
+    std::filesystem::path get_cache_dir(const std::string& subdir) const;
+    std::filesystem::path get_mesh_cache_path(int node_id) const;
+    std::filesystem::path get_sdf_cache_path(int node_id) const;
+    std::filesystem::path get_voxel_cache_path(int node_id) const;
 
     // 后台队列
 
@@ -741,6 +768,11 @@ class RenderVoxelList {
         bool load_as_sdf = false;
         int subdivisions = 3;
         bool save_to_file = true;
+        int source_node_id = -1;
+        int node_source_data_type = 0;
+        int node_source_sdf_subdivisions = 2;
+        bool node_source_sdf_simplify = false;
+        float node_source_sdf_simplify_ratio = 0.1f;
     };
     std::queue<QueueTask> queue;
     std::mutex queue_mutex;
@@ -754,6 +786,8 @@ class RenderVoxelList {
     void stop_thread();
 
     std::vector<int> find_roots();
+    bool is_descendant_of(int child_id, int ancestor_id);
+    bool would_form_source_cycle(int from_id, int to_id);
     void update_nav_node_position();
 
     size_t get_num_items();
@@ -765,7 +799,12 @@ class RenderVoxelList {
                           float voxel_size,
                           const std::string& stl_path,
                           int load_mode = 0,
-                          bool load_as_sdf = false);
+                          bool load_as_sdf = false,
+                          int source_node_id = -1,
+                          int node_source_data_type = 0,
+                          int node_source_sdf_subdivisions = 2,
+                          bool node_source_sdf_simplify = false,
+                          float node_source_sdf_simplify_ratio = 0.1f);
     void queue_do_segment(int index);
     void queue_do_segment();
     void queue_do_segment_unsafe();

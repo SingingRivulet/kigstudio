@@ -27,10 +27,14 @@ void RenderVoxelList::render_nav_map() {
     ImNodes::BeginNodeEditor();
 
     std::unordered_set<int> sdf_sources;
+    std::unordered_set<int> node_sources;
     for (auto& [id, item] : this->items) {
         if (item->segment_mode == RenderVoxelItem::SDF_NODE_SPLIT &&
             item->sdf_split_target_id >= 0) {
             sdf_sources.insert(item->sdf_split_target_id);
+        }
+        if (item->source_type == 1 && item->source_node_id >= 0) {
+            node_sources.insert(item->source_node_id);
         }
     }
 
@@ -73,6 +77,13 @@ void RenderVoxelList::render_nav_map() {
             ImNodes::BeginInputAttribute(id * 1000 + 1,
                                          ImNodesPinShape_CircleFilled);
             ImGui::Text("SDF");
+            ImNodes::EndInputAttribute();
+        }
+
+        if (item->source_type == 1 && item->source_node_id >= 0) {
+            ImNodes::BeginInputAttribute(id * 1000 + 3,
+                                         ImNodesPinShape_CircleFilled);
+            ImGui::Text("Src");
             ImNodes::EndInputAttribute();
         }
 
@@ -127,6 +138,13 @@ void RenderVoxelList::render_nav_map() {
             ImNodes::EndOutputAttribute();
         }
 
+        if (node_sources.count(id)) {
+            ImNodes::BeginOutputAttribute(id * 1000 + 3,
+                                          ImNodesPinShape_CircleFilled);
+            ImGui::Text("");
+            ImNodes::EndOutputAttribute();
+        }
+
         ImNodes::EndNode();
 
         if (is_current) {
@@ -156,6 +174,16 @@ void RenderVoxelList::render_nav_map() {
                 this->items.end()) {
             int source_attr = item->sdf_split_target_id * 1000 + 2;
             int target_attr = id * 1000 + 1;
+            ImNodes::Link(link_id++, source_attr, target_attr);
+        }
+    }
+
+    // 绘制 Source Node 依赖线
+    for (auto& [id, item] : this->items) {
+        if (item->source_type == 1 && item->source_node_id >= 0 &&
+            this->items.find(item->source_node_id) != this->items.end()) {
+            int source_attr = item->source_node_id * 1000 + 3;
+            int target_attr = id * 1000 + 3;
             ImNodes::Link(link_id++, source_attr, target_attr);
         }
     }
@@ -259,6 +287,42 @@ inline void compute_layout(RenderVoxelList& mgr) {
         std::cerr << "WARNING: Cycle detected in RenderVoxelItem graph!"
                   << std::endl;
     }
+}
+
+bool RenderVoxelList::is_descendant_of(int child_id, int ancestor_id) {
+    if (child_id == ancestor_id)
+        return true;
+    // Caller must hold locker
+    auto it = items.find(child_id);
+    if (it == items.end())
+        return false;
+    for (int parent_id : it->second->children) {
+        if (is_descendant_of(parent_id, ancestor_id)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool RenderVoxelList::would_form_source_cycle(int from_id, int to_id) {
+    if (from_id == to_id)
+        return true;
+    // Caller must hold locker
+    int current = to_id;
+    std::unordered_set<int> visited;
+    while (current >= 0) {
+        if (current == from_id)
+            return true;
+        if (!visited.insert(current).second)
+            break;
+        auto it = items.find(current);
+        if (it == items.end())
+            break;
+        current = it->second->source_type == 1
+                      ? it->second->source_node_id
+                      : -1;
+    }
+    return false;
 }
 
 std::vector<int> RenderVoxelList::find_roots() {

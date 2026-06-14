@@ -81,6 +81,16 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddNumberToObject(obj, "stl_load_mode", item.stl_load_mode);
     cJSON_AddBoolToObject(obj, "load_as_sdf", item.load_as_sdf);
     cJSON_AddBoolToObject(obj, "mesh_only", item.mesh_only);
+    cJSON_AddNumberToObject(obj, "source_type", item.source_type);
+    cJSON_AddNumberToObject(obj, "source_node_id", item.source_node_id);
+    cJSON_AddNumberToObject(obj, "node_source_data_type",
+                            item.node_source_data_type);
+    cJSON_AddNumberToObject(obj, "node_source_sdf_subdivisions",
+                            item.node_source_sdf_subdivisions);
+    cJSON_AddBoolToObject(obj, "node_source_sdf_simplify",
+                          item.node_source_sdf_simplify);
+    cJSON_AddNumberToObject(obj, "node_source_sdf_simplify_ratio",
+                            item.node_source_sdf_simplify_ratio);
     cJSON_AddItemToObject(
         obj, "silhouette_center",
         sinriv::kigstudio::to_json(item.silhouette_center));
@@ -257,6 +267,39 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         cJSON_GetObjectItem(obj, "mesh_only");
     if (mesh_only_json) {
         item->mesh_only = cJSON_IsTrue(mesh_only_json);
+    }
+    const cJSON* source_type_json =
+        cJSON_GetObjectItem(obj, "source_type");
+    if (source_type_json) {
+        item->source_type = source_type_json->valueint;
+    }
+    const cJSON* source_node_id_json =
+        cJSON_GetObjectItem(obj, "source_node_id");
+    if (source_node_id_json) {
+        item->source_node_id = source_node_id_json->valueint;
+    }
+    const cJSON* node_source_data_type_json =
+        cJSON_GetObjectItem(obj, "node_source_data_type");
+    if (node_source_data_type_json) {
+        item->node_source_data_type = node_source_data_type_json->valueint;
+    }
+    const cJSON* node_source_sdf_subdivisions_json =
+        cJSON_GetObjectItem(obj, "node_source_sdf_subdivisions");
+    if (node_source_sdf_subdivisions_json) {
+        item->node_source_sdf_subdivisions =
+            node_source_sdf_subdivisions_json->valueint;
+    }
+    const cJSON* node_source_sdf_simplify_json =
+        cJSON_GetObjectItem(obj, "node_source_sdf_simplify");
+    if (node_source_sdf_simplify_json) {
+        item->node_source_sdf_simplify =
+            cJSON_IsTrue(node_source_sdf_simplify_json);
+    }
+    const cJSON* node_source_sdf_simplify_ratio_json =
+        cJSON_GetObjectItem(obj, "node_source_sdf_simplify_ratio");
+    if (node_source_sdf_simplify_ratio_json) {
+        item->node_source_sdf_simplify_ratio =
+            static_cast<float>(node_source_sdf_simplify_ratio_json->valuedouble);
     }
     const cJSON* silhouette_center_json =
         cJSON_GetObjectItem(obj, "silhouette_center");

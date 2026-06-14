@@ -38,8 +38,17 @@ void RenderVoxelList::process_queue_result() {
         }
     }
     for (auto& it : to_remove) {
+        int removed_id = it;
         items.erase(it);
         update_nav_node_status = true;
+        // 断开指向被删除节点的 source-node 引用
+        for (auto& [id, item] : items) {
+            if (item->source_type == 1 &&
+                item->source_node_id == removed_id) {
+                item->source_type = 0;
+                item->source_node_id = -1;
+            }
+        }
     }
     // 重新选一个可用的render_id
     if (items.find(render_id) == items.end()) {
@@ -124,15 +133,35 @@ void RenderVoxelList::queue_thread() {
                 queue_running = false;
                 break;
             case TASK_RELOAD_STL:
-                // 重新加载stl文件（更改体素大小）
-                append_queue_logf("log.queue.start_reload_stl", task.index,
-                                  task.file_path.c_str());
-                std::cout << "Reload stl file: " << task.file_path
-                          << " for item " << task.index << std::endl;
+                // 重新加载stl文件（更改体素大小）或从节点加载
                 queue_running = true;
                 try {
-                    load_stl(task.file_path, task.voxel_size, 0.5, true,
-                             task.index, task.load_mode, task.load_as_sdf);
+                    if (task.source_node_id >= 0) {
+                        append_queue_logf("log.queue.start_reload_stl",
+                                          task.index,
+                                          ("node " +
+                                           std::to_string(task.source_node_id))
+                                              .c_str());
+                        std::cout << "Reload from node: "
+                                  << task.source_node_id << " for item "
+                                  << task.index << std::endl;
+                        load_from_node(
+                            task.index, task.source_node_id,
+                            task.node_source_data_type,
+                            task.node_source_sdf_subdivisions,
+                            task.node_source_sdf_simplify,
+                            task.node_source_sdf_simplify_ratio,
+                            task.load_mode);
+                    } else {
+                        append_queue_logf("log.queue.start_reload_stl",
+                                          task.index,
+                                          task.file_path.c_str());
+                        std::cout << "Reload stl file: " << task.file_path
+                                  << " for item " << task.index << std::endl;
+                        load_stl(task.file_path, task.voxel_size, 0.5, true,
+                                 task.index, task.load_mode,
+                                 task.load_as_sdf);
+                    }
                     append_queue_logf("log.queue.done_reload_stl", task.index);
                 } catch (std::runtime_error& e) {
                     append_queue_logf("log.queue.error_reload_stl", task.index,
@@ -775,8 +804,13 @@ void RenderVoxelList::queue_reload_stl(int item_id,
                                        float voxel_size,
                                        const std::string& stl_path,
                                        int load_mode,
-                                       bool load_as_sdf) {
-    if (stl_path.empty())
+                                       bool load_as_sdf,
+                                       int source_node_id,
+                                       int node_source_data_type,
+                                       int node_source_sdf_subdivisions,
+                                       bool node_source_sdf_simplify,
+                                       float node_source_sdf_simplify_ratio) {
+    if (stl_path.empty() && source_node_id < 0)
         return;
     std::lock_guard<std::mutex> lock(queue_mutex);
     QueueTask task;
@@ -786,6 +820,11 @@ void RenderVoxelList::queue_reload_stl(int item_id,
     task.voxel_size = voxel_size;
     task.load_mode = load_mode;
     task.load_as_sdf = load_as_sdf;
+    task.source_node_id = source_node_id;
+    task.node_source_data_type = node_source_data_type;
+    task.node_source_sdf_subdivisions = node_source_sdf_subdivisions;
+    task.node_source_sdf_simplify = node_source_sdf_simplify;
+    task.node_source_sdf_simplify_ratio = node_source_sdf_simplify_ratio;
     queue.push(task);
     this->queue_num = static_cast<int>(queue.size());
 }

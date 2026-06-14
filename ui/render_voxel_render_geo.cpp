@@ -1,4 +1,5 @@
 #include "render_voxel_list.h"
+#include "kigstudio/cgal/mesh_simplification.h"
 #include "kigstudio/cgal/skeleton_extraction.h"
 #include "kigstudio/mesh/conebox.h"
 #include "kigstudio/sdf/sdf_mesh.h"
@@ -906,6 +907,7 @@ void RenderVoxelList::load_stl(std::string filename,
         for (auto face :
              {triangle_bvh<float>::voxel_face_X, triangle_bvh<float>::voxel_face_Y,
               triangle_bvh<float>::voxel_face_Z}) {
+            // TODO：利用cgal辅助判断，降低错误率（参考sinriv::kigstudio::sdf::SDF_Mesh::Impl::getBatch）
             bvh.getSolidByFace(voxel_size, voxel_size, voxel_size, face,
                                voxel_callback);
         }
@@ -1034,5 +1036,273 @@ void RenderVoxelList::load_stl(std::string filename,
 
     setQueueStatus("Done");
     queue_progress = 1.0f;
+}
+
+std::filesystem::path RenderVoxelList::get_cache_dir(
+    const std::string& subdir) const {
+    std::filesystem::path base;
+    if (!project_path.empty()) {
+        base = utf8_path(project_path) / "cache" / subdir;
+    } else {
+        base = std::filesystem::temp_directory_path() / "kigstudio_cache" /
+               subdir;
+    }
+    std::filesystem::create_directories(base);
+    return base;
+}
+
+std::filesystem::path RenderVoxelList::get_mesh_cache_path(int node_id) const {
+    return get_cache_dir("mesh") / (std::to_string(node_id) + ".stl");
+}
+
+std::filesystem::path RenderVoxelList::get_sdf_cache_path(int node_id) const {
+    return get_cache_dir("sdf") / (std::to_string(node_id) + ".stl");
+}
+
+std::filesystem::path RenderVoxelList::get_voxel_cache_path(int node_id) const {
+    return get_cache_dir("voxel") / (std::to_string(node_id) + ".vxgrid");
+}
+
+void RenderVoxelList::load_from_node(int target_item_id,
+                                     int source_node_id,
+                                     int node_source_data_type,
+                                     int node_source_sdf_subdivisions,
+                                     bool node_source_sdf_simplify,
+                                     float node_source_sdf_simplify_ratio,
+                                     int load_mode) {
+    using namespace sinriv::kigstudio::voxel;
+    using Triangle = triangle_bvh<float>::triangle;
+    using vec3f = sinriv::kigstudio::vec3<float>;
+
+    std::lock_guard<std::mutex> lock(locker);
+    auto source_it = items.find(source_node_id);
+    auto target_it = items.find(target_item_id);
+    if (source_it == items.end() || target_it == items.end()) {
+        return;
+    }
+    auto& source = *source_it->second;
+    auto& target = *target_it->second;
+
+    target.mesh_renderer.clear();
+    target.exported_mesh_renderer.clear();
+    target.cached_mesh.clear();
+    target.cached_mesh_dirty = true;
+    target.voxel_renderer.clear();
+    target.sdf_data = nullptr;
+    target.source_triangles.clear();
+    target.voxel_grid_data.chunks.clear();
+    target.mesh_only = false;
+    target.stl_path.clear();
+
+    // Gather source mesh triangles if available
+    std::vector<Triangle> source_mesh = source.source_triangles;
+    if (source_mesh.empty() && source.sdf_data &&
+        !source.voxel_grid_data.chunks.empty()) {
+        std::vector<std::tuple<Triangle, vec3f>> mesh;
+        int numTriangles = 0;
+        for (auto tri : generateSmoothMeshFromSDF(
+                 source.voxel_grid_data, numTriangles,
+                 [&](const std::string& status) {
+                     setQueueStatus("SDF Mesh: " + status);
+                     return queue_should_continue.load() &&
+                            queue_running.load();
+                 },
+                 true, node_source_sdf_subdivisions, source.sdf_data.get())) {
+            mesh.push_back(tri);
+        }
+        if (!mesh.empty()) {
+            mesh = cleanMesh(mesh);
+        }
+        if (node_source_sdf_simplify && !mesh.empty()) {
+            mesh = sinriv::kigstudio::cgal::simplifyMesh(
+                mesh, static_cast<double>(node_source_sdf_simplify_ratio));
+        }
+        source_mesh.reserve(mesh.size());
+        for (auto& [tri, n] : mesh) {
+            source_mesh.push_back(tri);
+        }
+    }
+
+    if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+        // Silhouette from source mesh
+        if (!source_mesh.empty()) {
+            target.source_triangles =
+                sinriv::kigstudio::mesh::conebox::
+                    build_closed_mesh_from_triangles_silhouette(
+                        source_mesh, target.silhouette_center);
+            target.mesh_renderer.loadGeometry(triangle_generator_with_normals(
+                target.source_triangles));
+            target.mesh_only = true;
+        }
+    } else if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
+        // Surface-only voxelization from source mesh
+        if (!source_mesh.empty()) {
+            target.source_triangles = source_mesh;
+            target.mesh_renderer.loadGeometry(
+                triangle_generator_with_normals(target.source_triangles));
+            VoxelGrid voxel_data;
+            voxel_data.voxel_size = {target.stl_voxel_size,
+                                     target.stl_voxel_size,
+                                     target.stl_voxel_size};
+            voxel_data.global_position = {-0.5f * target.stl_voxel_size,
+                                          -0.5f * target.stl_voxel_size,
+                                          -0.5f * target.stl_voxel_size};
+            float precision = target.stl_voxel_size / 10.0f;
+            for (const auto& tri : target.source_triangles) {
+                for (auto point : sinriv::kigstudio::voxel::draw_triangle(
+                         tri, target.stl_voxel_size, target.stl_voxel_size,
+                         target.stl_voxel_size, precision)) {
+                    voxel_data.insert(voxel_data.worldToVoxel(point));
+                }
+            }
+            target.voxel_renderer.loadVoxelGridChunked(voxel_data, 0.5, true);
+            target.voxel_grid_data = std::move(voxel_data);
+            target.mesh_only = false;
+        }
+    } else if (load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
+        // Mesh only
+        target.source_triangles = source_mesh;
+        if (!target.source_triangles.empty()) {
+            target.mesh_renderer.loadGeometry(triangle_generator_with_normals(
+                target.source_triangles));
+        }
+        target.mesh_only = true;
+    } else {
+        // Default: follow node_source_data_type
+        if (node_source_data_type == 0) {
+            // Mesh: voxelize source triangles like file mode DEFAULT
+            target.source_triangles = source.source_triangles;
+            if (!target.source_triangles.empty()) {
+                target.mesh_renderer.loadGeometry(triangle_generator_with_normals(
+                    target.source_triangles));
+
+                float voxel_size = target.stl_voxel_size;
+                triangle_bvh<float> bvh;
+                for (const auto& tri : target.source_triangles) {
+                    bvh.insert(tri);
+                }
+
+                VoxelGrid voxel_data;
+                voxel_data.voxel_size = {voxel_size, voxel_size, voxel_size};
+                voxel_data.global_position = bvh.global_boundBox_min;
+
+                float minx = floor(bvh.global_boundBox_min.x / voxel_size) *
+                             voxel_size;
+                float miny = floor(bvh.global_boundBox_min.y / voxel_size) *
+                             voxel_size;
+                float minz = floor(bvh.global_boundBox_min.z / voxel_size) *
+                             voxel_size;
+                float maxx = ceil(bvh.global_boundBox_max.x / voxel_size) *
+                             voxel_size;
+                float maxy = ceil(bvh.global_boundBox_max.y / voxel_size) *
+                             voxel_size;
+                float maxz = ceil(bvh.global_boundBox_max.z / voxel_size) *
+                             voxel_size;
+                int num_block_x =
+                    static_cast<int>(floor((maxx - minx) / voxel_size)) + 1;
+                int num_block_y =
+                    static_cast<int>(floor((maxy - miny) / voxel_size)) + 1;
+                int num_block_z =
+                    static_cast<int>(floor((maxz - minz) / voxel_size)) + 1;
+
+                std::mutex bvh_locker;
+                auto voxel_callback = [&](auto start, auto end) {
+                    int start_x = static_cast<int>(std::round(
+                        (start.x - voxel_data.global_position.x) / voxel_size));
+                    int start_y = static_cast<int>(std::round(
+                        (start.y - voxel_data.global_position.y) / voxel_size));
+                    int start_z = static_cast<int>(std::round(
+                        (start.z - voxel_data.global_position.z) / voxel_size));
+                    int end_x = static_cast<int>(std::round(
+                        (end.x - voxel_data.global_position.x) / voxel_size));
+                    int end_y = static_cast<int>(std::round(
+                        (end.y - voxel_data.global_position.y) / voxel_size));
+                    int end_z = static_cast<int>(std::round(
+                        (end.z - voxel_data.global_position.z) / voxel_size));
+
+                    std::lock_guard<std::mutex> lock(bvh_locker);
+                    for (int i = start_x; i <= end_x; ++i) {
+                        for (int j = start_y; j <= end_y; ++j) {
+                            for (int k = start_z; k <= end_z; ++k) {
+                                if (i >= 0 && j >= 0 && k >= 0) {
+                                    voxel_data.insert(i, j, k);
+                                }
+                            }
+                        }
+                    }
+                };
+
+                for (auto face :
+                     {triangle_bvh<float>::voxel_face_X,
+                      triangle_bvh<float>::voxel_face_Y,
+                      triangle_bvh<float>::voxel_face_Z}) {
+                    bvh.getSolidByFace(voxel_size, voxel_size, voxel_size,
+                                       face, voxel_callback);
+                }
+
+                target.voxel_renderer.loadVoxelGridChunked(voxel_data, 0.5,
+                                                            true);
+                target.voxel_grid_data = std::move(voxel_data);
+            }
+            target.mesh_only = false;
+        } else if (node_source_data_type == 1) {
+            // SDF: copy SDF and voxel grid from source
+            target.voxel_grid_data = source.voxel_grid_data;
+            target.sdf_data = source.sdf_data;
+            target.voxel_renderer.loadVoxelGridChunked(target.voxel_grid_data,
+                                                        0.5, true);
+            target.source_triangles = source.source_triangles;
+            if (!target.source_triangles.empty()) {
+                target.mesh_renderer.loadGeometry(triangle_generator_with_normals(
+                    target.source_triangles));
+            }
+            target.mesh_only = false;
+        } else if (node_source_data_type == 2) {
+            // Voxel
+            target.voxel_grid_data = source.voxel_grid_data;
+            target.voxel_renderer.loadVoxelGridChunked(target.voxel_grid_data,
+                                                        0.5, true);
+            target.source_triangles = source.source_triangles;
+            if (!target.source_triangles.empty()) {
+                target.mesh_renderer.loadGeometry(triangle_generator_with_normals(
+                    target.source_triangles));
+            }
+            target.mesh_only = false;
+        }
+    }
+
+    target.thumbnail_dirty = true;
+    target.dirty = true;
+
+    // Write cache for source node data
+    try {
+        if (node_source_data_type == 0) {
+            auto path = get_mesh_cache_path(source_node_id);
+            std::vector<std::tuple<Triangle, vec3f>> mesh;
+            mesh.reserve(source.source_triangles.size());
+            for (const auto& tri : source.source_triangles) {
+                mesh.push_back(
+                    {tri, sinriv::kigstudio::voxel::calcTriangleNormal(tri)});
+            }
+            sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, path.string());
+        } else if (node_source_data_type == 1) {
+            auto path = get_sdf_cache_path(source_node_id);
+            std::vector<std::tuple<Triangle, vec3f>> mesh;
+            mesh.reserve(target.source_triangles.size());
+            for (const auto& tri : target.source_triangles) {
+                mesh.push_back(
+                    {tri, sinriv::kigstudio::voxel::calcTriangleNormal(tri)});
+            }
+            sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, path.string());
+        } else if (node_source_data_type == 2) {
+            auto path = get_voxel_cache_path(source_node_id);
+            std::string error;
+            sinriv::kigstudio::save(path.string(), source.voxel_grid_data,
+                                    &error);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[load_from_node] cache write failed: " << e.what()
+                  << std::endl;
+    }
 }
 }  // namespace sinriv::ui::render
