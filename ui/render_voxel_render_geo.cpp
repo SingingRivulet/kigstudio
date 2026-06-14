@@ -1085,39 +1085,53 @@ void RenderVoxelList::load_from_node(int target_item_id,
     using Triangle = triangle_bvh<float>::triangle;
     using vec3f = sinriv::kigstudio::vec3<float>;
 
-    std::lock_guard<std::mutex> lock(locker);
-    auto source_it = items.find(source_node_id);
-    auto target_it = items.find(target_item_id);
-    if (source_it == items.end() || target_it == items.end()) {
+    // Snapshot source data and mark target as writing under lock,
+    // then perform heavy processing without holding locker so the UI stays
+    // responsive.
+    float voxel_size = 0.0f;
+    vec3f silhouette_center{0.0f, 0.0f, 0.0f};
+    std::vector<Triangle> source_triangles;
+    VoxelGrid source_voxel_grid;
+    std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> source_sdf;
+    bool source_found = false;
+    RenderVoxelItem* target_ptr = nullptr;
+    int data_type = node_source_data_type;
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto source_it = items.find(source_node_id);
+        auto target_it = items.find(target_item_id);
+        if (source_it == items.end() || target_it == items.end()) {
+            return;
+        }
+        auto& source = *source_it->second;
+        target_ptr = target_it->second.get();
+        target_ptr->ref_count++;
+        target_ptr->write_count++;
+        source_found = true;
+
+        voxel_size = target_ptr->stl_voxel_size;
+        silhouette_center = target_ptr->silhouette_center;
+
+        source_triangles = source.source_triangles;
+        source_voxel_grid = source.voxel_grid_data;
+        source_sdf = source.sdf_data;
+    }
+    if (!source_found || !target_ptr) {
         return;
     }
-    auto& source = *source_it->second;
-    auto& target = *target_it->second;
 
-    target.mesh_renderer.clear();
-    target.exported_mesh_renderer.clear();
-    target.cached_mesh.clear();
-    target.cached_mesh_dirty = true;
-    target.voxel_renderer.clear();
-    target.sdf_data = nullptr;
-    target.source_triangles.clear();
-    target.voxel_grid_data.chunks.clear();
-    target.mesh_only = false;
-    target.stl_path.clear();
-
-    // Helper: voxelize a triangle set into target using current stl_voxel_size
-    auto voxelize_triangles = [&](const std::vector<Triangle>& triangles) {
+    // Helper: voxelize a triangle set using the given voxel size
+    auto voxelize_triangles = [&](const std::vector<Triangle>& triangles,
+                                  VoxelGrid& out_voxel) {
         if (triangles.empty())
             return;
-        float voxel_size = target.stl_voxel_size;
         triangle_bvh<float> bvh;
         for (const auto& tri : triangles) {
             bvh.insert(tri);
         }
 
-        VoxelGrid voxel_data;
-        voxel_data.voxel_size = {voxel_size, voxel_size, voxel_size};
-        voxel_data.global_position = bvh.global_boundBox_min;
+        out_voxel.voxel_size = {voxel_size, voxel_size, voxel_size};
+        out_voxel.global_position = bvh.global_boundBox_min;
 
         float minx = floor(bvh.global_boundBox_min.x / voxel_size) * voxel_size;
         float miny = floor(bvh.global_boundBox_min.y / voxel_size) * voxel_size;
@@ -1135,24 +1149,24 @@ void RenderVoxelList::load_from_node(int target_item_id,
         std::mutex bvh_locker;
         auto voxel_callback = [&](auto start, auto end) {
             int start_x = static_cast<int>(std::round(
-                (start.x - voxel_data.global_position.x) / voxel_size));
+                (start.x - out_voxel.global_position.x) / voxel_size));
             int start_y = static_cast<int>(std::round(
-                (start.y - voxel_data.global_position.y) / voxel_size));
+                (start.y - out_voxel.global_position.y) / voxel_size));
             int start_z = static_cast<int>(std::round(
-                (start.z - voxel_data.global_position.z) / voxel_size));
+                (start.z - out_voxel.global_position.z) / voxel_size));
             int end_x = static_cast<int>(std::round(
-                (end.x - voxel_data.global_position.x) / voxel_size));
+                (end.x - out_voxel.global_position.x) / voxel_size));
             int end_y = static_cast<int>(std::round(
-                (end.y - voxel_data.global_position.y) / voxel_size));
+                (end.y - out_voxel.global_position.y) / voxel_size));
             int end_z = static_cast<int>(std::round(
-                (end.z - voxel_data.global_position.z) / voxel_size));
+                (end.z - out_voxel.global_position.z) / voxel_size));
 
             std::lock_guard<std::mutex> lock(bvh_locker);
             for (int i = start_x; i <= end_x; ++i) {
                 for (int j = start_y; j <= end_y; ++j) {
                     for (int k = start_z; k <= end_z; ++k) {
                         if (i >= 0 && j >= 0 && k >= 0) {
-                            voxel_data.insert(i, j, k);
+                            out_voxel.insert(i, j, k);
                         }
                     }
                 }
@@ -1165,30 +1179,26 @@ void RenderVoxelList::load_from_node(int target_item_id,
             bvh.getSolidByFace(voxel_size, voxel_size, voxel_size, face,
                                voxel_callback);
         }
-
-        target.voxel_renderer.loadVoxelGridChunked(voxel_data, 0.5, true);
-        target.voxel_grid_data = std::move(voxel_data);
     };
 
     // Gather source mesh triangles according to node_source_data_type
     std::vector<Triangle> source_mesh;
-    if (node_source_data_type == 0) {
+    if (data_type == 0) {
         // Mesh
-        source_mesh = source.source_triangles;
-    } else if (node_source_data_type == 1) {
+        source_mesh = std::move(source_triangles);
+    } else if (data_type == 1) {
         // SDF
-        if (source.sdf_data && !source.voxel_grid_data.chunks.empty()) {
+        if (source_sdf && !source_voxel_grid.chunks.empty()) {
             std::vector<std::tuple<Triangle, vec3f>> mesh;
             int numTriangles = 0;
             for (auto tri : generateSmoothMeshFromSDF(
-                     source.voxel_grid_data, numTriangles,
+                     source_voxel_grid, numTriangles,
                      [&](const std::string& status) {
                          setQueueStatus("SDF Mesh: " + status);
                          return queue_should_continue.load() &&
                                 queue_running.load();
                      },
-                     true, node_source_sdf_subdivisions,
-                     source.sdf_data.get())) {
+                     true, node_source_sdf_subdivisions, source_sdf.get())) {
                 mesh.push_back(tri);
             }
             if (!mesh.empty()) {
@@ -1204,15 +1214,15 @@ void RenderVoxelList::load_from_node(int target_item_id,
                 source_mesh.push_back(tri);
             }
         } else {
-            source_mesh = source.source_triangles;
+            source_mesh = std::move(source_triangles);
         }
-    } else if (node_source_data_type == 2) {
+    } else if (data_type == 2) {
         // Voxel
-        if (!source.voxel_grid_data.chunks.empty()) {
+        if (!source_voxel_grid.chunks.empty()) {
             std::vector<std::tuple<Triangle, vec3f>> mesh;
             int numTriangles = 0;
-            for (auto tri : generateMesh(source.voxel_grid_data, 0.5,
-                                          numTriangles, true)) {
+            for (auto tri : generateMesh(source_voxel_grid, 0.5, numTriangles,
+                                          true)) {
                 mesh.push_back(tri);
             }
             source_mesh.reserve(mesh.size());
@@ -1220,132 +1230,139 @@ void RenderVoxelList::load_from_node(int target_item_id,
                 source_mesh.push_back(tri);
             }
         } else {
-            source_mesh = source.source_triangles;
+            source_mesh = std::move(source_triangles);
         }
     }
 
+    // Compute target data according to load_mode
+    std::vector<Triangle> target_triangles;
+    VoxelGrid target_voxel;
+    std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> target_sdf;
+    bool target_mesh_only = false;
+
     if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
-        // Silhouette from source mesh
         if (!source_mesh.empty()) {
-            target.source_triangles =
+            target_triangles =
                 sinriv::kigstudio::mesh::conebox::
                     build_closed_mesh_from_triangles_silhouette(
-                        source_mesh, target.silhouette_center);
-            target.mesh_renderer.loadGeometry(triangle_generator_with_normals(
-                target.source_triangles));
-            target.mesh_only = true;
+                        source_mesh, silhouette_center);
+            target_mesh_only = true;
         }
     } else if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
-        // Surface-only voxelization from source mesh
         if (!source_mesh.empty()) {
-            target.source_triangles = source_mesh;
-            target.mesh_renderer.loadGeometry(
-                triangle_generator_with_normals(target.source_triangles));
+            target_triangles = source_mesh;
             VoxelGrid voxel_data;
-            voxel_data.voxel_size = {target.stl_voxel_size,
-                                     target.stl_voxel_size,
-                                     target.stl_voxel_size};
-            voxel_data.global_position = {-0.5f * target.stl_voxel_size,
-                                          -0.5f * target.stl_voxel_size,
-                                          -0.5f * target.stl_voxel_size};
-            float precision = target.stl_voxel_size / 10.0f;
-            for (const auto& tri : target.source_triangles) {
+            voxel_data.voxel_size = {voxel_size, voxel_size, voxel_size};
+            voxel_data.global_position = {-0.5f * voxel_size,
+                                          -0.5f * voxel_size,
+                                          -0.5f * voxel_size};
+            float precision = voxel_size / 10.0f;
+            for (const auto& tri : target_triangles) {
                 for (auto point : sinriv::kigstudio::voxel::draw_triangle(
-                         tri, target.stl_voxel_size, target.stl_voxel_size,
-                         target.stl_voxel_size, precision)) {
+                         tri, voxel_size, voxel_size, voxel_size,
+                         precision)) {
                     voxel_data.insert(voxel_data.worldToVoxel(point));
                 }
             }
-            target.voxel_renderer.loadVoxelGridChunked(voxel_data, 0.5, true);
-            target.voxel_grid_data = std::move(voxel_data);
-            target.mesh_only = false;
+            target_voxel = std::move(voxel_data);
         }
     } else if (load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
-        // Mesh only
-        target.source_triangles = source_mesh;
-        if (!target.source_triangles.empty()) {
-            target.mesh_renderer.loadGeometry(triangle_generator_with_normals(
-                target.source_triangles));
-        }
-        target.mesh_only = true;
-    } else if (load_mode ==
-               static_cast<int>(StlLoadMode::CONVEX_HULL)) {
-        // Convex hull from source mesh, then voxelize like DEFAULT
+        target_triangles = std::move(source_mesh);
+        target_mesh_only = true;
+    } else if (load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
         if (!source_mesh.empty()) {
-            target.source_triangles =
+            target_triangles =
                 sinriv::kigstudio::cgal::convexHull3(source_mesh);
-            if (!target.source_triangles.empty()) {
-                target.mesh_renderer.loadGeometry(
-                    triangle_generator_with_normals(target.source_triangles));
-                voxelize_triangles(target.source_triangles);
+            if (!target_triangles.empty()) {
+                VoxelGrid voxel_data;
+                voxelize_triangles(target_triangles, voxel_data);
+                target_voxel = std::move(voxel_data);
             }
         }
-        target.mesh_only = false;
     } else {
         // Default: follow node_source_data_type
-        if (node_source_data_type == 0) {
+        if (data_type == 0) {
             // Mesh: voxelize source triangles like file mode DEFAULT
-            target.source_triangles = source.source_triangles;
-            if (!target.source_triangles.empty()) {
-                target.mesh_renderer.loadGeometry(triangle_generator_with_normals(
-                    target.source_triangles));
-                voxelize_triangles(target.source_triangles);
+            target_triangles = std::move(source_mesh);
+            if (!target_triangles.empty()) {
+                VoxelGrid voxel_data;
+                voxelize_triangles(target_triangles, voxel_data);
+                target_voxel = std::move(voxel_data);
             }
-            target.mesh_only = false;
-        } else if (node_source_data_type == 1) {
+        } else if (data_type == 1) {
             // SDF: copy SDF and voxel grid from source
-            target.voxel_grid_data = source.voxel_grid_data;
-            target.sdf_data = source.sdf_data;
-            target.voxel_renderer.loadVoxelGridChunked(target.voxel_grid_data,
-                                                        0.5, true);
-            target.source_triangles = source.source_triangles;
-            if (!target.source_triangles.empty()) {
-                target.mesh_renderer.loadGeometry(triangle_generator_with_normals(
-                    target.source_triangles));
-            }
-            target.mesh_only = false;
-        } else if (node_source_data_type == 2) {
+            target_voxel = source_voxel_grid;
+            target_sdf = source_sdf;
+            target_triangles = std::move(source_triangles);
+        } else if (data_type == 2) {
             // Voxel
-            target.voxel_grid_data = source.voxel_grid_data;
-            target.voxel_renderer.loadVoxelGridChunked(target.voxel_grid_data,
-                                                        0.5, true);
-            target.source_triangles = source.source_triangles;
-            if (!target.source_triangles.empty()) {
-                target.mesh_renderer.loadGeometry(triangle_generator_with_normals(
-                    target.source_triangles));
-            }
-            target.mesh_only = false;
+            target_voxel = source_voxel_grid;
+            target_triangles = std::move(source_triangles);
         }
     }
 
-    target.thumbnail_dirty = true;
-    target.dirty = true;
+    // Apply results to target under lock
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto target_it = items.find(target_item_id);
+        if (target_it != items.end()) {
+            auto& target = *target_it->second;
+            target.mesh_renderer.clear();
+            target.exported_mesh_renderer.clear();
+            target.cached_mesh.clear();
+            target.cached_mesh_dirty = true;
+            target.voxel_renderer.clear();
+            target.sdf_data = nullptr;
+            target.source_triangles.clear();
+            target.voxel_grid_data.chunks.clear();
+            target.mesh_only = false;
+            target.stl_path.clear();
+
+            if (!target_triangles.empty()) {
+                target.source_triangles = std::move(target_triangles);
+                target.mesh_renderer.loadGeometry(
+                    triangle_generator_with_normals(target.source_triangles));
+            }
+            if (!target_voxel.chunks.empty()) {
+                target.voxel_grid_data = std::move(target_voxel);
+                target.voxel_renderer.loadVoxelGridChunked(
+                    target.voxel_grid_data, 0.5, true);
+            }
+            if (target_sdf) {
+                target.sdf_data = std::move(target_sdf);
+            }
+            target.mesh_only = target_mesh_only;
+            target.thumbnail_dirty = true;
+            target.dirty = true;
+        }
+        target_ptr->ref_count--;
+        target_ptr->write_count--;
+    }
 
     // Write cache for source node data
     try {
-        if (node_source_data_type == 0) {
+        if (data_type == 0) {
             auto path = get_mesh_cache_path(source_node_id);
             std::vector<std::tuple<Triangle, vec3f>> mesh;
-            mesh.reserve(source.source_triangles.size());
-            for (const auto& tri : source.source_triangles) {
+            mesh.reserve(source_triangles.size());
+            for (const auto& tri : source_triangles) {
                 mesh.push_back(
                     {tri, sinriv::kigstudio::voxel::calcTriangleNormal(tri)});
             }
             sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, path.string());
-        } else if (node_source_data_type == 1) {
+        } else if (data_type == 1) {
             auto path = get_sdf_cache_path(source_node_id);
             std::vector<std::tuple<Triangle, vec3f>> mesh;
-            mesh.reserve(target.source_triangles.size());
-            for (const auto& tri : target.source_triangles) {
+            mesh.reserve(target_triangles.size());
+            for (const auto& tri : target_triangles) {
                 mesh.push_back(
                     {tri, sinriv::kigstudio::voxel::calcTriangleNormal(tri)});
             }
             sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, path.string());
-        } else if (node_source_data_type == 2) {
+        } else if (data_type == 2) {
             auto path = get_voxel_cache_path(source_node_id);
             std::string error;
-            sinriv::kigstudio::save(path.string(), source.voxel_grid_data,
-                                    &error);
+            sinriv::kigstudio::save(path.string(), source_voxel_grid, &error);
         }
     } catch (const std::exception& e) {
         std::cerr << "[load_from_node] cache write failed: " << e.what()

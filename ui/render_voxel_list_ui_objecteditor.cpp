@@ -402,6 +402,25 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 }
             }
         }
+
+        // 后台加载进度条与取消按钮
+        if (item.write_count > 0) {
+            ImGui::Separator();
+            ImGui::Text("%s", this->getQueueStatus().c_str());
+            const char* cancel_label = get_locale_cstr("action.cancel");
+            ImVec2 button_size = ImGui::CalcTextSize(cancel_label);
+            button_size.x += ImGui::GetStyle().FramePadding.x * 2;
+            button_size.y = 0;
+            float progress_width = ImGui::GetContentRegionAvail().x -
+                                   button_size.x -
+                                   ImGui::GetStyle().ItemSpacing.x;
+            ImGui::ProgressBar(this->getQueueProgress(),
+                               ImVec2(progress_width, 0));
+            ImGui::SameLine();
+            if (ImGui::Button(cancel_label, button_size)) {
+                this->queue_should_continue = false;
+            }
+        }
     } else {
         // ===================== NODE MODE =====================
         // 节点选择器
@@ -538,6 +557,25 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                     item.node_source_sdf_simplify_ratio);
             }
             ImGui::EndDisabled();
+
+            // 后台加载进度条与取消按钮
+            if (item.write_count > 0) {
+                ImGui::Separator();
+                ImGui::Text("%s", this->getQueueStatus().c_str());
+                const char* cancel_label = get_locale_cstr("action.cancel");
+                ImVec2 button_size = ImGui::CalcTextSize(cancel_label);
+                button_size.x += ImGui::GetStyle().FramePadding.x * 2;
+                button_size.y = 0;
+                float progress_width = ImGui::GetContentRegionAvail().x -
+                                       button_size.x -
+                                       ImGui::GetStyle().ItemSpacing.x;
+                ImGui::ProgressBar(this->getQueueProgress(),
+                                   ImVec2(progress_width, 0));
+                ImGui::SameLine();
+                if (ImGui::Button(cancel_label, button_size)) {
+                    this->queue_should_continue = false;
+                }
+            }
         }
     }
 }
