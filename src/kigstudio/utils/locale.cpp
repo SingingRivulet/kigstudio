@@ -295,6 +295,8 @@ void init_locale_strings() {
                       {{"en", "Surface Only"}, {"zh", "表面体素化"}});
     add_locale_string("label.stl_load_mode.mesh_only",
                       {{"en", "Mesh Only"}, {"zh", "仅网格"}});
+    add_locale_string("label.stl_load_mode.convex_hull",
+                      {{"en", "Convex Hull"}, {"zh", "凸包"}});
     add_locale_string("action.browse",
                       {{"en", "Browse..."}, {"zh", "浏览..."}});
     add_locale_string("label.silhouette_center",
@@ -701,6 +703,13 @@ void init_locale_strings() {
          {"zh",
           "仅加载网格几何体，不进行体素化。适用于直接编辑网格和基于平面的网格切"
           "分。"}});
+    add_locale_string(
+        "tooltip.stl_load_mode.convex_hull",
+        {{"en",
+          "Compute the convex hull of the source mesh and voxelize it. "
+          "Produces a closed, simplified convex representation."},
+         {"zh",
+          "计算源网格的凸包并进行体素化。生成一个封闭的简化凸体表示。"}});
     add_locale_string(
         "tooltip.render_sdf",
         {{"en",

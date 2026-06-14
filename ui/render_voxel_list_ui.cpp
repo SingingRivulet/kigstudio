@@ -492,6 +492,7 @@ void RenderVoxelList::render_file_loader() {
                 get_locale_cstr("label.stl_load_mode.silhouette"),
                 get_locale_cstr("label.stl_load_mode.surface_only"),
                 get_locale_cstr("label.stl_load_mode.mesh_only"),
+                get_locale_cstr("label.stl_load_mode.convex_hull"),
             };
             ImGui::Combo(get_locale_cstr("label.stl_load_mode"),
                          &file_loader_load_mode, load_mode_names,
@@ -511,6 +512,9 @@ void RenderVoxelList::render_file_loader() {
                     case 3:
                         tooltip_key = "tooltip.stl_load_mode.mesh_only";
                         break;
+                    case 4:
+                        tooltip_key = "tooltip.stl_load_mode.convex_hull";
+                        break;
                 }
                 if (tooltip_key) {
                     ImGui::SetTooltip(get_locale_cstr(tooltip_key));
@@ -519,13 +523,17 @@ void RenderVoxelList::render_file_loader() {
             if (file_loader_load_mode ==
                     static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
                 file_loader_load_mode ==
-                    static_cast<int>(StlLoadMode::MESH_ONLY)) {
+                    static_cast<int>(StlLoadMode::MESH_ONLY) ||
+                file_loader_load_mode ==
+                    static_cast<int>(StlLoadMode::CONVEX_HULL)) {
                 file_loader_load_as_sdf = false;
             }
             if (file_loader_load_mode !=
                     static_cast<int>(StlLoadMode::SURFACE_ONLY) &&
                 file_loader_load_mode !=
-                    static_cast<int>(StlLoadMode::MESH_ONLY)) {
+                    static_cast<int>(StlLoadMode::MESH_ONLY) &&
+                file_loader_load_mode !=
+                    static_cast<int>(StlLoadMode::CONVEX_HULL)) {
                 ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"),
                                 &file_loader_load_as_sdf);
                 if (ImGui::IsItemHovered()) {

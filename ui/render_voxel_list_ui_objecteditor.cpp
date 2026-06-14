@@ -222,6 +222,7 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         get_locale_cstr("label.stl_load_mode.silhouette"),
         get_locale_cstr("label.stl_load_mode.surface_only"),
         get_locale_cstr("label.stl_load_mode.mesh_only"),
+        get_locale_cstr("label.stl_load_mode.convex_hull"),
     };
     int load_mode = item.stl_load_mode;
     if (ImGui::Combo(get_locale_cstr("label.stl_load_mode"), &load_mode,
@@ -231,7 +232,9 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         if (item.stl_load_mode ==
                 static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
             item.stl_load_mode ==
-                static_cast<int>(StlLoadMode::MESH_ONLY)) {
+                static_cast<int>(StlLoadMode::MESH_ONLY) ||
+            item.stl_load_mode ==
+                static_cast<int>(StlLoadMode::CONVEX_HULL)) {
             item.load_as_sdf = false;
         }
         if (item.stl_load_mode ==
@@ -255,6 +258,9 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 break;
             case static_cast<int>(StlLoadMode::MESH_ONLY):
                 tooltip_key = "tooltip.stl_load_mode.mesh_only";
+                break;
+            case static_cast<int>(StlLoadMode::CONVEX_HULL):
+                tooltip_key = "tooltip.stl_load_mode.convex_hull";
                 break;
         }
         if (tooltip_key) {

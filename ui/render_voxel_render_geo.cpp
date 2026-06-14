@@ -1,4 +1,5 @@
 #include "render_voxel_list.h"
+#include "kigstudio/cgal/convex_hull.h"
 #include "kigstudio/cgal/mesh_simplification.h"
 #include "kigstudio/cgal/skeleton_extraction.h"
 #include "kigstudio/mesh/conebox.h"
@@ -798,13 +799,18 @@ void RenderVoxelList::load_stl(std::string filename,
         source_triangles = sinriv::kigstudio::mesh::conebox::
             build_closed_mesh_from_triangles_silhouette(raw_triangles,
                                                         cb_center);
+    } else if (load_mode ==
+               static_cast<int>(StlLoadMode::CONVEX_HULL)) {
+        source_triangles =
+            sinriv::kigstudio::cgal::convexHull3(raw_triangles);
     } else {
         source_triangles = std::move(raw_triangles);
     }
 
-    // Surface-only and mesh-only modes do not support SDF
+    // Surface-only, mesh-only and convex-hull modes do not support SDF
     if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
-        load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
+        load_mode == static_cast<int>(StlLoadMode::MESH_ONLY) ||
+        load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
         load_as_sdf = false;
     }
 
@@ -927,7 +933,9 @@ void RenderVoxelList::load_stl(std::string filename,
             if (it != items.end()) {
                 auto& item = *it->second;
                 item.mesh_renderer.clear();
-                if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+                if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
+                    load_mode ==
+                        static_cast<int>(StlLoadMode::CONVEX_HULL)) {
                     item.mesh_renderer.loadGeometry(
                         triangle_generator_with_normals(source_triangles));
                 } else {
@@ -943,6 +951,7 @@ void RenderVoxelList::load_stl(std::string filename,
                     item.sdf_data = nullptr;
                     item.mesh_only = true;
                 } else {
+                    // DEFAULT / SILHOUETTE / SURFACE_ONLY / CONVEX_HULL
                     item.voxel_renderer.clear();
                     item.voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
                                                              smooth_normals);
@@ -986,7 +995,8 @@ void RenderVoxelList::load_stl(std::string filename,
         std::cout << "[load_stl] new item id=" << item->id
                   << " write_count=" << item->write_count.load()
                   << " ref_count=" << item->ref_count.load() << std::endl;
-        if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+        if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
+            load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
             item->mesh_renderer.loadGeometry(
                 triangle_generator_with_normals(source_triangles));
         } else {
@@ -1001,6 +1011,7 @@ void RenderVoxelList::load_stl(std::string filename,
             item->voxel_grid_data.chunks.clear();
             item->sdf_data = nullptr;
         } else {
+            // DEFAULT / SILHOUETTE / SURFACE_ONLY / CONVEX_HULL
             item->voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
                                                       smooth_normals);
             item->voxel_grid_data = std::move(voxel_data);
@@ -1094,6 +1105,71 @@ void RenderVoxelList::load_from_node(int target_item_id,
     target.mesh_only = false;
     target.stl_path.clear();
 
+    // Helper: voxelize a triangle set into target using current stl_voxel_size
+    auto voxelize_triangles = [&](const std::vector<Triangle>& triangles) {
+        if (triangles.empty())
+            return;
+        float voxel_size = target.stl_voxel_size;
+        triangle_bvh<float> bvh;
+        for (const auto& tri : triangles) {
+            bvh.insert(tri);
+        }
+
+        VoxelGrid voxel_data;
+        voxel_data.voxel_size = {voxel_size, voxel_size, voxel_size};
+        voxel_data.global_position = bvh.global_boundBox_min;
+
+        float minx = floor(bvh.global_boundBox_min.x / voxel_size) * voxel_size;
+        float miny = floor(bvh.global_boundBox_min.y / voxel_size) * voxel_size;
+        float minz = floor(bvh.global_boundBox_min.z / voxel_size) * voxel_size;
+        float maxx = ceil(bvh.global_boundBox_max.x / voxel_size) * voxel_size;
+        float maxy = ceil(bvh.global_boundBox_max.y / voxel_size) * voxel_size;
+        float maxz = ceil(bvh.global_boundBox_max.z / voxel_size) * voxel_size;
+        int num_block_x =
+            static_cast<int>(floor((maxx - minx) / voxel_size)) + 1;
+        int num_block_y =
+            static_cast<int>(floor((maxy - miny) / voxel_size)) + 1;
+        int num_block_z =
+            static_cast<int>(floor((maxz - minz) / voxel_size)) + 1;
+
+        std::mutex bvh_locker;
+        auto voxel_callback = [&](auto start, auto end) {
+            int start_x = static_cast<int>(std::round(
+                (start.x - voxel_data.global_position.x) / voxel_size));
+            int start_y = static_cast<int>(std::round(
+                (start.y - voxel_data.global_position.y) / voxel_size));
+            int start_z = static_cast<int>(std::round(
+                (start.z - voxel_data.global_position.z) / voxel_size));
+            int end_x = static_cast<int>(std::round(
+                (end.x - voxel_data.global_position.x) / voxel_size));
+            int end_y = static_cast<int>(std::round(
+                (end.y - voxel_data.global_position.y) / voxel_size));
+            int end_z = static_cast<int>(std::round(
+                (end.z - voxel_data.global_position.z) / voxel_size));
+
+            std::lock_guard<std::mutex> lock(bvh_locker);
+            for (int i = start_x; i <= end_x; ++i) {
+                for (int j = start_y; j <= end_y; ++j) {
+                    for (int k = start_z; k <= end_z; ++k) {
+                        if (i >= 0 && j >= 0 && k >= 0) {
+                            voxel_data.insert(i, j, k);
+                        }
+                    }
+                }
+            }
+        };
+
+        for (auto face : {triangle_bvh<float>::voxel_face_X,
+                          triangle_bvh<float>::voxel_face_Y,
+                          triangle_bvh<float>::voxel_face_Z}) {
+            bvh.getSolidByFace(voxel_size, voxel_size, voxel_size, face,
+                               voxel_callback);
+        }
+
+        target.voxel_renderer.loadVoxelGridChunked(voxel_data, 0.5, true);
+        target.voxel_grid_data = std::move(voxel_data);
+    };
+
     // Gather source mesh triangles if available
     std::vector<Triangle> source_mesh = source.source_triangles;
     if (source_mesh.empty() && source.sdf_data &&
@@ -1167,6 +1243,19 @@ void RenderVoxelList::load_from_node(int target_item_id,
                 target.source_triangles));
         }
         target.mesh_only = true;
+    } else if (load_mode ==
+               static_cast<int>(StlLoadMode::CONVEX_HULL)) {
+        // Convex hull from source mesh, then voxelize like DEFAULT
+        if (!source_mesh.empty()) {
+            target.source_triangles =
+                sinriv::kigstudio::cgal::convexHull3(source_mesh);
+            if (!target.source_triangles.empty()) {
+                target.mesh_renderer.loadGeometry(
+                    triangle_generator_with_normals(target.source_triangles));
+                voxelize_triangles(target.source_triangles);
+            }
+        }
+        target.mesh_only = false;
     } else {
         // Default: follow node_source_data_type
         if (node_source_data_type == 0) {
@@ -1175,74 +1264,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
             if (!target.source_triangles.empty()) {
                 target.mesh_renderer.loadGeometry(triangle_generator_with_normals(
                     target.source_triangles));
-
-                float voxel_size = target.stl_voxel_size;
-                triangle_bvh<float> bvh;
-                for (const auto& tri : target.source_triangles) {
-                    bvh.insert(tri);
-                }
-
-                VoxelGrid voxel_data;
-                voxel_data.voxel_size = {voxel_size, voxel_size, voxel_size};
-                voxel_data.global_position = bvh.global_boundBox_min;
-
-                float minx = floor(bvh.global_boundBox_min.x / voxel_size) *
-                             voxel_size;
-                float miny = floor(bvh.global_boundBox_min.y / voxel_size) *
-                             voxel_size;
-                float minz = floor(bvh.global_boundBox_min.z / voxel_size) *
-                             voxel_size;
-                float maxx = ceil(bvh.global_boundBox_max.x / voxel_size) *
-                             voxel_size;
-                float maxy = ceil(bvh.global_boundBox_max.y / voxel_size) *
-                             voxel_size;
-                float maxz = ceil(bvh.global_boundBox_max.z / voxel_size) *
-                             voxel_size;
-                int num_block_x =
-                    static_cast<int>(floor((maxx - minx) / voxel_size)) + 1;
-                int num_block_y =
-                    static_cast<int>(floor((maxy - miny) / voxel_size)) + 1;
-                int num_block_z =
-                    static_cast<int>(floor((maxz - minz) / voxel_size)) + 1;
-
-                std::mutex bvh_locker;
-                auto voxel_callback = [&](auto start, auto end) {
-                    int start_x = static_cast<int>(std::round(
-                        (start.x - voxel_data.global_position.x) / voxel_size));
-                    int start_y = static_cast<int>(std::round(
-                        (start.y - voxel_data.global_position.y) / voxel_size));
-                    int start_z = static_cast<int>(std::round(
-                        (start.z - voxel_data.global_position.z) / voxel_size));
-                    int end_x = static_cast<int>(std::round(
-                        (end.x - voxel_data.global_position.x) / voxel_size));
-                    int end_y = static_cast<int>(std::round(
-                        (end.y - voxel_data.global_position.y) / voxel_size));
-                    int end_z = static_cast<int>(std::round(
-                        (end.z - voxel_data.global_position.z) / voxel_size));
-
-                    std::lock_guard<std::mutex> lock(bvh_locker);
-                    for (int i = start_x; i <= end_x; ++i) {
-                        for (int j = start_y; j <= end_y; ++j) {
-                            for (int k = start_z; k <= end_z; ++k) {
-                                if (i >= 0 && j >= 0 && k >= 0) {
-                                    voxel_data.insert(i, j, k);
-                                }
-                            }
-                        }
-                    }
-                };
-
-                for (auto face :
-                     {triangle_bvh<float>::voxel_face_X,
-                      triangle_bvh<float>::voxel_face_Y,
-                      triangle_bvh<float>::voxel_face_Z}) {
-                    bvh.getSolidByFace(voxel_size, voxel_size, voxel_size,
-                                       face, voxel_callback);
-                }
-
-                target.voxel_renderer.loadVoxelGridChunked(voxel_data, 0.5,
-                                                            true);
-                target.voxel_grid_data = std::move(voxel_data);
+                voxelize_triangles(target.source_triangles);
             }
             target.mesh_only = false;
         } else if (node_source_data_type == 1) {
