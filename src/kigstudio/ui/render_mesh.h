@@ -704,7 +704,7 @@ namespace sinriv::ui::render {
             setProgress(0.50f);
 
             // Phase 3: Generate mesh
-            setStatus("Generating mesh...");
+            setStatus("56WE");
             int num_triangles = 0;
             auto generator = generateMesh(voxel_data, isolevel, num_triangles, smooth_normals);
 

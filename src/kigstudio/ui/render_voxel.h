@@ -164,6 +164,19 @@ namespace sinriv::ui::render {
             }
         }
 
+        inline void loadChunkMeshes(
+            const std::unordered_map<
+                uint64_t,
+                std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>>>&
+                meshes) {
+            chunk_meshes_.clear();
+            for (const auto& [key, mesh] : meshes) {
+                if (!mesh.empty()) {
+                    chunk_meshes_[key].loadGeometry(mesh);
+                }
+            }
+        }
+
         inline void updateChunk(
             VoxelGrid& voxel_data,
             uint64_t chunk_key,

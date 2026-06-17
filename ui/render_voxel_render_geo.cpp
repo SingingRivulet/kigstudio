@@ -112,6 +112,35 @@ static void insert_voxels_with_optional_verify(
     voxel_data.insertMany(confirmed);
 }
 
+// 在 CPU 侧预生成所有 chunk 的体素网格数据（不创建 GPU 资源）。
+// 耗时部分在 generateMeshForChunk，放到 lock 外执行可避免阻塞 UI。
+static std::unordered_map<
+    uint64_t,
+    std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>>>
+generateChunkMeshData(sinriv::kigstudio::voxel::VoxelGrid& voxel_data,
+                      double isolevel,
+                      bool smooth_normals,
+                      float expand = 0.0f) {
+    std::unordered_map<
+        uint64_t,
+        std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>>>
+        result;
+    for (const auto& [key, chunk] : voxel_data.chunks) {
+        (void)chunk;
+        int num_triangles = 0;
+        auto generator = sinriv::kigstudio::voxel::generateMeshForChunk(
+            voxel_data, key, isolevel, num_triangles, smooth_normals, expand);
+        std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>> mesh;
+        for (auto [tri, n] : generator) {
+            mesh.push_back({tri, n});
+        }
+        if (!mesh.empty()) {
+            result[key] = std::move(mesh);
+        }
+    }
+    return result;
+}
+
 static std::vector<sinriv::kigstudio::vec3<float>> clip_polygon_by_plane(
     const std::vector<sinriv::kigstudio::vec3<float>>& poly,
     const sinriv::kigstudio::vec3<float>& point,
@@ -1086,6 +1115,15 @@ void RenderVoxelList::load_stl(std::string filename,
     setQueueStatus(get_locale_string("status.generating_mesh"));
     queue_progress = 0.75f;
 
+    // 在拿 locker 之前在 CPU 侧生成 chunk mesh，避免阻塞 UI 线程。
+    std::unordered_map<
+        uint64_t,
+        std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>>>
+        chunk_meshes;
+    if (load_mode != static_cast<int>(StlLoadMode::MESH_ONLY)) {
+        chunk_meshes = generateChunkMeshData(voxel_data, isolevel, smooth_normals);
+    }
+
     if (target_item_id >= 0) {
         // 更新现有 item
         {
@@ -1114,8 +1152,7 @@ void RenderVoxelList::load_stl(std::string filename,
                 } else {
                     // DEFAULT / SILHOUETTE / SURFACE_ONLY / CONVEX_HULL
                     item.voxel_renderer.clear();
-                    item.voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
-                                                             smooth_normals);
+                    item.voxel_renderer.loadChunkMeshes(chunk_meshes);
                     item.voxel_grid_data = std::move(voxel_data);
                     if (load_as_sdf) {
                         auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
@@ -1178,8 +1215,7 @@ void RenderVoxelList::load_stl(std::string filename,
             item->sdf_data = nullptr;
         } else {
             // DEFAULT / SILHOUETTE / SURFACE_ONLY / CONVEX_HULL
-            item->voxel_renderer.loadVoxelGridChunked(voxel_data, isolevel,
-                                                      smooth_normals);
+            item->voxel_renderer.loadChunkMeshes(chunk_meshes);
             item->voxel_grid_data = std::move(voxel_data);
             if (load_as_sdf) {
                 auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
@@ -1591,6 +1627,15 @@ void RenderVoxelList::load_from_node(int target_item_id,
         }
     }
 
+    // 在拿 locker 之前在 CPU 侧生成 chunk mesh，避免阻塞 UI 线程。
+    std::unordered_map<
+        uint64_t,
+        std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>>>
+        target_chunk_meshes;
+    if (!target_voxel.chunks.empty()) {
+        target_chunk_meshes = generateChunkMeshData(target_voxel, 0.5, true);
+    }
+
     // Apply results to target under lock
     {
         std::lock_guard<std::mutex> lock(locker);
@@ -1622,8 +1667,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
             }
             if (!target_voxel.chunks.empty()) {
                 target.voxel_grid_data = std::move(target_voxel);
-                target.voxel_renderer.loadVoxelGridChunked(
-                    target.voxel_grid_data, 0.5, true);
+                target.voxel_renderer.loadChunkMeshes(target_chunk_meshes);
             }
             if (target_sdf) {
                 target.sdf_data = std::move(target_sdf);
