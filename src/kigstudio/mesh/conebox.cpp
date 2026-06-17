@@ -1487,83 +1487,16 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     }
 
     report_progress(0.8f, sinriv::locale::get_locale_string(
-                              "status.silhouette.extract_boundary"));
+                              "status.silhouette.flip_normals"));
 
-    // 4. 提取边界边（只被一个可见三角形共享的边）
-    // 对顶点做 snap，避免浮点误差导致切割后的相邻碎片产生重叠边界边
-    struct EdgeKey {
-        static float snap(float v) {
-            const float SNAP_EPS = 1e-4f;
-            return std::round(v / SNAP_EPS) * SNAP_EPS;
-        }
-        static vec3f snap_vec(const vec3f& v) {
-            return vec3f(snap(v.x), snap(v.y), snap(v.z));
-        }
-        vec3f a, b;
-        EdgeKey(const vec3f& v0, const vec3f& v1) {
-            vec3f s0 = snap_vec(v0);
-            vec3f s1 = snap_vec(v1);
-            if (s0.x < s1.x || (s0.x == s1.x && s0.y < s1.y) ||
-                (s0.x == s1.x && s0.y == s1.y && s0.z < s1.z)) {
-                a = s0;
-                b = s1;
-            } else {
-                a = s1;
-                b = s0;
-            }
-        }
-        bool operator<(const EdgeKey& o) const {
-            if (a.x != o.a.x)
-                return a.x < o.a.x;
-            if (a.y != o.a.y)
-                return a.y < o.a.y;
-            if (a.z != o.a.z)
-                return a.z < o.a.z;
-            if (b.x != o.b.x)
-                return b.x < o.b.x;
-            if (b.y != o.b.y)
-                return b.y < o.b.y;
-            return b.z < o.b.z;
-        }
-    };
-
-    std::map<EdgeKey, int> edge_count;
+    // 5. 调整可见面法线方向：使法线朝外（支持凹体，使用三条射线投票）
     int visible_count = static_cast<int>(visible_tris.size());
     for (int i = 0; i < visible_count; ++i) {
         if (should_continue && !should_continue())
             break;
         if (progress && i % 100 == 0) {
-            float t = 0.8f + static_cast<float>(i) /
-                                 static_cast<float>(visible_count) * 0.05f;
-            report_progress(t, step_text("status.silhouette.extract_boundary",
-                                         i, visible_count));
-        }
-        const auto& tri = visible_tris[i];
-        const auto& v0 = std::get<0>(tri);
-        const auto& v1 = std::get<1>(tri);
-        const auto& v2 = std::get<2>(tri);
-        edge_count[EdgeKey(v0, v1)]++;
-        edge_count[EdgeKey(v1, v2)]++;
-        edge_count[EdgeKey(v2, v0)]++;
-    }
-
-    std::vector<std::pair<vec3f, vec3f>> boundary_edges;
-    for (const auto& kv : edge_count) {
-        if (kv.second == 1) {
-            boundary_edges.push_back({kv.first.a, kv.first.b});
-        }
-    }
-
-    report_progress(0.85f, sinriv::locale::get_locale_string(
-                               "status.silhouette.flip_normals"));
-
-    // 5. 调整可见面法线方向：使法线朝外（支持凹体，使用三条射线投票）
-    for (int i = 0; i < visible_count; ++i) {
-        if (should_continue && !should_continue())
-            break;
-        if (progress && i % 100 == 0) {
-            float t = 0.85f + static_cast<float>(i) /
-                                  static_cast<float>(visible_count) * 0.03f;
+            float t = 0.80f + static_cast<float>(i) /
+                                  static_cast<float>(visible_count) * 0.05f;
             report_progress(t, step_text("status.silhouette.flip_normals", i,
                                          visible_count));
         }
@@ -1584,23 +1517,76 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         }
     }
 
-    // 预计算可见面法线（用于侧面朝向判断）
-    std::vector<vec3f> visible_normals;
-    visible_normals.reserve(visible_tris.size());
+    report_progress(0.85f, sinriv::locale::get_locale_string(
+                               "status.silhouette.extract_boundary"));
+
+    // 4. 提取边界边（只被一个可见三角形共享的边）
+    // 对顶点做 snap，避免浮点误差导致切割后的相邻碎片产生重叠边界边。
+    // 注意：必须在 flip_normals 之后提取，这样 EdgeKey 保存的原始方向
+    // 才是三角形最终顶点顺序的方向；侧面 (a, b, center) 的法线自然朝外。
+    struct EdgeKey {
+        static float snap(float v) {
+            const float SNAP_EPS = 1e-4f;
+            return std::round(v / SNAP_EPS) * SNAP_EPS;
+        }
+        static vec3f snap_vec(const vec3f& v) {
+            return vec3f(snap(v.x), snap(v.y), snap(v.z));
+        }
+        vec3f sorted_a, sorted_b;  // 用于去重比较
+        vec3f a, b;                // 原始方向（来自可见面顶点顺序）
+        EdgeKey(const vec3f& v0, const vec3f& v1) {
+            a = v0;
+            b = v1;
+            vec3f s0 = snap_vec(v0);
+            vec3f s1 = snap_vec(v1);
+            if (s0.x < s1.x || (s0.x == s1.x && s0.y < s1.y) ||
+                (s0.x == s1.x && s0.y == s1.y && s0.z < s1.z)) {
+                sorted_a = s0;
+                sorted_b = s1;
+            } else {
+                sorted_a = s1;
+                sorted_b = s0;
+            }
+        }
+        bool operator<(const EdgeKey& o) const {
+            if (sorted_a.x != o.sorted_a.x)
+                return sorted_a.x < o.sorted_a.x;
+            if (sorted_a.y != o.sorted_a.y)
+                return sorted_a.y < o.sorted_a.y;
+            if (sorted_a.z != o.sorted_a.z)
+                return sorted_a.z < o.sorted_a.z;
+            if (sorted_b.x != o.sorted_b.x)
+                return sorted_b.x < o.sorted_b.x;
+            if (sorted_b.y != o.sorted_b.y)
+                return sorted_b.y < o.sorted_b.y;
+            return sorted_b.z < o.sorted_b.z;
+        }
+    };
+
+    std::map<EdgeKey, int> edge_count;
     for (int i = 0; i < visible_count; ++i) {
         if (should_continue && !should_continue())
             break;
         if (progress && i % 100 == 0) {
-            float t = 0.88f + static_cast<float>(i) /
-                                  static_cast<float>(visible_count) * 0.02f;
-            report_progress(t, step_text("status.silhouette.flip_normals", i,
-                                         visible_count));
+            float t = 0.85f + static_cast<float>(i) /
+                                 static_cast<float>(visible_count) * 0.05f;
+            report_progress(t, step_text("status.silhouette.extract_boundary",
+                                         i, visible_count));
         }
         const auto& tri = visible_tris[i];
         const auto& v0 = std::get<0>(tri);
         const auto& v1 = std::get<1>(tri);
         const auto& v2 = std::get<2>(tri);
-        visible_normals.push_back((v1 - v0).cross(v2 - v0));
+        edge_count[EdgeKey(v0, v1)]++;
+        edge_count[EdgeKey(v1, v2)]++;
+        edge_count[EdgeKey(v2, v0)]++;
+    }
+
+    std::vector<EdgeKey> boundary_edges;
+    for (const auto& kv : edge_count) {
+        if (kv.second == 1) {
+            boundary_edges.push_back(kv.first);
+        }
     }
 
     report_progress(0.9f, sinriv::locale::get_locale_string(
@@ -1627,28 +1613,35 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
                                          boundary_count));
         }
         const auto& e = boundary_edges[i];
+        // 在 flip_normals 之后提取的边界边 (a, b) 已是最终顶点顺序。
+        // 相邻可见面法线 n_F 与侧面法线 n_T 都垂直于该边，
+        // 故在边垂直平面内比较二者方向即可判断侧面是否朝外。
+        vec3f a = e.a, b = e.b;
         vec3f n_F;
         bool found = false;
-        for (size_t j = 0; j < visible_tris.size(); ++j) {
-            const auto& tri = visible_tris[j];
+        for (const auto& tri : visible_tris) {
             const auto& v0 = std::get<0>(tri);
             const auto& v1 = std::get<1>(tri);
             const auto& v2 = std::get<2>(tri);
-            if ((edge_eq(v0, e.first) && edge_eq(v1, e.second)) ||
-                (edge_eq(v1, e.first) && edge_eq(v2, e.second)) ||
-                (edge_eq(v2, e.first) && edge_eq(v0, e.second)) ||
-                (edge_eq(v0, e.second) && edge_eq(v1, e.first)) ||
-                (edge_eq(v1, e.second) && edge_eq(v2, e.first)) ||
-                (edge_eq(v2, e.second) && edge_eq(v0, e.first))) {
-                n_F = visible_normals[j];
+            if (edge_eq(v0, e.a) && edge_eq(v1, e.b)) {
+                n_F = (b - a).cross(v2 - a);
+                found = true;
+                break;
+            }
+            if (edge_eq(v1, e.a) && edge_eq(v2, e.b)) {
+                n_F = (b - a).cross(v0 - a);
+                found = true;
+                break;
+            }
+            if (edge_eq(v2, e.a) && edge_eq(v0, e.b)) {
+                n_F = (b - a).cross(v1 - a);
                 found = true;
                 break;
             }
         }
 
-        vec3f a = e.first, b = e.second;
         vec3f n_T = (b - a).cross(center - a);
-        if (found && n_T.dot(n_F) < 0.0f) {
+        if (found && n_F.dot(n_T) < 0.0f) {
             std::swap(a, b);
         }
         result.emplace_back(std::make_tuple(a, b, center));

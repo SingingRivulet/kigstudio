@@ -299,6 +299,40 @@ void init_locale_strings() {
     add_locale_string("status.silhouette.generate_sides",
                       {{"en", "Generating side faces..."},
                        {"zh", "生成侧面..."}});
+    add_locale_string("status.segmenting",
+                      {{"en", "Segmenting..."}, {"zh", "正在分割..."}});
+    add_locale_string(
+        "status.extracting_skeleton_cgal",
+        {{"en", "CGAL skeleton extraction..."}, {"zh", "CGAL 骨架提取..."}});
+    add_locale_string("status.reading_stl",
+                      {{"en", "Reading STL..."}, {"zh", "正在读取 STL..."}});
+    add_locale_string("status.building_spatial_index",
+                      {{"en", "Building spatial index..."},
+                       {"zh", "正在构建空间索引..."}});
+    add_locale_string("status.rasterizing_surface",
+                      {{"en", "Rasterizing surface..."},
+                       {"zh", "正在光栅化表面..."}});
+    add_locale_string("status.voxelizing",
+                      {{"en", "Voxelizing..."}, {"zh", "正在体素化..."}});
+    add_locale_string("status.generating_mesh",
+                      {{"en", "Generating mesh..."}, {"zh", "正在生成网格..."}});
+    add_locale_string("status.generating_voxel_mesh",
+                      {{"en", "Generating voxel mesh..."},
+                       {"zh", "正在生成体素网格..."}});
+    add_locale_string("status.preparing_mesh",
+                      {{"en", "Preparing mesh..."}, {"zh", "正在准备网格..."}});
+    add_locale_string("status.saving_cache",
+                      {{"en", "Saving cache..."}, {"zh", "正在保存缓存..."}});
+    add_locale_string("status.uploading",
+                      {{"en", "Uploading..."}, {"zh", "正在上传..."}});
+    add_locale_string("status.done",
+                      {{"en", "Done"}, {"zh", "完成"}});
+    add_locale_string("status.sdf_mesh_prefix",
+                      {{"en", "SDF Mesh: "}, {"zh", "SDF 网格: "}});
+    add_locale_string(
+        "status.generating_silhouette_mesh",
+        {{"en", "Generating silhouette mesh..."},
+         {"zh", "正在生成轮廓网格..."}});
 
     // Labels
     add_locale_string("label.no_log_entries",
