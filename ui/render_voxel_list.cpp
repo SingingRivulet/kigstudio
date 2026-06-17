@@ -50,6 +50,13 @@ void RenderVoxelList::setVoxelAxisVisible(bool visible) {
     }
 }
 
+void RenderVoxelList::setOriginMeshVisible(bool visible) {
+    std::lock_guard<std::mutex> lock(locker);
+    auto it = items.find(render_id);
+    if (it != items.end()) {
+        it->second->showOriginMesh = visible;
+    }
+}
 void RenderVoxelList::setMeshVisible(bool visible) {
     std::lock_guard<std::mutex> lock(locker);
     auto it = items.find(render_id);

@@ -151,7 +151,7 @@ void RenderVoxelList::queue_thread() {
                             task.node_source_sdf_subdivisions,
                             task.node_source_sdf_simplify,
                             task.node_source_sdf_simplify_ratio,
-                            task.load_mode);
+                            task.load_mode, task.load_as_sdf);
                     } else {
                         append_queue_logf("log.queue.start_reload_stl",
                                           task.index,

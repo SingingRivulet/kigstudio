@@ -785,6 +785,19 @@ void RenderVoxelList::load_stl(std::string filename,
         }
     }
 
+    // Load origin mesh (raw, before load mode processing)
+    if (target_item_id >= 0) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(target_item_id);
+        if (it != items.end()) {
+            it->second->origin_mesh_renderer.clear();
+            it->second->origin_mesh_renderer.setBaseColor(0.0f, 0.0f, 1.0f,
+                                                          1.0f);
+            it->second->origin_mesh_renderer.loadGeometry(
+                triangle_generator_with_normals(raw_triangles));
+        }
+    }
+
     // Phase 1b: Optional preprocessing based on load mode
     std::vector<Triangle> source_triangles;
     if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
@@ -807,10 +820,9 @@ void RenderVoxelList::load_stl(std::string filename,
         source_triangles = std::move(raw_triangles);
     }
 
-    // Surface-only, mesh-only and convex-hull modes do not support SDF
+    // Surface-only and mesh-only modes do not support SDF
     if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
-        load_mode == static_cast<int>(StlLoadMode::MESH_ONLY) ||
-        load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
+        load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
         load_as_sdf = false;
     }
 
@@ -958,7 +970,8 @@ void RenderVoxelList::load_stl(std::string filename,
                     item.voxel_grid_data = std::move(voxel_data);
                     if (load_as_sdf) {
                         auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
-                        if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+                        if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
+                            load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
                             mesh_sdf->loadTriangles(source_triangles);
                         } else {
                             mesh_sdf->loadSTL(filename);
@@ -995,6 +1008,9 @@ void RenderVoxelList::load_stl(std::string filename,
         std::cout << "[load_stl] new item id=" << item->id
                   << " write_count=" << item->write_count.load()
                   << " ref_count=" << item->ref_count.load() << std::endl;
+        item->origin_mesh_renderer.setBaseColor(0.0f, 0.0f, 1.0f, 1.0f);
+        item->origin_mesh_renderer.loadGeometry(
+            triangle_generator_with_normals(raw_triangles));
         if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
             load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
             item->mesh_renderer.loadGeometry(
@@ -1017,7 +1033,8 @@ void RenderVoxelList::load_stl(std::string filename,
             item->voxel_grid_data = std::move(voxel_data);
             if (load_as_sdf) {
                 auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
-                if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+                if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
+                    load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
                     mesh_sdf->loadTriangles(source_triangles);
                 } else {
                     mesh_sdf->loadSTL(filename);
@@ -1080,7 +1097,8 @@ void RenderVoxelList::load_from_node(int target_item_id,
                                      int node_source_sdf_subdivisions,
                                      bool node_source_sdf_simplify,
                                      float node_source_sdf_simplify_ratio,
-                                     int load_mode) {
+                                     int load_mode,
+                                     bool load_as_sdf) {
     using namespace sinriv::kigstudio::voxel;
     using Triangle = triangle_bvh<float>::triangle;
     using vec3f = sinriv::kigstudio::vec3<float>;
@@ -1234,6 +1252,9 @@ void RenderVoxelList::load_from_node(int target_item_id,
         }
     }
 
+    // Keep a copy of the raw source mesh for origin_mesh_renderer
+    std::vector<Triangle> origin_mesh_triangles = source_mesh;
+
     // Compute target data according to load_mode
     std::vector<Triangle> target_triangles;
     VoxelGrid target_voxel;
@@ -1301,6 +1322,27 @@ void RenderVoxelList::load_from_node(int target_item_id,
         }
     }
 
+    // Generate SDF from the loaded/reconstructed triangle mesh if requested.
+    // For Silhouette / Convex Hull the processed mesh is used;
+    // for Default the raw loaded mesh (or SDF-reconstructed mesh) is used.
+    if (load_as_sdf && (data_type == 0 || data_type == 1) &&
+        load_mode != static_cast<int>(StlLoadMode::SURFACE_ONLY) &&
+        load_mode != static_cast<int>(StlLoadMode::MESH_ONLY)) {
+        auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
+        if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
+            load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
+            if (!target_triangles.empty()) {
+                mesh_sdf->loadTriangles(target_triangles);
+                target_sdf = std::move(mesh_sdf);
+            }
+        } else {
+            if (!source_mesh.empty()) {
+                mesh_sdf->loadTriangles(source_mesh);
+                target_sdf = std::move(mesh_sdf);
+            }
+        }
+    }
+
     // Apply results to target under lock
     {
         std::lock_guard<std::mutex> lock(locker);
@@ -1317,6 +1359,13 @@ void RenderVoxelList::load_from_node(int target_item_id,
             target.voxel_grid_data.chunks.clear();
             target.mesh_only = false;
             target.stl_path.clear();
+
+            target.origin_mesh_renderer.clear();
+            target.origin_mesh_renderer.setBaseColor(0.0f, 0.0f, 1.0f, 1.0f);
+            if (!origin_mesh_triangles.empty()) {
+                target.origin_mesh_renderer.loadGeometry(
+                    triangle_generator_with_normals(origin_mesh_triangles));
+            }
 
             if (!target_triangles.empty()) {
                 target.source_triangles = std::move(target_triangles);

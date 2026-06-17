@@ -85,6 +85,8 @@ void RenderVoxelList::render_ui() {
                                 &show_history_window);
                 ImGui::Checkbox(get_locale_cstr("menu.log"), &show_log_window);
                 if (ImGui::BeginMenu(get_locale_cstr("menu.body"))) {
+                    ImGui::Checkbox(get_locale_cstr("label.show_origin_mesh"),
+                                    &showOriginMesh);
                     ImGui::Checkbox(get_locale_cstr("label.show_mesh"),
                                     &showMesh);
                     ImGui::Checkbox(get_locale_cstr("label.show_exported_mesh"),
@@ -286,24 +288,25 @@ void RenderVoxelList::render_ui() {
         ImGui::Text(get_locale_cstr("label.current_fps"), fps);
         ImGui::SameLine();
         {
-            const char* labels[] = {get_locale_cstr("label.show_mesh"),
+            const char* labels[] = {get_locale_cstr("label.show_origin_mesh"),
+                                    get_locale_cstr("label.show_mesh"),
                                     get_locale_cstr("label.show_exported_mesh"),
                                     get_locale_cstr("label.show_collision"),
                                     get_locale_cstr("label.show_voxels")};
-            bool* states[] = {&showMesh, &showExportedMesh, &showCollision,
-                              &showVoxels};
+            bool* states[] = {&showOriginMesh, &showMesh, &showExportedMesh,
+                              &showCollision, &showVoxels};
             float buttonSpacing = ImGui::GetStyle().ItemSpacing.x;
             float totalWidth = 0;
-            for (int i = 0; i < 4; ++i) {
+            for (int i = 0; i < 5; ++i) {
                 ImVec2 size = ImGui::CalcTextSize(labels[i]);
                 totalWidth += size.x + ImGui::GetStyle().FramePadding.x * 2.0f;
-                if (i < 3)
+                if (i < 4)
                     totalWidth += buttonSpacing;
             }
             float windowWidth = ImGui::GetWindowSize().x;
             ImGui::SetCursorPosX(windowWidth - totalWidth -
                                  ImGui::GetStyle().WindowPadding.x);
-            for (int i = 0; i < 4; ++i) {
+            for (int i = 0; i < 5; ++i) {
                 if (*states[i]) {
                     ImGui::PushStyleColor(ImGuiCol_Button,
                                           ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
@@ -323,7 +326,7 @@ void RenderVoxelList::render_ui() {
                     *states[i] = !*states[i];
                 }
                 ImGui::PopStyleColor(3);
-                if (i < 3)
+                if (i < 4)
                     ImGui::SameLine();
             }
         }
@@ -442,6 +445,7 @@ void RenderVoxelList::render_ui() {
 
     this->setMeshAxisVisible(showMeshAxis);
     this->setVoxelAxisVisible(showVoxelAxis);
+    this->setOriginMeshVisible(showOriginMesh);
     this->setMeshVisible(showMesh);
     this->setExportedMeshVisible(showExportedMesh);
     this->setVoxelsVisible(showVoxels);
@@ -523,17 +527,13 @@ void RenderVoxelList::render_file_loader() {
             if (file_loader_load_mode ==
                     static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
                 file_loader_load_mode ==
-                    static_cast<int>(StlLoadMode::MESH_ONLY) ||
-                file_loader_load_mode ==
-                    static_cast<int>(StlLoadMode::CONVEX_HULL)) {
+                    static_cast<int>(StlLoadMode::MESH_ONLY)) {
                 file_loader_load_as_sdf = false;
             }
             if (file_loader_load_mode !=
                     static_cast<int>(StlLoadMode::SURFACE_ONLY) &&
                 file_loader_load_mode !=
-                    static_cast<int>(StlLoadMode::MESH_ONLY) &&
-                file_loader_load_mode !=
-                    static_cast<int>(StlLoadMode::CONVEX_HULL)) {
+                    static_cast<int>(StlLoadMode::MESH_ONLY)) {
                 ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"),
                                 &file_loader_load_as_sdf);
                 if (ImGui::IsItemHovered()) {

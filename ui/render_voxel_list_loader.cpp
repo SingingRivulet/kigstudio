@@ -58,6 +58,7 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddItemToObject(
         obj, "sdf_split_scale",
         sinriv::kigstudio::to_json(item.sdf_split_scale));
+    cJSON_AddBoolToObject(obj, "show_origin_mesh", item.showOriginMesh);
     cJSON_AddBoolToObject(obj, "show_mesh", item.showMesh);
     cJSON_AddBoolToObject(obj, "show_exported_mesh", item.showExportedMesh);
     cJSON_AddBoolToObject(obj, "show_voxel", item.showVoxel);
@@ -223,6 +224,10 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
             sinriv::kigstudio::vec3_from_json<vec3f>(
                 sdf_split_scale_json);
     }
+    const cJSON* show_origin_mesh_json =
+        cJSON_GetObjectItem(obj, "show_origin_mesh");
+    item->showOriginMesh =
+        show_origin_mesh_json ? cJSON_IsTrue(show_origin_mesh_json) : false;
     const cJSON* show_mesh_json = cJSON_GetObjectItem(obj, "show_mesh");
     item->showMesh = show_mesh_json ? cJSON_IsTrue(show_mesh_json) : true;
     const cJSON* show_exported_mesh_json =

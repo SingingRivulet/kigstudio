@@ -232,9 +232,7 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         if (item.stl_load_mode ==
                 static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
             item.stl_load_mode ==
-                static_cast<int>(StlLoadMode::MESH_ONLY) ||
-            item.stl_load_mode ==
-                static_cast<int>(StlLoadMode::CONVEX_HULL)) {
+                static_cast<int>(StlLoadMode::MESH_ONLY)) {
             item.load_as_sdf = false;
         }
         if (item.stl_load_mode ==
@@ -543,6 +541,25 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 }
             }
 
+            // Load as SDF checkbox for mesh/SDF node sources
+            if ((item.node_source_data_type == 0 ||
+                 item.node_source_data_type == 1) &&
+                item.stl_load_mode !=
+                    static_cast<int>(StlLoadMode::SURFACE_ONLY) &&
+                item.stl_load_mode !=
+                    static_cast<int>(StlLoadMode::MESH_ONLY)) {
+                ImGui::Separator();
+                bool load_as_sdf = item.load_as_sdf;
+                if (ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"),
+                                    &load_as_sdf)) {
+                    push_undo_now(item.id, std::nullopt, "Load as SDF");
+                    item.load_as_sdf = load_as_sdf;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
+                }
+            }
+
             // 重新加载按钮
             ImGui::Separator();
             ImGui::BeginDisabled(!any_data_available);
@@ -727,6 +744,8 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
 
     ImGui::Checkbox(get_locale_cstr("label.auto_segment_update"),
                     &item.auto_segment_update);
+    ImGui::Checkbox(get_locale_cstr("label.show_origin_mesh"),
+                    &item.showOriginMesh);
 
     if (item.mesh_only) {
         if (item.segment_mode != RenderVoxelItem::PLANE) {

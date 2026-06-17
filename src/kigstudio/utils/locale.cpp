@@ -389,6 +389,8 @@ void init_locale_strings() {
     add_locale_string("action.pick_pos_auto_snapping_stop",
                       {{"en", "stop auto snapping"}, {"zh", "取消自动吸附"}});
 
+    add_locale_string("label.show_origin_mesh",
+                      {{"en", "show origin mesh"}, {"zh", "显示原始网格"}});
     add_locale_string("label.show_mesh",
                       {{"en", "show mesh"}, {"zh", "显示网格"}});
     add_locale_string("label.show_exported_mesh",

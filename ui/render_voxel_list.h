@@ -143,7 +143,7 @@ enum class StlLoadMode : int {
     SILHOUETTE = 1,
     SURFACE_ONLY = 2,
     MESH_ONLY = 3,
-    CONVEX_HULL = 4, // TODO：使用CGAL::convex_hull_3
+    CONVEX_HULL = 4,
     COUNT
 };
 
@@ -234,7 +234,7 @@ class RenderVoxelList {
             SDF_NODE_SPLIT = 7
         } segment_mode = COLLISION;
 
-        sinriv::ui::render::RenderMesh origin_mesh_renderer; // TODO:用于显示原始mesh(使用蓝色，默认隐藏)
+        sinriv::ui::render::RenderMesh origin_mesh_renderer;
         sinriv::ui::render::RenderMesh mesh_renderer;
         sinriv::ui::render::RenderMesh exported_mesh_renderer;
         sinriv::ui::render::RenderVoxel voxel_renderer;
@@ -362,6 +362,7 @@ class RenderVoxelList {
 
         bool queue_release = false;
 
+        bool showOriginMesh = false;
         bool showMesh = true;
         bool showExportedMesh = true;
         bool showVoxel = true;
@@ -507,6 +508,7 @@ class RenderVoxelList {
     int menu_height = 0;
     float item_status_height = 0;
 
+    bool showOriginMesh = false;
     bool showMesh = true;
     bool showExportedMesh = true;
     bool showVoxels = true;
@@ -689,6 +691,7 @@ class RenderVoxelList {
     mat4f current_model_matrix;
     void setMeshAxisVisible(bool visible);
     void setVoxelAxisVisible(bool visible);
+    void setOriginMeshVisible(bool visible);
     void setMeshVisible(bool visible);
     void setExportedMeshVisible(bool visible);
     void setVoxelsVisible(bool visible);
@@ -715,7 +718,8 @@ class RenderVoxelList {
                         int node_source_sdf_subdivisions,
                         bool node_source_sdf_simplify,
                         float node_source_sdf_simplify_ratio,
-                        int load_mode = 0);
+                        int load_mode = 0,
+                        bool load_as_sdf = false);
 
     // Cache helpers for node sources
     std::filesystem::path get_cache_dir(const std::string& subdir) const;

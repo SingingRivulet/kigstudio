@@ -71,6 +71,10 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     if (showMesh) {
         mesh_renderer.renderGBuffer(transform, mesh_shader);
     }
+    if (showOriginMesh && !origin_mesh_renderer.empty()) {
+        origin_mesh_renderer.cull_backface = false;
+        origin_mesh_renderer.renderGBuffer(transform, mesh_shader);
+    }
     if (showExportedMesh && !cached_mesh.empty()) {
         if (!cached_mesh_dirty) {
             exported_mesh_renderer.loadGeometry(cached_mesh);
