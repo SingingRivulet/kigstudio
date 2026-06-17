@@ -275,6 +275,30 @@ void init_locale_strings() {
                       {{"en", "Simplifying mesh"}, {"zh", "模型简化"}});
     add_locale_string("status.exporting_stl.saveing_mesh",
                       {{"en", "Saving mesh"}, {"zh", "保存模型"}});
+    add_locale_string("status.silhouette.prepare",
+                      {{"en", "Preparing silhouette mesh..."},
+                       {"zh", "准备轮廓网格..."}});
+    add_locale_string("status.silhouette.test_center",
+                      {{"en", "Detecting center point..."},
+                       {"zh", "检测中心点位置..."}});
+    add_locale_string("status.silhouette.clip_cones",
+                      {{"en", "Clipping triangles by cone..."},
+                       {"zh", "锥体裁剪三角形..."}});
+    add_locale_string("status.silhouette.build_bvh",
+                      {{"en", "Building acceleration structure..."},
+                       {"zh", "构建加速结构..."}});
+    add_locale_string("status.silhouette.ray_visibility",
+                      {{"en", "Computing ray visibility..."},
+                       {"zh", "计算射线可见性..."}});
+    add_locale_string("status.silhouette.extract_boundary",
+                      {{"en", "Extracting boundary edges..."},
+                       {"zh", "提取边界边..."}});
+    add_locale_string("status.silhouette.flip_normals",
+                      {{"en", "Orienting normals outward..."},
+                       {"zh", "调整法线方向..."}});
+    add_locale_string("status.silhouette.generate_sides",
+                      {{"en", "Generating side faces..."},
+                       {"zh", "生成侧面..."}});
 
     // Labels
     add_locale_string("label.no_log_entries",

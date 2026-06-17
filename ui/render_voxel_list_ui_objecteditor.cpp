@@ -417,7 +417,7 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         // 后台加载进度条与取消按钮
         if (item.write_count > 0) {
             ImGui::Separator();
-            ImGui::Text("%s", this->getQueueStatus().c_str());
+            ImGui::TextWrapped("%s", this->getQueueStatus().c_str());
             const char* cancel_label = get_locale_cstr("action.cancel");
             ImVec2 button_size = ImGui::CalcTextSize(cancel_label);
             button_size.x += ImGui::GetStyle().FramePadding.x * 2;
@@ -604,7 +604,7 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             // 后台加载进度条与取消按钮
             if (item.write_count > 0) {
                 ImGui::Separator();
-                ImGui::Text("%s", this->getQueueStatus().c_str());
+                ImGui::TextWrapped("%s", this->getQueueStatus().c_str());
                 const char* cancel_label = get_locale_cstr("action.cancel");
                 ImVec2 button_size = ImGui::CalcTextSize(cancel_label);
                 button_size.x += ImGui::GetStyle().FramePadding.x * 2;

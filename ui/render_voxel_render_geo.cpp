@@ -912,8 +912,9 @@ void RenderVoxelList::load_stl(std::string filename,
             build_closed_mesh_from_triangles_silhouette(
                 raw_triangles, cb_center,
                 [&]() { return queue_should_continue.load(); },
-                [&](float t) {
+                [&](float t, const std::string& step) {
                     queue_progress = 0.13f + t * 0.02f;
+                    setQueueStatus(step);
                 });
     } else if (load_mode ==
                static_cast<int>(StlLoadMode::CONVEX_HULL)) {
@@ -1422,7 +1423,10 @@ void RenderVoxelList::load_from_node(int target_item_id,
                     build_closed_mesh_from_triangles_silhouette(
                         source_mesh, silhouette_center,
                         [&]() { return queue_should_continue.load(); },
-                        [&](float t) { queue_progress = t * 0.1f; });
+                        [&](float t, const std::string& step) {
+                            queue_progress = t * 0.1f;
+                            setQueueStatus(step);
+                        });
             target_mesh_only = true;
         }
     } else if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY)) {

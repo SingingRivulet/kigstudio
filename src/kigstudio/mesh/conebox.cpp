@@ -9,16 +9,17 @@
 #include <tuple>
 
 #include "kigstudio/utils/dbvt3d.h"
+#include "kigstudio/utils/locale.h"
 
 namespace sinriv::kigstudio::mesh::conebox {
 
-#define CONEBOX_DEBUG 0
+// #define CONEBOX_DEBUG 0
 
-#if CONEBOX_DEBUG
-    #define CB_DBG(x) std::cout << "[conebox] " << x << std::endl
-#else
-    #define CB_DBG(x)
-#endif
+// #if CONEBOX_DEBUG
+#define CB_DBG(x) std::cout << "[conebox] " << x << std::endl
+// #else
+// #define CB_DBG(x)
+// #endif
 
 void Triangle_status::compute_projection(const vec3f& center) {
     const auto& [v0, v1, v2] = triangle;
@@ -226,8 +227,7 @@ static Point2 snap_point2(const Point2& p) {
     constexpr double SCALE = 1e5;  // 1e-5 网格
     const double x = CGAL::to_double(p.x());
     const double y = CGAL::to_double(p.y());
-    Point2 sp(std::round(x * SCALE) / SCALE,
-              std::round(y * SCALE) / SCALE);
+    Point2 sp(std::round(x * SCALE) / SCALE, std::round(y * SCALE) / SCALE);
     return sp;
 }
 
@@ -254,9 +254,9 @@ static Polygon_2 cleanup_polygon(const Polygon_2& poly) {
         const auto& prev = verts[(i + verts.size() - 1) % verts.size()];
         const auto& curr = verts[i];
         const auto& next = verts[(i + 1) % verts.size()];
-        const double cross = CGAL::to_double(
-            (curr.x() - prev.x()) * (next.y() - prev.y()) -
-            (curr.y() - prev.y()) * (next.x() - prev.x()));
+        const double cross =
+            CGAL::to_double((curr.x() - prev.x()) * (next.y() - prev.y()) -
+                            (curr.y() - prev.y()) * (next.x() - prev.x()));
         if (std::abs(cross) > 1e-12)
             cleaned.push_back(curr);
     }
@@ -288,10 +288,10 @@ static Polygon_with_holes_2 cleanup_polygon_with_holes(
 
 static Polygon_2 make_face_polygon(const Triangle_status& status, int face) {
     const auto& [p0, p1, p2] = status.pos_in_face[face];
-    CB_DBG("make_face_polygon face=" << face
-           << " raw=" << p0.x << "," << p0.y << "," << p0.z
-           << " " << p1.x << "," << p1.y << "," << p1.z
-           << " " << p2.x << "," << p2.y << "," << p2.z);
+    CB_DBG("make_face_polygon face=" << face << " raw=" << p0.x << "," << p0.y
+                                     << "," << p0.z << " " << p1.x << ","
+                                     << p1.y << "," << p1.z << " " << p2.x
+                                     << "," << p2.y << "," << p2.z);
     std::vector<Point2> raw;
     raw.reserve(3);
     if (p0.z > 0.0f)
@@ -332,9 +332,8 @@ static Polygon_2 make_face_polygon(const Triangle_status& status, int face) {
         const auto& a = vertices[i];
         const auto& b = vertices[(i + 1) % vertices.size()];
         const auto& c = vertices[(i + 2) % vertices.size()];
-        const double cross =
-            CGAL::to_double((b.x() - a.x()) * (c.y() - a.y()) -
-                            (b.y() - a.y()) * (c.x() - a.x()));
+        const double cross = CGAL::to_double((b.x() - a.x()) * (c.y() - a.y()) -
+                                             (b.y() - a.y()) * (c.x() - a.x()));
         if (std::abs(cross) > 1e-12) {
             has_area = true;
             break;
@@ -353,8 +352,7 @@ static Polygon_2 make_face_polygon(const Triangle_status& status, int face) {
     return polygon;
 }
 
-static bool polygon_overlaps_triangle(const Polygon_2& a,
-                                      const Polygon_2& b) {
+static bool polygon_overlaps_triangle(const Polygon_2& a, const Polygon_2& b) {
     if (a.is_empty() || b.is_empty())
         return false;
 
@@ -366,10 +364,14 @@ static bool polygon_overlaps_triangle(const Polygon_2& a,
         for (size_t i = 1; i < p.size(); ++i) {
             double x = CGAL::to_double(p[i].x());
             double y = CGAL::to_double(p[i].y());
-            if (x < min_x) min_x = x;
-            if (x > max_x) max_x = x;
-            if (y < min_y) min_y = y;
-            if (y > max_y) max_y = y;
+            if (x < min_x)
+                min_x = x;
+            if (x > max_x)
+                max_x = x;
+            if (y < min_y)
+                min_y = y;
+            if (y > max_y)
+                max_y = y;
         }
     };
 
@@ -420,7 +422,7 @@ Triangle_group::compute_visible_triangulation(size_t triangle_id,
         return {out_triangles, polygon_vertices};
 
     CB_DBG("=== compute_visible_triangulation tri=" << triangle_id
-           << " face=" << face_id);
+                                                    << " face=" << face_id);
 
     const Triangle_status& target_status = triangles[triangle_id];
     Polygon_2 target_polygon = make_face_polygon(target_status, face_id);
@@ -519,8 +521,7 @@ Triangle_group::compute_visible_triangulation(size_t triangle_id,
     };
 
     auto has_strictly_inside_vertex = [](const Polygon_2& container,
-                                         const Polygon_2& contained)
-        -> bool {
+                                         const Polygon_2& contained) -> bool {
         for (auto it = contained.vertices_begin();
              it != contained.vertices_end(); ++it) {
             if (container.bounded_side(*it) == CGAL::ON_BOUNDED_SIDE)
@@ -531,14 +532,14 @@ Triangle_group::compute_visible_triangulation(size_t triangle_id,
 
     int occluder_idx = 0;
     for (const auto& occluder : occluders) {
-        CB_DBG("  applying occluder " << occluder_idx
-               << " id=" << occluder.id << " depth=" << occluder.depth
-               << " poly_size=" << occluder.polygon.size());
+        CB_DBG("  applying occluder "
+               << occluder_idx << " id=" << occluder.id << " depth="
+               << occluder.depth << " poly_size=" << occluder.polygon.size());
         next_regions.clear();
         int region_idx = 0;
         for (const auto& region : current_regions) {
-            CB_DBG("    diff with region " << region_idx
-                   << " outer=" << region.outer_boundary().size());
+            CB_DBG("    diff with region " << region_idx << " outer="
+                                           << region.outer_boundary().size());
 
             const auto& reg_poly = region.outer_boundary();
 
@@ -676,11 +677,8 @@ static bool ray_triangle_intersect(const vec3f& origin,
 static bool is_inside_mesh(const vec3f& p,
                            const std::vector<Triangle>& tris,
                            float unique_eps = 1e-4f) {
-    const vec3f dirs[3] = {
-        vec3f(1.0f, 0.0f, 0.0f),
-        vec3f(0.0f, 1.0f, 0.0f),
-        vec3f(0.0f, 0.0f, 1.0f)
-    };
+    const vec3f dirs[3] = {vec3f(1.0f, 0.0f, 0.0f), vec3f(0.0f, 1.0f, 0.0f),
+                           vec3f(0.0f, 0.0f, 1.0f)};
     int inside_votes = 0;
 
     for (int axis = 0; axis < 3; ++axis) {
@@ -689,9 +687,9 @@ static bool is_inside_mesh(const vec3f& p,
         ts.reserve(tris.size());
         for (const auto& tri : tris) {
             vec3f hit;
-            if (ray_triangle_intersect(p, dir,
-                                       std::get<0>(tri), std::get<1>(tri),
-                                       std::get<2>(tri), hit)) {
+            if (ray_triangle_intersect(p, dir, std::get<0>(tri),
+                                       std::get<1>(tri), std::get<2>(tri),
+                                       hit)) {
                 float t = (hit - p).dot(dir);
                 if (t > unique_eps) {
                     ts.push_back(t);
@@ -710,6 +708,54 @@ static bool is_inside_mesh(const vec3f& p,
         }
     }
     // 至少 2 轴认定为 inside 才算内部（与 sdf_mesh.cpp 一致）
+    return inside_votes >= 2;
+}
+
+// 使用 BVH 加速的点在封闭 mesh 内部判断（三条射线投票）
+static bool is_inside_mesh_bvh(
+    const vec3f& p,
+    const sinriv::kigstudio::dbvt3d<float, int>& bvh,
+    const std::vector<Triangle>& tris,
+    float max_dist,
+    float unique_eps = 1e-4f) {
+    const vec3f dirs[3] = {vec3f(1.0f, 0.0f, 0.0f), vec3f(0.0f, 1.0f, 0.0f),
+                           vec3f(0.0f, 0.0f, 1.0f)};
+    int inside_votes = 0;
+
+    for (int axis = 0; axis < 3; ++axis) {
+        const vec3f& dir = dirs[axis];
+        std::vector<float> ts;
+        ts.reserve(tris.size() / 4);
+
+        bvh.rayTest(
+            sinriv::kigstudio::ray<float>(p, p + dir * max_dist),
+            [&](const sinriv::kigstudio::dbvt3d<float, int>::AABB* node) {
+                int idx = *node->data;
+                if (idx < 0 || idx >= static_cast<int>(tris.size()))
+                    return;
+                const auto& tri = tris[idx];
+                vec3f hit;
+                if (ray_triangle_intersect(p, dir, std::get<0>(tri),
+                                           std::get<1>(tri), std::get<2>(tri),
+                                           hit)) {
+                    float t = (hit - p).dot(dir);
+                    if (t > unique_eps) {
+                        ts.push_back(t);
+                    }
+                }
+            });
+
+        std::sort(ts.begin(), ts.end());
+        int intersect_count = 0;
+        for (size_t i = 0; i < ts.size(); ++i) {
+            if (i == 0 || std::abs(ts[i] - ts[i - 1]) > unique_eps) {
+                ++intersect_count;
+            }
+        }
+        if (intersect_count % 2 == 1) {
+            ++inside_votes;
+        }
+    }
     return inside_votes >= 2;
 }
 
@@ -766,8 +812,7 @@ struct ConePlanes {
     float s01, s12, s20;
 };
 
-static ConePlanes build_cone_planes(const Triangle& tri,
-                                    const vec3f& center) {
+static ConePlanes build_cone_planes(const Triangle& tri, const vec3f& center) {
     const auto& v0 = std::get<0>(tri);
     const auto& v1 = std::get<1>(tri);
     const auto& v2 = std::get<2>(tri);
@@ -793,8 +838,10 @@ static void tri_aabb(const Triangle& tri, vec3f& out_min, vec3f& out_max) {
     out_max.z = std::max(v0.z, std::max(v1.z, v2.z));
 }
 
-static void cone_aabb(const Triangle& tri, const vec3f& center,
-                      vec3f& out_min, vec3f& out_max) {
+static void cone_aabb(const Triangle& tri,
+                      const vec3f& center,
+                      vec3f& out_min,
+                      vec3f& out_max) {
     const auto& v0 = std::get<0>(tri);
     const auto& v1 = std::get<1>(tri);
     const auto& v2 = std::get<2>(tri);
@@ -818,9 +865,11 @@ static std::vector<vec3f> clip_by_plane(const std::vector<vec3f>& poly,
                                         const vec3f& normal,
                                         float sign) {
     std::vector<vec3f> out;
-    if (poly.empty()) return out;
+    if (poly.empty())
+        return out;
 
-    if (std::abs(sign) < 1e-12f) sign = 1.0f;
+    if (std::abs(sign) < 1e-12f)
+        sign = 1.0f;
 
     const float EPS = 1e-5f;
 
@@ -849,8 +898,9 @@ static std::vector<vec3f> clip_by_plane(const std::vector<vec3f>& poly,
     return out;
 }
 
-static std::vector<Triangle> clip_triangle_by_cone(
-    const Triangle& tri, const ConePlanes& cone, const vec3f& center) {
+static std::vector<Triangle> clip_triangle_by_cone(const Triangle& tri,
+                                                   const ConePlanes& cone,
+                                                   const vec3f& center) {
     const auto& v0 = std::get<0>(tri);
     const auto& v1 = std::get<1>(tri);
     const auto& v2 = std::get<2>(tri);
@@ -858,20 +908,22 @@ static std::vector<Triangle> clip_triangle_by_cone(
     std::vector<vec3f> poly = {v0, v1, v2};
 
     poly = clip_by_plane(poly, center, cone.n01, cone.s01);
-    if (poly.size() < 3) return {};
+    if (poly.size() < 3)
+        return {};
 
     poly = clip_by_plane(poly, center, cone.n12, cone.s12);
-    if (poly.size() < 3) return {};
+    if (poly.size() < 3)
+        return {};
 
     poly = clip_by_plane(poly, center, cone.n20, cone.s20);
-    if (poly.size() < 3) return {};
+    if (poly.size() < 3)
+        return {};
 
     // 去重相邻顶点
     std::vector<vec3f> cleaned;
     const float DUP_EPS_SQ = 1e-10f;
     for (const auto& p : poly) {
-        if (cleaned.empty() ||
-            (p - cleaned.back()).length2() > DUP_EPS_SQ) {
+        if (cleaned.empty() || (p - cleaned.back()).length2() > DUP_EPS_SQ) {
             cleaned.push_back(p);
         }
     }
@@ -879,7 +931,8 @@ static std::vector<Triangle> clip_triangle_by_cone(
         (cleaned.front() - cleaned.back()).length2() <= DUP_EPS_SQ) {
         cleaned.pop_back();
     }
-    if (cleaned.size() < 3) return {};
+    if (cleaned.size() < 3)
+        return {};
 
     // 扇形分解
     std::vector<Triangle> result;
@@ -1047,15 +1100,16 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
     const float min_half = std::min({half_x, half_y, half_z});
 
     CB_DBG("  bbox min=" << min_p.x << "," << min_p.y << "," << min_p.z
-           << " max=" << max_p.x << "," << max_p.y << "," << max_p.z);
+                         << " max=" << max_p.x << "," << max_p.y << ","
+                         << max_p.z);
     CB_DBG("  center=" << center.x << "," << center.y << "," << center.z
-           << " min_half=" << min_half);
+                       << " min_half=" << min_half);
 
     // 若模型太贴近中心，则统一缩放使其超出算法使用的 0.5 单位立方体
     constexpr float target_half = 0.6f;
-    const float scale =
-        (min_half > 1e-8f && min_half < target_half) ? target_half / min_half
-                                                     : 1.0f;
+    const float scale = (min_half > 1e-8f && min_half < target_half)
+                            ? target_half / min_half
+                            : 1.0f;
     const float inv_scale = 1.0f / scale;
 
     CB_DBG("  scale=" << scale);
@@ -1070,10 +1124,9 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
 
     for (const auto& tri : input_triangles) {
         Triangle_status status;
-        status.triangle =
-            std::make_tuple(to_local(std::get<0>(tri)),
-                            to_local(std::get<1>(tri)),
-                            to_local(std::get<2>(tri)));
+        status.triangle = std::make_tuple(to_local(std::get<0>(tri)),
+                                          to_local(std::get<1>(tri)),
+                                          to_local(std::get<2>(tri)));
         status.compute_projection(group.center);
         group.add_triangle(status);
     }
@@ -1089,10 +1142,9 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
     std::vector<Triangle> result;
     result.reserve(local_mesh.size());
     for (const auto& tri : local_mesh) {
-        result.emplace_back(std::make_tuple(
-            to_world(std::get<0>(tri)),
-            to_world(std::get<1>(tri)),
-            to_world(std::get<2>(tri))));
+        result.emplace_back(std::make_tuple(to_world(std::get<0>(tri)),
+                                            to_world(std::get<1>(tri)),
+                                            to_world(std::get<2>(tri))));
     }
     return result;
 }
@@ -1101,9 +1153,23 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const std::vector<Triangle>& input_triangles,
     const vec3f& center,
     const std::function<bool()>& should_continue,
-    const std::function<void(float)>& progress) {
+    const std::function<void(float, const std::string&)>& progress) {
     if (input_triangles.empty())
         return {};
+
+    auto report_progress = [&](float t, const std::string& text) {
+        if (progress) {
+            progress(t, text);
+        }
+    };
+
+    auto step_text = [&](const std::string& key, int cur, int total) {
+        return sinriv::locale::get_locale_string(key) + " (" +
+               std::to_string(cur) + "/" + std::to_string(total) + ")";
+    };
+
+    report_progress(
+        0.0f, sinriv::locale::get_locale_string("status.silhouette.prepare"));
 
     // =====================================================================
     // Phase 0: 精确锥体裁剪 — 用每个三角形与 center 构成的三面锥去切割
@@ -1121,9 +1187,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     // 按原始三角形重心深度升序排序（近的优先处理）
     std::vector<int> order(input_triangles.size());
     std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(), [&](int a, int b) {
-        return src_depths[a] < src_depths[b];
-    });
+    std::sort(order.begin(), order.end(),
+              [&](int a, int b) { return src_depths[a] < src_depths[b]; });
 
     std::vector<float> frag_depths = src_depths;
 
@@ -1133,8 +1198,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         vec3f ray_dir(1.0f, 0.0f, 0.0f);
         float ray_max = 0.0f;
         for (const auto& tri : input_triangles) {
-            for (const auto& v : {std::get<0>(tri), std::get<1>(tri),
-                                  std::get<2>(tri)}) {
+            for (const auto& v :
+                 {std::get<0>(tri), std::get<1>(tri), std::get<2>(tri)}) {
                 ray_max = std::max(ray_max, std::abs(v.x - center.x));
             }
         }
@@ -1142,9 +1207,9 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         std::vector<float> ts;
         for (const auto& tri : input_triangles) {
             vec3f hit;
-            if (ray_triangle_intersect(center, ray_dir,
-                                       std::get<0>(tri), std::get<1>(tri),
-                                       std::get<2>(tri), hit)) {
+            if (ray_triangle_intersect(center, ray_dir, std::get<0>(tri),
+                                       std::get<1>(tri), std::get<2>(tri),
+                                       hit)) {
                 float t = (hit - center).dot(ray_dir);
                 if (t > 1e-6f && t < ray_max) {
                     ts.push_back(t);
@@ -1161,6 +1226,9 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         center_inside = (intersect_count % 2 == 1);
     }
 
+    report_progress(0.05f, sinriv::locale::get_locale_string(
+                               "status.silhouette.test_center"));
+
     // 碎片数量上限，防止内存爆炸
     const size_t MAX_FRAGMENTS =
         std::max(input_triangles.size() * 20, size_t(10000));
@@ -1172,89 +1240,141 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
             if (should_continue && !should_continue())
                 break;
             if (progress && loop_idx % 10 == 0) {
-                progress(static_cast<float>(loop_idx) /
-                         static_cast<float>(order.size()) * 0.5f);
+                float t = 0.1f + static_cast<float>(loop_idx) /
+                                     static_cast<float>(order.size()) * 0.35f;
+                report_progress(t, sinriv::locale::get_locale_string(
+                                       "status.silhouette.clip_cones"));
             }
             if (fragments.size() > MAX_FRAGMENTS)
                 break;
 
-        const auto& src_tri = input_triangles[src_idx];
-        ConePlanes cone = build_cone_planes(src_tri, center);
+            const auto& src_tri = input_triangles[src_idx];
+            ConePlanes cone = build_cone_planes(src_tri, center);
 
-        // 跳过退化锥体（三角形与 center 近似共面）
-        if (std::abs(cone.s01) < 1e-8f && std::abs(cone.s12) < 1e-8f &&
-            std::abs(cone.s20) < 1e-8f) {
-            continue;
-        }
-
-        vec3f cone_min, cone_max;
-        cone_aabb(src_tri, center, cone_min, cone_max);
-
-        std::vector<Triangle> new_fragments;
-        std::vector<int> new_frag_src;
-        std::vector<float> new_frag_depths;
-        new_fragments.reserve(fragments.size());
-        new_frag_src.reserve(fragments.size());
-        new_frag_depths.reserve(fragments.size());
-
-        for (size_t j = 0; j < fragments.size(); ++j) {
-            // 不切割自己
-            if (frag_src[j] == src_idx) {
-                new_fragments.push_back(fragments[j]);
-                new_frag_src.push_back(frag_src[j]);
-                new_frag_depths.push_back(frag_depths[j]);
+            // 跳过退化锥体（三角形与 center 近似共面）
+            if (std::abs(cone.s01) < 1e-8f && std::abs(cone.s12) < 1e-8f &&
+                std::abs(cone.s20) < 1e-8f) {
                 continue;
             }
 
-            // AABB 快速排斥
-            vec3f fmin, fmax;
-            tri_aabb(fragments[j], fmin, fmax);
-            if (fmax.x < cone_min.x || fmin.x > cone_max.x ||
-                fmax.y < cone_min.y || fmin.y > cone_max.y ||
-                fmax.z < cone_min.z || fmin.z > cone_max.z) {
-                new_fragments.push_back(fragments[j]);
-                new_frag_src.push_back(frag_src[j]);
-                new_frag_depths.push_back(frag_depths[j]);
-                continue;
-            }
+            vec3f cone_min, cone_max;
+            cone_aabb(src_tri, center, cone_min, cone_max);
 
-            // 碎片来自比 src 更近的原始三角形，不切割
-            if (frag_depths[j] < src_depths[src_idx] - 1e-4f) {
-                new_fragments.push_back(fragments[j]);
-                new_frag_src.push_back(frag_src[j]);
-                new_frag_depths.push_back(frag_depths[j]);
-                continue;
-            }
+            std::vector<Triangle> new_fragments;
+            std::vector<int> new_frag_src;
+            std::vector<float> new_frag_depths;
+            new_fragments.reserve(fragments.size());
+            new_frag_src.reserve(fragments.size());
+            new_frag_depths.reserve(fragments.size());
 
-            // 精确裁剪：保留锥体外部；若外部为空则保留原片
-            //（让 silhouette 步骤处理完全遮挡的情况）
-            auto clipped = clip_triangle_by_cone(fragments[j], cone, center);
-            if (clipped.empty()) {
-                new_fragments.push_back(fragments[j]);
-                new_frag_src.push_back(frag_src[j]);
-                new_frag_depths.push_back(frag_depths[j]);
-            } else {
-                for (const auto& ct : clipped) {
-                    new_fragments.push_back(ct);
+            for (size_t j = 0; j < fragments.size(); ++j) {
+                // 不切割自己
+                if (frag_src[j] == src_idx) {
+                    new_fragments.push_back(fragments[j]);
                     new_frag_src.push_back(frag_src[j]);
-                    new_frag_depths.push_back(
-                        (tri_centroid(ct) - center).length());
+                    new_frag_depths.push_back(frag_depths[j]);
+                    continue;
+                }
+
+                // AABB 快速排斥
+                vec3f fmin, fmax;
+                tri_aabb(fragments[j], fmin, fmax);
+                if (fmax.x < cone_min.x || fmin.x > cone_max.x ||
+                    fmax.y < cone_min.y || fmin.y > cone_max.y ||
+                    fmax.z < cone_min.z || fmin.z > cone_max.z) {
+                    new_fragments.push_back(fragments[j]);
+                    new_frag_src.push_back(frag_src[j]);
+                    new_frag_depths.push_back(frag_depths[j]);
+                    continue;
+                }
+
+                // 碎片来自比 src 更近的原始三角形，不切割
+                if (frag_depths[j] < src_depths[src_idx] - 1e-4f) {
+                    new_fragments.push_back(fragments[j]);
+                    new_frag_src.push_back(frag_src[j]);
+                    new_frag_depths.push_back(frag_depths[j]);
+                    continue;
+                }
+
+                // 精确裁剪：保留锥体外部；若外部为空则保留原片
+                // （让 silhouette 步骤处理完全遮挡的情况）
+                auto clipped =
+                    clip_triangle_by_cone(fragments[j], cone, center);
+                if (clipped.empty()) {
+                    new_fragments.push_back(fragments[j]);
+                    new_frag_src.push_back(frag_src[j]);
+                    new_frag_depths.push_back(frag_depths[j]);
+                } else {
+                    for (const auto& ct : clipped) {
+                        new_fragments.push_back(ct);
+                        new_frag_src.push_back(frag_src[j]);
+                        new_frag_depths.push_back(
+                            (tri_centroid(ct) - center).length());
+                    }
                 }
             }
-        }
 
-        fragments = std::move(new_fragments);
-        frag_src = std::move(new_frag_src);
-        frag_depths = std::move(new_frag_depths);
-    }
+            fragments = std::move(new_fragments);
+            frag_src = std::move(new_frag_src);
+            frag_depths = std::move(new_frag_depths);
+        }
     }  // if (!center_inside)
 
     // =====================================================================
     // Phase 1+: 基于裁剪后的碎片运行 silhouette 算法
     // =====================================================================
 
-    // 1. 构建 DBVT 加速射线查询
+    report_progress(0.45f, sinriv::locale::get_locale_string(
+                               "status.silhouette.build_bvh"));
+
+    // 0. 为原始输入网格构建 DBVT，用于加速 inside 测试
     using BVH = sinriv::kigstudio::dbvt3d<float, int>;
+    BVH input_bvh;
+    std::vector<BVH::AABB*> input_aabbs;
+    std::vector<int> input_indices;
+    input_aabbs.reserve(input_triangles.size());
+    input_indices.reserve(input_triangles.size());
+    vec3f input_min, input_max;
+    bool input_bounds_init = false;
+
+    for (int i = 0; i < static_cast<int>(input_triangles.size()); ++i) {
+        if (should_continue && !should_continue())
+            break;
+        const auto& tri = input_triangles[i];
+        const auto& v0 = std::get<0>(tri);
+        const auto& v1 = std::get<1>(tri);
+        const auto& v2 = std::get<2>(tri);
+        vec3f mn(v0.x, v0.y, v0.z);
+        vec3f mx(v0.x, v0.y, v0.z);
+        mn.x = std::min(mn.x, std::min(v1.x, v2.x));
+        mn.y = std::min(mn.y, std::min(v1.y, v2.y));
+        mn.z = std::min(mn.z, std::min(v1.z, v2.z));
+        mx.x = std::max(mx.x, std::max(v1.x, v2.x));
+        mx.y = std::max(mx.y, std::max(v1.y, v2.y));
+        mx.z = std::max(mx.z, std::max(v1.z, v2.z));
+
+        if (!input_bounds_init) {
+            input_min = mn;
+            input_max = mx;
+            input_bounds_init = true;
+        } else {
+            input_min.x = std::min(input_min.x, mn.x);
+            input_min.y = std::min(input_min.y, mn.y);
+            input_min.z = std::min(input_min.z, mn.z);
+            input_max.x = std::max(input_max.x, mx.x);
+            input_max.y = std::max(input_max.y, mx.y);
+            input_max.z = std::max(input_max.z, mx.z);
+        }
+
+        input_indices.push_back(i);
+        input_aabbs.push_back(input_bvh.add(mn, mx, &input_indices.back()));
+    }
+
+    const float input_max_dist = input_bounds_init
+                                     ? (input_max - input_min).length() * 2.0f
+                                     : 1.0f;
+
+    // 1. 构建 DBVT 加速射线查询
     BVH bvh;
     std::vector<BVH::AABB*> aabbs;
     std::vector<int> indices;
@@ -1265,8 +1385,10 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         if (should_continue && !should_continue())
             break;
         if (progress && i % 100 == 0) {
-            progress(0.5f + static_cast<float>(i) /
-                                static_cast<float>(fragments.size()) * 0.5f);
+            float t = 0.45f + static_cast<float>(i) /
+                                  static_cast<float>(fragments.size()) * 0.05f;
+            report_progress(t, sinriv::locale::get_locale_string(
+                                   "status.silhouette.build_bvh"));
         }
         const auto& tri = fragments[i];
         const auto& v0 = std::get<0>(tri);
@@ -1298,6 +1420,14 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     std::vector<int> visible_flags(fragments.size(), 0);
 
     for (int i = 0; i < static_cast<int>(fragments.size()); ++i) {
+        if (should_continue && !should_continue())
+            break;
+        if (progress && i % 100 == 0) {
+            float t = 0.5f + static_cast<float>(i) /
+                                 static_cast<float>(fragments.size()) * 0.3f;
+            report_progress(t, step_text("status.silhouette.ray_visibility", i,
+                                         static_cast<int>(fragments.size())));
+        }
         const auto& tri = fragments[i];
         const auto& v0 = std::get<0>(tri);
         const auto& v1 = std::get<1>(tri);
@@ -1320,9 +1450,9 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
                     return;
                 const auto& t2 = fragments[idx];
                 vec3f hit;
-                if (ray_triangle_intersect(center, dir_n,
-                                           std::get<0>(t2), std::get<1>(t2),
-                                           std::get<2>(t2), hit)) {
+                if (ray_triangle_intersect(center, dir_n, std::get<0>(t2),
+                                           std::get<1>(t2), std::get<2>(t2),
+                                           hit)) {
                     float t = (hit - center).length();
                     if (t > farthest_t) {
                         farthest_t = t;
@@ -1349,8 +1479,15 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
             bvh.remove(aabb);
             bvh.delAABB(aabb);
         }
+        for (auto* aabb : input_aabbs) {
+            input_bvh.remove(aabb);
+            input_bvh.delAABB(aabb);
+        }
         return {};
     }
+
+    report_progress(0.8f, sinriv::locale::get_locale_string(
+                              "status.silhouette.extract_boundary"));
 
     // 4. 提取边界边（只被一个可见三角形共享的边）
     // 对顶点做 snap，避免浮点误差导致切割后的相邻碎片产生重叠边界边
@@ -1376,17 +1513,32 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
             }
         }
         bool operator<(const EdgeKey& o) const {
-            if (a.x != o.a.x) return a.x < o.a.x;
-            if (a.y != o.a.y) return a.y < o.a.y;
-            if (a.z != o.a.z) return a.z < o.a.z;
-            if (b.x != o.b.x) return b.x < o.b.x;
-            if (b.y != o.b.y) return b.y < o.b.y;
+            if (a.x != o.a.x)
+                return a.x < o.a.x;
+            if (a.y != o.a.y)
+                return a.y < o.a.y;
+            if (a.z != o.a.z)
+                return a.z < o.a.z;
+            if (b.x != o.b.x)
+                return b.x < o.b.x;
+            if (b.y != o.b.y)
+                return b.y < o.b.y;
             return b.z < o.b.z;
         }
     };
 
     std::map<EdgeKey, int> edge_count;
-    for (const auto& tri : visible_tris) {
+    int visible_count = static_cast<int>(visible_tris.size());
+    for (int i = 0; i < visible_count; ++i) {
+        if (should_continue && !should_continue())
+            break;
+        if (progress && i % 100 == 0) {
+            float t = 0.8f + static_cast<float>(i) /
+                                 static_cast<float>(visible_count) * 0.05f;
+            report_progress(t, step_text("status.silhouette.extract_boundary",
+                                         i, visible_count));
+        }
+        const auto& tri = visible_tris[i];
         const auto& v0 = std::get<0>(tri);
         const auto& v1 = std::get<1>(tri);
         const auto& v2 = std::get<2>(tri);
@@ -1402,8 +1554,20 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         }
     }
 
+    report_progress(0.85f, sinriv::locale::get_locale_string(
+                               "status.silhouette.flip_normals"));
+
     // 5. 调整可见面法线方向：使法线朝外（支持凹体，使用三条射线投票）
-    for (auto& tri : visible_tris) {
+    for (int i = 0; i < visible_count; ++i) {
+        if (should_continue && !should_continue())
+            break;
+        if (progress && i % 100 == 0) {
+            float t = 0.85f + static_cast<float>(i) /
+                                  static_cast<float>(visible_count) * 0.03f;
+            report_progress(t, step_text("status.silhouette.flip_normals", i,
+                                         visible_count));
+        }
+        auto& tri = visible_tris[i];
         auto& v0 = std::get<0>(tri);
         auto& v1 = std::get<1>(tri);
         auto& v2 = std::get<2>(tri);
@@ -1414,7 +1578,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         vec3f n_unit = n * (1.0f / n_len);
         vec3f centroid = (v0 + v1 + v2) * (1.0f / 3.0f);
         vec3f p_test = centroid + n_unit * 1e-3f;
-        if (is_inside_mesh(p_test, input_triangles)) {
+        if (is_inside_mesh_bvh(p_test, input_bvh, input_triangles,
+                               input_max_dist)) {
             std::swap(v1, v2);
         }
     }
@@ -1422,12 +1587,24 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     // 预计算可见面法线（用于侧面朝向判断）
     std::vector<vec3f> visible_normals;
     visible_normals.reserve(visible_tris.size());
-    for (const auto& tri : visible_tris) {
+    for (int i = 0; i < visible_count; ++i) {
+        if (should_continue && !should_continue())
+            break;
+        if (progress && i % 100 == 0) {
+            float t = 0.88f + static_cast<float>(i) /
+                                  static_cast<float>(visible_count) * 0.02f;
+            report_progress(t, step_text("status.silhouette.flip_normals", i,
+                                         visible_count));
+        }
+        const auto& tri = visible_tris[i];
         const auto& v0 = std::get<0>(tri);
         const auto& v1 = std::get<1>(tri);
         const auto& v2 = std::get<2>(tri);
         visible_normals.push_back((v1 - v0).cross(v2 - v0));
     }
+
+    report_progress(0.9f, sinriv::locale::get_locale_string(
+                              "status.silhouette.generate_sides"));
 
     // 6. 生成侧面并调整法线：侧面法线应与邻接可见面法线同向（都朝外）
     std::vector<Triangle> result;
@@ -1439,7 +1616,17 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         return (a - b).length2() < EDGE_EPS_SQ;
     };
 
-    for (const auto& e : boundary_edges) {
+    int boundary_count = static_cast<int>(boundary_edges.size());
+    for (int i = 0; i < boundary_count; ++i) {
+        if (should_continue && !should_continue())
+            break;
+        if (progress && i % 100 == 0) {
+            float t = 0.9f + static_cast<float>(i) /
+                                 static_cast<float>(boundary_count) * 0.1f;
+            report_progress(t, step_text("status.silhouette.generate_sides", i,
+                                         boundary_count));
+        }
+        const auto& e = boundary_edges[i];
         vec3f n_F;
         bool found = false;
         for (size_t j = 0; j < visible_tris.size(); ++j) {
@@ -1467,10 +1654,17 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         result.emplace_back(std::make_tuple(a, b, center));
     }
 
+    report_progress(1.0f, sinriv::locale::get_locale_string(
+                              "status.silhouette.generate_sides"));
+
     // 清理 DBVT
     for (auto* aabb : aabbs) {
         bvh.remove(aabb);
         bvh.delAABB(aabb);
+    }
+    for (auto* aabb : input_aabbs) {
+        input_bvh.remove(aabb);
+        input_bvh.delAABB(aabb);
     }
     return result;
 }

@@ -345,12 +345,12 @@ void RenderVoxelList::render_ui() {
         float async_y = window_height - item_status_height - 10.0f;
         ImGui::SetNextWindowPos(ImVec2((float)window_width, async_y),
                                 ImGuiCond_Always, ImVec2(1.0f, 1.0f));
-        ImGui::SetNextWindowSize(ImVec2(320, 70), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(420, 85), ImGuiCond_Always);
         if (ImGui::Begin(get_locale_cstr("window.async_voxel_loader"), nullptr,
                          ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoTitleBar |
                              ImGuiWindowFlags_NoBringToFrontOnFocus)) {
-            ImGui::Text("%s", this->getQueueStatus().c_str());
+            ImGui::TextWrapped("%s", this->getQueueStatus().c_str());
             const char* cancel_label = get_locale_cstr("action.cancel");
             ImVec2 button_size = ImGui::CalcTextSize(cancel_label);
             button_size.x += ImGui::GetStyle().FramePadding.x * 2;
