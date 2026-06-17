@@ -281,6 +281,9 @@ void init_locale_strings() {
                       {{"en", "No log entries."}, {"zh", "暂无日志记录。"}});
     add_locale_string("label.load_as_sdf",
                       {{"en", "Load as SDF"}, {"zh", "加载SDF"}});
+    add_locale_string(
+        "label.use_precise_voxelization",
+        {{"en", "Precise voxelization"}, {"zh", "精确体素化"}});
     add_locale_string("label.stl_path",
                       {{"en", "STL Path"}, {"zh", "STL 路径"}});
     add_locale_string("label.stl_load_mode",
@@ -666,6 +669,14 @@ void init_locale_strings() {
           "将 STL 文件作为有符号距离场 (SDF) "
           "加载，这将显著提升模型精度，但是输出模型将消耗更长的时间。使用部分功"
           "能时会丢失 SDF 数据（例如邻近分割）。"}});
+    add_locale_string(
+        "tooltip.use_precise_voxelization",
+        {{"en",
+          "Use CGAL side-of-mesh test to verify ambiguous voxels and reduce "
+          "voxelization errors. Disable for faster loading on large models."},
+         {"zh",
+          "使用 CGAL 体素内判定来验证可疑体素，降低体素化错误率。对大模型关闭可"
+          "以加快加载速度。"}});
     add_locale_string(
         "tooltip.stl_load_mode",
         {{"en", "Choose how the STL file is processed before voxelization."},

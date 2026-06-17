@@ -81,6 +81,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddNumberToObject(obj, "stl_voxel_size", item.stl_voxel_size);
     cJSON_AddNumberToObject(obj, "stl_load_mode", item.stl_load_mode);
     cJSON_AddBoolToObject(obj, "load_as_sdf", item.load_as_sdf);
+    cJSON_AddBoolToObject(obj, "use_precise_voxelization",
+                          item.use_precise_voxelization);
     cJSON_AddBoolToObject(obj, "mesh_only", item.mesh_only);
     cJSON_AddNumberToObject(obj, "source_type", item.source_type);
     cJSON_AddNumberToObject(obj, "source_node_id", item.source_node_id);
@@ -268,6 +270,11 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
     if (load_as_sdf_json) {
         item->load_as_sdf = cJSON_IsTrue(load_as_sdf_json);
     }
+    const cJSON* use_precise_voxelization_json =
+        cJSON_GetObjectItem(obj, "use_precise_voxelization");
+    item->use_precise_voxelization =
+        use_precise_voxelization_json ? cJSON_IsTrue(use_precise_voxelization_json)
+                                      : true;
     const cJSON* mesh_only_json =
         cJSON_GetObjectItem(obj, "mesh_only");
     if (mesh_only_json) {

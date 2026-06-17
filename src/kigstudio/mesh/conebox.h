@@ -74,8 +74,11 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
     const vec3f& manual_center = vec3f{0.0f, 0.0f, 0.0f});
 
 // 3D 轮廓边算法：从外部看向 center，保留最远可见面 + 侧面
+// should_continue: 返回 false 时提前终止；progress(t) 报告 0~1 的进度。
 std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const std::vector<Triangle>& triangles,
-    const vec3f& center);
+    const vec3f& center,
+    const std::function<bool()>& should_continue = nullptr,
+    const std::function<void(float)>& progress = nullptr);
 
 }  // namespace sinriv::kigstudio::mesh::conebox

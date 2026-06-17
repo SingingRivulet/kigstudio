@@ -171,6 +171,7 @@ struct CollisionEditorSnapshot {
     std::string stl_path;
     int stl_load_mode = 0;
     bool load_as_sdf = false;
+    bool use_precise_voxelization = false;
     bool mesh_only = false;
     int source_type = 0;
     int source_node_id = -1;
@@ -394,6 +395,7 @@ class RenderVoxelList {
         float stl_voxel_size = 1.0f;
         int stl_load_mode = 0;
         bool load_as_sdf = false;
+        bool use_precise_voxelization = true;
         bool mesh_only = false;
         int source_type = 0;
         int source_node_id = -1;
@@ -711,7 +713,8 @@ class RenderVoxelList {
                   bool smooth_normals = true,
                   int target_item_id = -1,
                   int load_mode = 0,
-                  bool load_as_sdf = false);
+                  bool load_as_sdf = false,
+                  bool use_precise_voxelization = true);
     void load_from_node(int target_item_id,
                         int source_node_id,
                         int node_source_data_type,
@@ -719,7 +722,8 @@ class RenderVoxelList {
                         bool node_source_sdf_simplify,
                         float node_source_sdf_simplify_ratio,
                         int load_mode = 0,
-                        bool load_as_sdf = false);
+                        bool load_as_sdf = false,
+                        bool use_precise_voxelization = true);
 
     // Cache helpers for node sources
     std::filesystem::path get_cache_dir(const std::string& subdir) const;
@@ -763,6 +767,7 @@ class RenderVoxelList {
         float export_simplify_ratio = 0.1f;
         int load_mode = 0;
         bool load_as_sdf = false;
+        bool use_precise_voxelization = true;
         int subdivisions = 3;
         bool save_to_file = true;
         int source_node_id = -1;
@@ -791,12 +796,14 @@ class RenderVoxelList {
     void queue_load_stl(const std::string& file_path,
                         float voxel_size,
                         int load_mode = 0,
-                        bool load_as_sdf = false);
+                        bool load_as_sdf = false,
+                        bool use_precise_voxelization = true);
     void queue_reload_stl(int item_id,
                           float voxel_size,
                           const std::string& stl_path,
                           int load_mode = 0,
                           bool load_as_sdf = false,
+                          bool use_precise_voxelization = true,
                           int source_node_id = -1,
                           int node_source_data_type = 0,
                           int node_source_sdf_subdivisions = 2,

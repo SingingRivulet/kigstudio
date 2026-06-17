@@ -356,6 +356,17 @@ float SDF_Mesh::get(const Vec3f& p) const {
     return inside ? -static_cast<float>(dist) : static_cast<float>(dist);
 }
 
+bool SDF_Mesh::isInside(const Vec3f& p) const {
+    if (impl->triangles.empty()) {
+        return false;
+    }
+    return impl->isInside(p);
+}
+
+bool SDF_Mesh::hasInsideTester() const {
+    return impl->side_tester != nullptr;
+}
+
 void SDF_Mesh::get(const Vec3f& begin,
                    const Vec3f& voxelSize,
                    const Vec3i& voxelCount,

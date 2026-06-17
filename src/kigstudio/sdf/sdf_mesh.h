@@ -25,6 +25,9 @@ struct SDF_Mesh : public SDFBase {
              const Vec3i& voxelCount,
              std::vector<float>& out) const override;
 
+    bool isInside(const Vec3f& p) const;
+    bool hasInsideTester() const;
+
     std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;

@@ -100,7 +100,8 @@ void RenderVoxelList::queue_thread() {
                 queue_running = true;
                 try {
                     load_stl(task.file_path, task.voxel_size, 0.5, true, -1,
-                             task.load_mode, task.load_as_sdf);
+                             task.load_mode, task.load_as_sdf,
+                             task.use_precise_voxelization);
                     append_queue_logf("log.queue.done_load_stl",
                                       task.file_path.c_str());
                 } catch (std::runtime_error& e) {
@@ -151,7 +152,8 @@ void RenderVoxelList::queue_thread() {
                             task.node_source_sdf_subdivisions,
                             task.node_source_sdf_simplify,
                             task.node_source_sdf_simplify_ratio,
-                            task.load_mode, task.load_as_sdf);
+                            task.load_mode, task.load_as_sdf,
+                            task.use_precise_voxelization);
                     } else {
                         append_queue_logf("log.queue.start_reload_stl",
                                           task.index,
@@ -160,7 +162,8 @@ void RenderVoxelList::queue_thread() {
                                   << " for item " << task.index << std::endl;
                         load_stl(task.file_path, task.voxel_size, 0.5, true,
                                  task.index, task.load_mode,
-                                 task.load_as_sdf);
+                                 task.load_as_sdf,
+                                 task.use_precise_voxelization);
                     }
                     append_queue_logf("log.queue.done_reload_stl", task.index);
                 } catch (std::runtime_error& e) {
@@ -787,7 +790,8 @@ size_t RenderVoxelList::get_num_items() {
 void RenderVoxelList::queue_load_stl(const std::string& file_path,
                                      float voxel_size,
                                      int load_mode,
-                                     bool load_as_sdf) {
+                                     bool load_as_sdf,
+                                     bool use_precise_voxelization) {
     // 将加载任务加入队列
     std::lock_guard<std::mutex> lock(queue_mutex);
     QueueTask task;
@@ -796,6 +800,7 @@ void RenderVoxelList::queue_load_stl(const std::string& file_path,
     task.voxel_size = voxel_size;
     task.load_mode = load_mode;
     task.load_as_sdf = load_as_sdf;
+    task.use_precise_voxelization = use_precise_voxelization;
     queue.push(task);
     this->queue_num = static_cast<int>(queue.size());
 }
@@ -805,6 +810,7 @@ void RenderVoxelList::queue_reload_stl(int item_id,
                                        const std::string& stl_path,
                                        int load_mode,
                                        bool load_as_sdf,
+                                       bool use_precise_voxelization,
                                        int source_node_id,
                                        int node_source_data_type,
                                        int node_source_sdf_subdivisions,
@@ -820,6 +826,7 @@ void RenderVoxelList::queue_reload_stl(int item_id,
     task.voxel_size = voxel_size;
     task.load_mode = load_mode;
     task.load_as_sdf = load_as_sdf;
+    task.use_precise_voxelization = use_precise_voxelization;
     task.source_node_id = source_node_id;
     task.node_source_data_type = node_source_data_type;
     task.node_source_sdf_subdivisions = node_source_sdf_subdivisions;

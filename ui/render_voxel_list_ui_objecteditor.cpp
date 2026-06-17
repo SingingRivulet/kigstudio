@@ -335,6 +335,18 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
             }
+            bool use_precise_voxelization = item.use_precise_voxelization;
+            if (ImGui::Checkbox(
+                    get_locale_cstr("label.use_precise_voxelization"),
+                    &use_precise_voxelization)) {
+                push_undo_now(item.id, std::nullopt,
+                              "Use Precise Voxelization");
+                item.use_precise_voxelization = use_precise_voxelization;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    get_locale_cstr("tooltip.use_precise_voxelization"));
+            }
         }
 
         // Voxel Size
@@ -368,7 +380,8 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         if (!item.stl_path.empty()) {
             if (ImGui::Button(get_locale_cstr("action.reload_stl"))) {
                 queue_reload_stl(item.id, item.stl_voxel_size, item.stl_path,
-                                 item.stl_load_mode, item.load_as_sdf);
+                                 item.stl_load_mode, item.load_as_sdf,
+                                 item.use_precise_voxelization);
             }
             first = false;
         }
@@ -558,6 +571,18 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
                 }
+                bool use_precise_voxelization = item.use_precise_voxelization;
+                if (ImGui::Checkbox(
+                        get_locale_cstr("label.use_precise_voxelization"),
+                        &use_precise_voxelization)) {
+                    push_undo_now(item.id, std::nullopt,
+                                  "Use Precise Voxelization");
+                    item.use_precise_voxelization = use_precise_voxelization;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        get_locale_cstr("tooltip.use_precise_voxelization"));
+                }
             }
 
             // 重新加载按钮
@@ -568,7 +593,8 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 queue_reload_stl(
                     item.id, item.stl_voxel_size, item.stl_path,
                     item.stl_load_mode, item.load_as_sdf,
-                    item.source_node_id, item.node_source_data_type,
+                    item.use_precise_voxelization, item.source_node_id,
+                    item.node_source_data_type,
                     item.node_source_sdf_subdivisions,
                     item.node_source_sdf_simplify,
                     item.node_source_sdf_simplify_ratio);

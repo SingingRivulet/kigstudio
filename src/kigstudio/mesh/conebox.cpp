@@ -1099,7 +1099,9 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
 
 std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const std::vector<Triangle>& input_triangles,
-    const vec3f& center) {
+    const vec3f& center,
+    const std::function<bool()>& should_continue,
+    const std::function<void(float)>& progress) {
     if (input_triangles.empty())
         return {};
 
@@ -1165,9 +1167,16 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
 
     // 若 center 在内部，不需要锥体裁剪（所有面都可见，无遮挡）
     if (!center_inside) {
-        for (int src_idx : order) {
-        if (fragments.size() > MAX_FRAGMENTS)
-            break;
+        for (size_t loop_idx = 0; loop_idx < order.size(); ++loop_idx) {
+            int src_idx = order[loop_idx];
+            if (should_continue && !should_continue())
+                break;
+            if (progress && loop_idx % 10 == 0) {
+                progress(static_cast<float>(loop_idx) /
+                         static_cast<float>(order.size()) * 0.5f);
+            }
+            if (fragments.size() > MAX_FRAGMENTS)
+                break;
 
         const auto& src_tri = input_triangles[src_idx];
         ConePlanes cone = build_cone_planes(src_tri, center);
@@ -1253,6 +1262,12 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     indices.reserve(fragments.size());
 
     for (int i = 0; i < static_cast<int>(fragments.size()); ++i) {
+        if (should_continue && !should_continue())
+            break;
+        if (progress && i % 100 == 0) {
+            progress(0.5f + static_cast<float>(i) /
+                                static_cast<float>(fragments.size()) * 0.5f);
+        }
         const auto& tri = fragments[i];
         const auto& v0 = std::get<0>(tri);
         const auto& v1 = std::get<1>(tri);
