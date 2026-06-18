@@ -88,6 +88,10 @@ void init_locale_strings() {
                       {{"en", "Edit Segment Plane"}, {"zh", "编辑分割平面"}});
     add_locale_string("window.nav_node_map",
                       {{"en", "nav node map"}, {"zh", "导航节点图"}});
+    add_locale_string("action.reset_layout",
+                      {{"en", "Reset Layout"}, {"zh", "重置布局"}});
+    add_locale_string("label.force_layout",
+                      {{"en", "Force Layout"}, {"zh", "力导向布局"}});
 
     add_locale_string("menu.file", {{"en", "File"}, {"zh", "文件"}});
     add_locale_string("menu.new_node", {{"en", "New Node"}, {"zh", "新建节点"}});

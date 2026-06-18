@@ -11,10 +11,15 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     }
     cJSON_AddItemToObject(obj, "children", children);
     cJSON* nav_pos = cJSON_CreateArray();
-    cJSON_AddItemToArray(nav_pos,
-                         cJSON_CreateNumber(item.nav_node_position[0]));
-    cJSON_AddItemToArray(nav_pos,
-                         cJSON_CreateNumber(item.nav_node_position[1]));
+    // 力导向下保存当前浮点位置（同步到整型快照以保持兼容）
+    int save_x = this->nav_layout_force_directed
+                     ? static_cast<int>(item.nav_layout_pos[0])
+                     : item.nav_node_position[0];
+    int save_y = this->nav_layout_force_directed
+                     ? static_cast<int>(item.nav_layout_pos[1])
+                     : item.nav_node_position[1];
+    cJSON_AddItemToArray(nav_pos, cJSON_CreateNumber(save_x));
+    cJSON_AddItemToArray(nav_pos, cJSON_CreateNumber(save_y));
     cJSON_AddItemToObject(obj, "nav_node_position", nav_pos);
     const char* mode_str;
     switch (item.segment_mode) {
@@ -188,6 +193,13 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
     const cJSON* nav_pos = cJSON_GetObjectItem(obj, "nav_node_position");
     item->nav_node_position[0] = cJSON_GetArrayItem(nav_pos, 0)->valueint;
     item->nav_node_position[1] = cJSON_GetArrayItem(nav_pos, 1)->valueint;
+    // nav_layout_pos 与 nav_node_position 同轴
+    item->nav_layout_pos[0] = (float)item->nav_node_position[0];
+    item->nav_layout_pos[1] = (float)item->nav_node_position[1];
+    item->nav_layout_vel[0] = 0.0f;
+    item->nav_layout_vel[1] = 0.0f;
+    item->nav_layout_pinned = false;
+    item->nav_layout_pos_set = true;
     const char* mode_str =
         cJSON_GetObjectItem(obj, "segment_mode")->valuestring;
     if (strcmp(mode_str, "collision") == 0) {
@@ -733,7 +745,7 @@ bool RenderVoxelList::load_project(const std::string& folder) {
         render_id = items.begin()->first;
     }
     project_path = folder;
-    update_nav_node_status = true;
+    nav_layout_initialized = true;
     clear_all_dirty();
     object_editor_tab = 0;
     return true;

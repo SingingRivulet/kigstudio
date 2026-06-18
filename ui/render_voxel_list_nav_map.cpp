@@ -6,11 +6,14 @@
 #include <imgui/imgui.h>
 #include <imnodes.h>
 
+#include <cmath>
 #include <unordered_set>
 
 #include "kigstudio/utils/locale.h"
 
 namespace sinriv::ui::render {
+
+inline void compute_layout(RenderVoxelList& mgr);
 
 void RenderVoxelList::render_nav_map() {
     std::lock_guard<std::mutex> lock(locker);
@@ -24,7 +27,11 @@ void RenderVoxelList::render_nav_map() {
         return;
     }
 
-    ImNodes::BeginNodeEditor();
+    struct LayoutEdge {
+        int from;
+        int to;
+    };
+    std::vector<LayoutEdge> layout_edges;
 
     std::unordered_set<int> sdf_sources;
     std::unordered_set<int> node_sources;
@@ -38,14 +45,188 @@ void RenderVoxelList::render_nav_map() {
         }
     }
 
+    // 初始化力导向位置：只给新节点（还没有位置）分配树形布局位置，
+    // 已有节点保持当前位置，避免新增/删除节点时整个图被重置。
+    if (nav_layout_force_directed && !nav_layout_initialized) {
+        compute_layout(*this);
+        for (auto& [id, item] : this->items) {
+            if (item->nav_layout_pinned || item->nav_layout_pos_set)
+                continue;
+            // nav_layout_pos 与 nav_node_position 同轴：
+            // [0]=水平位置(my_x), [1]=深度(depth)
+            item->nav_layout_pos[0] = (float)item->nav_node_position[0];
+            item->nav_layout_pos[1] = (float)item->nav_node_position[1];
+            item->nav_layout_vel[0] = 0.0f;
+            item->nav_layout_vel[1] = 0.0f;
+            item->nav_layout_pos_set = true;
+        }
+        nav_layout_initialized = true;
+    }
+
+    // 收集所有边（父子 + SDF 依赖 + Source Node 依赖）
+    if (nav_layout_force_directed) {
+        for (auto& [id, item] : this->items) {
+            for (int child_id : item->children) {
+                if (this->items.find(child_id) != this->items.end()) {
+                    layout_edges.push_back({id, child_id});
+                }
+            }
+        }
+        for (auto& [id, item] : this->items) {
+            if (item->segment_mode == RenderVoxelItem::SDF_NODE_SPLIT &&
+                item->sdf_split_target_id >= 0 &&
+                this->items.find(item->sdf_split_target_id) !=
+                    this->items.end()) {
+                layout_edges.push_back({item->sdf_split_target_id, id});
+            }
+        }
+        for (auto& [id, item] : this->items) {
+            if (item->source_type == 1 && item->source_node_id >= 0 &&
+                this->items.find(item->source_node_id) != this->items.end()) {
+                layout_edges.push_back({item->source_node_id, id});
+            }
+        }
+    }
+
+    // 力导向迭代一步
+    if (nav_layout_force_directed && nav_layout_initialized &&
+        this->items.size() > 1) {
+        std::unordered_map<int, ImVec2> forces;
+        for (auto& [id, item] : this->items) {
+            forces[id] = ImVec2(0.0f, 0.0f);
+        }
+
+        // 节点间斥力
+        for (auto it1 = this->items.begin(); it1 != this->items.end(); ++it1) {
+            for (auto it2 = std::next(it1); it2 != this->items.end(); ++it2) {
+                auto& a = it1->second;
+                auto& b = it2->second;
+                float dx = b->nav_layout_pos[0] - a->nav_layout_pos[0];
+                float dy = b->nav_layout_pos[1] - a->nav_layout_pos[1];
+                float dist_sq = dx * dx + dy * dy;
+                if (dist_sq < 1.0f)
+                    dist_sq = 1.0f;
+                float dist = std::sqrt(dist_sq);
+                bool same_root = (a->root_id == b->root_id) &&
+                                 (a->root_id >= 0) && (b->root_id >= 0);
+                float repulsion = same_root ? nav_layout_repulsion
+                                            : nav_layout_repulsion_cross_root;
+                float f = repulsion / dist_sq;
+                float fx = f * dx / dist;
+                float fy = f * dy / dist;
+                forces[it1->first].x -= fx;
+                forces[it1->first].y -= fy;
+                forces[it2->first].x += fx;
+                forces[it2->first].y += fy;
+            }
+        }
+
+        // 边弹力
+        for (auto& edge : layout_edges) {
+            auto it_from = this->items.find(edge.from);
+            auto it_to = this->items.find(edge.to);
+            if (it_from == this->items.end() || it_to == this->items.end())
+                continue;
+            auto& a = it_from->second;
+            auto& b = it_to->second;
+            float dx = b->nav_layout_pos[0] - a->nav_layout_pos[0];
+            float dy = b->nav_layout_pos[1] - a->nav_layout_pos[1];
+            float dist = std::sqrt(dx * dx + dy * dy);
+            if (dist < 1.0f)
+                dist = 1.0f;
+            float displacement = dist - nav_layout_ideal_length;
+            float f = nav_layout_spring * displacement;
+            float fx = f * dx / dist;
+            float fy = f * dy / dist;
+            forces[edge.from].x += fx;
+            forces[edge.from].y += fy;
+            forces[edge.to].x -= fx;
+            forces[edge.to].y -= fy;
+        }
+
+        // 父节点右侧虚拟点引力：让子节点倾向于位于父节点右边
+        for (auto& edge : layout_edges) {
+            auto it_from = this->items.find(edge.from);
+            auto it_to = this->items.find(edge.to);
+            if (it_from == this->items.end() || it_to == this->items.end())
+                continue;
+            auto& parent = it_from->second;
+            auto& child = it_to->second;
+            float virtual_pos0 = parent->nav_layout_pos[0];
+            float virtual_pos1 =
+                parent->nav_layout_pos[1] + nav_layout_right_offset;
+            float d0 = virtual_pos0 - child->nav_layout_pos[0];
+            float d1 = virtual_pos1 - child->nav_layout_pos[1];
+            float dist = std::sqrt(d0 * d0 + d1 * d1);
+            if (dist < 1.0f)
+                dist = 1.0f;
+            float f = nav_layout_right_pull * dist;
+            float fx = f * d0 / dist;
+            float fy = f * d1 / dist;
+            forces[edge.to].x += fx;
+            forces[edge.to].y += fy;
+            // 补回父节点的反作用力，否则系统动量不守恒，会永远漂移
+            forces[edge.from].x -= fx;
+            forces[edge.from].y -= fy;
+        }
+
+        // 积分更新速度与位置（被拖动的节点固定）
+        for (auto& [id, item] : this->items) {
+            if (item->nav_layout_pinned)
+                continue;
+            auto& f = forces[id];
+            // 微小向心力，把图拉向原点 (0,0)，让整体更紧凑
+            forces[id].x += nav_layout_center_pull * (0.0f - item->nav_layout_pos[0]);
+            forces[id].y += nav_layout_center_pull * (0.0f - item->nav_layout_pos[1]);
+            item->nav_layout_vel[0] =
+                (item->nav_layout_vel[0] + f.x * nav_layout_dt) *
+                nav_layout_damping;
+            item->nav_layout_vel[1] =
+                (item->nav_layout_vel[1] + f.y * nav_layout_dt) *
+                nav_layout_damping;
+            float speed = std::sqrt(item->nav_layout_vel[0] * item->nav_layout_vel[0] +
+                                    item->nav_layout_vel[1] * item->nav_layout_vel[1]);
+            if (speed > nav_layout_max_speed) {
+                item->nav_layout_vel[0] =
+                    item->nav_layout_vel[0] / speed * nav_layout_max_speed;
+                item->nav_layout_vel[1] =
+                    item->nav_layout_vel[1] / speed * nav_layout_max_speed;
+            } else if (speed < nav_layout_velocity_threshold) {
+                item->nav_layout_vel[0] = 0.0f;
+                item->nav_layout_vel[1] = 0.0f;
+            }
+            item->nav_layout_pos[0] += item->nav_layout_vel[0];
+            item->nav_layout_pos[1] += item->nav_layout_vel[1];
+        }
+    }
+
+    std::unordered_map<int, ImVec2> intended_positions;
+
+    // 把节点编辑器限制在一个固定高度的子区域，底部留出控件空间
+    float editor_height =
+        std::max(ImGui::GetContentRegionAvail().y - 30.0f, 100.0f);
+    ImGui::BeginChild("nav_map_editor", ImVec2(-1.0f, editor_height), false);
+
+    ImNodes::BeginNodeEditor();
+
     int link_id = 0;
     for (auto& [id, item] : this->items) {
-        // 设置节点固定坐标
-        ImNodes::SetNodeGridSpacePos(
-            id, ImVec2((float)item->nav_node_position[1] * 1.5f,
-                       (float)item->nav_node_position[0] * 1.5f));
-        // 禁止拖动
-        ImNodes::SetNodeDraggable(id, false);
+        // 计算目标位置
+        ImVec2 target_pos;
+        if (nav_layout_force_directed && nav_layout_initialized) {
+            target_pos = ImVec2(item->nav_layout_pos[1] * 1.5f,
+                                item->nav_layout_pos[0] * 1.5f);
+            if (!item->nav_layout_pinned) {
+                ImNodes::SetNodeGridSpacePos(id, target_pos);
+            }
+            ImNodes::SetNodeDraggable(id, true);
+        } else {
+            target_pos = ImVec2((float)item->nav_node_position[1] * 1.5f,
+                                (float)item->nav_node_position[0] * 1.5f);
+            ImNodes::SetNodeGridSpacePos(id, target_pos);
+            ImNodes::SetNodeDraggable(id, false);
+        }
+        intended_positions[id] = target_pos;
 
         // 当前选中节点高亮
         bool is_current = (id == this->render_id);
@@ -123,10 +304,10 @@ void RenderVoxelList::render_nav_map() {
             }
         }
 
-        // Output attributes (连向子节点)
-        for (size_t i = 0; i < item->children.size(); ++i) {
-            ImNodes::BeginOutputAttribute(
-                static_cast<int>(id * 10 + 2 + i), ImNodesPinShape_CircleFilled);
+        // Output attribute (连向所有子节点的统一出口)
+        if (!item->children.empty()) {
+            ImNodes::BeginOutputAttribute(static_cast<int>(id * 10 + 2),
+                                          ImNodesPinShape_CircleFilled);
             ImGui::Text("");
             ImNodes::EndOutputAttribute();
         }
@@ -154,12 +335,13 @@ void RenderVoxelList::render_nav_map() {
         }
     }
 
-    // 绘制连线：父节点的 output 连向子节点的 input
+    // 绘制连线：父节点的统一 output 连向所有子节点的 input
     for (auto& [id, item] : this->items) {
-        for (size_t i = 0; i < item->children.size(); ++i) {
-            int child_id = item->children[i];
+        if (item->children.empty())
+            continue;
+        int parent_attr_id = id * 10 + 2;
+        for (int child_id : item->children) {
             if (this->items.find(child_id) != this->items.end()) {
-                int parent_attr_id = static_cast<int>(id * 10 + 2 + i);
                 int child_attr_id = child_id * 10 + 1;
                 ImNodes::Link(link_id++, parent_attr_id, child_attr_id);
             }
@@ -190,6 +372,44 @@ void RenderVoxelList::render_nav_map() {
 
     ImNodes::MiniMap(0.2f, ImNodesMiniMapLocation_BottomLeft);
     ImNodes::EndNodeEditor();
+    ImGui::EndChild();
+
+    // 检测用户拖动：实际位置与 intended 不一致时固定该节点
+    if (nav_layout_force_directed && nav_layout_initialized) {
+        for (auto& [id, item] : this->items) {
+            if (item->nav_layout_pinned)
+                continue;
+            ImVec2 actual = ImNodes::GetNodeGridSpacePos(id);
+            ImVec2 intended = intended_positions[id];
+            float dx = actual.x - intended.x;
+            float dy = actual.y - intended.y;
+            if (dx * dx + dy * dy > 4.0f) {
+                item->nav_layout_pinned = true;
+                item->nav_layout_pos[0] = actual.y / 1.5f;
+                item->nav_layout_pos[1] = actual.x / 1.5f;
+                item->nav_layout_vel[0] = 0.0f;
+                item->nav_layout_vel[1] = 0.0f;
+            }
+        }
+    }
+
+    // 底部控制栏：力导向开关 + 重置布局
+    ImGui::Checkbox(get_locale_cstr("label.force_layout"),
+                    &nav_layout_force_directed);
+    if (!nav_layout_force_directed) {
+        nav_layout_initialized = false;
+    } else {
+        ImGui::SameLine();
+        if (ImGui::Button(get_locale_cstr("action.reset_layout"))) {
+            for (auto& [id, item] : this->items) {
+                item->nav_layout_pinned = false;
+                item->nav_layout_pos_set = false;
+                item->nav_layout_vel[0] = 0.0f;
+                item->nav_layout_vel[1] = 0.0f;
+            }
+            nav_layout_initialized = false;
+        }
+    }
 
     // 点击节点切换 render_id
     int num_selected = ImNodes::NumSelectedNodes();
@@ -350,7 +570,13 @@ std::vector<int> RenderVoxelList::find_roots() {
 void RenderVoxelList::update_nav_node_position() {
     if (update_nav_node_status) {
         std::cout << "update nav node position" << std::endl;
-        compute_layout(*this);
+        if (nav_layout_force_directed) {
+            // 力导向模式下重新以树形布局作为起点收敛，
+            // 避免直接覆盖用户已固定的节点和当前物理状态。
+            nav_layout_initialized = false;
+        } else {
+            compute_layout(*this);
+        }
     }
     update_nav_node_status = false;
 }
