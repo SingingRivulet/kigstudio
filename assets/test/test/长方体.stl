@@ -1,0 +1,86 @@
+solid 
+facet normal 0 0 1
+ outer loop
+  vertex 21.962286 8.119936 8.119936
+  vertex -21.962286 8.119936 8.119936
+  vertex -21.962286 -8.119936 8.119936
+ endloop
+endfacet
+facet normal 0 -0 1
+ outer loop
+  vertex 21.962286 8.119936 8.119936
+  vertex -21.962286 -8.119936 8.119936
+  vertex 21.962286 -8.119936 8.119936
+ endloop
+endfacet
+facet normal 0 -1 0
+ outer loop
+  vertex 21.962286 -8.119936 -8.119936
+  vertex 21.962286 -8.119936 8.119936
+  vertex -21.962286 -8.119936 8.119936
+ endloop
+endfacet
+facet normal 0 -1 0
+ outer loop
+  vertex 21.962286 -8.119936 -8.119936
+  vertex -21.962286 -8.119936 8.119936
+  vertex -21.962286 -8.119936 -8.119936
+ endloop
+endfacet
+facet normal -1 -0 -0
+ outer loop
+  vertex -21.962286 -8.119936 -8.119936
+  vertex -21.962286 -8.119936 8.119936
+  vertex -21.962286 8.119936 8.119936
+ endloop
+endfacet
+facet normal -1 -0 0
+ outer loop
+  vertex -21.962286 -8.119936 -8.119936
+  vertex -21.962286 8.119936 8.119936
+  vertex -21.962286 8.119936 -8.119936
+ endloop
+endfacet
+facet normal 0 0 -1
+ outer loop
+  vertex -21.962286 8.119936 -8.119936
+  vertex 21.962286 8.119936 -8.119936
+  vertex 21.962286 -8.119936 -8.119936
+ endloop
+endfacet
+facet normal 0 0 -1
+ outer loop
+  vertex -21.962286 8.119936 -8.119936
+  vertex 21.962286 -8.119936 -8.119936
+  vertex -21.962286 -8.119936 -8.119936
+ endloop
+endfacet
+facet normal 1 -0 0
+ outer loop
+  vertex 21.962286 8.119936 -8.119936
+  vertex 21.962286 8.119936 8.119936
+  vertex 21.962286 -8.119936 8.119936
+ endloop
+endfacet
+facet normal 1 -0 0
+ outer loop
+  vertex 21.962286 8.119936 -8.119936
+  vertex 21.962286 -8.119936 8.119936
+  vertex 21.962286 -8.119936 -8.119936
+ endloop
+endfacet
+facet normal 0 1 0
+ outer loop
+  vertex -21.962286 8.119936 -8.119936
+  vertex -21.962286 8.119936 8.119936
+  vertex 21.962286 8.119936 8.119936
+ endloop
+endfacet
+facet normal 0 1 -0
+ outer loop
+  vertex -21.962286 8.119936 -8.119936
+  vertex 21.962286 8.119936 8.119936
+  vertex 21.962286 8.119936 -8.119936
+ endloop
+endfacet
+endsolid 

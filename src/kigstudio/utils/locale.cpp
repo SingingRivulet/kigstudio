@@ -561,6 +561,15 @@ void init_locale_strings() {
                       {{"en", "Female Gap"}, {"zh", "母连接柱间隙"}});
     add_locale_string("label.slot_extra",
                       {{"en", "Slot Extra"}, {"zh", "槽间隙"}});
+    add_locale_string(
+        "label.socket_fillet_radius",
+        {{"en", "Socket Fillet Radius"}, {"zh", "关节窝圆角半径"}});
+    add_locale_string(
+        "label.socket_fillet_height",
+        {{"en", "Socket Fillet Height"}, {"zh", "关节窝圆角高度"}});
+    add_locale_string(
+        "label.socket_fillet_offset",
+        {{"en", "Socket Fillet Offset"}, {"zh", "关节窝圆角偏移"}});
     add_locale_string("label.rotation_angle",
                       {{"en", "Rotation Angle"}, {"zh", "旋转角度"}});
     add_locale_string("window.reload_stl",

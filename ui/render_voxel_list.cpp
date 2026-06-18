@@ -649,6 +649,9 @@ void RenderVoxelList::RenderVoxelItem::rebuild_joint_wireframe() {
         neg.male_cylinder_offset = params.male_cylinder_offset;
         neg.male_cylinder_radius = params.male_cylinder_radius;
         neg.slot_extra = params.slot_extra;
+        neg.socket_fillet_radius = params.socket_fillet_radius;
+        neg.socket_fillet_height = params.socket_fillet_height;
+        neg.socket_fillet_offset = params.socket_fillet_offset;
 
         // 正体积 socket 支撑锥与负体积切割锥完全匹配
         pos.socket_support_offset = params.socket_cone_offset;
@@ -743,6 +746,9 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
         neg.male_cylinder_offset = params.male_cylinder_offset;
         neg.male_cylinder_radius = params.male_cylinder_radius;
         neg.slot_extra = params.slot_extra;
+        neg.socket_fillet_radius = params.socket_fillet_radius;
+        neg.socket_fillet_height = params.socket_fillet_height;
+        neg.socket_fillet_offset = params.socket_fillet_offset;
 
         std::vector<Vec3i> to_remove;
         for (const auto& [key, chunk] : result.chunks) {

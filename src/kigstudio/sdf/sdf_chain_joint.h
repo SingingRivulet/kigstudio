@@ -29,6 +29,10 @@ namespace sinriv::kigstudio::sdf::joint {
  *               距离关节窝切割圆锥顶点的距离（连接柱顶点位于切割圆锥顶点与中心线起点之间）
  *               圆柱底面半径
  *               旋转角度关节连接柱的旋转角度（一个向量，从中心线上一点往这个方向作射线，圆柱的轴位于该射线与中心线围成的平面上）
+ *           关节窝圆角：
+ *              关节窝因为是圆锥切出来的，边缘很尖锐，生成stl容易出现破裂。
+ *              解决方法：加入一个新的负模型，结构=圆柱-关节窝切割圆锥。
+ *              圆柱轴和中心线重合，半径（socket_fillet_radius）、高（socket_fillet_height）和偏移（socket_fillet_offset）作为新加入的参数。
  *      关节头：
  *           切割圆锥 用于切割出关节头的圆锥，需要两个参数定义：
  *               距离关节窝切割圆锥的距离
@@ -102,6 +106,11 @@ class JointNegativeSDF : public sinriv::kigstudio::sdf::SDFBase {
 
     // slot thickness between socket and head cones
     float slot_extra = 0.5f;
+
+    // socket fillet: cylinder minus socket cutting cone
+    float socket_fillet_radius = 5.f;
+    float socket_fillet_height = 8.f;
+    float socket_fillet_offset = 0.f;
 
     std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> buildTree() const;
     float get(const Vec3f& world_p) const override;

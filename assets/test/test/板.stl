@@ -1,0 +1,86 @@
+solid 
+facet normal 0 0 1
+ outer loop
+  vertex 0.4270948 24.448019 94.97091
+  vertex -0.4270948 24.448019 94.97091
+  vertex -0.4270948 -24.448019 94.97091
+ endloop
+endfacet
+facet normal 0 -0 1
+ outer loop
+  vertex 0.4270948 24.448019 94.97091
+  vertex -0.4270948 -24.448019 94.97091
+  vertex 0.4270948 -24.448019 94.97091
+ endloop
+endfacet
+facet normal 0 -1 0
+ outer loop
+  vertex 0.4270948 -24.448019 -94.97091
+  vertex 0.4270948 -24.448019 94.97091
+  vertex -0.4270948 -24.448019 94.97091
+ endloop
+endfacet
+facet normal 0 -1 0
+ outer loop
+  vertex 0.4270948 -24.448019 -94.97091
+  vertex -0.4270948 -24.448019 94.97091
+  vertex -0.4270948 -24.448019 -94.97091
+ endloop
+endfacet
+facet normal -1 -0 -0
+ outer loop
+  vertex -0.4270948 -24.448019 -94.97091
+  vertex -0.4270948 -24.448019 94.97091
+  vertex -0.4270948 24.448019 94.97091
+ endloop
+endfacet
+facet normal -1 -0 0
+ outer loop
+  vertex -0.4270948 -24.448019 -94.97091
+  vertex -0.4270948 24.448019 94.97091
+  vertex -0.4270948 24.448019 -94.97091
+ endloop
+endfacet
+facet normal 0 0 -1
+ outer loop
+  vertex -0.4270948 24.448019 -94.97091
+  vertex 0.4270948 24.448019 -94.97091
+  vertex 0.4270948 -24.448019 -94.97091
+ endloop
+endfacet
+facet normal 0 0 -1
+ outer loop
+  vertex -0.4270948 24.448019 -94.97091
+  vertex 0.4270948 -24.448019 -94.97091
+  vertex -0.4270948 -24.448019 -94.97091
+ endloop
+endfacet
+facet normal 1 -0 0
+ outer loop
+  vertex 0.4270948 24.448019 -94.97091
+  vertex 0.4270948 24.448019 94.97091
+  vertex 0.4270948 -24.448019 94.97091
+ endloop
+endfacet
+facet normal 1 -0 0
+ outer loop
+  vertex 0.4270948 24.448019 -94.97091
+  vertex 0.4270948 -24.448019 94.97091
+  vertex 0.4270948 -24.448019 -94.97091
+ endloop
+endfacet
+facet normal 0 1 0
+ outer loop
+  vertex -0.4270948 24.448019 -94.97091
+  vertex -0.4270948 24.448019 94.97091
+  vertex 0.4270948 24.448019 94.97091
+ endloop
+endfacet
+facet normal 0 1 -0
+ outer loop
+  vertex -0.4270948 24.448019 -94.97091
+  vertex 0.4270948 24.448019 94.97091
+  vertex 0.4270948 24.448019 -94.97091
+ endloop
+endfacet
+endsolid 

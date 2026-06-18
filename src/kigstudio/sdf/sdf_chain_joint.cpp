@@ -118,6 +118,26 @@ void appendJointWireframe(std::vector<std::pair<Vec3f, Vec3f>>& segments,
         addSeg(p0, p1);
     }
 
+    // socket fillet cylinder (cylinder minus socket cutting cone)
+    float fillet_cyl_z = neg.socket_cone_offset + socket_h -
+                         neg.socket_fillet_offset -
+                         neg.socket_fillet_height * 0.5f;
+    Vec3f fillet_center(0, 0, fillet_cyl_z);
+    addCircleZ(fillet_center + Vec3f(0, 0, neg.socket_fillet_height * 0.5f),
+               neg.socket_fillet_radius);
+    addCircleZ(fillet_center - Vec3f(0, 0, neg.socket_fillet_height * 0.5f),
+               neg.socket_fillet_radius);
+    for (int i = 0; i < 4; ++i) {
+        float a = 2.0f * 3.14159265f * i / 4;
+        Vec3f p0(std::cos(a) * neg.socket_fillet_radius,
+                 std::sin(a) * neg.socket_fillet_radius,
+                 fillet_cyl_z - neg.socket_fillet_height * 0.5f);
+        Vec3f p1(std::cos(a) * neg.socket_fillet_radius,
+                 std::sin(a) * neg.socket_fillet_radius,
+                 fillet_cyl_z + neg.socket_fillet_height * 0.5f);
+        addSeg(p0, p1);
+    }
+
     // socket support cone
     float socket_sup_h =
         pos.socket_support_radius / std::tan(pos.socket_support_angle);
@@ -170,11 +190,26 @@ std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> JointNegativeSDF::buildTree()
     auto female_node = std::make_shared<SDF_Translate>(
         Vec3f(0, 0, male_cylinder_offset), female_cyl);
 
+    // socket fillet: cylinder minus socket cutting cone
+    Frame fillet_frame;
+    fillet_frame.origin = Vec3f(
+        0, 0,
+        socket_cone_offset + socket_h - socket_fillet_offset -
+            socket_fillet_height * 0.5f);
+    fillet_frame.x_axis = Vec3f(0, 0, 1);
+    fillet_frame.y_axis = Vec3f(0, 1, 0);
+    fillet_frame.z_axis = Vec3f(-1, 0, 0);
+    auto fillet_cyl = std::make_shared<SDF_CappedCylinderX>(
+        socket_fillet_radius, socket_fillet_height * 0.5f);
+    auto fillet_cyl_node =
+        std::make_shared<SDF_FrameTransform>(fillet_frame, fillet_cyl);
+    auto fillet = sdf_subtraction(fillet_cyl_node, socket_node);
+
     // slot: socket minus inflated head
     auto slot = sdf_subtraction(socket_node, head_inflated);
 
-    // union: female cylinder + slot
-    auto local_tree = sdf_union(female_node, slot);
+    // union: female cylinder + slot + socket fillet
+    auto local_tree = sdf_union(female_node, sdf_union(slot, fillet));
 
     return std::make_shared<SDF_FrameTransform>(frame, local_tree);
 }
@@ -197,7 +232,15 @@ float JointNegativeSDF::get(const Vec3f& world_p) const {
     Vec3f cyl_off(0, 0, male_cylinder_offset);
     float cyl = sdCappedCylinderX(p - cyl_off, male_cylinder_radius + female_gap, male_cylinder_half_height);
 
-    float out = opUnion(cyl, slot);
+    // socket fillet: cylinder minus socket cutting cone
+    Vec3f fillet_off(
+        0, 0,
+        socket_cone_offset + socket_h - socket_fillet_offset -
+            socket_fillet_height * 0.5f);
+    float fillet_cyl = sdCappedCylinder(p - fillet_off, socket_fillet_radius, socket_fillet_height * 0.5f);
+    float fillet = opSubtraction(fillet_cyl, socket);
+
+    float out = opUnion(cyl, opUnion(slot, fillet));
     return out;
 }
 
@@ -247,6 +290,12 @@ void JointNegativeSDF::get(const Vec3f& begin,
             const __m128 v_male_off_z = _mm_set1_ps(male_cylinder_offset);
             const __m128 v_male_rad = _mm_set1_ps(male_cylinder_radius + female_gap);
             const __m128 v_male_half = _mm_set1_ps(male_cylinder_half_height);
+            const __m128 v_fillet_off_z = _mm_set1_ps(
+                socket_cone_offset + socket_h - socket_fillet_offset -
+                socket_fillet_height * 0.5f);
+            const __m128 v_fillet_rad = _mm_set1_ps(socket_fillet_radius);
+            const __m128 v_fillet_half =
+                _mm_set1_ps(socket_fillet_height * 0.5f);
             const __m128 v_tan_socket = _mm_set1_ps(std::tan(socket_cone_angle));
             const __m128 v_socket_h = _mm_set1_ps(socket_h);
             const __m128 v_head_h = _mm_set1_ps(head_h);
@@ -302,8 +351,29 @@ void JointNegativeSDF::get(const Vec3f& begin,
                 __m128 sq = _mm_sqrt_ps(_mm_add_ps(_mm_mul_ps(ax, ax), _mm_mul_ps(ay, ay)));
                 __m128 cylv = _mm_add_ps(_mm_min_ps(maxdxdy, _mm_set1_ps(0.0f)), sq);
 
-                // out = opUnion(cyl, slot) => min(cyl, slot)
-                __m128 outv = _mm_min_ps(cylv, slotv);
+                // socket fillet: cylinder minus socket cone
+                __m128 pz_fo = _mm_sub_ps(pz, v_fillet_off_z);
+                __m128 r_fillet = _mm_sqrt_ps(
+                    _mm_add_ps(_mm_mul_ps(px, px), _mm_mul_ps(py, py)));
+                __m128 dx_f = _mm_sub_ps(r_fillet, v_fillet_rad);
+                __m128 abs_pz_f = _mm_max_ps(
+                    _mm_sub_ps(_mm_set1_ps(0.0f), pz_fo), pz_fo);
+                __m128 dy_f = _mm_sub_ps(abs_pz_f, v_fillet_half);
+                __m128 ax_f = _mm_max_ps(dx_f, _mm_set1_ps(0.0f));
+                __m128 ay_f = _mm_max_ps(dy_f, _mm_set1_ps(0.0f));
+                __m128 maxdxdy_f = _mm_max_ps(dx_f, dy_f);
+                __m128 sq_f = _mm_sqrt_ps(_mm_add_ps(
+                    _mm_mul_ps(ax_f, ax_f), _mm_mul_ps(ay_f, ay_f)));
+                __m128 fillet_cylv =
+                    _mm_add_ps(_mm_min_ps(maxdxdy_f, _mm_set1_ps(0.0f)), sq_f);
+
+                // fillet = opSubtraction(fillet_cyl, socket) => max(fillet_cyl, -socket)
+                __m128 filletv =
+                    _mm_max_ps(fillet_cylv, _mm_sub_ps(_mm_set1_ps(0.0f), cone));
+
+                // out = min(cyl, slot, fillet)
+                __m128 outv =
+                    _mm_min_ps(cylv, _mm_min_ps(slotv, filletv));
                 _mm_storeu_ps(&out[i], outv);
                 i += 4;
             }
@@ -328,7 +398,14 @@ void JointNegativeSDF::get(const Vec3f& begin,
                 Vec3f cyl_off(0, 0, male_cylinder_offset);
                 float cyl = sdCappedCylinderX(p - cyl_off, male_cylinder_radius + female_gap, male_cylinder_half_height);
 
-                out[i++] = opUnion(cyl, slot);
+                Vec3f fillet_off(
+                    0, 0,
+                    socket_cone_offset + socket_h - socket_fillet_offset -
+                        socket_fillet_height * 0.5f);
+                float fillet_cyl = sdCappedCylinder(p - fillet_off, socket_fillet_radius, socket_fillet_height * 0.5f);
+                float fillet = opSubtraction(fillet_cyl, socket);
+
+                out[i++] = opUnion(cyl, opUnion(slot, fillet));
             }
         }
     }
@@ -374,7 +451,14 @@ void JointNegativeSDF::get(const Vec3f& begin,
                 Vec3f cyl_off(0, 0, male_cylinder_offset);
                 float cyl = sdCappedCylinderX(p - cyl_off, male_cylinder_radius + female_gap, male_cylinder_half_height);
 
-                out[i++] = opUnion(cyl, slot);
+                Vec3f fillet_off(
+                    0, 0,
+                    socket_cone_offset + socket_h - socket_fillet_offset -
+                        socket_fillet_height * 0.5f);
+                float fillet_cyl = sdCappedCylinder(p - fillet_off, socket_fillet_radius, socket_fillet_height * 0.5f);
+                float fillet = opSubtraction(fillet_cyl, socket);
+
+                out[i++] = opUnion(cyl, opUnion(slot, fillet));
             }
         }
     }
@@ -631,6 +715,9 @@ cJSON* JointNegativeSDF::toJSON() const {
     cJSON_AddNumberToObject(obj, "head_cone_offset", head_cone_offset);
     cJSON_AddNumberToObject(obj, "head_cone_radius", head_cone_radius);
     cJSON_AddNumberToObject(obj, "slot_extra", slot_extra);
+    cJSON_AddNumberToObject(obj, "socket_fillet_radius", socket_fillet_radius);
+    cJSON_AddNumberToObject(obj, "socket_fillet_height", socket_fillet_height);
+    cJSON_AddNumberToObject(obj, "socket_fillet_offset", socket_fillet_offset);
     return obj;
 }
 
@@ -647,6 +734,9 @@ void JointNegativeSDF::fromJSON(const cJSON* json) {
     head_cone_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_cone_offset")));
     head_cone_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_cone_radius")));
     slot_extra = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "slot_extra")));
+    socket_fillet_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_fillet_radius")));
+    socket_fillet_height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_fillet_height")));
+    socket_fillet_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_fillet_offset")));
 }
 
 // ============================================================

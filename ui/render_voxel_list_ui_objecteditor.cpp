@@ -108,6 +108,20 @@ bool autoDetectJointRadius(RenderVoxelList::RenderVoxelItem& item,
         changed = true;
     }
 
+    // Initialize socket fillet cylinder
+    const float new_fillet_radius = picked.socket_cone_radius;
+    const float new_fillet_offset = 0.0f;
+    const float new_fillet_height =
+        std::max(0.0f, socket_base_z - picked.male_cylinder_offset) / 3.0f;
+    if (std::abs(new_fillet_radius - picked.socket_fillet_radius) > 1e-4f ||
+        std::abs(new_fillet_offset - picked.socket_fillet_offset) > 1e-4f ||
+        std::abs(new_fillet_height - picked.socket_fillet_height) > 1e-4f) {
+        picked.socket_fillet_radius = new_fillet_radius;
+        picked.socket_fillet_offset = new_fillet_offset;
+        picked.socket_fillet_height = new_fillet_height;
+        changed = true;
+    }
+
     return changed;
 }
 
@@ -1085,6 +1099,27 @@ void RenderVoxelList::render_object_editor_chain_mode(RenderVoxelItem& item) {
                 if (ImGui::DragFloat(get_locale_cstr("label.radius"),
                                      &picked.socket_cone_radius, 0.1f, 0.1f,
                                      50.0f))
+                    dirty = true;
+                chain_edit_result.activated |= ImGui::IsItemActivated();
+                chain_edit_result.deactivated_after_edit |=
+                    ImGui::IsItemDeactivatedAfterEdit();
+                if (ImGui::DragFloat(get_locale_cstr("label.socket_fillet_radius"),
+                                     &picked.socket_fillet_radius, 0.1f, 0.0f,
+                                     50.0f))
+                    dirty = true;
+                chain_edit_result.activated |= ImGui::IsItemActivated();
+                chain_edit_result.deactivated_after_edit |=
+                    ImGui::IsItemDeactivatedAfterEdit();
+                if (ImGui::DragFloat(get_locale_cstr("label.socket_fillet_height"),
+                                     &picked.socket_fillet_height, 0.1f, 0.0f,
+                                     100.0f))
+                    dirty = true;
+                chain_edit_result.activated |= ImGui::IsItemActivated();
+                chain_edit_result.deactivated_after_edit |=
+                    ImGui::IsItemDeactivatedAfterEdit();
+                if (ImGui::DragFloat(get_locale_cstr("label.socket_fillet_offset"),
+                                     &picked.socket_fillet_offset, 0.1f, 0.0f,
+                                     100.0f))
                     dirty = true;
                 chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=

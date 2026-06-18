@@ -112,6 +112,9 @@ struct SkeletonPointPick {
     float male_cylinder_radius = 1.5f;
     float female_gap = 0.3f;
     float slot_extra = 0.5f;
+    float socket_fillet_radius = 5.f;
+    float socket_fillet_height = 8.f;
+    float socket_fillet_offset = 0.f;
     float rotation_angle = 0.f;
 };
 
