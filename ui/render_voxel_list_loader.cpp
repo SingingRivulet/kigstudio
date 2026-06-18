@@ -163,6 +163,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
                                 sp.socket_fillet_height);
         cJSON_AddNumberToObject(sp_obj, "socket_fillet_offset",
                                 sp.socket_fillet_offset);
+        cJSON_AddNumberToObject(sp_obj, "head_fillet_height",
+                                sp.head_fillet_height);
         cJSON_AddNumberToObject(sp_obj, "rotation_angle",
                                 sp.rotation_angle);
         cJSON_AddItemToArray(skeleton_points, sp_obj);
@@ -489,6 +491,11 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
             if (socket_fillet_offset_json)
                 sp.socket_fillet_offset = static_cast<float>(
                     socket_fillet_offset_json->valuedouble);
+            cJSON* head_fillet_height_json =
+                cJSON_GetObjectItem(sp_obj, "head_fillet_height");
+            if (head_fillet_height_json)
+                sp.head_fillet_height = static_cast<float>(
+                    head_fillet_height_json->valuedouble);
             cJSON* rotation_angle_json =
                 cJSON_GetObjectItem(sp_obj, "rotation_angle");
             if (rotation_angle_json)

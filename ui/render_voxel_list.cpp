@@ -652,6 +652,7 @@ void RenderVoxelList::RenderVoxelItem::rebuild_joint_wireframe() {
         neg.socket_fillet_radius = params.socket_fillet_radius;
         neg.socket_fillet_height = params.socket_fillet_height;
         neg.socket_fillet_offset = params.socket_fillet_offset;
+        neg.head_fillet_height = params.head_fillet_height;
 
         // 正体积 socket 支撑锥与负体积切割锥完全匹配
         pos.socket_support_offset = params.socket_cone_offset;
@@ -749,6 +750,7 @@ RenderVoxelList::RenderVoxelItem::do_segment_chain() const {
         neg.socket_fillet_radius = params.socket_fillet_radius;
         neg.socket_fillet_height = params.socket_fillet_height;
         neg.socket_fillet_offset = params.socket_fillet_offset;
+        neg.head_fillet_height = params.head_fillet_height;
 
         std::vector<Vec3i> to_remove;
         for (const auto& [key, chunk] : result.chunks) {

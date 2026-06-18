@@ -570,6 +570,9 @@ void init_locale_strings() {
     add_locale_string(
         "label.socket_fillet_offset",
         {{"en", "Socket Fillet Offset"}, {"zh", "关节窝圆角偏移"}});
+    add_locale_string(
+        "label.head_fillet_height",
+        {{"en", "Head Fillet Height"}, {"zh", "关节头圆角高度"}});
     add_locale_string("label.rotation_angle",
                       {{"en", "Rotation Angle"}, {"zh", "旋转角度"}});
     add_locale_string("window.reload_stl",

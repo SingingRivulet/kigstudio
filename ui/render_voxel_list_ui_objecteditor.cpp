@@ -122,6 +122,17 @@ bool autoDetectJointRadius(RenderVoxelList::RenderVoxelItem& item,
         changed = true;
     }
 
+    // Initialize head fillet cone
+    // height = distance between cone apexes + distance from male cylinder to
+    // head cone apex / 3
+    const float new_head_fillet_height =
+        (picked.head_cone_offset - picked.socket_cone_offset) +
+        (picked.male_cylinder_offset - picked.head_cone_offset) / 3.0f;
+    if (std::abs(new_head_fillet_height - picked.head_fillet_height) > 1e-4f) {
+        picked.head_fillet_height = new_head_fillet_height;
+        changed = true;
+    }
+
     return changed;
 }
 
@@ -1140,6 +1151,13 @@ void RenderVoxelList::render_object_editor_chain_mode(RenderVoxelItem& item) {
                 if (ImGui::DragFloat(get_locale_cstr("label.radius"),
                                      &picked.head_cone_radius, 0.1f, 0.1f,
                                      50.0f))
+                    dirty = true;
+                chain_edit_result.activated |= ImGui::IsItemActivated();
+                chain_edit_result.deactivated_after_edit |=
+                    ImGui::IsItemDeactivatedAfterEdit();
+                if (ImGui::DragFloat(get_locale_cstr("label.head_fillet_height"),
+                                     &picked.head_fillet_height, 0.1f, 0.0f,
+                                     100.0f))
                     dirty = true;
                 chain_edit_result.activated |= ImGui::IsItemActivated();
                 chain_edit_result.deactivated_after_edit |=

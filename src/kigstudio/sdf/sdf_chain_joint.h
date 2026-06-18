@@ -46,6 +46,10 @@ namespace sinriv::kigstudio::sdf::joint {
  *           连接柱（母） 切割一个圆柱，离公连接柱有一定距离，使其能活动
  *               半径（通过与公连接柱的差值来定义）
  *               *轴和角度无需定义（和公连接柱共用轴）*
+ *           关节头圆角：
+ *              关节头圆锥顶点过于尖锐，生成stl容易出现破裂。
+ *              解决方法：加入一个新的负模型，为一个与关节窝切割圆锥共顶点、共侧面的圆锥。
+ *              关节头圆角圆锥顶点与关节窝圆锥顶点重合，侧面与关节窝圆锥侧面重合，高度（head_fillet_height）作为新参数自定义。
  *      连接槽：
  *           在关节头和关节窝的切割圆锥之间进行切割一个带厚度的锥形，便于活动
  *           没有可设置的参数，形状取决于关节头的切割圆锥和关节窝的切割圆锥
@@ -111,6 +115,9 @@ class JointNegativeSDF : public sinriv::kigstudio::sdf::SDFBase {
     float socket_fillet_radius = 5.f;
     float socket_fillet_height = 8.f;
     float socket_fillet_offset = 0.f;
+
+    // head fillet: cone with same apex/angle as head cutting cone
+    float head_fillet_height = 3.f;
 
     std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> buildTree() const;
     float get(const Vec3f& world_p) const override;
