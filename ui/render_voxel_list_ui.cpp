@@ -11,6 +11,7 @@
 #include <windows.h>
 #endif
 #include "kigstudio/utils/vec3.h"
+#include "license.h"
 
 #include "kigstudio/utils/locale.h"
 #include "render_voxel_list.h"
@@ -18,6 +19,8 @@
 namespace sinriv::ui::render {
 
 void RenderVoxelList::render_ui() {
+    static bool show_license_window = false;
+
     processThumbnails();
     item_status_height = 0;
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
@@ -139,6 +142,28 @@ void RenderVoxelList::render_ui() {
                             !debug.show_voxel_pick_debug;
                     }
                     ImGui::EndMenu();
+                }
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu(get_locale_cstr("menu.about"))) {
+                if (ImGui::MenuItem(get_locale_cstr("menu.show_license"))) {
+                    show_license_window = true;
+                }
+                if (ImGui::MenuItem(get_locale_cstr("menu.show_github"))) {
+                    {
+                        std::string url =
+                            "https://github.com/SingingRivulet/kigstudio";
+#ifdef _WIN32
+                        std::string cmd = "start \"\" \"" + url + "\"";
+#elif defined(__APPLE__)
+                        std::string cmd = "open \"" + url + "\"";
+#else
+                        std::string cmd = "xdg-open \"" + url + "\"";
+#endif
+
+                        std::system(cmd.c_str());
+                    }
                 }
                 ImGui::EndMenu();
             }
@@ -442,6 +467,19 @@ void RenderVoxelList::render_ui() {
         }
         ImGui::EndPopup();
     }
+    if (show_license_window) {
+        ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_Once);
+        if (ImGui::Begin("License", &show_license_window,
+                         ImGuiWindowFlags_NoCollapse)) {
+            ImGui::BeginChild("LicenseText", ImVec2(0, 0), true);
+            ImGui::PushTextWrapPos();
+            ImGui::TextUnformatted(KIGSTUDIO_LICENSE_TEXT);
+            ImGui::PopTextWrapPos();
+            ImGui::EndChild();
+        }
+
+        ImGui::End();
+    }
 
     this->setMeshAxisVisible(showMeshAxis);
     this->setVoxelAxisVisible(showVoxelAxis);
@@ -575,10 +613,10 @@ void RenderVoxelList::render_file_loader() {
             }
             ImGui::BeginDisabled(stl_file_path.empty());
             if (ImGui::Button(get_locale_cstr("action.open"))) {
-                this->queue_load_stl(
-                    stl_file_path, voxel_size, file_loader_load_mode,
-                    file_loader_load_as_sdf,
-                    file_loader_use_precise_voxelization);
+                this->queue_load_stl(stl_file_path, voxel_size,
+                                     file_loader_load_mode,
+                                     file_loader_load_as_sdf,
+                                     file_loader_use_precise_voxelization);
                 show_file_loader = false;
             }
             ImGui::EndDisabled();

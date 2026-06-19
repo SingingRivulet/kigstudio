@@ -19,10 +19,10 @@
 #include <windows.h>
 #endif
 
+#include "kigstudio/sdf/sdf_shape.h"
 #include "kigstudio/ui/render_collision.h"
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/ui/render_voxel.h"
-#include "kigstudio/sdf/sdf_shape.h"
 #include "kigstudio/utils/KDTree.h"
 #include "kigstudio/utils/locale.h"
 #include "kigstudio/utils/plane.h"
@@ -200,7 +200,7 @@ class RenderVoxelList {
      * 一个体素
      * 一个碰撞体，一个空间分割平面（二者只能启动一个）
      * 两个输出结果（被分割为两半）
-    */
+     */
 
     std::atomic<int> current_id = 0;
     std::mutex locker;
@@ -216,17 +216,21 @@ class RenderVoxelList {
     // 力导向布局参数
     bool nav_layout_force_directed = true;
     bool nav_layout_initialized = false;
-    float nav_layout_repulsion = 16000.0f;           // 同 root 节点间斥力系数
-    float nav_layout_repulsion_cross_root = 32000.0f;  // 不同 root 节点间斥力系数
-    float nav_layout_spring = 0.02f;                  // 弹簧系数
-    float nav_layout_ideal_length = 120.0f; // 理想边长
-    float nav_layout_center_pull = 0.02f;   // 中心引力系数
-    float nav_layout_right_pull = 0.002f;   // 父节点右侧虚拟点引力系数
-    float nav_layout_right_offset = 80.0f;  // 父节点右侧虚拟点水平偏移
-    float nav_layout_damping = 0.92f;       // 速度阻尼
-    float nav_layout_dt = 0.5f;             // 时间步长
-    float nav_layout_max_speed = 20.0f;     // 单帧最大速度
-    float nav_layout_velocity_threshold = 0.5f; // 速度低于此值直接归零，防止微幅抖动
+    float nav_layout_repulsion = 16000.0f;  // 同 root 节点间斥力系数
+    float nav_layout_repulsion_cross_root =
+        24000.0f;                            // 不同 root 节点间斥力系数
+    float nav_layout_spring = 0.02f;         // 弹簧系数
+    float nav_layout_ideal_length = 120.0f;  // 理想边长
+    float nav_layout_center_pull = 0.02f;    // 中心引力系数
+    float nav_layout_right_pull = 0.002f;    // 父节点右侧虚拟点引力系数
+    float nav_layout_right_offset = 80.0f;   // 父节点右侧虚拟点水平偏移
+    float nav_layout_damping = 0.92f;        // 速度阻尼
+    float nav_layout_dt = 0.5f;              // 时间步长
+    float nav_layout_max_speed = 20.0f;      // 单帧最大速度
+    float nav_layout_velocity_threshold =
+        0.1f;  // 速度低于此值直接归零，防止微幅抖动
+    int nav_layout_velocity_threshold_start_frame = 120;
+    int nav_layout_velocity_threshold_frame = 0;
 
    public:
     class RenderVoxelItem {
@@ -234,7 +238,8 @@ class RenderVoxelList {
         int id = -1;
         int root_id = -1;
         std::vector<int> children;
-        int nav_node_position[2] = {0, 0};  // 在分割演示图中的位置（序列化用快照）
+        int nav_node_position[2] = {0,
+                                    0};  // 在分割演示图中的位置（序列化用快照）
         float nav_layout_pos[2] = {0.0f, 0.0f};  // 力导向浮点位置
         float nav_layout_vel[2] = {0.0f, 0.0f};  // 力导向速度
         bool nav_layout_pinned = false;          // 用户拖动后固定
@@ -373,7 +378,8 @@ class RenderVoxelList {
             if (!target_sdf) {
                 return nullptr;
             }
-            return std::make_shared<sinriv::kigstudio::sdf::SDF_AffineTransform>(
+            return std::make_shared<
+                sinriv::kigstudio::sdf::SDF_AffineTransform>(
                 sdf_split_inverse_transform_matrix(), target_sdf);
         }
 
@@ -474,9 +480,7 @@ class RenderVoxelList {
                                            true, expand);
         }
     };
-    inline RenderVoxelList() {
-        current_model_matrix.setIdentity();
-    }
+    inline RenderVoxelList() { current_model_matrix.setIdentity(); }
     inline ~RenderVoxelList() { release(); }
 
     std::map<int, std::unique_ptr<RenderVoxelItem>> items;

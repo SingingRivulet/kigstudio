@@ -97,6 +97,9 @@ void init_locale_strings() {
     add_locale_string("menu.new_node", {{"en", "New Node"}, {"zh", "新建节点"}});
     add_locale_string("menu.view", {{"en", "View"}, {"zh", "视图"}});
     add_locale_string("menu.tools", {{"en", "Tools"}, {"zh", "工具"}});
+    add_locale_string("menu.about", {{"en", "about"}, {"zh", "关于"}});
+    add_locale_string("menu.show_license", {{"en", "license"}, {"zh", "版权信息"}});
+    add_locale_string("menu.show_github", {{"en", "GitHub"}, {"zh", "GitHub"}});
     add_locale_string("menu.debug", {{"en", "Debug"}, {"zh", "调试"}});
     add_locale_string("menu.debug_voxel_picking",
                       {{"en", "Voxel Picking"}, {"zh", "体素拾取"}});

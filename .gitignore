@@ -43,3 +43,4 @@ dep/SDL2-2.30.11
 dep/FreeImage
 dep/boost
 dep/eigen3
+.vs/*

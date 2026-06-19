@@ -12,7 +12,6 @@
 #include "kigstudio/utils/locale.h"
 
 namespace sinriv::ui::render {
-
 inline void compute_layout(RenderVoxelList& mgr);
 
 void RenderVoxelList::render_nav_map() {
@@ -61,6 +60,7 @@ void RenderVoxelList::render_nav_map() {
             item->nav_layout_pos_set = true;
         }
         nav_layout_initialized = true;
+        nav_layout_velocity_threshold_frame = 0;
     }
 
     // 收集所有边（父子 + SDF 依赖 + Source Node 依赖）
@@ -91,6 +91,12 @@ void RenderVoxelList::render_nav_map() {
     // 力导向迭代一步
     if (nav_layout_force_directed && nav_layout_initialized &&
         this->items.size() > 1) {
+        const bool use_velocity_threshold =
+            nav_layout_velocity_threshold_frame >=
+            nav_layout_velocity_threshold_start_frame;
+        if (!use_velocity_threshold) {
+            ++nav_layout_velocity_threshold_frame;
+        }
         std::unordered_map<int, ImVec2> forces;
         for (auto& [id, item] : this->items) {
             forces[id] = ImVec2(0.0f, 0.0f);
@@ -176,22 +182,26 @@ void RenderVoxelList::render_nav_map() {
                 continue;
             auto& f = forces[id];
             // 微小向心力，把图拉向原点 (0,0)，让整体更紧凑
-            forces[id].x += nav_layout_center_pull * (0.0f - item->nav_layout_pos[0]);
-            forces[id].y += nav_layout_center_pull * (0.0f - item->nav_layout_pos[1]);
+            forces[id].x +=
+                nav_layout_center_pull * (0.0f - item->nav_layout_pos[0]);
+            forces[id].y +=
+                nav_layout_center_pull * (0.0f - item->nav_layout_pos[1]);
             item->nav_layout_vel[0] =
                 (item->nav_layout_vel[0] + f.x * nav_layout_dt) *
                 nav_layout_damping;
             item->nav_layout_vel[1] =
                 (item->nav_layout_vel[1] + f.y * nav_layout_dt) *
                 nav_layout_damping;
-            float speed = std::sqrt(item->nav_layout_vel[0] * item->nav_layout_vel[0] +
-                                    item->nav_layout_vel[1] * item->nav_layout_vel[1]);
+            float speed =
+                std::sqrt(item->nav_layout_vel[0] * item->nav_layout_vel[0] +
+                          item->nav_layout_vel[1] * item->nav_layout_vel[1]);
             if (speed > nav_layout_max_speed) {
                 item->nav_layout_vel[0] =
                     item->nav_layout_vel[0] / speed * nav_layout_max_speed;
                 item->nav_layout_vel[1] =
                     item->nav_layout_vel[1] / speed * nav_layout_max_speed;
-            } else if (speed < nav_layout_velocity_threshold) {
+            } else if (use_velocity_threshold &&
+                       speed < nav_layout_velocity_threshold) {
                 item->nav_layout_vel[0] = 0.0f;
                 item->nav_layout_vel[1] = 0.0f;
             }
@@ -255,16 +265,18 @@ void RenderVoxelList::render_nav_map() {
         ImNodes::EndInputAttribute();
 
         if (item->segment_mode == RenderVoxelItem::SDF_NODE_SPLIT) {
+            ImGui::SameLine(0.0f, 4.0f);
             ImNodes::BeginInputAttribute(id * 1000 + 1,
                                          ImNodesPinShape_CircleFilled);
-            ImGui::Text("SDF");
+            ImGui::Text("");
             ImNodes::EndInputAttribute();
         }
 
         if (item->source_type == 1 && item->source_node_id >= 0) {
+            ImGui::SameLine(0.0f, 4.0f);
             ImNodes::BeginInputAttribute(id * 1000 + 3,
                                          ImNodesPinShape_CircleFilled);
-            ImGui::Text("Src");
+            ImGui::Text("");
             ImNodes::EndInputAttribute();
         }
 
@@ -287,7 +299,8 @@ void RenderVoxelList::render_nav_map() {
                          ImVec2(20.0f, 20.0f));
             first_icon = false;
             if (ImGui::BeginItemTooltip()) {
-                ImGui::Text(get_locale_cstr("tooltip.sdf_resolution"), item->sdf_data->getInfo().c_str());
+                ImGui::Text(get_locale_cstr("tooltip.sdf_resolution"),
+                            item->sdf_data->getInfo().c_str());
                 ImGui::EndTooltip();
             }
         }
@@ -305,21 +318,30 @@ void RenderVoxelList::render_nav_map() {
         }
 
         // Output attribute (连向所有子节点的统一出口)
+        bool output_attr_on_line = false;
         if (!item->children.empty()) {
             ImNodes::BeginOutputAttribute(static_cast<int>(id * 10 + 2),
                                           ImNodesPinShape_CircleFilled);
             ImGui::Text("");
             ImNodes::EndOutputAttribute();
+            output_attr_on_line = true;
         }
 
         if (sdf_sources.count(id)) {
+            if (output_attr_on_line) {
+                ImGui::SameLine(0.0f, 4.0f);
+            }
             ImNodes::BeginOutputAttribute(id * 1000 + 2,
                                           ImNodesPinShape_CircleFilled);
             ImGui::Text("");
             ImNodes::EndOutputAttribute();
+            output_attr_on_line = true;
         }
 
         if (node_sources.count(id)) {
+            if (output_attr_on_line) {
+                ImGui::SameLine(0.0f, 4.0f);
+            }
             ImNodes::BeginOutputAttribute(id * 1000 + 3,
                                           ImNodesPinShape_CircleFilled);
             ImGui::Text("");
@@ -348,12 +370,17 @@ void RenderVoxelList::render_nav_map() {
         }
     }
 
+    const ImU32 src_link_color = IM_COL32(160, 72, 220, 220);
+    const ImU32 src_link_color_active = IM_COL32(190, 96, 255, 255);
+    ImNodes::PushColorStyle(ImNodesCol_Link, src_link_color);
+    ImNodes::PushColorStyle(ImNodesCol_LinkHovered, src_link_color_active);
+    ImNodes::PushColorStyle(ImNodesCol_LinkSelected, src_link_color_active);
+
     // 绘制 SDF 分割依赖线
     for (auto& [id, item] : this->items) {
         if (item->segment_mode == RenderVoxelItem::SDF_NODE_SPLIT &&
             item->sdf_split_target_id >= 0 &&
-            this->items.find(item->sdf_split_target_id) !=
-                this->items.end()) {
+            this->items.find(item->sdf_split_target_id) != this->items.end()) {
             int source_attr = item->sdf_split_target_id * 1000 + 2;
             int target_attr = id * 1000 + 1;
             ImNodes::Link(link_id++, source_attr, target_attr);
@@ -369,6 +396,10 @@ void RenderVoxelList::render_nav_map() {
             ImNodes::Link(link_id++, source_attr, target_attr);
         }
     }
+
+    ImNodes::PopColorStyle();
+    ImNodes::PopColorStyle();
+    ImNodes::PopColorStyle();
 
     ImNodes::MiniMap(0.2f, ImNodesMiniMapLocation_BottomLeft);
     ImNodes::EndNodeEditor();
@@ -408,6 +439,7 @@ void RenderVoxelList::render_nav_map() {
                 item->nav_layout_vel[1] = 0.0f;
             }
             nav_layout_initialized = false;
+            nav_layout_velocity_threshold_frame = 0;
         }
     }
 
@@ -465,10 +497,12 @@ inline float layout_node(RenderVoxelList& mgr,
 
     std::vector<float> child_xs;
     for (int child_id : node.children) {
-        if (child_id < 0) continue;
+        if (child_id < 0)
+            continue;
         float cx = layout_node(mgr, child_id, depth + 1, ctx, visit_state,
                                has_cycle, root_id);
-        if (cx >= 0) child_xs.push_back(cx);
+        if (cx >= 0)
+            child_xs.push_back(cx);
     }
 
     float my_x;
@@ -477,7 +511,8 @@ inline float layout_node(RenderVoxelList& mgr,
         ctx.next_x += ctx.x_spacing;
     } else {
         float sum = 0.0f;
-        for (float cx : child_xs) sum += cx;
+        for (float cx : child_xs)
+            sum += cx;
         my_x = sum / static_cast<float>(child_xs.size());
     }
 
@@ -538,9 +573,8 @@ bool RenderVoxelList::would_form_source_cycle(int from_id, int to_id) {
         auto it = items.find(current);
         if (it == items.end())
             break;
-        current = it->second->source_type == 1
-                      ? it->second->source_node_id
-                      : -1;
+        current =
+            it->second->source_type == 1 ? it->second->source_node_id : -1;
     }
     return false;
 }
@@ -574,6 +608,7 @@ void RenderVoxelList::update_nav_node_position() {
             // 力导向模式下重新以树形布局作为起点收敛，
             // 避免直接覆盖用户已固定的节点和当前物理状态。
             nav_layout_initialized = false;
+            nav_layout_velocity_threshold_frame = 0;
         } else {
             compute_layout(*this);
         }
