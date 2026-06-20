@@ -105,6 +105,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddBoolToObject(obj, "show_silhouette_center",
                           item.showSilhouetteCenter);
     cJSON_AddStringToObject(obj, "err_info", item.err_info.c_str());
+    cJSON_AddStringToObject(obj, "title", item.title.c_str());
+    cJSON_AddStringToObject(obj, "comment_text", item.comment_text.c_str());
     cJSON_AddItemToObject(obj, "collision_group",
                           sinriv::kigstudio::to_json(item.collision_group));
     cJSON_AddItemToObject(obj, "plane", sinriv::kigstudio::to_json(item.plane));
@@ -347,6 +349,14 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
             cJSON_IsTrue(show_silhouette_center_json);
     }
     item->err_info = cJSON_GetObjectItem(obj, "err_info")->valuestring;
+    const cJSON* title_json = cJSON_GetObjectItem(obj, "title");
+    if (title_json) {
+        item->title = title_json->valuestring;
+    }
+    const cJSON* comment_text_json = cJSON_GetObjectItem(obj, "comment_text");
+    if (comment_text_json) {
+        item->comment_text = comment_text_json->valuestring;
+    }
     item->collision_group = sinriv::kigstudio::from_json_collision_group(
         cJSON_GetObjectItem(obj, "collision_group"));
     item->plane =
@@ -588,6 +598,19 @@ bool RenderVoxelList::save_project(const std::string& folder) {
     }
     cJSON_AddItemToObject(root, "items", arr);
 
+    // 保存工作流输入/输出节点
+    cJSON* flow_inputs_arr = cJSON_CreateArray();
+    for (int id : flow_inputs) {
+        cJSON_AddItemToArray(flow_inputs_arr, cJSON_CreateNumber(id));
+    }
+    cJSON_AddItemToObject(root, "flow_inputs", flow_inputs_arr);
+
+    cJSON* flow_outputs_arr = cJSON_CreateArray();
+    for (int id : flow_outputs) {
+        cJSON_AddItemToArray(flow_outputs_arr, cJSON_CreateNumber(id));
+    }
+    cJSON_AddItemToObject(root, "flow_outputs", flow_outputs_arr);
+
     std::filesystem::path json_path = dir / "project.json";
     char* json_str = cJSON_Print(root);
     if (!json_str) {
@@ -739,6 +762,27 @@ bool RenderVoxelList::load_project(const std::string& folder) {
             items[id] = std::move(item);
         }
     }
+
+    // 加载工作流输入/输出节点（兼容旧项目）
+    flow_inputs.clear();
+    flow_outputs.clear();
+    cJSON* flow_inputs_arr = cJSON_GetObjectItem(root, "flow_inputs");
+    if (flow_inputs_arr) {
+        int flow_inputs_count = cJSON_GetArraySize(flow_inputs_arr);
+        for (int i = 0; i < flow_inputs_count; ++i) {
+            flow_inputs.push_back(
+                cJSON_GetArrayItem(flow_inputs_arr, i)->valueint);
+        }
+    }
+    cJSON* flow_outputs_arr = cJSON_GetObjectItem(root, "flow_outputs");
+    if (flow_outputs_arr) {
+        int flow_outputs_count = cJSON_GetArraySize(flow_outputs_arr);
+        for (int i = 0; i < flow_outputs_count; ++i) {
+            flow_outputs.push_back(
+                cJSON_GetArrayItem(flow_outputs_arr, i)->valueint);
+        }
+    }
+    flow_needs_recompute = true;
 
     cJSON_Delete(root);
     if (!items.empty()) {

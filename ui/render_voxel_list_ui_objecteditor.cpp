@@ -1,5 +1,7 @@
 #include <dear-imgui/imgui_internal.h>
 #include <iconfontheaders/icons_font_awesome.h>
+#include <cstring>
+#include <vector>
 #include <iconfontheaders/icons_kenney.h>
 #include <imgui/imgui.h>
 #include <imnodes.h>
@@ -166,11 +168,13 @@ void RenderVoxelList::render_object_editor() {
                 ImGuiTabItemFlags flags_collision = 0;
                 ImGuiTabItemFlags flags_voxel = 0;
                 ImGuiTabItemFlags flags_file_status = 0;
+                ImGuiTabItemFlags flags_comment = 0;
                 if (last_object_editor_tab != object_editor_tab) {
                     // 重置所有 Tab 的标志位
                     flags_collision = 0;
                     flags_voxel = 0;
                     flags_file_status = 0;
+                    flags_comment = 0;
 
                     // 根据当前选中的 Tab 设置对应的选中标志
                     if (object_editor_tab == 0)
@@ -179,6 +183,8 @@ void RenderVoxelList::render_object_editor() {
                         flags_voxel = ImGuiTabItemFlags_SetSelected;
                     else if (object_editor_tab == 2)
                         flags_file_status = ImGuiTabItemFlags_SetSelected;
+                    else if (object_editor_tab == 3)
+                        flags_comment = ImGuiTabItemFlags_SetSelected;
 
                     last_object_editor_tab = object_editor_tab;
                 }
@@ -213,6 +219,15 @@ void RenderVoxelList::render_object_editor() {
                         ImGui::EndTabItem();
                     }
                 }
+
+                // ===== Tab: Comment =====
+                if (ImGui::BeginTabItem(get_locale_cstr("tab.comment"),
+                                        nullptr, flags_comment)) {
+                    object_editor_tab = 3;
+                    render_object_editor_comment_tab_content(item);
+                    ImGui::EndTabItem();
+                }
+
                 ImGui::EndTabBar();
             }
 
@@ -221,6 +236,36 @@ void RenderVoxelList::render_object_editor() {
         }
     }
     ImGui::End();
+}
+
+void RenderVoxelList::render_object_editor_comment_tab_content(
+    RenderVoxelItem& item) {
+    // 标题输入框
+    char title_buf[256];
+    std::strncpy(title_buf, item.title.c_str(), sizeof(title_buf) - 1);
+    title_buf[sizeof(title_buf) - 1] = '\0';
+    if (ImGui::InputText(get_locale_cstr("label.title"), title_buf,
+                         sizeof(title_buf))) {
+        item.title = title_buf;
+    }
+
+    ImGui::Separator();
+
+    // 注释文本输入框
+    ImGui::TextUnformatted(get_locale_cstr("label.comment_text"));
+    std::vector<char> comment_buf(item.comment_text.begin(),
+                                  item.comment_text.end());
+    comment_buf.push_back('\0');
+    // 预留足够空间以容纳用户输入
+    const size_t kMaxCommentSize = 4096;
+    if (comment_buf.size() < kMaxCommentSize) {
+        comment_buf.resize(kMaxCommentSize, '\0');
+    }
+    if (ImGui::InputTextMultiline("##comment_text", comment_buf.data(),
+                                  comment_buf.size(),
+                                  ImVec2(-FLT_MIN, 120.0f))) {
+        item.comment_text = comment_buf.data();
+    }
 }
 
 void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {

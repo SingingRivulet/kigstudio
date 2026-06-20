@@ -3,6 +3,9 @@
 #include <chrono>
 #include <cstring>
 #include <limits>
+#include <queue>
+#include <unordered_map>
+#include <unordered_set>
 #include "kigstudio/sdf/sdf_chain_joint.h"
 namespace sinriv::ui::render {
 

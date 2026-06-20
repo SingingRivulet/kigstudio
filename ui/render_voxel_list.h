@@ -234,6 +234,15 @@ class RenderVoxelList {
 
    public:
     class RenderVoxelItem {
+        /*
+         * TODO:
+         * 1.新增功能：生成工作流
+         *   允许指定多个入口节点和输出节点，生成一个工作流图
+         *   处理流程是：当一个节点所有输入都有数据时，该节点就会执行，向连接节点输出数据
+         *   当所有输出节点都有数据时，整个工作流结束
+         *   处理完后进行剪枝，成为真正的工作流
+         *   生成时，以节点为src的节点视为快照节点，不会使用已有的缓存
+         */
        public:
         int id = -1;
         int root_id = -1;
@@ -245,6 +254,8 @@ class RenderVoxelList {
         bool nav_layout_pinned = false;          // 用户拖动后固定
         bool nav_layout_pos_set = false;         // 是否已有有效初始位置
         std::string err_info;
+        std::string title;         // 节点标题（显示在节点编辑器上）
+        std::string comment_text;  // 节点注释文本
         RenderVoxelList* manager = nullptr;
         RenderVoxelItem() : ref_count(1), write_count(0) {}
         ~RenderVoxelItem() {
@@ -568,11 +579,13 @@ class RenderVoxelList {
     void render_object_editor_chain_mode(RenderVoxelItem& item);
     void render_object_editor_sdf_node_split_mode(RenderVoxelItem& item);
     void render_object_editor_voxel_tab_content(RenderVoxelItem& item);
+    void render_object_editor_comment_tab_content(RenderVoxelItem& item);
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_concave_cone_editor(RenderVoxelItem& item);
     void render_nav_map();
     void render_file_loader();
+    void render_flow_viewer();
 
     void render_save_dialog();
     void render_load_dialog();
@@ -585,6 +598,13 @@ class RenderVoxelList {
     bool show_save_dialog = false;
     bool show_save_as_dialog = false;
     bool show_load_dialog = false;
+    bool show_flow_viewer = false;
+
+    // 工作流查看器状态
+    std::vector<int> flow_inputs;
+    std::vector<int> flow_outputs;
+    std::vector<int> flow_cached_order;
+    bool flow_needs_recompute = true;
 
     bool show_delete_confirm = false;
     int pending_delete_item_id = -1;
@@ -757,9 +777,11 @@ class RenderVoxelList {
     std::filesystem::path get_mesh_cache_path(int node_id) const;
     std::filesystem::path get_sdf_cache_path(int node_id) const;
     std::filesystem::path get_voxel_cache_path(int node_id) const;
+    std::vector<int> get_process_flow(const std::vector<int>& inputs,
+                                      const std::vector<int>& outputs)
+        const;  // TODO:用于实现工作流的辅助函数，返回依次被调用的节点id列表
 
     // 后台队列
-
     std::vector<std::unique_ptr<RenderVoxelItem>> pending_deletion;
     std::mutex pending_deletion_mutex;
 

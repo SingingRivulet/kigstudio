@@ -135,6 +135,9 @@ void RenderVoxelList::render_ui() {
                         append_queue_logf("log.queue.skip_check_busy");
                     }
                 }
+                if (ImGui::MenuItem(get_locale_cstr("menu.flow_viewer"))) {
+                    show_flow_viewer = true;
+                }
                 if (ImGui::BeginMenu(get_locale_cstr("menu.debug"))) {
                     if (ImGui::MenuItem(
                             get_locale_cstr("menu.debug_voxel_picking"))) {
@@ -402,6 +405,7 @@ void RenderVoxelList::render_ui() {
     render_history_window();
     render_log_window();
     render_debug_voxel_pick_window();
+    render_flow_viewer();
 
     // Delete confirm modal
     if (show_delete_confirm) {

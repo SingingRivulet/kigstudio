@@ -52,6 +52,9 @@ int main(int argc, char** argv) {
     bool leftMouseDownOnPick = false;
     bool middleMouseDownOnPick = false;
     SDL_SetMainReady();
+    // 显示系统 IME 候选窗口（中文/日文输入法需要）
+    SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
+
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;
         return -1;
@@ -111,6 +114,35 @@ int main(int argc, char** argv) {
 
     imguiCreate();
     ImGui::CreateContext();
+    {
+        // 设置 IME 回调，让 SDL2 知道输入光标位置，从而显示候选框
+        ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+        platform_io.Platform_ImeUserData = window;
+        platform_io.Platform_SetImeDataFn =
+            [](ImGuiContext*, ImGuiViewport*, ImGuiPlatformImeData* data) {
+                SDL_Window* sdl_window = static_cast<SDL_Window*>(
+                    ImGui::GetPlatformIO().Platform_ImeUserData);
+                if (!sdl_window)
+                    return;
+                if (!data->WantTextInput) {
+                    if (SDL_IsTextInputActive()) {
+                        SDL_StopTextInput();
+                    }
+                    return;
+                }
+                if (!SDL_IsTextInputActive()) {
+                    SDL_StartTextInput();
+                }
+                if (data->WantVisible) {
+                    SDL_Rect r;
+                    r.x = static_cast<int>(data->InputPos.x);
+                    r.y = static_cast<int>(data->InputPos.y);
+                    r.w = 1;
+                    r.h = static_cast<int>(data->InputLineHeight);
+                    SDL_SetTextInputRect(&r);
+                }
+            };
+    }
     ImNodes::CreateContext();
 
     int width, height;

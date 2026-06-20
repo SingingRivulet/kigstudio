@@ -253,9 +253,18 @@ void RenderVoxelList::render_nav_map() {
 
         ImNodes::BeginNodeTitleBar();
         if (item->write_count > 0) {
-            ImGui::Text(get_locale_cstr("label.node_updating"), id);
+            if (!item->title.empty()) {
+                ImGui::Text("%s (%s)", item->title.c_str(),
+                            get_locale_cstr("label.updating"));
+            } else {
+                ImGui::Text(get_locale_cstr("label.node_updating"), id);
+            }
         } else {
-            ImGui::Text(get_locale_cstr("label.node"), id);
+            if (!item->title.empty()) {
+                ImGui::TextUnformatted(item->title.c_str());
+            } else {
+                ImGui::Text(get_locale_cstr("label.node"), id);
+            }
         }
         ImNodes::EndNodeTitleBar();
 

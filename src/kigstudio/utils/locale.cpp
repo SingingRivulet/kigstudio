@@ -84,6 +84,8 @@ void init_locale_strings() {
                       {{"en", "Voxel Picking"}, {"zh", "体素选择"}});
     add_locale_string("tab.file_status",
                       {{"en", "Voxel Picking"}, {"zh", "文件"}});
+    add_locale_string("tab.comment",
+                      {{"en", "Comment"}, {"zh", "注释"}});
     add_locale_string("window.edit_segment_plane",
                       {{"en", "Edit Segment Plane"}, {"zh", "编辑分割平面"}});
     add_locale_string("window.nav_node_map",
@@ -103,6 +105,7 @@ void init_locale_strings() {
     add_locale_string("menu.debug", {{"en", "Debug"}, {"zh", "调试"}});
     add_locale_string("menu.debug_voxel_picking",
                       {{"en", "Voxel Picking"}, {"zh", "体素拾取"}});
+    add_locale_string("menu.flow_viewer", {{"en", "Flow Viewer"}, {"zh", "工作流"}});
     add_locale_string(
         "menu.check_non_manifold",
         {{"en", "Check Non-Manifold Edges"}, {"zh", "检查非流形边"}});
@@ -510,6 +513,33 @@ void init_locale_strings() {
         {{"en", "mouse highlight range"}, {"zh", "鼠标高亮范围"}});
     add_locale_string("window.history",
                       {{"en", "History"}, {"zh", "历史记录"}});
+    add_locale_string("window.flow_viewer",
+                      {{"en", "Flow Viewer"}, {"zh", "工作流"}});
+    add_locale_string("label.flow_inputs",
+                      {{"en", "Inputs"}, {"zh", "输入节点"}});
+    add_locale_string("label.flow_outputs",
+                      {{"en", "Outputs"}, {"zh", "输出节点"}});
+    add_locale_string("label.flow_process_order",
+                      {{"en", "Process Order"}, {"zh", "执行顺序"}});
+    add_locale_string("label.flow_select_node",
+                      {{"en", "Select node"}, {"zh", "选择节点"}});
+    add_locale_string("label.flow_no_result",
+                      {{"en", "Unable to build process flow"},
+                       {"zh", "无法生成工作流"}});
+    add_locale_string("label.flow_add_input_hint",
+                      {{"en", "Add an input node"},
+                       {"zh", "添加入口节点"}});
+    add_locale_string("label.flow_add_output_hint",
+                      {{"en", "Add an output node"},
+                       {"zh", "添加输出节点"}});
+    add_locale_string("action.add", {{"en", "Add"}, {"zh", "添加"}});
+    add_locale_string("action.remove", {{"en", "Remove"}, {"zh", "删除"}});
+    add_locale_string("label.flow_node_id",
+                      {{"en", "ID"}, {"zh", "节点ID"}});
+    add_locale_string("label.flow_node_mode",
+                      {{"en", "Mode"}, {"zh", "处理模式"}});
+    add_locale_string("label.flow_node_title",
+                      {{"en", "Title"}, {"zh", "标题"}});
     add_locale_string("window.log", {{"en", "Log"}, {"zh", "日志"}});
     add_locale_string("window.debug_voxel_picking",
                       {{"en", "Voxel Picking Debug"}, {"zh", "体素拾取调试"}});
@@ -664,6 +694,9 @@ void init_locale_strings() {
     add_locale_string("label.node", {{"en", "Node %d"}, {"zh", "节点 %d"}});
     add_locale_string("label.node_updating", {{"en", "Node %d (updating...)"},
                                               {"zh", "节点 %d (更新中...)"}});
+    add_locale_string("label.title", {{"en", "Title"}, {"zh", "标题"}});
+    add_locale_string("label.comment_text",
+                      {{"en", "Comment"}, {"zh", "注释内容"}});
     add_locale_string("label.position", {{"en", "Position"}, {"zh", "位置"}});
     add_locale_string("label.rotation_deg",
                       {{"en", "Rotation (deg)"}, {"zh", "旋转 (度)"}});
