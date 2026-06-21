@@ -3,8 +3,6 @@
 
 namespace sinriv::kigstudio::sdf {
 
-static cJSON* vec3_to_json(const Vec3f& v);
-static Vec3f json_to_vec3(const cJSON* json);
 
 float SDF_FiniteCone::get(const Vec3f& p) const {
     return sdFiniteCone(p, angle_rad, height);
@@ -25,8 +23,21 @@ cJSON* SDF_FiniteCone::toJSON() const {
 }
 
 void SDF_FiniteCone::fromJSON(const cJSON* json) {
-    angle_rad = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "angle_rad")));
-    height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "height")));
+    if (!json)
+        return;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string || !cJSON_IsNumber(child))
+            continue;
+
+        const double value = cJSON_GetNumberValue(child);
+        if (strcmp(child->string, "angle_rad") == 0) {
+            angle_rad = static_cast<float>(value);
+        } else if (strcmp(child->string, "height") == 0) {
+            height = static_cast<float>(value);
+        }
+    }
 }
 
 void SDF_FiniteCone::get(const Vec3f& begin,
@@ -188,24 +199,38 @@ std::string SDF_PolyCone::getInfo(int indent) const {
 cJSON* SDF_PolyCone::toJSON() const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "type", "poly_cone");
-    cJSON_AddItemToObject(obj, "apex", vec3_to_json(apex));
+    cJSON_AddItemToObject(obj, "apex", sinriv::kigstudio::to_json(apex));
     cJSON* arr = cJSON_CreateArray();
     for (const auto& v : base_vertices) {
-        cJSON_AddItemToArray(arr, vec3_to_json(v));
+        cJSON_AddItemToArray(arr, sinriv::kigstudio::to_json(v));
     }
     cJSON_AddItemToObject(obj, "base_vertices", arr);
     return obj;
 }
 
 void SDF_PolyCone::fromJSON(const cJSON* json) {
-    const cJSON* apex_json = cJSON_GetObjectItem(json, "apex");
-    if (apex_json) apex = json_to_vec3(apex_json);
+    if (!json)
+        return;
+
     base_vertices.clear();
-    const cJSON* arr = cJSON_GetObjectItem(json, "base_vertices");
-    if (arr) {
-        int count = cJSON_GetArraySize(arr);
-        for (int i = 0; i < count; ++i) {
-            base_vertices.push_back(json_to_vec3(cJSON_GetArrayItem(arr, i)));
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string)
+            continue;
+
+        if (cJSON_IsObject(child)) {
+            if (strcmp(child->string, "apex") == 0) {
+                apex = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+            }
+        } else if (cJSON_IsArray(child) &&
+                   strcmp(child->string, "base_vertices") == 0) {
+            int count = cJSON_GetArraySize(child);
+            for (int i = 0; i < count; ++i) {
+                const cJSON* v = cJSON_GetArrayItem(child, i);
+                if (v && cJSON_IsObject(v))
+                    base_vertices.push_back(
+                        sinriv::kigstudio::vec3_from_json<Vec3f>(v));
+            }
         }
     }
 }
@@ -229,8 +254,21 @@ cJSON* SDF_CappedCylinderX::toJSON() const {
 }
 
 void SDF_CappedCylinderX::fromJSON(const cJSON* json) {
-    radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "radius")));
-    half_height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "half_height")));
+    if (!json)
+        return;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string || !cJSON_IsNumber(child))
+            continue;
+
+        const double value = cJSON_GetNumberValue(child);
+        if (strcmp(child->string, "radius") == 0) {
+            radius = static_cast<float>(value);
+        } else if (strcmp(child->string, "half_height") == 0) {
+            half_height = static_cast<float>(value);
+        }
+    }
 }
 
 void SDF_CappedCylinderX::get(const Vec3f& begin,
@@ -274,15 +312,30 @@ std::string SDF_Sphere::getInfo(int indent) const {
 cJSON* SDF_Sphere::toJSON() const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "type", "sphere");
-    cJSON_AddItemToObject(obj, "center", vec3_to_json(center));
+    cJSON_AddItemToObject(obj, "center", sinriv::kigstudio::to_json(center));
     cJSON_AddNumberToObject(obj, "radius", radius);
     return obj;
 }
 
 void SDF_Sphere::fromJSON(const cJSON* json) {
-    const cJSON* center_json = cJSON_GetObjectItem(json, "center");
-    if (center_json) center = json_to_vec3(center_json);
-    radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "radius")));
+    if (!json)
+        return;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string)
+            continue;
+
+        if (cJSON_IsObject(child)) {
+            if (strcmp(child->string, "center") == 0) {
+                center = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+            }
+        } else if (cJSON_IsNumber(child)) {
+            if (strcmp(child->string, "radius") == 0) {
+                radius = static_cast<float>(cJSON_GetNumberValue(child));
+            }
+        }
+    }
 }
 
 void SDF_Sphere::get(const Vec3f& begin,
@@ -328,18 +381,33 @@ std::string SDF_Cylinder::getInfo(int indent) const {
 cJSON* SDF_Cylinder::toJSON() const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "type", "cylinder");
-    cJSON_AddItemToObject(obj, "start", vec3_to_json(start));
-    cJSON_AddItemToObject(obj, "end", vec3_to_json(end));
+    cJSON_AddItemToObject(obj, "start", sinriv::kigstudio::to_json(start));
+    cJSON_AddItemToObject(obj, "end", sinriv::kigstudio::to_json(end));
     cJSON_AddNumberToObject(obj, "radius", radius);
     return obj;
 }
 
 void SDF_Cylinder::fromJSON(const cJSON* json) {
-    const cJSON* start_json = cJSON_GetObjectItem(json, "start");
-    if (start_json) start = json_to_vec3(start_json);
-    const cJSON* end_json = cJSON_GetObjectItem(json, "end");
-    if (end_json) end = json_to_vec3(end_json);
-    radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "radius")));
+    if (!json)
+        return;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string)
+            continue;
+
+        if (cJSON_IsObject(child)) {
+            if (strcmp(child->string, "start") == 0) {
+                start = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+            } else if (strcmp(child->string, "end") == 0) {
+                end = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+            }
+        } else if (cJSON_IsNumber(child)) {
+            if (strcmp(child->string, "radius") == 0) {
+                radius = static_cast<float>(cJSON_GetNumberValue(child));
+            }
+        }
+    }
 }
 
 void SDF_Cylinder::get(const Vec3f& begin,
@@ -385,18 +453,33 @@ std::string SDF_Capsule::getInfo(int indent) const {
 cJSON* SDF_Capsule::toJSON() const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "type", "capsule");
-    cJSON_AddItemToObject(obj, "start", vec3_to_json(start));
-    cJSON_AddItemToObject(obj, "end", vec3_to_json(end));
+    cJSON_AddItemToObject(obj, "start", sinriv::kigstudio::to_json(start));
+    cJSON_AddItemToObject(obj, "end", sinriv::kigstudio::to_json(end));
     cJSON_AddNumberToObject(obj, "radius", radius);
     return obj;
 }
 
 void SDF_Capsule::fromJSON(const cJSON* json) {
-    const cJSON* start_json = cJSON_GetObjectItem(json, "start");
-    if (start_json) start = json_to_vec3(start_json);
-    const cJSON* end_json = cJSON_GetObjectItem(json, "end");
-    if (end_json) end = json_to_vec3(end_json);
-    radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "radius")));
+    if (!json)
+        return;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string)
+            continue;
+
+        if (cJSON_IsObject(child)) {
+            if (strcmp(child->string, "start") == 0) {
+                start = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+            } else if (strcmp(child->string, "end") == 0) {
+                end = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+            }
+        } else if (cJSON_IsNumber(child)) {
+            if (strcmp(child->string, "radius") == 0) {
+                radius = static_cast<float>(cJSON_GetNumberValue(child));
+            }
+        }
+    }
 }
 
 void SDF_Capsule::get(const Vec3f& begin,
@@ -440,13 +523,24 @@ std::string SDF_Box::getInfo(int indent) const {
 cJSON* SDF_Box::toJSON() const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "type", "box");
-    cJSON_AddItemToObject(obj, "half_extent", vec3_to_json(half_extent));
+    cJSON_AddItemToObject(obj, "half_extent",
+                          sinriv::kigstudio::to_json(half_extent));
     return obj;
 }
 
 void SDF_Box::fromJSON(const cJSON* json) {
-    const cJSON* half_extent_json = cJSON_GetObjectItem(json, "half_extent");
-    if (half_extent_json) half_extent = json_to_vec3(half_extent_json);
+    if (!json)
+        return;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string || !cJSON_IsObject(child))
+            continue;
+
+        if (strcmp(child->string, "half_extent") == 0) {
+            half_extent = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+        }
+    }
 }
 
 void SDF_Box::get(const Vec3f& begin,
@@ -476,40 +570,39 @@ void SDF_Box::get(const Vec3f& begin,
     }
 }
 
-static cJSON* vec3_to_json(const Vec3f& v) {
-    cJSON* obj = cJSON_CreateObject();
-    cJSON_AddNumberToObject(obj, "x", v.x);
-    cJSON_AddNumberToObject(obj, "y", v.y);
-    cJSON_AddNumberToObject(obj, "z", v.z);
-    return obj;
-}
-
-static Vec3f json_to_vec3(const cJSON* json) {
-    return Vec3f(
-        static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "x"))),
-        static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "y"))),
-        static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "z"))));
-}
-
 static cJSON* frame_to_json(const Frame& f) {
     cJSON* obj = cJSON_CreateObject();
-    cJSON_AddItemToObject(obj, "origin", vec3_to_json(f.origin));
-    cJSON_AddItemToObject(obj, "x_axis", vec3_to_json(f.x_axis));
-    cJSON_AddItemToObject(obj, "y_axis", vec3_to_json(f.y_axis));
-    cJSON_AddItemToObject(obj, "z_axis", vec3_to_json(f.z_axis));
+    cJSON_AddItemToObject(obj, "origin",
+                          sinriv::kigstudio::to_json(f.origin));
+    cJSON_AddItemToObject(obj, "x_axis",
+                          sinriv::kigstudio::to_json(f.x_axis));
+    cJSON_AddItemToObject(obj, "y_axis",
+                          sinriv::kigstudio::to_json(f.y_axis));
+    cJSON_AddItemToObject(obj, "z_axis",
+                          sinriv::kigstudio::to_json(f.z_axis));
     return obj;
 }
 
 static Frame json_to_frame(const cJSON* json) {
     Frame f;
-    const cJSON* origin = cJSON_GetObjectItem(json, "origin");
-    if (origin) f.origin = json_to_vec3(origin);
-    const cJSON* x_axis = cJSON_GetObjectItem(json, "x_axis");
-    if (x_axis) f.x_axis = json_to_vec3(x_axis);
-    const cJSON* y_axis = cJSON_GetObjectItem(json, "y_axis");
-    if (y_axis) f.y_axis = json_to_vec3(y_axis);
-    const cJSON* z_axis = cJSON_GetObjectItem(json, "z_axis");
-    if (z_axis) f.z_axis = json_to_vec3(z_axis);
+    if (!json)
+        return f;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string || !cJSON_IsObject(child))
+            continue;
+
+        if (strcmp(child->string, "origin") == 0) {
+            f.origin = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+        } else if (strcmp(child->string, "x_axis") == 0) {
+            f.x_axis = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+        } else if (strcmp(child->string, "y_axis") == 0) {
+            f.y_axis = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+        } else if (strcmp(child->string, "z_axis") == 0) {
+            f.z_axis = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+        }
+    }
     return f;
 }
 
@@ -567,10 +660,22 @@ cJSON* SDF_FrameTransform::toJSON() const {
 }
 
 void SDF_FrameTransform::fromJSON(const cJSON* json) {
-    const cJSON* frame_json = cJSON_GetObjectItem(json, "frame");
-    if (frame_json) frame = json_to_frame(frame_json);
-    const cJSON* cj = cJSON_GetObjectItem(json, "child");
-    if (cj) child = sdf_from_json(cj);
+    if (!json)
+        return;
+
+    const cJSON* c = nullptr;
+    cJSON_ArrayForEach(c, json) {
+        if (!c->string)
+            continue;
+
+        if (cJSON_IsObject(c)) {
+            if (strcmp(c->string, "frame") == 0) {
+                frame = json_to_frame(c);
+            } else if (strcmp(c->string, "child") == 0) {
+                child = sdf_from_json(c);
+            }
+        }
+    }
 }
 
 // ============================================================

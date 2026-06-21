@@ -143,8 +143,13 @@ inline cJSON* to_json(const Plane<float>& p) {
 }
 
 inline Plane<float> from_json_plane(const cJSON* obj) {
-    vec3<float> point = vec3_from_json<vec3<float>>(cJSON_GetObjectItem(obj, "point"));
-    vec3<float> normal = vec3_from_json<vec3<float>>(cJSON_GetObjectItem(obj, "normal"));
+    auto point_obj = cJSON_GetObjectItem(obj, "point");
+    auto normal_obj = cJSON_GetObjectItem(obj, "normal");
+    if (!point_obj || !normal_obj) {
+        return Plane<float>();
+    }
+    vec3<float> point = vec3_from_json<vec3<float>>(point_obj);
+    vec3<float> normal = vec3_from_json<vec3<float>>(normal_obj);
     return Plane<float>(point, normal);
 }
 

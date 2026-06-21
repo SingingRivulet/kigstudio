@@ -412,35 +412,44 @@ cJSON* SDF_Mesh::toJSON() const {
 }
 
 void SDF_Mesh::fromJSON(const cJSON* json) {
-    const cJSON* tri_array = cJSON_GetObjectItem(json, "triangles");
-    if (tri_array && cJSON_IsArray(tri_array)) {
-        impl->clear();
-        int tri_count = cJSON_GetArraySize(tri_array);
-        for (int i = 0; i < tri_count; ++i) {
-            cJSON* t = cJSON_GetArrayItem(tri_array, i);
-            if (!t || !cJSON_IsArray(t) || cJSON_GetArraySize(t) != 9)
-                continue;
-            double ax = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 0));
-            double ay = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 1));
-            double az = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 2));
-            double bx = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 3));
-            double by = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 4));
-            double bz = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 5));
-            double cx = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 6));
-            double cy = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 7));
-            double cz = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 8));
-            impl->triangles.emplace_back(
-                Point_3(ax, ay, az), Point_3(bx, by, bz), Point_3(cx, cy, cz));
-        }
-        if (!impl->triangles.empty()) {
-            impl->rebuild();
-        }
-        path.clear();
-    } else {
-        const char* p = cJSON_GetStringValue(cJSON_GetObjectItem(json, "path"));
-        if (p) {
-            path = p;
-            loadSTL(path);
+    if (!json)
+        return;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string)
+            continue;
+
+        if (cJSON_IsArray(child) && strcmp(child->string, "triangles") == 0) {
+            impl->clear();
+            int tri_count = cJSON_GetArraySize(child);
+            for (int i = 0; i < tri_count; ++i) {
+                const cJSON* t = cJSON_GetArrayItem(child, i);
+                if (!t || !cJSON_IsArray(t) || cJSON_GetArraySize(t) != 9)
+                    continue;
+                double ax = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 0));
+                double ay = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 1));
+                double az = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 2));
+                double bx = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 3));
+                double by = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 4));
+                double bz = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 5));
+                double cx = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 6));
+                double cy = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 7));
+                double cz = cJSON_GetNumberValue(cJSON_GetArrayItem(t, 8));
+                impl->triangles.emplace_back(Point_3(ax, ay, az),
+                                             Point_3(bx, by, bz),
+                                             Point_3(cx, cy, cz));
+            }
+            if (!impl->triangles.empty()) {
+                impl->rebuild();
+            }
+            path.clear();
+        } else if (cJSON_IsString(child) &&
+                   strcmp(child->string, "path") == 0) {
+            if (child->valuestring) {
+                path = child->valuestring;
+                loadSTL(path);
+            }
         }
     }
 }

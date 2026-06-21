@@ -61,11 +61,27 @@ inline cJSON* to_json(const Cone& c) {
 
 inline Cone from_json_cone(const cJSON* obj) {
     Cone c;
-    c.apex = vec3_from_json<vec3f>(cJSON_GetObjectItem(obj, "apex"));
-    const cJSON* arr = cJSON_GetObjectItem(obj, "base_vertices");
-    int count = cJSON_GetArraySize(arr);
-    for (int i = 0; i < count; ++i) {
-        c.base_vertices.push_back(vec3_from_json<vec3f>(cJSON_GetArrayItem(arr, i)));
+    if (!cJSON_IsObject(obj)) {
+        c.triangulate();
+        return c;
+    }
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, obj) {
+        if (!child->string)
+            continue;
+
+        if (cJSON_IsObject(child) && strcmp(child->string, "apex") == 0) {
+            c.apex = vec3_from_json<vec3f>(child);
+        } else if (cJSON_IsArray(child) &&
+                   strcmp(child->string, "base_vertices") == 0) {
+            int count = cJSON_GetArraySize(child);
+            for (int i = 0; i < count; ++i) {
+                const cJSON* v = cJSON_GetArrayItem(child, i);
+                if (v && cJSON_IsObject(v))
+                    c.base_vertices.push_back(vec3_from_json<vec3f>(v));
+            }
+        }
     }
     c.triangulate();
     return c;

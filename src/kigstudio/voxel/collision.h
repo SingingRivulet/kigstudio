@@ -534,21 +534,21 @@ inline cJSON* to_json(const voxel::collision::Quaternion& q) {
 inline voxel::collision::Quaternion from_json_quat(const cJSON* obj) {
     float w = 0, x = 0, y = 0, z = 0;
     if (cJSON_IsObject(obj)) {
-        auto obj_w = cJSON_GetObjectItem(obj, "w");
-        auto obj_x = cJSON_GetObjectItem(obj, "x");
-        auto obj_y = cJSON_GetObjectItem(obj, "y");
-        auto obj_z = cJSON_GetObjectItem(obj, "z");
-        if (obj_w && cJSON_IsNumber(obj_w)) {
-            w = (float)obj_w->valuedouble;
-        }
-        if (obj_x && cJSON_IsNumber(obj_x)) {
-            x = (float)obj_x->valuedouble;
-        }
-        if (obj_y && cJSON_IsNumber(obj_y)) {
-            y = (float)obj_y->valuedouble;
-        }
-        if (obj_z && cJSON_IsNumber(obj_z)) {
-            z = (float)obj_z->valuedouble;
+        const cJSON* child = nullptr;
+        cJSON_ArrayForEach(child, obj) {
+            if (!child->string || !cJSON_IsNumber(child))
+                continue;
+
+            const float value = (float)child->valuedouble;
+            if (strcmp(child->string, "w") == 0) {
+                w = value;
+            } else if (strcmp(child->string, "x") == 0) {
+                x = value;
+            } else if (strcmp(child->string, "y") == 0) {
+                y = value;
+            } else if (strcmp(child->string, "z") == 0) {
+                z = value;
+            }
         }
     }
     return {x, y, z, w};
@@ -563,17 +563,21 @@ inline cJSON* to_json(const voxel::collision::Transform& t) {
 
 inline voxel::collision::Transform from_json_transform(const cJSON* obj) {
     voxel::collision::Transform t;
-    auto pos_obj = cJSON_GetObjectItem(obj, "position");
-    auto pos_rot = cJSON_GetObjectItem(obj, "rotation");
-    auto pos_sca = cJSON_GetObjectItem(obj, "scale");
-    if (pos_obj && cJSON_IsObject(pos_obj)) {
-        t.setPosition(vec3_from_json<voxel::collision::vec3f>(pos_obj));
-    }
-    if (pos_rot && cJSON_IsObject(pos_obj)) {
-        t.setRotationQuaternion(from_json_quat(pos_rot));
-    }
-    if (pos_sca && cJSON_IsObject(pos_obj)) {
-        t.setScale(vec3_from_json<voxel::collision::vec3f>(pos_sca));
+    if (!cJSON_IsObject(obj))
+        return t;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, obj) {
+        if (!child->string || !cJSON_IsObject(child))
+            continue;
+
+        if (strcmp(child->string, "position") == 0) {
+            t.setPosition(vec3_from_json<voxel::collision::vec3f>(child));
+        } else if (strcmp(child->string, "rotation") == 0) {
+            t.setRotationQuaternion(from_json_quat(child));
+        } else if (strcmp(child->string, "scale") == 0) {
+            t.setScale(vec3_from_json<voxel::collision::vec3f>(child));
+        }
     }
     return t;
 }
@@ -586,9 +590,21 @@ inline cJSON* to_json(const voxel::collision::Sphere& s) {
 
 inline voxel::collision::Sphere from_json_sphere(const cJSON* obj) {
     voxel::collision::Sphere s;
-    s.center = vec3_from_json<voxel::collision::vec3f>(
-        cJSON_GetObjectItem(obj, "center"));
-    s.radius = (float)cJSON_GetObjectItem(obj, "radius")->valuedouble;
+    if (!cJSON_IsObject(obj))
+        return s;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, obj) {
+        if (!child->string)
+            continue;
+
+        if (cJSON_IsObject(child) && strcmp(child->string, "center") == 0) {
+            s.center = vec3_from_json<voxel::collision::vec3f>(child);
+        } else if (cJSON_IsNumber(child) &&
+                   strcmp(child->string, "radius") == 0) {
+            s.radius = (float)child->valuedouble;
+        }
+    }
     return s;
 }
 
@@ -601,12 +617,29 @@ inline cJSON* to_json(const voxel::collision::Cylinder& c) {
 }
 
 inline voxel::collision::Cylinder from_json_cylinder(const cJSON* obj) {
-    return voxel::collision::Cylinder(
-        vec3_from_json<voxel::collision::vec3f>(
-            cJSON_GetObjectItem(obj, "start")),
-        vec3_from_json<voxel::collision::vec3f>(
-            cJSON_GetObjectItem(obj, "end")),
-        (float)cJSON_GetObjectItem(obj, "radius")->valuedouble);
+    voxel::collision::vec3f start;
+    voxel::collision::vec3f end;
+    float radius = 0.0f;
+
+    if (cJSON_IsObject(obj)) {
+        const cJSON* child = nullptr;
+        cJSON_ArrayForEach(child, obj) {
+            if (!child->string)
+                continue;
+
+            if (cJSON_IsObject(child)) {
+                if (strcmp(child->string, "start") == 0) {
+                    start = vec3_from_json<voxel::collision::vec3f>(child);
+                } else if (strcmp(child->string, "end") == 0) {
+                    end = vec3_from_json<voxel::collision::vec3f>(child);
+                }
+            } else if (cJSON_IsNumber(child) &&
+                       strcmp(child->string, "radius") == 0) {
+                radius = (float)child->valuedouble;
+            }
+        }
+    }
+    return voxel::collision::Cylinder(start, end, radius);
 }
 
 inline cJSON* to_json(const voxel::collision::Capsule& c) {
@@ -618,12 +651,29 @@ inline cJSON* to_json(const voxel::collision::Capsule& c) {
 }
 
 inline voxel::collision::Capsule from_json_capsule(const cJSON* obj) {
-    return voxel::collision::Capsule(
-        vec3_from_json<voxel::collision::vec3f>(
-            cJSON_GetObjectItem(obj, "start")),
-        vec3_from_json<voxel::collision::vec3f>(
-            cJSON_GetObjectItem(obj, "end")),
-        (float)cJSON_GetObjectItem(obj, "radius")->valuedouble);
+    voxel::collision::vec3f start;
+    voxel::collision::vec3f end;
+    float radius = 0.0f;
+
+    if (cJSON_IsObject(obj)) {
+        const cJSON* child = nullptr;
+        cJSON_ArrayForEach(child, obj) {
+            if (!child->string)
+                continue;
+
+            if (cJSON_IsObject(child)) {
+                if (strcmp(child->string, "start") == 0) {
+                    start = vec3_from_json<voxel::collision::vec3f>(child);
+                } else if (strcmp(child->string, "end") == 0) {
+                    end = vec3_from_json<voxel::collision::vec3f>(child);
+                }
+            } else if (cJSON_IsNumber(child) &&
+                       strcmp(child->string, "radius") == 0) {
+                radius = (float)child->valuedouble;
+            }
+        }
+    }
+    return voxel::collision::Capsule(start, end, radius);
 }
 
 inline cJSON* to_json(const voxel::collision::Box& b) {
@@ -634,8 +684,18 @@ inline cJSON* to_json(const voxel::collision::Box& b) {
 
 inline voxel::collision::Box from_json_box(const cJSON* obj) {
     voxel::collision::Box b;
-    b.half_extent = vec3_from_json<voxel::collision::vec3f>(
-        cJSON_GetObjectItem(obj, "half_extent"));
+    if (!cJSON_IsObject(obj))
+        return b;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, obj) {
+        if (!child->string || !cJSON_IsObject(child))
+            continue;
+
+        if (strcmp(child->string, "half_extent") == 0) {
+            b.half_extent = vec3_from_json<voxel::collision::vec3f>(child);
+        }
+    }
     return b;
 }
 
@@ -667,8 +727,26 @@ inline cJSON* to_json(const voxel::collision::Geometry& g) {
 }
 
 inline voxel::collision::Geometry from_json_geometry(const cJSON* obj) {
-    const char* type = cJSON_GetObjectItem(obj, "type")->valuestring;
-    const cJSON* data = cJSON_GetObjectItem(obj, "data");
+    const char* type = nullptr;
+    const cJSON* data = nullptr;
+
+    if (cJSON_IsObject(obj)) {
+        const cJSON* child = nullptr;
+        cJSON_ArrayForEach(child, obj) {
+            if (!child->string)
+                continue;
+
+            if (cJSON_IsString(child) && strcmp(child->string, "type") == 0) {
+                type = child->valuestring;
+            } else if (cJSON_IsObject(child) &&
+                       strcmp(child->string, "data") == 0) {
+                data = child;
+            }
+        }
+    }
+
+    if (!type || !data)
+        return voxel::collision::Sphere{};
 
     if (strcmp(type, "sphere") == 0) {
         return from_json_sphere(data);
@@ -694,10 +772,22 @@ inline cJSON* to_json(const voxel::collision::GeometryInstance& gi) {
 
 inline voxel::collision::GeometryInstance from_json_geometry_instance(
     const cJSON* obj) {
-    voxel::collision::Geometry geometry =
-        from_json_geometry(cJSON_GetObjectItem(obj, "geometry"));
-    voxel::collision::Transform transform =
-        from_json_transform(cJSON_GetObjectItem(obj, "transform"));
+    voxel::collision::Geometry geometry;
+    voxel::collision::Transform transform;
+
+    if (cJSON_IsObject(obj)) {
+        const cJSON* child = nullptr;
+        cJSON_ArrayForEach(child, obj) {
+            if (!child->string || !cJSON_IsObject(child))
+                continue;
+
+            if (strcmp(child->string, "geometry") == 0) {
+                geometry = from_json_geometry(child);
+            } else if (strcmp(child->string, "transform") == 0) {
+                transform = from_json_transform(child);
+            }
+        }
+    }
 
     return std::visit(
         [&](auto&& shape) {
@@ -723,14 +813,28 @@ inline cJSON* to_json(const voxel::collision::CollisionGroup& group) {
 inline voxel::collision::CollisionGroup from_json_collision_group(
     const cJSON* obj) {
     voxel::collision::CollisionGroup group;
-    group.setTransform(
-        from_json_transform(cJSON_GetObjectItem(obj, "transform")));
 
-    const cJSON* geometries = cJSON_GetObjectItem(obj, "geometries");
-    const int count = cJSON_GetArraySize(geometries);
-    for (int i = 0; i < count; ++i) {
-        group.geometries().push_back(
-            from_json_geometry_instance(cJSON_GetArrayItem(geometries, i)));
+    if (!cJSON_IsObject(obj))
+        return group;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, obj) {
+        if (!child->string)
+            continue;
+
+        if (cJSON_IsObject(child) && strcmp(child->string, "transform") == 0) {
+            group.setTransform(from_json_transform(child));
+        } else if (cJSON_IsArray(child) &&
+                   strcmp(child->string, "geometries") == 0) {
+            const int count = cJSON_GetArraySize(child);
+            for (int i = 0; i < count; ++i) {
+                const cJSON* gi = cJSON_GetArrayItem(child, i);
+                if (gi && cJSON_IsObject(gi)) {
+                    group.geometries().push_back(
+                        from_json_geometry_instance(gi));
+                }
+            }
+        }
     }
 
     return group;

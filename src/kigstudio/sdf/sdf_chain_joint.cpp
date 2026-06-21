@@ -693,40 +693,39 @@ void JointPositiveSDF::get(const Vec3f& begin,
 
 namespace {
 
-cJSON* vec3_to_json(const Vec3f& v) {
-    cJSON* obj = cJSON_CreateObject();
-    cJSON_AddNumberToObject(obj, "x", v.x);
-    cJSON_AddNumberToObject(obj, "y", v.y);
-    cJSON_AddNumberToObject(obj, "z", v.z);
-    return obj;
-}
-
-Vec3f json_to_vec3(const cJSON* json) {
-    return Vec3f(
-        static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "x"))),
-        static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "y"))),
-        static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "z"))));
-}
-
 cJSON* frame_to_json(const Frame& f) {
     cJSON* obj = cJSON_CreateObject();
-    cJSON_AddItemToObject(obj, "origin", vec3_to_json(f.origin));
-    cJSON_AddItemToObject(obj, "x_axis", vec3_to_json(f.x_axis));
-    cJSON_AddItemToObject(obj, "y_axis", vec3_to_json(f.y_axis));
-    cJSON_AddItemToObject(obj, "z_axis", vec3_to_json(f.z_axis));
+    cJSON_AddItemToObject(obj, "origin",
+                          sinriv::kigstudio::to_json(f.origin));
+    cJSON_AddItemToObject(obj, "x_axis",
+                          sinriv::kigstudio::to_json(f.x_axis));
+    cJSON_AddItemToObject(obj, "y_axis",
+                          sinriv::kigstudio::to_json(f.y_axis));
+    cJSON_AddItemToObject(obj, "z_axis",
+                          sinriv::kigstudio::to_json(f.z_axis));
     return obj;
 }
 
 Frame json_to_frame(const cJSON* json) {
     Frame f;
-    const cJSON* origin = cJSON_GetObjectItem(json, "origin");
-    if (origin) f.origin = json_to_vec3(origin);
-    const cJSON* x_axis = cJSON_GetObjectItem(json, "x_axis");
-    if (x_axis) f.x_axis = json_to_vec3(x_axis);
-    const cJSON* y_axis = cJSON_GetObjectItem(json, "y_axis");
-    if (y_axis) f.y_axis = json_to_vec3(y_axis);
-    const cJSON* z_axis = cJSON_GetObjectItem(json, "z_axis");
-    if (z_axis) f.z_axis = json_to_vec3(z_axis);
+    if (!json)
+        return f;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string || !cJSON_IsObject(child))
+            continue;
+
+        if (strcmp(child->string, "origin") == 0) {
+            f.origin = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+        } else if (strcmp(child->string, "x_axis") == 0) {
+            f.x_axis = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+        } else if (strcmp(child->string, "y_axis") == 0) {
+            f.y_axis = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+        } else if (strcmp(child->string, "z_axis") == 0) {
+            f.z_axis = sinriv::kigstudio::vec3_from_json<Vec3f>(child);
+        }
+    }
     return f;
 }
 
@@ -765,22 +764,51 @@ cJSON* JointNegativeSDF::toJSON() const {
 }
 
 void JointNegativeSDF::fromJSON(const cJSON* json) {
-    const cJSON* frame_json = cJSON_GetObjectItem(json, "frame");
-    if (frame_json) frame = json_to_frame(frame_json);
-    socket_cone_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_cone_offset")));
-    socket_cone_angle = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_cone_angle")));
-    socket_cone_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_cone_radius")));
-    female_gap = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "female_gap")));
-    male_cylinder_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_offset")));
-    male_cylinder_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_radius")));
-    male_cylinder_half_height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_half_height")));
-    head_cone_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_cone_offset")));
-    head_cone_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_cone_radius")));
-    slot_extra = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "slot_extra")));
-    socket_fillet_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_fillet_radius")));
-    socket_fillet_height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_fillet_height")));
-    socket_fillet_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_fillet_offset")));
-    head_fillet_height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_fillet_height")));
+    if (!json)
+        return;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string)
+            continue;
+
+        if (cJSON_IsObject(child)) {
+            if (strcmp(child->string, "frame") == 0) {
+                frame = json_to_frame(child);
+            }
+        } else if (cJSON_IsNumber(child)) {
+            const double value = cJSON_GetNumberValue(child);
+            if (strcmp(child->string, "socket_cone_offset") == 0) {
+                socket_cone_offset = static_cast<float>(value);
+            } else if (strcmp(child->string, "socket_cone_angle") == 0) {
+                socket_cone_angle = static_cast<float>(value);
+            } else if (strcmp(child->string, "socket_cone_radius") == 0) {
+                socket_cone_radius = static_cast<float>(value);
+            } else if (strcmp(child->string, "female_gap") == 0) {
+                female_gap = static_cast<float>(value);
+            } else if (strcmp(child->string, "male_cylinder_offset") == 0) {
+                male_cylinder_offset = static_cast<float>(value);
+            } else if (strcmp(child->string, "male_cylinder_radius") == 0) {
+                male_cylinder_radius = static_cast<float>(value);
+            } else if (strcmp(child->string, "male_cylinder_half_height") == 0) {
+                male_cylinder_half_height = static_cast<float>(value);
+            } else if (strcmp(child->string, "head_cone_offset") == 0) {
+                head_cone_offset = static_cast<float>(value);
+            } else if (strcmp(child->string, "head_cone_radius") == 0) {
+                head_cone_radius = static_cast<float>(value);
+            } else if (strcmp(child->string, "slot_extra") == 0) {
+                slot_extra = static_cast<float>(value);
+            } else if (strcmp(child->string, "socket_fillet_radius") == 0) {
+                socket_fillet_radius = static_cast<float>(value);
+            } else if (strcmp(child->string, "socket_fillet_height") == 0) {
+                socket_fillet_height = static_cast<float>(value);
+            } else if (strcmp(child->string, "socket_fillet_offset") == 0) {
+                socket_fillet_offset = static_cast<float>(value);
+            } else if (strcmp(child->string, "head_fillet_height") == 0) {
+                head_fillet_height = static_cast<float>(value);
+            }
+        }
+    }
 }
 
 // ============================================================
@@ -811,17 +839,41 @@ cJSON* JointPositiveSDF::toJSON() const {
 }
 
 void JointPositiveSDF::fromJSON(const cJSON* json) {
-    const cJSON* frame_json = cJSON_GetObjectItem(json, "frame");
-    if (frame_json) frame = json_to_frame(frame_json);
-    socket_support_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_support_offset")));
-    socket_support_angle = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_support_angle")));
-    socket_support_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "socket_support_radius")));
-    head_support_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_support_offset")));
-    head_support_angle = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_support_angle")));
-    head_support_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "head_support_radius")));
-    male_cylinder_offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_offset")));
-    male_cylinder_radius = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_radius")));
-    male_cylinder_half_height = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "male_cylinder_half_height")));
+    if (!json)
+        return;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string)
+            continue;
+
+        if (cJSON_IsObject(child)) {
+            if (strcmp(child->string, "frame") == 0) {
+                frame = json_to_frame(child);
+            }
+        } else if (cJSON_IsNumber(child)) {
+            const double value = cJSON_GetNumberValue(child);
+            if (strcmp(child->string, "socket_support_offset") == 0) {
+                socket_support_offset = static_cast<float>(value);
+            } else if (strcmp(child->string, "socket_support_angle") == 0) {
+                socket_support_angle = static_cast<float>(value);
+            } else if (strcmp(child->string, "socket_support_radius") == 0) {
+                socket_support_radius = static_cast<float>(value);
+            } else if (strcmp(child->string, "head_support_offset") == 0) {
+                head_support_offset = static_cast<float>(value);
+            } else if (strcmp(child->string, "head_support_angle") == 0) {
+                head_support_angle = static_cast<float>(value);
+            } else if (strcmp(child->string, "head_support_radius") == 0) {
+                head_support_radius = static_cast<float>(value);
+            } else if (strcmp(child->string, "male_cylinder_offset") == 0) {
+                male_cylinder_offset = static_cast<float>(value);
+            } else if (strcmp(child->string, "male_cylinder_radius") == 0) {
+                male_cylinder_radius = static_cast<float>(value);
+            } else if (strcmp(child->string, "male_cylinder_half_height") == 0) {
+                male_cylinder_half_height = static_cast<float>(value);
+            }
+        }
+    }
 }
 
 // ============================================================

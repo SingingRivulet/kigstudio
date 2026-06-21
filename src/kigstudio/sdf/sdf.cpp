@@ -25,6 +25,7 @@ void sdf_register_type(
 std::shared_ptr<SDFBase> sdf_from_json(const cJSON* json) {
     if (!json) return nullptr;
     const cJSON* type_item = cJSON_GetObjectItem(json, "type");
+    if (!type_item) return nullptr;
     const char* type = cJSON_GetStringValue(type_item);
     if (!type) return nullptr;
     auto it = get_registry().find(type);
@@ -152,16 +153,33 @@ cJSON* SDF_bool::toJSON() const {
 }
 
 void SDF_bool::fromJSON(const cJSON* json) {
-    const char* op_name = cJSON_GetStringValue(cJSON_GetObjectItem(json, "op"));
-    if (op_name) {
-        if (strcmp(op_name, "Union") == 0) op = SDFBoolOp::Union;
-        else if (strcmp(op_name, "Intersection") == 0) op = SDFBoolOp::Intersection;
-        else if (strcmp(op_name, "Subtraction") == 0) op = SDFBoolOp::Subtraction;
+    if (!json)
+        return;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string)
+            continue;
+
+        if (cJSON_IsString(child)) {
+            if (strcmp(child->string, "op") == 0) {
+                const char* op_name = child->valuestring;
+                if (strcmp(op_name, "Union") == 0) {
+                    op = SDFBoolOp::Union;
+                } else if (strcmp(op_name, "Intersection") == 0) {
+                    op = SDFBoolOp::Intersection;
+                } else if (strcmp(op_name, "Subtraction") == 0) {
+                    op = SDFBoolOp::Subtraction;
+                }
+            }
+        } else if (cJSON_IsObject(child)) {
+            if (strcmp(child->string, "left") == 0) {
+                left = sdf_from_json(child);
+            } else if (strcmp(child->string, "right") == 0) {
+                right = sdf_from_json(child);
+            }
+        }
     }
-    const cJSON* lj = cJSON_GetObjectItem(json, "left");
-    if (lj) left = sdf_from_json(lj);
-    const cJSON* rj = cJSON_GetObjectItem(json, "right");
-    if (rj) right = sdf_from_json(rj);
 }
 
 // ============================================================
@@ -290,24 +308,29 @@ void SDF_Translate::get(const Vec3f& begin,
 cJSON* SDF_Translate::toJSON() const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "type", "translate");
-    cJSON* off = cJSON_CreateObject();
-    cJSON_AddNumberToObject(off, "x", offset.x);
-    cJSON_AddNumberToObject(off, "y", offset.y);
-    cJSON_AddNumberToObject(off, "z", offset.z);
-    cJSON_AddItemToObject(obj, "offset", off);
+    cJSON_AddItemToObject(obj, "offset",
+                          sinriv::kigstudio::to_json(offset));
     if (child) cJSON_AddItemToObject(obj, "child", child->toJSON());
     return obj;
 }
 
 void SDF_Translate::fromJSON(const cJSON* json) {
-    const cJSON* off = cJSON_GetObjectItem(json, "offset");
-    if (off) {
-        offset.x = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(off, "x")));
-        offset.y = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(off, "y")));
-        offset.z = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(off, "z")));
+    if (!json)
+        return;
+
+    const cJSON* c = nullptr;
+    cJSON_ArrayForEach(c, json) {
+        if (!c->string)
+            continue;
+
+        if (cJSON_IsObject(c)) {
+            if (strcmp(c->string, "offset") == 0) {
+                offset = sinriv::kigstudio::vec3_from_json<Vec3f>(c);
+            } else if (strcmp(c->string, "child") == 0) {
+                this->child = sdf_from_json(c);
+            }
+        }
     }
-    const cJSON* cj = cJSON_GetObjectItem(json, "child");
-    if (cj) child = sdf_from_json(cj);
 }
 
 // ============================================================
@@ -345,7 +368,9 @@ cJSON* SDF_Offset::toJSON() const {
 }
 
 void SDF_Offset::fromJSON(const cJSON* json) {
-    offset = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "offset")));
+    auto offset_obj = cJSON_GetObjectItem(json, "offset");
+    if (!offset_obj) return;
+    offset = static_cast<float>(cJSON_GetNumberValue(offset_obj));
     const cJSON* cj = cJSON_GetObjectItem(json, "child");
     if (cj) child = sdf_from_json(cj);
 }
@@ -393,10 +418,25 @@ cJSON* SDF_Plane::toJSON() const {
 }
 
 void SDF_Plane::fromJSON(const cJSON* json) {
-    A = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "A")));
-    B = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "B")));
-    C = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "C")));
-    D = static_cast<float>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "D")));
+    if (!json)
+        return;
+
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string || !cJSON_IsNumber(child))
+            continue;
+
+        const double value = cJSON_GetNumberValue(child);
+        if (strcmp(child->string, "A") == 0) {
+            A = static_cast<float>(value);
+        } else if (strcmp(child->string, "B") == 0) {
+            B = static_cast<float>(value);
+        } else if (strcmp(child->string, "C") == 0) {
+            C = static_cast<float>(value);
+        } else if (strcmp(child->string, "D") == 0) {
+            D = static_cast<float>(value);
+        }
+    }
 }
 
 // ============================================================
@@ -458,17 +498,10 @@ cJSON* SDFGrid::toJSON() const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "type", "grid");
 
-    cJSON* minb = cJSON_CreateObject();
-    cJSON_AddNumberToObject(minb, "x", min_bound.x);
-    cJSON_AddNumberToObject(minb, "y", min_bound.y);
-    cJSON_AddNumberToObject(minb, "z", min_bound.z);
-    cJSON_AddItemToObject(obj, "min_bound", minb);
-
-    cJSON* maxb = cJSON_CreateObject();
-    cJSON_AddNumberToObject(maxb, "x", max_bound.x);
-    cJSON_AddNumberToObject(maxb, "y", max_bound.y);
-    cJSON_AddNumberToObject(maxb, "z", max_bound.z);
-    cJSON_AddItemToObject(obj, "max_bound", maxb);
+    cJSON_AddItemToObject(obj, "min_bound",
+                          sinriv::kigstudio::to_json(min_bound));
+    cJSON_AddItemToObject(obj, "max_bound",
+                          sinriv::kigstudio::to_json(max_bound));
 
     cJSON_AddNumberToObject(obj, "sx", sx);
     cJSON_AddNumberToObject(obj, "sy", sy);
@@ -483,28 +516,38 @@ cJSON* SDFGrid::toJSON() const {
 }
 
 void SDFGrid::fromJSON(const cJSON* json) {
-    const cJSON* minb = cJSON_GetObjectItem(json, "min_bound");
-    if (minb) {
-        min_bound.x = static_cast<int>(cJSON_GetNumberValue(cJSON_GetObjectItem(minb, "x")));
-        min_bound.y = static_cast<int>(cJSON_GetNumberValue(cJSON_GetObjectItem(minb, "y")));
-        min_bound.z = static_cast<int>(cJSON_GetNumberValue(cJSON_GetObjectItem(minb, "z")));
-    }
-    const cJSON* maxb = cJSON_GetObjectItem(json, "max_bound");
-    if (maxb) {
-        max_bound.x = static_cast<int>(cJSON_GetNumberValue(cJSON_GetObjectItem(maxb, "x")));
-        max_bound.y = static_cast<int>(cJSON_GetNumberValue(cJSON_GetObjectItem(maxb, "y")));
-        max_bound.z = static_cast<int>(cJSON_GetNumberValue(cJSON_GetObjectItem(maxb, "z")));
-    }
-    sx = static_cast<int>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "sx")));
-    sy = static_cast<int>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "sy")));
-    sz = static_cast<int>(cJSON_GetNumberValue(cJSON_GetObjectItem(json, "sz")));
+    if (!json)
+        return;
 
-    const cJSON* data = cJSON_GetObjectItem(json, "sdf");
-    if (data && cJSON_IsArray(data)) {
-        int count = cJSON_GetArraySize(data);
-        sdf.resize(count);
-        for (int i = 0; i < count; ++i) {
-            sdf[i] = static_cast<float>(cJSON_GetNumberValue(cJSON_GetArrayItem(data, i)));
+    const cJSON* child = nullptr;
+    cJSON_ArrayForEach(child, json) {
+        if (!child->string)
+            continue;
+
+        const char* key = child->string;
+
+        if (cJSON_IsObject(child)) {
+            if (strcmp(key, "min_bound") == 0) {
+                min_bound = sinriv::kigstudio::vec3_from_json<Vec3i>(child);
+            } else if (strcmp(key, "max_bound") == 0) {
+                max_bound = sinriv::kigstudio::vec3_from_json<Vec3i>(child);
+            }
+        } else if (cJSON_IsNumber(child)) {
+            if (strcmp(key, "sx") == 0) {
+                sx = child->valueint;
+            } else if (strcmp(key, "sy") == 0) {
+                sy = child->valueint;
+            } else if (strcmp(key, "sz") == 0) {
+                sz = child->valueint;
+            }
+        } else if (cJSON_IsArray(child) && strcmp(key, "sdf") == 0) {
+            int count = cJSON_GetArraySize(child);
+            sdf.resize(count);
+            for (int i = 0; i < count; ++i) {
+                const cJSON* v = cJSON_GetArrayItem(child, i);
+                if (v && cJSON_IsNumber(v))
+                    sdf[i] = static_cast<float>(cJSON_GetNumberValue(v));
+            }
         }
     }
 }

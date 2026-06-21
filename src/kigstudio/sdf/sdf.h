@@ -105,7 +105,7 @@ struct SDF_Group : public SDFBase {
 };
 
 struct SDF_Translate : public SDFBase {
-    Vec3f offset;
+    Vec3f offset {0.f, 0.f, 0.f};
     std::shared_ptr<SDFBase> child;
 
     SDF_Translate(const Vec3f& offset, std::shared_ptr<SDFBase> child)
@@ -123,7 +123,7 @@ struct SDF_Translate : public SDFBase {
 };
 
 struct SDF_Offset : public SDFBase {
-    float offset;
+    float offset=0;
     std::shared_ptr<SDFBase> child;
 
     SDF_Offset(float offset, std::shared_ptr<SDFBase> child)
