@@ -37,11 +37,11 @@ T vec3_from_json(const cJSON* json) {
     cJSON* y_item = cJSON_GetObjectItemCaseSensitive(json, "y");
     cJSON* z_item = cJSON_GetObjectItemCaseSensitive(json, "z");
 
-    if (x_item)
+    if (x_item && cJSON_IsNumber(x_item))
         result.x = static_cast<decltype(result.x)>(x_item->valuedouble);
-    if (y_item)
+    if (y_item && cJSON_IsNumber(y_item))
         result.y = static_cast<decltype(result.y)>(y_item->valuedouble);
-    if (z_item)
+    if (z_item && cJSON_IsNumber(z_item))
         result.z = static_cast<decltype(result.z)>(z_item->valuedouble);
 
     return result;

@@ -392,6 +392,10 @@ void init_locale_strings() {
                       {{"en", "extract skeleton"}, {"zh", "提取骨架"}});
     add_locale_string("action.undo",
                       {{"en", "Undo (Ctrl+Z)"}, {"zh", "撤销 (Ctrl+Z)"}});
+    add_locale_string("action.copy",
+                      {{"en", "Copy (Ctrl+C)"}, {"zh", "复制 (Ctrl+C)"}});
+    add_locale_string("action.paste",
+                      {{"en", "Paste (Ctrl+V)"}, {"zh", "粘贴 (Ctrl+V)"}});
     add_locale_string("action.redo",
                       {{"en", "Redo (Ctrl+Y)"}, {"zh", "重做 (Ctrl+Y)"}});
     add_locale_string("action.open_file_dialog",

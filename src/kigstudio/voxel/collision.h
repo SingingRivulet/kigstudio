@@ -6,9 +6,9 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include "kigstudio/sdf/sdf_shape.h"
 #include "kigstudio/utils/mat.h"
 #include "kigstudio/utils/vec3.h"
-#include "kigstudio/sdf/sdf_shape.h"
 
 namespace sinriv::kigstudio {
 namespace voxel::collision {
@@ -484,8 +484,8 @@ inline bool pointIntersectsWorld(const vec3f& point,
     return group.containsWorldPoint(point);
 }
 
-inline std::shared_ptr<sinriv::kigstudio::sdf::SDFBase>
-CollisionGroup::to_sdf() const {
+inline std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> CollisionGroup::to_sdf()
+    const {
     using namespace sinriv::kigstudio::sdf;
     std::vector<std::shared_ptr<SDFBase>> children;
     children.reserve(geometries_.size());
@@ -532,10 +532,26 @@ inline cJSON* to_json(const voxel::collision::Quaternion& q) {
 }
 
 inline voxel::collision::Quaternion from_json_quat(const cJSON* obj) {
-    return {(float)cJSON_GetObjectItem(obj, "x")->valuedouble,
-            (float)cJSON_GetObjectItem(obj, "y")->valuedouble,
-            (float)cJSON_GetObjectItem(obj, "z")->valuedouble,
-            (float)cJSON_GetObjectItem(obj, "w")->valuedouble};
+    float w = 0, x = 0, y = 0, z = 0;
+    if (cJSON_IsObject(obj)) {
+        auto obj_w = cJSON_GetObjectItem(obj, "w");
+        auto obj_x = cJSON_GetObjectItem(obj, "x");
+        auto obj_y = cJSON_GetObjectItem(obj, "y");
+        auto obj_z = cJSON_GetObjectItem(obj, "z");
+        if (obj_w && cJSON_IsNumber(obj_w)) {
+            w = (float)obj_w->valuedouble;
+        }
+        if (obj_x && cJSON_IsNumber(obj_x)) {
+            x = (float)obj_x->valuedouble;
+        }
+        if (obj_y && cJSON_IsNumber(obj_y)) {
+            y = (float)obj_y->valuedouble;
+        }
+        if (obj_z && cJSON_IsNumber(obj_z)) {
+            z = (float)obj_z->valuedouble;
+        }
+    }
+    return {x, y, z, w};
 }
 inline cJSON* to_json(const voxel::collision::Transform& t) {
     cJSON* obj = cJSON_CreateObject();
@@ -547,12 +563,18 @@ inline cJSON* to_json(const voxel::collision::Transform& t) {
 
 inline voxel::collision::Transform from_json_transform(const cJSON* obj) {
     voxel::collision::Transform t;
-    t.setPosition(vec3_from_json<voxel::collision::vec3f>(
-        cJSON_GetObjectItem(obj, "position")));
-    t.setRotationQuaternion(
-        from_json_quat(cJSON_GetObjectItem(obj, "rotation")));
-    t.setScale(vec3_from_json<voxel::collision::vec3f>(
-        cJSON_GetObjectItem(obj, "scale")));
+    auto pos_obj = cJSON_GetObjectItem(obj, "position");
+    auto pos_rot = cJSON_GetObjectItem(obj, "rotation");
+    auto pos_sca = cJSON_GetObjectItem(obj, "scale");
+    if (pos_obj && cJSON_IsObject(pos_obj)) {
+        t.setPosition(vec3_from_json<voxel::collision::vec3f>(pos_obj));
+    }
+    if (pos_rot && cJSON_IsObject(pos_obj)) {
+        t.setRotationQuaternion(from_json_quat(pos_rot));
+    }
+    if (pos_sca && cJSON_IsObject(pos_obj)) {
+        t.setScale(vec3_from_json<voxel::collision::vec3f>(pos_sca));
+    }
     return t;
 }
 inline cJSON* to_json(const voxel::collision::Sphere& s) {

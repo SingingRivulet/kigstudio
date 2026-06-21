@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <queue>
 #include <set>
 #include <string>
@@ -574,6 +575,8 @@ class RenderVoxelList {
     int last_object_editor_tab = -1;
     void render_object_editor();
     void render_object_editor_toolbar(RenderVoxelItem& item);
+    void copy_node_config(const RenderVoxelItem& item);
+    void paste_node_config(RenderVoxelItem& item);
     void render_file_status_tab(RenderVoxelItem& item);
     void render_object_editor_collision_tab_content(RenderVoxelItem& item);
     void render_object_editor_chain_mode(RenderVoxelItem& item);
@@ -630,6 +633,12 @@ class RenderVoxelList {
     CollisionEditorSnapshot capture_snapshot(const RenderVoxelItem& item) const;
     void apply_snapshot(RenderVoxelItem& item,
                         const CollisionEditorSnapshot& snapshot);
+
+    // 将碰撞编辑器配置序列化为 JSON（用于剪贴板复制/粘贴）
+    cJSON* snapshot_to_json(const CollisionEditorSnapshot& snapshot) const;
+    std::optional<CollisionEditorSnapshot> snapshot_from_json(
+        const cJSON* obj) const;
+
     void begin_edit(int item_id);
     void end_edit(int item_id, const std::string& desc = "Edit");
     void push_undo_now(

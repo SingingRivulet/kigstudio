@@ -1,5 +1,6 @@
 #include <dear-imgui/imgui_internal.h>
 #include <iconfontheaders/icons_font_awesome.h>
+#include <SDL.h>
 #include <cstring>
 #include <vector>
 #include <iconfontheaders/icons_kenney.h>
@@ -151,6 +152,20 @@ void RenderVoxelList::render_object_editor() {
             ImGui::TextUnformatted(get_locale_cstr("label.no_active_item"));
         } else {
             RenderVoxelItem& item = *item_it->second;
+
+            // 快捷键：Ctrl+C 复制，Ctrl+V 粘贴
+            // 只在 Object Editor 有焦点且没有文本输入框捕获键盘时触发
+            if (ImGui::IsWindowFocused(
+                    ImGuiFocusedFlags_RootAndChildWindows) &&
+                !ImGui::GetIO().WantTextInput) {
+                if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_C)) {
+                    copy_node_config(item);
+                } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl |
+                                                    ImGuiKey_V)) {
+                    paste_node_config(item);
+                }
+            }
+
             bool is_updating = item.write_count != 0;
             if (is_updating) {
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "%s",
@@ -693,6 +708,42 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
     }
 }
 
+void RenderVoxelList::copy_node_config(const RenderVoxelItem& item) {
+    auto snapshot = capture_snapshot(item);
+    cJSON* config_json = snapshot_to_json(snapshot);
+    cJSON* wrapper = cJSON_CreateObject();
+    cJSON_AddItemToObject(wrapper, "kigstudio_node_config", config_json);
+    char* json_str = cJSON_Print(wrapper);
+    if (json_str) {
+        SDL_SetClipboardText(json_str);
+        cJSON_free(json_str);
+    }
+    cJSON_Delete(wrapper);
+}
+
+void RenderVoxelList::paste_node_config(RenderVoxelItem& item) {
+    const char* clipboard = SDL_GetClipboardText();
+    if (clipboard && clipboard[0] != '\0') {
+        cJSON* wrapper = cJSON_Parse(clipboard);
+        if (wrapper) {
+            cJSON* config_json =
+                cJSON_GetObjectItem(wrapper, "kigstudio_node_config");
+            if (config_json) {
+                auto snapshot = snapshot_from_json(config_json);
+                if (snapshot.has_value()) {
+                    push_undo_now(item.id, std::nullopt, "Paste config");
+                    apply_snapshot(item, snapshot.value());
+                    item.dirty = true;
+                }
+            }
+            cJSON_Delete(wrapper);
+        }
+    }
+    if (clipboard) {
+        SDL_free(const_cast<char*>(clipboard));
+    }
+}
+
 void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
     if (ImGui::Button(get_locale_cstr("action.delete"))) {
         pending_delete_item_id = item.id;
@@ -836,6 +887,22 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
     }
     if (redo_disabled)
         ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button(get_locale_cstr("action.copy"))) {
+        copy_node_config(item);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Copy collision edit config to clipboard as JSON\n"
+                          "Shortcut: Ctrl+C");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(get_locale_cstr("action.paste"))) {
+        paste_node_config(item);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Paste collision edit config from clipboard JSON\n"
+                          "Shortcut: Ctrl+V");
+    }
     ImGui::Separator();
 
     ImGui::Checkbox(get_locale_cstr("label.auto_segment_update"),

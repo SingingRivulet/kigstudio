@@ -1,4 +1,5 @@
 #include <memory>
+#include <optional>
 #include "render_voxel_list.h"
 namespace sinriv::ui::render {
 
@@ -527,6 +528,455 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
         }
     }
     return item;
+}
+
+cJSON* RenderVoxelList::snapshot_to_json(
+    const CollisionEditorSnapshot& snapshot) const {
+    cJSON* obj = cJSON_CreateObject();
+
+    const char* mode_str;
+    switch (static_cast<RenderVoxelItem::SegmentMode>(snapshot.segment_mode)) {
+        case RenderVoxelItem::COLLISION:
+            mode_str = "collision";
+            break;
+        case RenderVoxelItem::PLANE:
+            mode_str = "plane";
+            break;
+        case RenderVoxelItem::CONCAVE_CONE:
+            mode_str = "concave_cone";
+            break;
+        case RenderVoxelItem::SPLIT_DISCONNECTED:
+            mode_str = "split_disconnected";
+            break;
+        case RenderVoxelItem::NEIGHBOR:
+            mode_str = "neighbor";
+            break;
+        case RenderVoxelItem::FILL_INTERIOR:
+            mode_str = "fill_interior";
+            break;
+        case RenderVoxelItem::CHAIN:
+            mode_str = "chain";
+            break;
+        case RenderVoxelItem::SDF_NODE_SPLIT:
+            mode_str = "sdf_node_split";
+            break;
+        default:
+            mode_str = "collision";
+            break;
+    }
+    cJSON_AddStringToObject(obj, "segment_mode", mode_str);
+
+    // 公共源数据配置（各模式通用）
+    cJSON_AddStringToObject(obj, "stl_path", snapshot.stl_path.c_str());
+    cJSON_AddNumberToObject(obj, "stl_load_mode", snapshot.stl_load_mode);
+    cJSON_AddBoolToObject(obj, "load_as_sdf", snapshot.load_as_sdf);
+    cJSON_AddBoolToObject(obj, "use_precise_voxelization",
+                          snapshot.use_precise_voxelization);
+    cJSON_AddBoolToObject(obj, "mesh_only", snapshot.mesh_only);
+    cJSON_AddNumberToObject(obj, "source_type", snapshot.source_type);
+    cJSON_AddNumberToObject(obj, "source_node_id", snapshot.source_node_id);
+    cJSON_AddNumberToObject(obj, "node_source_data_type",
+                            snapshot.node_source_data_type);
+    cJSON_AddNumberToObject(obj, "node_source_sdf_subdivisions",
+                            snapshot.node_source_sdf_subdivisions);
+    cJSON_AddBoolToObject(obj, "node_source_sdf_simplify",
+                          snapshot.node_source_sdf_simplify);
+    cJSON_AddNumberToObject(obj, "node_source_sdf_simplify_ratio",
+                            snapshot.node_source_sdf_simplify_ratio);
+    cJSON_AddItemToObject(
+        obj, "silhouette_center",
+        sinriv::kigstudio::to_json(snapshot.silhouette_center));
+    cJSON_AddBoolToObject(obj, "show_silhouette_center",
+                          snapshot.show_silhouette_center);
+
+    // 仅输出当前 segment_mode 相关的编辑字段
+    const auto mode =
+        static_cast<RenderVoxelItem::SegmentMode>(snapshot.segment_mode);
+    if (mode == RenderVoxelItem::COLLISION) {
+        cJSON_AddItemToObject(
+            obj, "collision_group",
+            sinriv::kigstudio::to_json(snapshot.collision_group));
+    } else if (mode == RenderVoxelItem::PLANE) {
+        cJSON_AddItemToObject(obj, "plane",
+                              sinriv::kigstudio::to_json(snapshot.plane));
+    } else if (mode == RenderVoxelItem::CONCAVE_CONE) {
+        cJSON_AddItemToObject(
+            obj, "concave_cone",
+            sinriv::kigstudio::voxel::concave::to_json(snapshot.concave_cone));
+        cJSON* expanded = cJSON_CreateArray();
+        for (int v : snapshot.concave_cone_expanded_vertices) {
+            cJSON_AddItemToArray(expanded, cJSON_CreateNumber(v));
+        }
+        cJSON_AddItemToObject(obj, "concave_cone_expanded_vertices", expanded);
+    } else if (mode == RenderVoxelItem::SDF_NODE_SPLIT) {
+        cJSON_AddNumberToObject(obj, "sdf_split_target_id",
+                                snapshot.sdf_split_target_id);
+        cJSON_AddItemToObject(
+            obj, "sdf_split_translation",
+            sinriv::kigstudio::to_json(snapshot.sdf_split_translation));
+        cJSON_AddItemToObject(
+            obj, "sdf_split_rotation",
+            sinriv::kigstudio::to_json(snapshot.sdf_split_rotation));
+        cJSON_AddItemToObject(
+            obj, "sdf_split_scale",
+            sinriv::kigstudio::to_json(snapshot.sdf_split_scale));
+    } else if (mode == RenderVoxelItem::CHAIN) {
+        cJSON_AddNumberToObject(obj, "chain_min_radius",
+                                snapshot.chain_min_radius);
+        cJSON_AddBoolToObject(obj, "use_cgal_skeleton",
+                              snapshot.use_cgal_skeleton);
+
+        cJSON* skeleton_points = cJSON_CreateArray();
+        for (const auto& sp : snapshot.picked_skeleton_points) {
+            cJSON* sp_obj = cJSON_CreateObject();
+            cJSON_AddItemToObject(
+                sp_obj, "position",
+                sinriv::kigstudio::to_json(sp.position));
+            cJSON_AddNumberToObject(sp_obj, "order", sp.order);
+            cJSON_AddBoolToObject(sp_obj, "use_custom_direction",
+                                  sp.use_custom_direction);
+            cJSON_AddItemToObject(
+                sp_obj, "custom_direction_end",
+                sinriv::kigstudio::to_json(sp.custom_direction_end));
+            cJSON_AddNumberToObject(sp_obj, "socket_cone_offset",
+                                    sp.socket_cone_offset);
+            cJSON_AddNumberToObject(sp_obj, "socket_cone_angle",
+                                    sp.socket_cone_angle);
+            cJSON_AddNumberToObject(sp_obj, "socket_cone_radius",
+                                    sp.socket_cone_radius);
+            cJSON_AddNumberToObject(sp_obj, "head_cone_offset",
+                                    sp.head_cone_offset);
+            cJSON_AddNumberToObject(sp_obj, "head_cone_radius",
+                                    sp.head_cone_radius);
+            cJSON_AddNumberToObject(sp_obj, "socket_support_offset",
+                                    sp.socket_support_offset);
+            cJSON_AddNumberToObject(sp_obj, "socket_support_radius",
+                                    sp.socket_support_radius);
+            cJSON_AddNumberToObject(sp_obj, "head_support_offset",
+                                    sp.head_support_offset);
+            cJSON_AddNumberToObject(sp_obj, "head_support_radius",
+                                    sp.head_support_radius);
+            cJSON_AddNumberToObject(sp_obj, "male_cylinder_offset",
+                                    sp.male_cylinder_offset);
+            cJSON_AddNumberToObject(sp_obj, "male_cylinder_radius",
+                                    sp.male_cylinder_radius);
+            cJSON_AddNumberToObject(sp_obj, "female_gap", sp.female_gap);
+            cJSON_AddNumberToObject(sp_obj, "slot_extra", sp.slot_extra);
+            cJSON_AddNumberToObject(sp_obj, "socket_fillet_radius",
+                                    sp.socket_fillet_radius);
+            cJSON_AddNumberToObject(sp_obj, "socket_fillet_height",
+                                    sp.socket_fillet_height);
+            cJSON_AddNumberToObject(sp_obj, "socket_fillet_offset",
+                                    sp.socket_fillet_offset);
+            cJSON_AddNumberToObject(sp_obj, "head_fillet_height",
+                                    sp.head_fillet_height);
+            cJSON_AddNumberToObject(sp_obj, "rotation_angle",
+                                    sp.rotation_angle);
+            cJSON_AddItemToArray(skeleton_points, sp_obj);
+        }
+        cJSON_AddItemToObject(obj, "picked_skeleton_points", skeleton_points);
+
+        cJSON* skeleton_lines = cJSON_CreateArray();
+        for (const auto& line : snapshot.skeleton_lines) {
+            cJSON* line_obj = cJSON_CreateObject();
+            cJSON_AddItemToObject(line_obj, "start",
+                                  sinriv::kigstudio::to_json(line.first));
+            cJSON_AddItemToObject(line_obj, "end",
+                                  sinriv::kigstudio::to_json(line.second));
+            cJSON_AddItemToArray(skeleton_lines, line_obj);
+        }
+        cJSON_AddItemToObject(obj, "skeleton_lines", skeleton_lines);
+    }
+
+    return obj;
+}
+
+std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
+    const cJSON* obj) const {
+    if (!obj || !cJSON_IsObject(obj))
+        return std::nullopt;
+
+    CollisionEditorSnapshot snapshot;
+
+    const cJSON* collision_group_json =
+        cJSON_GetObjectItem(obj, "collision_group");
+    if (collision_group_json) {
+        snapshot.collision_group =
+            sinriv::kigstudio::from_json_collision_group(collision_group_json);
+    }
+
+    const cJSON* plane_json = cJSON_GetObjectItem(obj, "plane");
+    if (plane_json) {
+        snapshot.plane = sinriv::kigstudio::from_json_plane(plane_json);
+    }
+
+    const cJSON* concave_cone_json = cJSON_GetObjectItem(obj, "concave_cone");
+    if (concave_cone_json) {
+        snapshot.concave_cone =
+            sinriv::kigstudio::voxel::concave::from_json_cone(
+                concave_cone_json);
+    }
+
+    const cJSON* expanded =
+        cJSON_GetObjectItem(obj, "concave_cone_expanded_vertices");
+    if (expanded) {
+        int expanded_count = cJSON_GetArraySize(expanded);
+        for (int i = 0; i < expanded_count; ++i) {
+            snapshot.concave_cone_expanded_vertices.push_back(
+                cJSON_GetArrayItem(expanded, i)->valueint);
+        }
+    }
+
+    const cJSON* mode_json = cJSON_GetObjectItem(obj, "segment_mode");
+    if (mode_json && mode_json->valuestring) {
+        const char* mode_str = mode_json->valuestring;
+        if (strcmp(mode_str, "collision") == 0) {
+            snapshot.segment_mode = RenderVoxelItem::COLLISION;
+        } else if (strcmp(mode_str, "plane") == 0) {
+            snapshot.segment_mode = RenderVoxelItem::PLANE;
+        } else if (strcmp(mode_str, "concave_cone") == 0) {
+            snapshot.segment_mode = RenderVoxelItem::CONCAVE_CONE;
+        } else if (strcmp(mode_str, "split_disconnected") == 0) {
+            snapshot.segment_mode = RenderVoxelItem::SPLIT_DISCONNECTED;
+        } else if (strcmp(mode_str, "neighbor") == 0) {
+            snapshot.segment_mode = RenderVoxelItem::NEIGHBOR;
+        } else if (strcmp(mode_str, "fill_interior") == 0) {
+            snapshot.segment_mode = RenderVoxelItem::FILL_INTERIOR;
+        } else if (strcmp(mode_str, "chain") == 0) {
+            snapshot.segment_mode = RenderVoxelItem::CHAIN;
+        } else if (strcmp(mode_str, "sdf_node_split") == 0) {
+            snapshot.segment_mode = RenderVoxelItem::SDF_NODE_SPLIT;
+        } else {
+            snapshot.segment_mode = RenderVoxelItem::COLLISION;
+        }
+    } else {
+        snapshot.segment_mode = RenderVoxelItem::COLLISION;
+    }
+
+    const cJSON* sdf_split_target_json =
+        cJSON_GetObjectItem(obj, "sdf_split_target_id");
+    snapshot.sdf_split_target_id =
+        sdf_split_target_json ? sdf_split_target_json->valueint : -1;
+
+    const cJSON* sdf_split_translation_json =
+        cJSON_GetObjectItem(obj, "sdf_split_translation");
+    if (sdf_split_translation_json) {
+        snapshot.sdf_split_translation =
+            sinriv::kigstudio::vec3_from_json<vec3f>(
+                sdf_split_translation_json);
+    }
+    const cJSON* sdf_split_rotation_json =
+        cJSON_GetObjectItem(obj, "sdf_split_rotation");
+    if (sdf_split_rotation_json) {
+        snapshot.sdf_split_rotation =
+            sinriv::kigstudio::vec3_from_json<vec3f>(
+                sdf_split_rotation_json);
+    }
+    const cJSON* sdf_split_scale_json =
+        cJSON_GetObjectItem(obj, "sdf_split_scale");
+    if (sdf_split_scale_json) {
+        snapshot.sdf_split_scale =
+            sinriv::kigstudio::vec3_from_json<vec3f>(sdf_split_scale_json);
+    }
+
+    const cJSON* chain_min_radius_json =
+        cJSON_GetObjectItem(obj, "chain_min_radius");
+    if (chain_min_radius_json)
+        snapshot.chain_min_radius = chain_min_radius_json->valueint;
+    const cJSON* use_cgal_json =
+        cJSON_GetObjectItem(obj, "use_cgal_skeleton");
+    if (use_cgal_json)
+        snapshot.use_cgal_skeleton = cJSON_IsTrue(use_cgal_json);
+
+    const cJSON* skeleton_points =
+        cJSON_GetObjectItem(obj, "picked_skeleton_points");
+    if (skeleton_points) {
+        int sp_count = cJSON_GetArraySize(skeleton_points);
+        for (int i = 0; i < sp_count; ++i) {
+            const cJSON* sp_obj = cJSON_GetArrayItem(skeleton_points, i);
+            SkeletonPointPick sp;
+            sp.position = sinriv::kigstudio::vec3_from_json<
+                sinriv::kigstudio::voxel::vec3f>(
+                cJSON_GetObjectItem(sp_obj, "position"));
+            cJSON* order_json = cJSON_GetObjectItem(sp_obj, "order");
+            if (order_json)
+                sp.order = order_json->valueint;
+            cJSON* use_custom_dir_json =
+                cJSON_GetObjectItem(sp_obj, "use_custom_direction");
+            if (use_custom_dir_json)
+                sp.use_custom_direction = cJSON_IsTrue(use_custom_dir_json);
+            sp.custom_direction_end = sinriv::kigstudio::vec3_from_json<
+                sinriv::kigstudio::voxel::vec3f>(
+                cJSON_GetObjectItem(sp_obj, "custom_direction_end"));
+            cJSON* socket_cone_offset_json =
+                cJSON_GetObjectItem(sp_obj, "socket_cone_offset");
+            if (socket_cone_offset_json)
+                sp.socket_cone_offset = static_cast<float>(
+                    socket_cone_offset_json->valuedouble);
+            cJSON* socket_cone_angle_json =
+                cJSON_GetObjectItem(sp_obj, "socket_cone_angle");
+            if (socket_cone_angle_json)
+                sp.socket_cone_angle = static_cast<float>(
+                    socket_cone_angle_json->valuedouble);
+            cJSON* socket_cone_radius_json =
+                cJSON_GetObjectItem(sp_obj, "socket_cone_radius");
+            if (socket_cone_radius_json)
+                sp.socket_cone_radius = static_cast<float>(
+                    socket_cone_radius_json->valuedouble);
+            cJSON* head_cone_offset_json =
+                cJSON_GetObjectItem(sp_obj, "head_cone_offset");
+            if (head_cone_offset_json)
+                sp.head_cone_offset = static_cast<float>(
+                    head_cone_offset_json->valuedouble);
+            cJSON* head_cone_radius_json =
+                cJSON_GetObjectItem(sp_obj, "head_cone_radius");
+            if (head_cone_radius_json)
+                sp.head_cone_radius = static_cast<float>(
+                    head_cone_radius_json->valuedouble);
+            cJSON* socket_support_offset_json =
+                cJSON_GetObjectItem(sp_obj, "socket_support_offset");
+            if (socket_support_offset_json)
+                sp.socket_support_offset = static_cast<float>(
+                    socket_support_offset_json->valuedouble);
+            cJSON* socket_support_radius_json =
+                cJSON_GetObjectItem(sp_obj, "socket_support_radius");
+            if (socket_support_radius_json)
+                sp.socket_support_radius = static_cast<float>(
+                    socket_support_radius_json->valuedouble);
+            cJSON* head_support_offset_json =
+                cJSON_GetObjectItem(sp_obj, "head_support_offset");
+            if (head_support_offset_json)
+                sp.head_support_offset = static_cast<float>(
+                    head_support_offset_json->valuedouble);
+            cJSON* head_support_radius_json =
+                cJSON_GetObjectItem(sp_obj, "head_support_radius");
+            if (head_support_radius_json)
+                sp.head_support_radius = static_cast<float>(
+                    head_support_radius_json->valuedouble);
+            cJSON* male_cylinder_offset_json =
+                cJSON_GetObjectItem(sp_obj, "male_cylinder_offset");
+            if (male_cylinder_offset_json)
+                sp.male_cylinder_offset = static_cast<float>(
+                    male_cylinder_offset_json->valuedouble);
+            cJSON* male_cylinder_radius_json =
+                cJSON_GetObjectItem(sp_obj, "male_cylinder_radius");
+            if (male_cylinder_radius_json)
+                sp.male_cylinder_radius = static_cast<float>(
+                    male_cylinder_radius_json->valuedouble);
+            cJSON* female_gap_json =
+                cJSON_GetObjectItem(sp_obj, "female_gap");
+            if (female_gap_json)
+                sp.female_gap = static_cast<float>(
+                    female_gap_json->valuedouble);
+            cJSON* slot_extra_json =
+                cJSON_GetObjectItem(sp_obj, "slot_extra");
+            if (slot_extra_json)
+                sp.slot_extra = static_cast<float>(
+                    slot_extra_json->valuedouble);
+            cJSON* socket_fillet_radius_json =
+                cJSON_GetObjectItem(sp_obj, "socket_fillet_radius");
+            if (socket_fillet_radius_json)
+                sp.socket_fillet_radius = static_cast<float>(
+                    socket_fillet_radius_json->valuedouble);
+            cJSON* socket_fillet_height_json =
+                cJSON_GetObjectItem(sp_obj, "socket_fillet_height");
+            if (socket_fillet_height_json)
+                sp.socket_fillet_height = static_cast<float>(
+                    socket_fillet_height_json->valuedouble);
+            cJSON* socket_fillet_offset_json =
+                cJSON_GetObjectItem(sp_obj, "socket_fillet_offset");
+            if (socket_fillet_offset_json)
+                sp.socket_fillet_offset = static_cast<float>(
+                    socket_fillet_offset_json->valuedouble);
+            cJSON* head_fillet_height_json =
+                cJSON_GetObjectItem(sp_obj, "head_fillet_height");
+            if (head_fillet_height_json)
+                sp.head_fillet_height = static_cast<float>(
+                    head_fillet_height_json->valuedouble);
+            cJSON* rotation_angle_json =
+                cJSON_GetObjectItem(sp_obj, "rotation_angle");
+            if (rotation_angle_json)
+                sp.rotation_angle = static_cast<float>(
+                    rotation_angle_json->valuedouble);
+            snapshot.picked_skeleton_points.push_back(sp);
+        }
+    }
+
+    const cJSON* skeleton_lines = cJSON_GetObjectItem(obj, "skeleton_lines");
+    if (skeleton_lines) {
+        int line_count = cJSON_GetArraySize(skeleton_lines);
+        for (int i = 0; i < line_count; ++i) {
+            const cJSON* line_obj = cJSON_GetArrayItem(skeleton_lines, i);
+            sinriv::kigstudio::voxel::vec3f start =
+                sinriv::kigstudio::vec3_from_json<
+                    sinriv::kigstudio::voxel::vec3f>(
+                    cJSON_GetObjectItem(line_obj, "start"));
+            sinriv::kigstudio::voxel::vec3f end =
+                sinriv::kigstudio::vec3_from_json<
+                    sinriv::kigstudio::voxel::vec3f>(
+                    cJSON_GetObjectItem(line_obj, "end"));
+            snapshot.skeleton_lines.emplace_back(start, end);
+        }
+    }
+
+    const cJSON* stl_path_json = cJSON_GetObjectItem(obj, "stl_path");
+    if (stl_path_json && stl_path_json->valuestring)
+        snapshot.stl_path = stl_path_json->valuestring;
+    const cJSON* stl_load_mode_json =
+        cJSON_GetObjectItem(obj, "stl_load_mode");
+    if (stl_load_mode_json)
+        snapshot.stl_load_mode = stl_load_mode_json->valueint;
+    const cJSON* load_as_sdf_json = cJSON_GetObjectItem(obj, "load_as_sdf");
+    if (load_as_sdf_json)
+        snapshot.load_as_sdf = cJSON_IsTrue(load_as_sdf_json);
+    const cJSON* use_precise_voxelization_json =
+        cJSON_GetObjectItem(obj, "use_precise_voxelization");
+    if (use_precise_voxelization_json)
+        snapshot.use_precise_voxelization =
+            cJSON_IsTrue(use_precise_voxelization_json);
+    const cJSON* mesh_only_json = cJSON_GetObjectItem(obj, "mesh_only");
+    if (mesh_only_json)
+        snapshot.mesh_only = cJSON_IsTrue(mesh_only_json);
+    const cJSON* source_type_json = cJSON_GetObjectItem(obj, "source_type");
+    if (source_type_json)
+        snapshot.source_type = source_type_json->valueint;
+    const cJSON* source_node_id_json =
+        cJSON_GetObjectItem(obj, "source_node_id");
+    if (source_node_id_json)
+        snapshot.source_node_id = source_node_id_json->valueint;
+    const cJSON* node_source_data_type_json =
+        cJSON_GetObjectItem(obj, "node_source_data_type");
+    if (node_source_data_type_json)
+        snapshot.node_source_data_type =
+            node_source_data_type_json->valueint;
+    const cJSON* node_source_sdf_subdivisions_json =
+        cJSON_GetObjectItem(obj, "node_source_sdf_subdivisions");
+    if (node_source_sdf_subdivisions_json)
+        snapshot.node_source_sdf_subdivisions =
+            node_source_sdf_subdivisions_json->valueint;
+    const cJSON* node_source_sdf_simplify_json =
+        cJSON_GetObjectItem(obj, "node_source_sdf_simplify");
+    if (node_source_sdf_simplify_json)
+        snapshot.node_source_sdf_simplify =
+            cJSON_IsTrue(node_source_sdf_simplify_json);
+    const cJSON* node_source_sdf_simplify_ratio_json =
+        cJSON_GetObjectItem(obj, "node_source_sdf_simplify_ratio");
+    if (node_source_sdf_simplify_ratio_json)
+        snapshot.node_source_sdf_simplify_ratio = static_cast<float>(
+            node_source_sdf_simplify_ratio_json->valuedouble);
+    const cJSON* silhouette_center_json =
+        cJSON_GetObjectItem(obj, "silhouette_center");
+    if (silhouette_center_json)
+        snapshot.silhouette_center =
+            sinriv::kigstudio::vec3_from_json<sinriv::kigstudio::vec3<float>>(
+                silhouette_center_json);
+    const cJSON* show_silhouette_center_json =
+        cJSON_GetObjectItem(obj, "show_silhouette_center");
+    if (show_silhouette_center_json)
+        snapshot.show_silhouette_center =
+            cJSON_IsTrue(show_silhouette_center_json);
+
+    return snapshot;
 }
 
 bool RenderVoxelList::save_current_project() {
