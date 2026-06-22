@@ -1,6 +1,9 @@
 #include <memory>
 #include <optional>
+#include <queue>
+#include <unordered_map>
 #include "render_voxel_list.h"
+#include "kigstudio/sdf/sdf_mesh.h"
 namespace sinriv::ui::render {
 
 cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
@@ -935,6 +938,7 @@ bool RenderVoxelList::save_project(const std::string& folder) {
 bool RenderVoxelList::load_project(const std::string& folder) {
     last_load_error.clear();
     release();
+    update_nav_node_status = true;
     start_thread();
     initIcons();
     current_id = 0;
@@ -1059,6 +1063,21 @@ bool RenderVoxelList::load_project(const std::string& folder) {
                         (void)n;
                         item->source_triangles.push_back(tri);
                     }
+                    if (item->load_as_sdf && !item->source_triangles.empty()) {
+                        auto mesh_sdf = std::make_shared<
+                            sinriv::kigstudio::sdf::SDF_Mesh>();
+                        if (item->stl_load_mode ==
+                                static_cast<int>(
+                                    StlLoadMode::SILHOUETTE) ||
+                            item->stl_load_mode ==
+                                static_cast<int>(
+                                    StlLoadMode::CONVEX_HULL)) {
+                            mesh_sdf->loadTriangles(item->source_triangles);
+                        } else {
+                            mesh_sdf->loadSTL(item->stl_path);
+                        }
+                        item->sdf_data = std::move(mesh_sdf);
+                    }
                 } catch (const std::exception& e) {
                     std::cout << "Failed to load STL mesh for item " << id
                               << ": " << e.what() << std::endl;
@@ -1107,6 +1126,98 @@ bool RenderVoxelList::load_project(const std::string& folder) {
         }
     }
     flow_needs_recompute = true;
+
+    // 重建由 segment 产生的子节点的 SDF 数据
+    //（体素网格已从 .vxgrid 恢复，但 sdf_data 无法直接序列化）
+    {
+        std::unordered_map<int, std::vector<int>> forward_edges;
+        std::unordered_map<int, int> in_degree;
+        for (const auto& [id, item] : items) {
+            in_degree[id] = 0;
+            for (int child_id : item->children) {
+                if (child_id >= 0 && items.find(child_id) != items.end()) {
+                    forward_edges[id].push_back(child_id);
+                    ++in_degree[child_id];
+                }
+            }
+            if (item->segment_mode == RenderVoxelItem::SDF_NODE_SPLIT &&
+                item->sdf_split_target_id >= 0) {
+                auto target_it = items.find(item->sdf_split_target_id);
+                if (target_it != items.end()) {
+                    forward_edges[item->sdf_split_target_id].push_back(id);
+                    ++in_degree[id];
+                }
+            }
+        }
+
+        std::queue<int> q;
+        for (const auto& [id, degree] : in_degree) {
+            if (degree == 0)
+                q.push(id);
+        }
+
+        std::vector<int> order;
+        order.reserve(items.size());
+        while (!q.empty()) {
+            int cur = q.front();
+            q.pop();
+            order.push_back(cur);
+            auto it = forward_edges.find(cur);
+            if (it == forward_edges.end())
+                continue;
+            for (int next : it->second) {
+                auto deg_it = in_degree.find(next);
+                if (deg_it == in_degree.end())
+                    continue;
+                if (--deg_it->second == 0)
+                    q.push(next);
+            }
+        }
+
+        for (int id : order) {
+            auto it = items.find(id);
+            if (it == items.end())
+                continue;
+            auto& item = *it->second;
+            if (!item.sdf_data)
+                continue;
+
+            bool has_valid_children = false;
+            for (int child_id : item.children) {
+                if (child_id >= 0 && items.find(child_id) != items.end()) {
+                    has_valid_children = true;
+                    break;
+                }
+            }
+            if (!has_valid_children)
+                continue;
+
+            try {
+                auto results = item.do_segment();
+                if (results.size() != item.children.size()) {
+                    std::cerr << "[load_project] segment result count mismatch "
+                                 "for node "
+                              << id << std::endl;
+                    continue;
+                }
+                for (size_t i = 0; i < results.size(); ++i) {
+                    int child_id = item.children[i];
+                    if (child_id < 0)
+                        continue;
+                    auto child_it = items.find(child_id);
+                    if (child_it == items.end())
+                        continue;
+                    if (!child_it->second->sdf_data) {
+                        child_it->second->sdf_data =
+                            std::move(std::get<1>(results[i]));
+                    }
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[load_project] failed to rebuild SDF for node "
+                          << id << ": " << e.what() << std::endl;
+            }
+        }
+    }
 
     cJSON_Delete(root);
     if (!items.empty()) {
