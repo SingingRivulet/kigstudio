@@ -1,15 +1,15 @@
-#include "render_voxel_list.h"
+#include <cmath>
+#include <cstdint>
+#include <set>
+#include <unordered_map>
+#include <unordered_set>
 #include "kigstudio/cgal/convex_hull.h"
 #include "kigstudio/cgal/mesh_simplification.h"
 #include "kigstudio/cgal/skeleton_extraction.h"
 #include "kigstudio/mesh/conebox.h"
 #include "kigstudio/sdf/sdf_mesh.h"
 #include "kigstudio/utils/generator.h"
-#include <cmath>
-#include <cstdint>
-#include <unordered_map>
-#include <unordered_set>
-#include <set>
+#include "render_voxel_list.h"
 
 namespace sinriv::ui::render {
 namespace {
@@ -29,8 +29,8 @@ static void insert_voxels_with_optional_verify(
     const std::vector<Triangle>& source_triangles,
     float voxel_size,
     bool use_precise_voxelization) {
-    size_t total_candidates = candidates_x.size() + candidates_y.size() +
-                              candidates_z.size();
+    size_t total_candidates =
+        candidates_x.size() + candidates_y.size() + candidates_z.size();
     if (total_candidates == 0)
         return;
 
@@ -86,8 +86,7 @@ static void insert_voxels_with_optional_verify(
                 std::vector<Vec3i> local_confirmed;
 #pragma omp for nowait
                 for (int64_t idx = 0;
-                     idx < static_cast<int64_t>(to_verify.size());
-                     ++idx) {
+                     idx < static_cast<int64_t>(to_verify.size()); ++idx) {
                     const auto& v = to_verify[idx];
                     float wx = voxel_data.global_position.x +
                                (v.x + 0.5f) * voxel_size;
@@ -147,7 +146,8 @@ static std::vector<sinriv::kigstudio::vec3<float>> clip_polygon_by_plane(
     const sinriv::kigstudio::vec3<float>& normal,
     float threshold) {
     std::vector<sinriv::kigstudio::vec3<float>> out;
-    if (poly.empty()) return out;
+    if (poly.empty())
+        return out;
     const float EPS = 1e-5f;
     for (size_t i = 0; i < poly.size(); ++i) {
         const auto& curr = poly[i];
@@ -171,9 +171,8 @@ static std::vector<sinriv::kigstudio::vec3<float>> clip_polygon_by_plane(
 }
 
 static std::pair<std::vector<Triangle>, std::vector<Triangle>>
-split_triangles_by_plane(
-    const std::vector<Triangle>& triangles,
-    const sinriv::kigstudio::Plane<float>& plane) {
+split_triangles_by_plane(const std::vector<Triangle>& triangles,
+                         const sinriv::kigstudio::Plane<float>& plane) {
     std::vector<Triangle> positive;
     std::vector<Triangle> negative;
     sinriv::kigstudio::vec3<float> normal(plane.A, plane.B, plane.C);
@@ -230,9 +229,10 @@ struct SkeletonPointKeyHash {
 
 SkeletonPointKey makeSkeletonPointKey(const SkeletonPoint& p) {
     constexpr double kScale = 10000.0;
-    return {static_cast<int64_t>(std::llround(static_cast<double>(p.x) * kScale)),
-            static_cast<int64_t>(std::llround(static_cast<double>(p.y) * kScale)),
-            static_cast<int64_t>(std::llround(static_cast<double>(p.z) * kScale))};
+    return {
+        static_cast<int64_t>(std::llround(static_cast<double>(p.x) * kScale)),
+        static_cast<int64_t>(std::llround(static_cast<double>(p.y) * kScale)),
+        static_cast<int64_t>(std::llround(static_cast<double>(p.z) * kScale))};
 }
 
 uint64_t makeSkeletonEdgeKey(size_t a, size_t b) {
@@ -241,9 +241,10 @@ uint64_t makeSkeletonEdgeKey(size_t a, size_t b) {
     return (static_cast<uint64_t>(a) << 32) ^ static_cast<uint64_t>(b);
 }
 
-std::vector<SkeletonPoint> chaikinSmooth(const std::vector<SkeletonPoint>& points,
-                                         bool closed,
-                                         int iterations) {
+std::vector<SkeletonPoint> chaikinSmooth(
+    const std::vector<SkeletonPoint>& points,
+    bool closed,
+    int iterations) {
     if (points.size() < 3 || iterations <= 0)
         return points;
 
@@ -255,7 +256,8 @@ std::vector<SkeletonPoint> chaikinSmooth(const std::vector<SkeletonPoint>& point
         if (!closed)
             next.push_back(current.front());
 
-        const size_t segment_count = closed ? current.size() : current.size() - 1;
+        const size_t segment_count =
+            closed ? current.size() : current.size() - 1;
         for (size_t i = 0; i < segment_count; ++i) {
             const auto& a = current[i];
             const auto& b = current[(i + 1) % current.size()];
@@ -296,7 +298,8 @@ void appendSmoothedChain(const std::vector<size_t>& chain,
     }
 }
 
-std::vector<SkeletonLine> smoothSkeletonLines(const std::vector<SkeletonLine>& lines) {
+std::vector<SkeletonLine> smoothSkeletonLines(
+    const std::vector<SkeletonLine>& lines) {
     if (lines.size() < 3)
         return lines;
 
@@ -332,7 +335,8 @@ std::vector<SkeletonLine> smoothSkeletonLines(const std::vector<SkeletonLine>& l
     result.reserve(lines.size() * 4);
 
     auto edgeVisited = [&](size_t a, size_t b) {
-        return visited_edges.find(makeSkeletonEdgeKey(a, b)) != visited_edges.end();
+        return visited_edges.find(makeSkeletonEdgeKey(a, b)) !=
+               visited_edges.end();
     };
     auto markEdge = [&](size_t a, size_t b) {
         visited_edges.insert(makeSkeletonEdgeKey(a, b));
@@ -383,8 +387,9 @@ std::vector<SkeletonLine> smoothSkeletonLines(const std::vector<SkeletonLine>& l
             bool closed = false;
 
             while (adjacency[cur].size() == 2) {
-                size_t candidate = adjacency[cur][0] == prev ? adjacency[cur][1]
-                                                             : adjacency[cur][0];
+                size_t candidate = adjacency[cur][0] == prev
+                                       ? adjacency[cur][1]
+                                       : adjacency[cur][0];
                 if (candidate == start) {
                     markEdge(cur, candidate);
                     closed = true;
@@ -443,10 +448,9 @@ bool voxelLess(const sinriv::kigstudio::Vec3i& a,
     return a.z < b.z;
 }
 
-std::vector<SkeletonPointPick>
-buildSkeletonOrderCache(
-    const std::vector<std::pair<sinriv::kigstudio::Vec3i,
-                                sinriv::kigstudio::Vec3i>>& lines,
+std::vector<SkeletonPointPick> buildSkeletonOrderCache(
+    const std::vector<
+        std::pair<sinriv::kigstudio::Vec3i, sinriv::kigstudio::Vec3i>>& lines,
     const sinriv::kigstudio::voxel::VoxelGrid& voxel_grid,
     std::unordered_map<VoxelKey, int, VoxelKeyHash>& order_by_voxel) {
     using Vec3i = sinriv::kigstudio::Vec3i;
@@ -483,10 +487,9 @@ buildSkeletonOrderCache(
         return {};
 
     for (auto& neighbors : adjacency) {
-        std::sort(neighbors.begin(), neighbors.end(),
-                  [&](size_t a, size_t b) {
-                      return voxelLess(nodes[a], nodes[b]);
-                  });
+        std::sort(neighbors.begin(), neighbors.end(), [&](size_t a, size_t b) {
+            return voxelLess(nodes[a], nodes[b]);
+        });
         neighbors.erase(std::unique(neighbors.begin(), neighbors.end()),
                         neighbors.end());
     }
@@ -496,7 +499,8 @@ buildSkeletonOrderCache(
     for (size_t i = 0; i < nodes.size(); ++i) {
         const bool is_endpoint = adjacency[i].size() <= 1;
         if ((is_endpoint && !has_endpoint) ||
-            (is_endpoint == has_endpoint && voxelLess(nodes[i], nodes[start]))) {
+            (is_endpoint == has_endpoint &&
+             voxelLess(nodes[i], nodes[start]))) {
             start = i;
             has_endpoint = is_endpoint;
         }
@@ -512,9 +516,9 @@ buildSkeletonOrderCache(
         const auto world = voxel_grid.voxelCenterToWorld(nodes[index]);
         const int order = static_cast<int>(ordered.size());
         order_by_voxel[makeVoxelKey(nodes[index])] = order;
-        ordered.push_back({sinriv::kigstudio::voxel::vec3f(
-                               world.x, world.y, world.z),
-                           order});
+        ordered.push_back(
+            {sinriv::kigstudio::voxel::vec3f(world.x, world.y, world.z),
+             order});
     };
 
     while (!stack.empty()) {
@@ -548,10 +552,9 @@ triangle_generator_with_normals(
     const std::vector<std::tuple<sinriv::kigstudio::vec3<float>,
                                  sinriv::kigstudio::vec3<float>,
                                  sinriv::kigstudio::vec3<float>>>& triangles) {
-    using Triangle =
-        std::tuple<sinriv::kigstudio::vec3<float>,
-                   sinriv::kigstudio::vec3<float>,
-                   sinriv::kigstudio::vec3<float>>;
+    using Triangle = std::tuple<sinriv::kigstudio::vec3<float>,
+                                sinriv::kigstudio::vec3<float>,
+                                sinriv::kigstudio::vec3<float>>;
     using vec3f = sinriv::kigstudio::vec3<float>;
     for (const auto& tri : triangles) {
         const auto& v0 = std::get<0>(tri);
@@ -710,7 +713,8 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
             new_item->source_triangles = std::move(mesh_split_results[i]);
             if (!new_item->source_triangles.empty()) {
                 new_item->mesh_renderer.loadGeometry(
-                    triangle_generator_with_normals(new_item->source_triangles));
+                    triangle_generator_with_normals(
+                        new_item->source_triangles));
             }
         }
         auto ptr = new_item.get();
@@ -752,26 +756,29 @@ void RenderVoxelList::extract_skeleton(int index) {
     // --- CGAL mesh-based skeleton path ---
     if (it->second->use_cgal_skeleton && !it->second->stl_path.empty()) {
         try {
-            setQueueStatus(get_locale_string("status.extracting_skeleton_cgal"));
+            setQueueStatus(
+                get_locale_string("status.extracting_skeleton_cgal"));
             std::vector<sinriv::kigstudio::voxel::Triangle> cgal_triangles;
             if (!it->second->source_triangles.empty()) {
                 cgal_triangles = it->second->source_triangles;
             } else {
                 // Read STL directly
-                for (auto [tri, n] : sinriv::kigstudio::voxel::readSTL(it->second->stl_path)) {
+                for (auto [tri, n] :
+                     sinriv::kigstudio::voxel::readSTL(it->second->stl_path)) {
                     (void)n;
                     cgal_triangles.push_back(tri);
                 }
             }
             if (!cgal_triangles.empty()) {
-                auto cgal_lines = sinriv::kigstudio::cgal::extractSkeletonFromMesh(
-                    cgal_triangles);
+                auto cgal_lines =
+                    sinriv::kigstudio::cgal::extractSkeletonFromMesh(
+                        cgal_triangles);
                 if (!cgal_lines.empty()) {
                     chain_lines = std::move(cgal_lines);
                     chain_lines = smoothSkeletonLines(chain_lines);
 
                     // Build skeleton_order_cache from unique endpoints
-                    std::set<std::tuple<float,float,float>> seen;
+                    std::set<std::tuple<float, float, float>> seen;
                     int order = 0;
                     for (const auto& line : chain_lines) {
                         for (const auto& p : {line.first, line.second}) {
@@ -794,78 +801,87 @@ void RenderVoxelList::extract_skeleton(int index) {
     }
 
     // --- Voxel-based skeleton path (fallback) ---
-    if (!cgal_succeeded) try {
-        char res_buf[512];
-        setQueueStatus(get_locale_cstr("progress.extract_skeleton.buildDenseGrid"));
-        kigstudio::voxel::DenseGrid dense =
-            kigstudio::voxel::buildDenseGrid(it->second->voxel_grid_data);
-        snprintf(res_buf, sizeof(res_buf),
-                 get_locale_cstr("log.extract_skeleton.buildDenseGrid.result"),
-                 dense.min_bound.x, dense.min_bound.y, dense.min_bound.z,
-                 dense.max_bound.x, dense.max_bound.y, dense.max_bound.z,
-                 it->second->voxel_grid_data.num_chunk());
-        append_queue_logf(res_buf);
-        std::cout << res_buf << std::endl;
-        queue_progress = 0.25f;
-        setQueueStatus(get_locale_cstr("progress.extract_skeleton.computeEDT"));
-        kigstudio::voxel::computeEDT(dense);
-        queue_progress = 0.5f;
-        setQueueStatus(get_locale_cstr("progress.extract_skeleton.finalizeEDT"));
-        kigstudio::voxel::finalizeEDT(dense);
-        queue_progress = 0.75f;
-        setQueueStatus(get_locale_cstr("progress.extract_skeleton.extractCenterline"));
-        auto skeleton_lines =
-            kigstudio::voxel::extractGradientFlowSkeletonLines(dense);
-        auto surface_skeleton_cache =
-            kigstudio::voxel::mapSurfaceVoxelsToSkeleton(dense, skeleton_lines);
-        queue_progress = 1.0f;
-        snprintf(res_buf, sizeof(res_buf),
-                 get_locale_cstr("log.extract_skeleton.result"),
-                 skeleton_lines.size() * 2);
-        append_queue_logf(res_buf);
-        std::cout << res_buf << std::endl;
+    if (!cgal_succeeded)
+        try {
+            char res_buf[512];
+            setQueueStatus(
+                get_locale_cstr("progress.extract_skeleton.buildDenseGrid"));
+            kigstudio::voxel::DenseGrid dense =
+                kigstudio::voxel::buildDenseGrid(it->second->voxel_grid_data);
+            snprintf(
+                res_buf, sizeof(res_buf),
+                get_locale_cstr("log.extract_skeleton.buildDenseGrid.result"),
+                dense.min_bound.x, dense.min_bound.y, dense.min_bound.z,
+                dense.max_bound.x, dense.max_bound.y, dense.max_bound.z,
+                it->second->voxel_grid_data.num_chunk());
+            append_queue_logf(res_buf);
+            std::cout << res_buf << std::endl;
+            queue_progress = 0.25f;
+            setQueueStatus(
+                get_locale_cstr("progress.extract_skeleton.computeEDT"));
+            kigstudio::voxel::computeEDT(dense);
+            queue_progress = 0.5f;
+            setQueueStatus(
+                get_locale_cstr("progress.extract_skeleton.finalizeEDT"));
+            kigstudio::voxel::finalizeEDT(dense);
+            queue_progress = 0.75f;
+            setQueueStatus(
+                get_locale_cstr("progress.extract_skeleton.extractCenterline"));
+            auto skeleton_lines =
+                kigstudio::voxel::extractGradientFlowSkeletonLines(dense);
+            auto surface_skeleton_cache =
+                kigstudio::voxel::mapSurfaceVoxelsToSkeleton(dense,
+                                                             skeleton_lines);
+            queue_progress = 1.0f;
+            snprintf(res_buf, sizeof(res_buf),
+                     get_locale_cstr("log.extract_skeleton.result"),
+                     skeleton_lines.size() * 2);
+            append_queue_logf(res_buf);
+            std::cout << res_buf << std::endl;
 
-        const auto& voxel_grid = it->second->voxel_grid_data;
-        std::unordered_map<VoxelKey, int, VoxelKeyHash> order_by_voxel;
-        skeleton_order_cache =
-            buildSkeletonOrderCache(skeleton_lines, voxel_grid, order_by_voxel);
+            const auto& voxel_grid = it->second->voxel_grid_data;
+            std::unordered_map<VoxelKey, int, VoxelKeyHash> order_by_voxel;
+            skeleton_order_cache = buildSkeletonOrderCache(
+                skeleton_lines, voxel_grid, order_by_voxel);
 
-        auto to_world = [&voxel_grid](const kigstudio::Vec3i& voxel) {
-            return voxel_grid.voxelCenterToWorld(voxel);
-        };
+            auto to_world = [&voxel_grid](const kigstudio::Vec3i& voxel) {
+                return voxel_grid.voxelCenterToWorld(voxel);
+            };
 
-        for (const auto& line : skeleton_lines) {
-            const auto a = to_world(line.first);
-            const auto b = to_world(line.second);
-            chain_lines.push_back(
-                {sinriv::kigstudio::voxel::vec3f(a.x, a.y, a.z),
-                 sinriv::kigstudio::voxel::vec3f(b.x, b.y, b.z)});
-        }
-        chain_lines = smoothSkeletonLines(chain_lines);
-        surface_skeleton_world_cache.reserve(surface_skeleton_cache.size());
-        for (const auto& entry : surface_skeleton_cache) {
-            const auto skeleton_world = to_world(entry.second);
-            int order = 0;
-            const auto order_it = order_by_voxel.find(makeVoxelKey(entry.second));
-            if (order_it != order_by_voxel.end()) {
-                order = order_it->second;
+            for (const auto& line : skeleton_lines) {
+                const auto a = to_world(line.first);
+                const auto b = to_world(line.second);
+                chain_lines.push_back(
+                    {sinriv::kigstudio::voxel::vec3f(a.x, a.y, a.z),
+                     sinriv::kigstudio::voxel::vec3f(b.x, b.y, b.z)});
             }
-            surface_skeleton_world_cache.push_back(
-                {entry.first,
-                 {sinriv::kigstudio::voxel::vec3f(
-                      skeleton_world.x, skeleton_world.y, skeleton_world.z),
-                  order}});
-        }
+            chain_lines = smoothSkeletonLines(chain_lines);
+            surface_skeleton_world_cache.reserve(surface_skeleton_cache.size());
+            for (const auto& entry : surface_skeleton_cache) {
+                const auto skeleton_world = to_world(entry.second);
+                int order = 0;
+                const auto order_it =
+                    order_by_voxel.find(makeVoxelKey(entry.second));
+                if (order_it != order_by_voxel.end()) {
+                    order = order_it->second;
+                }
+                surface_skeleton_world_cache.push_back(
+                    {entry.first,
+                     {sinriv::kigstudio::voxel::vec3f(
+                          skeleton_world.x, skeleton_world.y, skeleton_world.z),
+                      order}});
+            }
 
-    } catch (const std::exception& e) {
-        std::cerr << "[extract_skeleton] exception: " << e.what() << std::endl;
-        {
-            std::lock_guard<std::mutex> lock(locker);
-            it->second->ref_count--;
-            it->second->write_count--;
+        } catch (const std::exception& e) {
+            std::cerr << "[extract_skeleton] exception: " << e.what()
+                      << std::endl;
+            {
+                std::lock_guard<std::mutex> lock(locker);
+                it->second->ref_count--;
+                it->second->write_count--;
+            }
+            throw;
         }
-        throw;
-    }
 
     {
         std::lock_guard<std::mutex> lock(locker);
@@ -944,10 +960,8 @@ void RenderVoxelList::load_stl(std::string filename,
                     queue_progress = 0.13f + t * 0.02f;
                     setQueueStatus(step);
                 });
-    } else if (load_mode ==
-               static_cast<int>(StlLoadMode::CONVEX_HULL)) {
-        source_triangles =
-            sinriv::kigstudio::cgal::convexHull3(raw_triangles);
+    } else if (load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
+        source_triangles = sinriv::kigstudio::cgal::convexHull3(raw_triangles);
     } else {
         source_triangles = std::move(raw_triangles);
     }
@@ -974,9 +988,9 @@ void RenderVoxelList::load_stl(std::string filename,
                                      static_cast<double>(std::get<2>(tri).z)});
             if (++spatial_idx % 100 == 0) {
                 queue_progress =
-                    0.13f +
-                    0.02f * (static_cast<float>(spatial_idx) /
-                             static_cast<float>(std::max(size_t(1), spatial_total)));
+                    0.13f + 0.02f * (static_cast<float>(spatial_idx) /
+                                     static_cast<float>(
+                                         std::max(size_t(1), spatial_total)));
                 setQueueStatus(
                     get_locale_string("status.building_spatial_index"));
             }
@@ -1006,11 +1020,10 @@ void RenderVoxelList::load_stl(std::string filename,
             }
             if (++surface_idx % 100 == 0) {
                 queue_progress =
-                    0.15f +
-                    0.35f * (static_cast<float>(surface_idx) /
-                             static_cast<float>(std::max(size_t(1), surface_total)));
-                setQueueStatus(
-                    get_locale_string("status.rasterizing_surface"));
+                    0.15f + 0.35f * (static_cast<float>(surface_idx) /
+                                     static_cast<float>(
+                                         std::max(size_t(1), surface_total)));
+                setQueueStatus(get_locale_string("status.rasterizing_surface"));
             }
         }
         queue_progress = 0.50f;
@@ -1028,9 +1041,12 @@ void RenderVoxelList::load_stl(std::string filename,
         float maxx = ceil(bvh.global_boundBox_max.x / voxel_size) * voxel_size;
         float maxy = ceil(bvh.global_boundBox_max.y / voxel_size) * voxel_size;
         float maxz = ceil(bvh.global_boundBox_max.z / voxel_size) * voxel_size;
-        int num_block_x = static_cast<int>(floor((maxx - minx) / voxel_size)) + 1;
-        int num_block_y = static_cast<int>(floor((maxy - miny) / voxel_size)) + 1;
-        int num_block_z = static_cast<int>(floor((maxz - minz) / voxel_size)) + 1;
+        int num_block_x =
+            static_cast<int>(floor((maxx - minx) / voxel_size)) + 1;
+        int num_block_y =
+            static_cast<int>(floor((maxy - miny) / voxel_size)) + 1;
+        int num_block_z =
+            static_cast<int>(floor((maxz - minz) / voxel_size)) + 1;
         size_t total_rays = static_cast<size_t>(num_block_y) * num_block_z +
                             static_cast<size_t>(num_block_x) * num_block_z +
                             static_cast<size_t>(num_block_x) * num_block_y;
@@ -1083,10 +1099,9 @@ void RenderVoxelList::load_stl(std::string filename,
                     callback_count.fetch_add(1, std::memory_order_relaxed) + 1;
                 if (cnt % 100 == 0) {
                     float p =
-                        0.15f +
-                        0.35f * std::min(1.0f, static_cast<float>(cnt) /
-                                                   static_cast<float>(total_rays *
-                                                                      2));
+                        0.15f + 0.35f * std::min(1.0f, static_cast<float>(cnt) /
+                                                           static_cast<float>(
+                                                               total_rays * 2));
                     queue_progress = p;
                     setQueueStatus(get_locale_string("status.voxelizing"));
                 }
@@ -1103,10 +1118,9 @@ void RenderVoxelList::load_stl(std::string filename,
                            triangle_bvh<float>::voxel_face_Z,
                            make_callback(candidates_z));
 
-        insert_voxels_with_optional_verify(voxel_data, candidates_x,
-                                            candidates_y, candidates_z,
-                                            source_triangles, voxel_size,
-                                            use_precise_voxelization);
+        insert_voxels_with_optional_verify(
+            voxel_data, candidates_x, candidates_y, candidates_z,
+            source_triangles, voxel_size, use_precise_voxelization);
 
         queue_progress = 0.50f;
     }
@@ -1121,7 +1135,8 @@ void RenderVoxelList::load_stl(std::string filename,
         std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>>>
         chunk_meshes;
     if (load_mode != static_cast<int>(StlLoadMode::MESH_ONLY)) {
-        chunk_meshes = generateChunkMeshData(voxel_data, isolevel, smooth_normals);
+        chunk_meshes =
+            generateChunkMeshData(voxel_data, isolevel, smooth_normals);
     }
 
     if (target_item_id >= 0) {
@@ -1133,8 +1148,7 @@ void RenderVoxelList::load_stl(std::string filename,
                 auto& item = *it->second;
                 item.mesh_renderer.clear();
                 if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
-                    load_mode ==
-                        static_cast<int>(StlLoadMode::CONVEX_HULL)) {
+                    load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
                     item.mesh_renderer.loadGeometry(
                         triangle_generator_with_normals(source_triangles));
                 } else {
@@ -1155,9 +1169,12 @@ void RenderVoxelList::load_stl(std::string filename,
                     item.voxel_renderer.loadChunkMeshes(chunk_meshes);
                     item.voxel_grid_data = std::move(voxel_data);
                     if (load_as_sdf) {
-                        auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
-                        if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
-                            load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
+                        auto mesh_sdf = std::make_shared<
+                            sinriv::kigstudio::sdf::SDF_Mesh>();
+                        if (load_mode ==
+                                static_cast<int>(StlLoadMode::SILHOUETTE) ||
+                            load_mode ==
+                                static_cast<int>(StlLoadMode::CONVEX_HULL)) {
                             mesh_sdf->loadTriangles(source_triangles);
                         } else {
                             mesh_sdf->loadSTL(filename);
@@ -1218,7 +1235,8 @@ void RenderVoxelList::load_stl(std::string filename,
             item->voxel_renderer.loadChunkMeshes(chunk_meshes);
             item->voxel_grid_data = std::move(voxel_data);
             if (load_as_sdf) {
-                auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
+                auto mesh_sdf =
+                    std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
                 if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
                     load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
                     mesh_sdf->loadTriangles(source_triangles);
@@ -1259,8 +1277,8 @@ std::filesystem::path RenderVoxelList::get_cache_dir(
     if (!project_path.empty()) {
         base = utf8_path(project_path) / "cache" / subdir;
     } else {
-        base = std::filesystem::temp_directory_path() / "kigstudio_cache" /
-               subdir;
+        base =
+            std::filesystem::temp_directory_path() / "kigstudio_cache" / subdir;
     }
     std::filesystem::create_directories(base);
     return base;
@@ -1337,10 +1355,9 @@ void RenderVoxelList::load_from_node(int target_item_id,
         for (const auto& tri : triangles) {
             bvh.insert(tri);
             if (++tri_idx % 100 == 0) {
-                queue_progress =
-                    0.25f +
-                    0.05f * (static_cast<float>(tri_idx) /
-                             static_cast<float>(std::max(size_t(1), tri_total)));
+                queue_progress = 0.25f + 0.05f * (static_cast<float>(tri_idx) /
+                                                  static_cast<float>(std::max(
+                                                      size_t(1), tri_total)));
                 setQueueStatus(
                     get_locale_string("status.building_spatial_index"));
             }
@@ -1413,10 +1430,9 @@ void RenderVoxelList::load_from_node(int target_item_id,
                     callback_count.fetch_add(1, std::memory_order_relaxed) + 1;
                 if (cnt % 100 == 0) {
                     float p =
-                        0.30f +
-                        0.35f * std::min(1.0f, static_cast<float>(cnt) /
-                                                   static_cast<float>(total_rays *
-                                                                      2));
+                        0.30f + 0.35f * std::min(1.0f, static_cast<float>(cnt) /
+                                                           static_cast<float>(
+                                                               total_rays * 2));
                     queue_progress = p;
                     setQueueStatus(get_locale_string("status.voxelizing"));
                 }
@@ -1433,10 +1449,9 @@ void RenderVoxelList::load_from_node(int target_item_id,
                            triangle_bvh<float>::voxel_face_Z,
                            make_callback(candidates_z));
 
-        insert_voxels_with_optional_verify(out_voxel, candidates_x,
-                                            candidates_y, candidates_z,
-                                            triangles, voxel_size,
-                                            use_precise_voxelization);
+        insert_voxels_with_optional_verify(
+            out_voxel, candidates_x, candidates_y, candidates_z, triangles,
+            voxel_size, use_precise_voxelization);
     };
 
     // Gather source mesh triangles according to node_source_data_type
@@ -1453,7 +1468,9 @@ void RenderVoxelList::load_from_node(int target_item_id,
             for (auto tri : generateSmoothMeshFromSDF(
                      source_voxel_grid, numTriangles,
                      [&](const std::string& status) {
-                         setQueueStatus(get_locale_string("status.sdf_mesh_prefix") + status);
+                         setQueueStatus(
+                             get_locale_string("status.sdf_mesh_prefix") +
+                             status);
                          return queue_should_continue.load() &&
                                 queue_running.load();
                      },
@@ -1461,8 +1478,9 @@ void RenderVoxelList::load_from_node(int target_item_id,
                 mesh.push_back(tri);
                 if (++sdf_mesh_progress % 100 == 0) {
                     queue_progress =
-                        0.05f +
-                        0.10f * std::min(1.0f, static_cast<float>(sdf_mesh_progress) / 50000.0f);
+                        0.05f + 0.10f * std::min(1.0f, static_cast<float>(
+                                                           sdf_mesh_progress) /
+                                                           50000.0f);
                 }
             }
             if (!mesh.empty()) {
@@ -1470,18 +1488,19 @@ void RenderVoxelList::load_from_node(int target_item_id,
             }
             if (node_source_sdf_simplify && !mesh.empty()) {
                 mesh = sinriv::kigstudio::cgal::simplifyMesh(
-                    mesh,
-                    static_cast<double>(node_source_sdf_simplify_ratio));
+                    mesh, static_cast<double>(node_source_sdf_simplify_ratio));
             }
             source_mesh.reserve(mesh.size());
             for (size_t i = 0; i < mesh.size(); ++i) {
                 source_mesh.push_back(std::get<0>(mesh[i]));
                 if (i % 100 == 0) {
                     queue_progress =
-                        0.15f +
-                        0.05f * (static_cast<float>(i) /
-                                 static_cast<float>(std::max(size_t(1), mesh.size())));
-                    setQueueStatus(get_locale_string("status.preparing_mesh"));
+                        0.15f + 0.05f * (static_cast<float>(i) /
+                                         static_cast<float>(
+                                             std::max(size_t(1), mesh.size())));
+                    setQueueStatus(get_locale_string("status.preparing_mesh") +
+                                   "(" + std::to_string(i) + "/" +
+                                   std::to_string(mesh.size()) + ")");
                 }
             }
         } else {
@@ -1493,13 +1512,15 @@ void RenderVoxelList::load_from_node(int target_item_id,
             std::vector<std::tuple<Triangle, vec3f>> mesh;
             int numTriangles = 0;
             int voxel_mesh_progress = 0;
-            for (auto tri : generateMesh(source_voxel_grid, 0.5, numTriangles,
-                                          true)) {
+            for (auto tri :
+                 generateMesh(source_voxel_grid, 0.5, numTriangles, true)) {
                 mesh.push_back(tri);
                 if (++voxel_mesh_progress % 100 == 0) {
                     queue_progress =
                         0.05f +
-                        0.10f * std::min(1.0f, static_cast<float>(voxel_mesh_progress) / 50000.0f);
+                        0.10f * std::min(1.0f, static_cast<float>(
+                                                   voxel_mesh_progress) /
+                                                   50000.0f);
                     setQueueStatus(
                         get_locale_string("status.generating_voxel_mesh"));
                 }
@@ -1509,10 +1530,12 @@ void RenderVoxelList::load_from_node(int target_item_id,
                 source_mesh.push_back(std::get<0>(mesh[i]));
                 if (i % 100 == 0) {
                     queue_progress =
-                        0.15f +
-                        0.05f * (static_cast<float>(i) /
-                                 static_cast<float>(std::max(size_t(1), mesh.size())));
-                    setQueueStatus(get_locale_string("status.preparing_mesh"));
+                        0.15f + 0.05f * (static_cast<float>(i) /
+                                         static_cast<float>(
+                                             std::max(size_t(1), mesh.size())));
+                    setQueueStatus(get_locale_string("status.preparing_mesh") +
+                                   "(" + std::to_string(i) + "/" +
+                                   std::to_string(mesh.size()) + ")");
                 }
             }
         } else {
@@ -1531,16 +1554,16 @@ void RenderVoxelList::load_from_node(int target_item_id,
 
     if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
         if (!source_mesh.empty()) {
-            setQueueStatus(get_locale_string("status.generating_silhouette_mesh"));
-            target_triangles =
-                sinriv::kigstudio::mesh::conebox::
-                    build_closed_mesh_from_triangles_silhouette(
-                        source_mesh, silhouette_center,
-                        [&]() { return queue_should_continue.load(); },
-                        [&](float t, const std::string& step) {
-                            queue_progress = t * 0.1f;
-                            setQueueStatus(step);
-                        });
+            setQueueStatus(
+                get_locale_string("status.generating_silhouette_mesh"));
+            target_triangles = sinriv::kigstudio::mesh::conebox::
+                build_closed_mesh_from_triangles_silhouette(
+                    source_mesh, silhouette_center,
+                    [&]() { return queue_should_continue.load(); },
+                    [&](float t, const std::string& step) {
+                        queue_progress = t * 0.1f;
+                        setQueueStatus(step);
+                    });
             target_mesh_only = true;
         }
     } else if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
@@ -1548,23 +1571,21 @@ void RenderVoxelList::load_from_node(int target_item_id,
             target_triangles = source_mesh;
             VoxelGrid voxel_data;
             voxel_data.voxel_size = {voxel_size, voxel_size, voxel_size};
-            voxel_data.global_position = {-0.5f * voxel_size,
-                                          -0.5f * voxel_size,
-                                          -0.5f * voxel_size};
+            voxel_data.global_position = {
+                -0.5f * voxel_size, -0.5f * voxel_size, -0.5f * voxel_size};
             float precision = voxel_size / 10.0f;
             size_t surface_idx = 0;
             const size_t surface_total = target_triangles.size();
             for (const auto& tri : target_triangles) {
                 for (auto point : sinriv::kigstudio::voxel::draw_triangle(
-                         tri, voxel_size, voxel_size, voxel_size,
-                         precision)) {
+                         tri, voxel_size, voxel_size, voxel_size, precision)) {
                     voxel_data.insert(voxel_data.worldToVoxel(point));
                 }
                 if (++surface_idx % 100 == 0) {
                     queue_progress =
-                        0.30f +
-                        0.20f * (static_cast<float>(surface_idx) /
-                                 static_cast<float>(std::max(size_t(1), surface_total)));
+                        0.30f + 0.20f * (static_cast<float>(surface_idx) /
+                                         static_cast<float>(std::max(
+                                             size_t(1), surface_total)));
                     setQueueStatus(
                         get_locale_string("status.rasterizing_surface"));
                 }

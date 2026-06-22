@@ -363,7 +363,8 @@ void RenderVoxelList::render_flow_viewer() {
                     get_locale_cstr("label.flow_node_title"));
                 ImGui::TableHeadersRow();
 
-                for (int node_id : flow_cached_order) {
+                for (size_t i = 0; i < flow_cached_order.size(); ++i) {
+                    int node_id = flow_cached_order[i];
                     auto it = items.find(node_id);
                     if (it == items.end())
                         continue;
@@ -375,8 +376,28 @@ void RenderVoxelList::render_flow_viewer() {
                     ImGui::Text("%d", node_id);
 
                     ImGui::TableSetColumnIndex(1);
-                    ImGui::TextUnformatted(
-                        segment_mode_label(item.segment_mode));
+                    const char* relation_label = nullptr;
+                    const bool is_input =
+                        std::find(flow_inputs.begin(), flow_inputs.end(),
+                                  node_id) != flow_inputs.end();
+                    if (is_input) {
+                        relation_label =
+                            get_locale_cstr("label.flow_relation_load");
+                    } else if (item.source_type == 1 &&
+                               item.source_node_id >= 0) {
+                        relation_label =
+                            get_locale_cstr("label.flow_relation_copy");
+                    } else if (i > 0) {
+                        int prev_id = flow_cached_order[i - 1];
+                        auto prev_it = items.find(prev_id);
+                        if (prev_it != items.end()) {
+                            relation_label = segment_mode_label(
+                                prev_it->second->segment_mode);
+                        }
+                    }
+                    if (!relation_label)
+                        relation_label = "?";
+                    ImGui::TextUnformatted(relation_label);
 
                     ImGui::TableSetColumnIndex(2);
                     ImGui::TextUnformatted(item.title.c_str());

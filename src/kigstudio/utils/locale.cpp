@@ -544,6 +544,10 @@ void init_locale_strings() {
                       {{"en", "Mode"}, {"zh", "处理模式"}});
     add_locale_string("label.flow_node_title",
                       {{"en", "Title"}, {"zh", "标题"}});
+    add_locale_string("label.flow_relation_load",
+                      {{"en", "Load"}, {"zh", "加载"}});
+    add_locale_string("label.flow_relation_copy",
+                      {{"en", "Copy"}, {"zh", "复制"}});
     add_locale_string("window.log", {{"en", "Log"}, {"zh", "日志"}});
     add_locale_string("window.debug_voxel_picking",
                       {{"en", "Voxel Picking Debug"}, {"zh", "体素拾取调试"}});
