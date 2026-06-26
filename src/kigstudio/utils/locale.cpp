@@ -245,6 +245,20 @@ void init_locale_strings() {
     add_locale_string("log.queue.simplify_result",
                       {{"en", "[Queue] Simplify: %d -> %d triangles"},
                        {"zh", "[队列] 简化: %d -> %d 个三角形"}});
+    add_locale_string(
+        "log.queue.start_execute_flow",
+        {{"en", "[Queue] Start: Execute flow - %d inputs, %d outputs"},
+         {"zh", "[队列] 开始: 执行工作流 - %d 个输入, %d 个输出"}});
+    add_locale_string(
+        "log.queue.processing_file",
+        {{"en", "[Queue] Processing file %d: %s"},
+         {"zh", "[队列] 处理文件 %d: %s"}});
+    add_locale_string("log.queue.exported_file",
+                      {{"en", "[Queue] Exported: %s"},
+                       {"zh", "[队列] 已导出: %s"}});
+    add_locale_string("log.queue.done_execute_flow",
+                      {{"en", "[Queue] Done: Execute flow completed"},
+                       {"zh", "[队列] 完成: 工作流执行完毕"}});
     add_locale_string("log.queue.done_export_stl_all",
                       {{"en", "[Queue] Done:  Exported %d/%d STL files"},
                        {"zh", "[队列] 完成: 已导出 %d/%d 个 STL 文件"}});
@@ -285,6 +299,14 @@ void init_locale_strings() {
                       {{"en", "Simplifying mesh"}, {"zh", "模型简化"}});
     add_locale_string("status.exporting_stl.saveing_mesh",
                       {{"en", "Saving mesh"}, {"zh", "保存模型"}});
+    add_locale_string("status.executing_flow",
+                      {{"en", "Executing flow..."}, {"zh", "正在执行工作流..."}});
+    add_locale_string("status.executing_flow.loading",
+                      {{"en", "Loading input"}, {"zh", "加载输入"}});
+    add_locale_string("status.executing_flow.segmenting",
+                      {{"en", "Segmenting"}, {"zh", "分割处理"}});
+    add_locale_string("status.executing_flow.exporting",
+                      {{"en", "Exporting output"}, {"zh", "导出输出"}});
     add_locale_string("status.silhouette.prepare",
                       {{"en", "Preparing silhouette mesh..."},
                        {"zh", "准备轮廓网格..."}});
@@ -548,6 +570,22 @@ void init_locale_strings() {
                       {{"en", "Load"}, {"zh", "加载"}});
     add_locale_string("label.flow_relation_copy",
                       {{"en", "Copy"}, {"zh", "复制"}});
+    add_locale_string("label.flow_use_file",
+                      {{"en", "Use file path"}, {"zh", "使用文件路径"}});
+    add_locale_string("label.flow_file_path",
+                      {{"en", "File path"}, {"zh", "文件路径"}});
+    add_locale_string("action.flow_load_inputs",
+                      {{"en", "Load Input Files"}, {"zh", "加载输入文件"}});
+    add_locale_string("label.flow_file",
+                      {{"en", "File"}, {"zh", "文件"}});
+    add_locale_string("action.flow_execute",
+                      {{"en", "Execute"}, {"zh", "执行"}});
+    add_locale_string("label.flow_template",
+                      {{"en", "Template (segment config)"},
+                       {"zh", "模板（分割配置）"}});
+    add_locale_string("label.flow_execute_hint",
+                      {{"en", "Add input and output file paths, then click Execute"},
+                       {"zh", "添加入口和出口文件路径，然后点击执行"}});
     add_locale_string("window.log", {{"en", "Log"}, {"zh", "日志"}});
     add_locale_string("window.debug_voxel_picking",
                       {{"en", "Voxel Picking Debug"}, {"zh", "体素拾取调试"}});

@@ -603,9 +603,15 @@ class RenderVoxelList {
     bool show_load_dialog = false;
     bool show_flow_viewer = false;
 
+    // 工作流端点：节点ID + 文件路径
+    struct FlowEntry {
+        int node_id = -1;
+        std::string file_path;
+    };
+
     // 工作流查看器状态
-    std::vector<int> flow_inputs;
-    std::vector<int> flow_outputs;
+    std::vector<FlowEntry> flow_inputs;
+    std::vector<FlowEntry> flow_outputs;
     std::vector<int> flow_cached_order;
     bool flow_needs_recompute = true;
 
@@ -786,6 +792,9 @@ class RenderVoxelList {
     std::filesystem::path get_mesh_cache_path(int node_id) const;
     std::filesystem::path get_sdf_cache_path(int node_id) const;
     std::filesystem::path get_voxel_cache_path(int node_id) const;
+    // 执行工作流：加载输入文件→按模板处理→导出输出文件
+    void execute_flow();
+
     std::vector<int> get_process_flow(const std::vector<int>& inputs,
                                       const std::vector<int>& outputs)
         const;  // TODO:用于实现工作流的辅助函数，返回依次被调用的节点id列表
@@ -814,6 +823,7 @@ class RenderVoxelList {
         TASK_EXTRACT_SKELETON = 8,
         TASK_EXPORT_STL = 9,
         TASK_EXPORT_STL_ALL = 10,
+        TASK_EXECUTE_FLOW = 11,
     };
     struct QueueTask {
         QueueTaskType type;
@@ -833,6 +843,9 @@ class RenderVoxelList {
         int node_source_sdf_subdivisions = 2;
         bool node_source_sdf_simplify = false;
         float node_source_sdf_simplify_ratio = 0.1f;
+        // 工作流执行
+        std::vector<FlowEntry> flow_input_entries;
+        std::vector<FlowEntry> flow_output_entries;
     };
     std::queue<QueueTask> queue;
     std::mutex queue_mutex;

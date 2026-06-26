@@ -889,18 +889,25 @@ bool RenderVoxelList::save_project(const std::string& folder) {
     }
     cJSON_AddItemToObject(root, "items", arr);
 
-    // 保存工作流输入/输出节点
-    cJSON* flow_inputs_arr = cJSON_CreateArray();
-    for (int id : flow_inputs) {
-        cJSON_AddItemToArray(flow_inputs_arr, cJSON_CreateNumber(id));
+    // 保存工作流输入/输出（节点ID + 文件路径）
+    {
+        auto save_flow_entries =
+            [](const std::vector<FlowEntry>& entries) -> cJSON* {
+            cJSON* arr = cJSON_CreateArray();
+            for (const auto& e : entries) {
+                cJSON* obj = cJSON_CreateObject();
+                cJSON_AddNumberToObject(obj, "node_id", e.node_id);
+                cJSON_AddStringToObject(obj, "file_path",
+                                        e.file_path.c_str());
+                cJSON_AddItemToArray(arr, obj);
+            }
+            return arr;
+        };
+        cJSON_AddItemToObject(root, "flow_inputs",
+                              save_flow_entries(flow_inputs));
+        cJSON_AddItemToObject(root, "flow_outputs",
+                              save_flow_entries(flow_outputs));
     }
-    cJSON_AddItemToObject(root, "flow_inputs", flow_inputs_arr);
-
-    cJSON* flow_outputs_arr = cJSON_CreateArray();
-    for (int id : flow_outputs) {
-        cJSON_AddItemToArray(flow_outputs_arr, cJSON_CreateNumber(id));
-    }
-    cJSON_AddItemToObject(root, "flow_outputs", flow_outputs_arr);
 
     std::filesystem::path json_path = dir / "project.json";
     char* json_str = cJSON_Print(root);
@@ -1106,25 +1113,38 @@ bool RenderVoxelList::load_project(const std::string& folder) {
         }
     }
 
-    // 加载工作流输入/输出节点（兼容旧项目）
-    flow_inputs.clear();
-    flow_outputs.clear();
-    if (flow_inputs_arr) {
-        int flow_inputs_count = cJSON_GetArraySize(flow_inputs_arr);
-        for (int i = 0; i < flow_inputs_count; ++i) {
-            const cJSON* v = cJSON_GetArrayItem(flow_inputs_arr, i);
-            if (v && cJSON_IsNumber(v))
-                flow_inputs.push_back(v->valueint);
+    // 加载工作流输入/输出（节点ID + 文件路径，兼容旧格式）
+    auto load_flow_entries =
+        [](const cJSON* arr) -> std::vector<FlowEntry> {
+        std::vector<FlowEntry> result;
+        if (!arr) return result;
+        int count = cJSON_GetArraySize(arr);
+        for (int i = 0; i < count; ++i) {
+            const cJSON* v = cJSON_GetArrayItem(arr, i);
+            if (!v) continue;
+            FlowEntry e;
+            if (cJSON_IsObject(v)) {
+                const cJSON* nid = cJSON_GetObjectItem(v, "node_id");
+                const cJSON* fp = cJSON_GetObjectItem(v, "file_path");
+                if (nid && cJSON_IsNumber(nid))
+                    e.node_id = nid->valueint;
+                if (fp && cJSON_IsString(fp) && fp->valuestring)
+                    e.file_path = fp->valuestring;
+                result.push_back(e);
+            } else if (cJSON_IsNumber(v)) {
+                // 旧格式：纯节点ID
+                e.node_id = v->valueint;
+                result.push_back(e);
+            } else if (cJSON_IsString(v)) {
+                // 旧格式：纯文件路径
+                e.file_path = v->valuestring;
+                result.push_back(e);
+            }
         }
-    }
-    if (flow_outputs_arr) {
-        int flow_outputs_count = cJSON_GetArraySize(flow_outputs_arr);
-        for (int i = 0; i < flow_outputs_count; ++i) {
-            const cJSON* v = cJSON_GetArrayItem(flow_outputs_arr, i);
-            if (v && cJSON_IsNumber(v))
-                flow_outputs.push_back(v->valueint);
-        }
-    }
+        return result;
+    };
+    flow_inputs = load_flow_entries(flow_inputs_arr);
+    flow_outputs = load_flow_entries(flow_outputs_arr);
     flow_needs_recompute = true;
 
     // 重建由 segment 产生的子节点的 SDF 数据

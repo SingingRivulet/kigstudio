@@ -1,5 +1,6 @@
 
 #include <sstream>
+#include <unordered_set>
 #include "kigstudio/cgal/mesh_simplification.h"
 #include "render_voxel_list.h"
 #include "utils.h"
@@ -756,6 +757,146 @@ void RenderVoxelList::queue_thread() {
                     TRACE_STACK();
                 }
                 queue_running = false;
+                break;
+            }
+            case TASK_EXECUTE_FLOW: {
+                const auto& inputs = task.flow_input_entries;
+                const auto& outputs = task.flow_output_entries;
+                append_queue_logf("log.queue.start_execute_flow",
+                                  static_cast<int>(inputs.size()),
+                                  static_cast<int>(outputs.size()));
+                queue_running = true;
+                queue_progress = 0.0f;
+
+                // 提取输入/输出节点ID
+                std::vector<int> in_ids, out_ids;
+                for (const auto& e : inputs)
+                    if (e.node_id >= 0) in_ids.push_back(e.node_id);
+                for (const auto& e : outputs)
+                    if (e.node_id >= 0) out_ids.push_back(e.node_id);
+
+                // 1. 加载输入文件到对应节点
+                for (size_t i = 0; i < inputs.size(); ++i) {
+                    if (!queue_should_continue.load()) break;
+                    if (inputs[i].node_id < 0 || inputs[i].file_path.empty())
+                        continue;
+                    queue_progress = 0.05f * (static_cast<float>(i) /
+                                              inputs.size());
+                    setQueueStatus(
+                        get_locale_string("status.executing_flow.loading") +
+                        " " + std::to_string(i + 1) + "/" +
+                        std::to_string(inputs.size()));
+                    append_queue_logf("log.queue.processing_file",
+                                      static_cast<int>(i),
+                                      inputs[i].file_path.c_str());
+                    try {
+                        load_stl(inputs[i].file_path, 0.5f, 0.5, true,
+                                 inputs[i].node_id, 0, false, true);
+                    } catch (std::exception& e) {
+                        append_queue_logf("log.queue.error_load_stl",
+                                          inputs[i].file_path.c_str(), e.what());
+                    } catch (...) {
+                        append_queue_logf("log.queue.error_load_stl",
+                                          inputs[i].file_path.c_str(), "unknown");
+                    }
+                }
+
+                // 2. 计算处理顺序
+                locker.lock();
+                std::vector<int> flow_order;
+                if (!in_ids.empty() && !out_ids.empty()) {
+                    flow_order = get_process_flow(in_ids, out_ids);
+                }
+                locker.unlock();
+
+                // 3. 依次执行分割（跳过纯输出节点）
+                std::unordered_set<int> output_set(out_ids.begin(), out_ids.end());
+                for (size_t i = 0; i < flow_order.size(); ++i) {
+                    if (!queue_should_continue.load()) break;
+                    int node_id = flow_order[i];
+                    if (output_set.count(node_id)) continue;  // 跳过输出节点
+
+                    queue_progress = 0.1f + 0.7f * (static_cast<float>(i) /
+                                                     flow_order.size());
+                    setQueueStatus(
+                        get_locale_string("status.executing_flow.segmenting") +
+                        " " + std::to_string(i + 1) + "/" +
+                        std::to_string(flow_order.size()));
+                    try {
+                        do_segment(node_id);
+                    } catch (std::exception& e) {
+                        append_queue_logf("log.queue.error_segment",
+                                          node_id, e.what());
+                    } catch (...) {
+                        append_queue_logf("log.queue.error_segment",
+                                          node_id, "unknown");
+                    }
+                }
+
+                // 4. 导出输出节点到文件
+                for (size_t i = 0; i < outputs.size(); ++i) {
+                    if (!queue_should_continue.load()) break;
+                    if (outputs[i].node_id < 0 || outputs[i].file_path.empty())
+                        continue;
+
+                    queue_progress = 0.8f + 0.2f * (static_cast<float>(i) /
+                                                     outputs.size());
+                    setQueueStatus(
+                        get_locale_string("status.executing_flow.exporting") +
+                        " " + std::to_string(i + 1) + "/" +
+                        std::to_string(outputs.size()));
+
+                    locker.lock();
+                    auto it = items.find(outputs[i].node_id);
+                    if (it == items.end() || !it->second ||
+                        it->second->write_count != 0) {
+                        locker.unlock();
+                        continue;
+                    }
+                    it->second->write_count++;
+                    auto* item_ptr = it->second.get();
+                    locker.unlock();
+
+                    try {
+                        int tri_count = 0;
+                        std::vector<std::tuple<
+                            sinriv::kigstudio::voxel::Triangle,
+                            sinriv::kigstudio::voxel::vec3f>>
+                            mesh;
+                        for (auto tri :
+                             sinriv::kigstudio::voxel::generateMesh(
+                                 item_ptr->voxel_grid_data, 0.5, tri_count,
+                                 true, 0.0f,
+                                 [&](const std::string&) {
+                                     return queue_should_continue.load();
+                                 })) {
+                            mesh.push_back(tri);
+                        }
+                        if (!mesh.empty()) {
+                            mesh = sinriv::kigstudio::voxel::cleanMesh(mesh);
+                            sinriv::kigstudio::voxel::saveMeshToASCIISTL(
+                                mesh, outputs[i].file_path);
+                            append_queue_logf("log.queue.exported_file",
+                                              outputs[i].file_path.c_str());
+                        }
+                    } catch (std::exception& e) {
+                        append_queue_logf("log.queue.error_export_stl",
+                                          outputs[i].node_id, e.what());
+                    } catch (...) {
+                        append_queue_logf("log.queue.error_export_stl",
+                                          outputs[i].node_id, "unknown");
+                    }
+
+                    locker.lock();
+                    it = items.find(outputs[i].node_id);
+                    if (it != items.end() && it->second)
+                        it->second->write_count--;
+                    locker.unlock();
+                }
+
+                queue_progress = 1.0f;
+                queue_running = false;
+                append_queue_log("log.queue.done_execute_flow");
                 break;
             }
         }
