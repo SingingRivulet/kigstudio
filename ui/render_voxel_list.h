@@ -187,6 +187,7 @@ struct CollisionEditorSnapshot {
     vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
     bool show_silhouette_center = false;
     int silhouette_subdivision = 4;
+    float inner_wall_radius = 0.0f;
 };
 
 struct MarkedVoxelsSnapshot {
@@ -448,6 +449,7 @@ class RenderVoxelList {
         vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
         bool showSilhouetteCenter = false;
         int silhouette_subdivision = 4;
+        float inner_wall_radius = 0.0f;
 
         // undo/redo stacks for collision editor
         std::vector<CollisionEditorSnapshot> undo_stack;

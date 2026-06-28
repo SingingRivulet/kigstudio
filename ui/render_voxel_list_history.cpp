@@ -30,7 +30,8 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.node_source_sdf_simplify_ratio,
             item.silhouette_center,
             item.showSilhouetteCenter,
-            item.silhouette_subdivision};
+            item.silhouette_subdivision,
+            item.inner_wall_radius};
 }
 
 void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
@@ -64,6 +65,7 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.silhouette_center = snapshot.silhouette_center;
     item.showSilhouetteCenter = snapshot.show_silhouette_center;
     item.silhouette_subdivision = snapshot.silhouette_subdivision;
+    item.inner_wall_radius = snapshot.inner_wall_radius;
     item.joint_wireframe_dirty = true;
 }
 

@@ -85,7 +85,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const vec3f& center,
     const std::function<bool()>& should_continue = nullptr,
     const std::function<void(float, const std::string&)>& progress = nullptr,
-    int subdivision_level = 4);
+    int subdivision_level = 4,
+    float inner_wall_radius = 0.f);
 
 // 旧版本：锥体裁剪 + 边界边提取实现，保留用于参考。
 std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_old(

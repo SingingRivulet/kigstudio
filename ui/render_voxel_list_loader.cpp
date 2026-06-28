@@ -110,6 +110,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
                           item.showSilhouetteCenter);
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
                             item.silhouette_subdivision);
+    cJSON_AddNumberToObject(obj, "inner_wall_radius",
+                            item.inner_wall_radius);
     cJSON_AddStringToObject(obj, "err_info", item.err_info.c_str());
     cJSON_AddStringToObject(obj, "title", item.title.c_str());
     cJSON_AddStringToObject(obj, "comment_text", item.comment_text.c_str());
@@ -342,6 +344,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->node_source_sdf_subdivisions = child->valueint;
             } else if (strcmp(key, "silhouette_subdivision") == 0) {
                 item->silhouette_subdivision = child->valueint;
+            } else if (strcmp(key, "inner_wall_radius") == 0) {
+                item->inner_wall_radius = static_cast<float>(value);
             } else if (strcmp(key, "node_source_sdf_simplify_ratio") == 0) {
                 item->node_source_sdf_simplify_ratio =
                     static_cast<float>(value);
@@ -512,6 +516,8 @@ cJSON* RenderVoxelList::snapshot_to_json(
                           snapshot.show_silhouette_center);
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
                             snapshot.silhouette_subdivision);
+    cJSON_AddNumberToObject(obj, "inner_wall_radius",
+                            snapshot.inner_wall_radius);
 
     // 仅输出当前 segment_mode 相关的编辑字段
     const auto mode =
@@ -733,6 +739,8 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.node_source_sdf_subdivisions = child->valueint;
             } else if (strcmp(key, "silhouette_subdivision") == 0) {
                 snapshot.silhouette_subdivision = child->valueint;
+            } else if (strcmp(key, "inner_wall_radius") == 0) {
+                snapshot.inner_wall_radius = static_cast<float>(value);
             } else if (strcmp(key, "node_source_sdf_simplify_ratio") == 0) {
                 snapshot.node_source_sdf_simplify_ratio =
                     static_cast<float>(value);

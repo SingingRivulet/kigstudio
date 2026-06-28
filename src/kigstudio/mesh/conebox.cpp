@@ -1163,7 +1163,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const vec3f& center,
     const std::function<bool()>& should_continue,
     const std::function<void(float, const std::string&)>& progress,
-    int subdivision_level)
+    int subdivision_level,
+    float inner_wall_radius)
 {
     if (input_triangles.empty())
         return {};

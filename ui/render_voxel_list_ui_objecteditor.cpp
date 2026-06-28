@@ -360,10 +360,54 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         if (center_result.deactivated_after_edit) {
             push_undo_now(item.id, std::nullopt, "Silhouette Center");
         }
-        if (ImGui::SliderInt(get_locale_cstr("label.silhouette_subdivision"),
-                             &item.silhouette_subdivision, 1, 32)) {
+        ImGui::TextUnformatted(get_locale_cstr("label.silhouette_subdivision"));
+        ImGui::SameLine();
+        const float btn_w = ImGui::GetFrameHeight();
+        if (ImGui::Button("-##silhouette_subdiv", ImVec2(btn_w, 0))) {
+            if (item.silhouette_subdivision > 1) {
+                --item.silhouette_subdivision;
+                push_undo_now(item.id, std::nullopt,
+                              "Silhouette Subdivision");
+            }
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.0f);
+        if (ImGui::InputInt("##silhouette_subdiv_val",
+                            &item.silhouette_subdivision,
+                            0, 0,
+                            ImGuiInputTextFlags_CharsDecimal)) {
+            if (item.silhouette_subdivision < 1)
+                item.silhouette_subdivision = 1;
             push_undo_now(item.id, std::nullopt,
                           "Silhouette Subdivision");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("+##silhouette_subdiv", ImVec2(btn_w, 0))) {
+            ++item.silhouette_subdivision;
+            push_undo_now(item.id, std::nullopt,
+                          "Silhouette Subdivision");
+        }
+
+        // Inner wall radius
+        ImGui::TextUnformatted(get_locale_cstr("label.inner_wall_radius"));
+        ImGui::SameLine();
+        if (ImGui::Button("-##inner_wall", ImVec2(btn_w, 0))) {
+            item.inner_wall_radius = std::max(0.0f, item.inner_wall_radius - 0.5f);
+            push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.0f);
+        if (ImGui::InputFloat("##inner_wall_val", &item.inner_wall_radius,
+                              0.0f, 0.0f, "%.1f",
+                              ImGuiInputTextFlags_CharsDecimal)) {
+            if (item.inner_wall_radius < 0.0f)
+                item.inner_wall_radius = 0.0f;
+            push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("+##inner_wall", ImVec2(btn_w, 0))) {
+            item.inner_wall_radius += 0.5f;
+            push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
         }
     }
 
