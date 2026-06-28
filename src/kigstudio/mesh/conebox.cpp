@@ -6,6 +6,7 @@
 #include <iostream>
 #include <map>
 #include <queue>
+#include <set>
 #include <tuple>
 
 #include "kigstudio/utils/dbvt3d.h"
@@ -712,12 +713,11 @@ static bool is_inside_mesh(const vec3f& p,
 }
 
 // 使用 BVH 加速的点在封闭 mesh 内部判断（三条射线投票）
-static bool is_inside_mesh_bvh(
-    const vec3f& p,
-    const sinriv::kigstudio::dbvt3d<float, int>& bvh,
-    const std::vector<Triangle>& tris,
-    float max_dist,
-    float unique_eps = 1e-4f) {
+static bool is_inside_mesh_bvh(const vec3f& p,
+                               const sinriv::kigstudio::dbvt3d<float, int>& bvh,
+                               const std::vector<Triangle>& tris,
+                               float max_dist,
+                               float unique_eps = 1e-4f) {
     const vec3f dirs[3] = {vec3f(1.0f, 0.0f, 0.0f), vec3f(0.0f, 1.0f, 0.0f),
                            vec3f(0.0f, 0.0f, 1.0f)};
     int inside_votes = 0;
@@ -1154,6 +1154,17 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const vec3f& center,
     const std::function<bool()>& should_continue,
     const std::function<void(float, const std::string&)>& progress) {
+    std::set<coneBox_node*> nodes;  // 注意需要释放内存
+    /*
+     * TODO：重新实现流程
+     * 创建一个正二十面体，中心在center
+     * 细分正二十面体每个面为多个正三角形（细分级别固定为常量，细分2级，现在先直接细分，后续将改为按物体三角形投影切割）
+     * 将input_triangles构建为bvh树
+     * 计算正二十面体细分体的每个顶点的向量，从外部沿这个顶点->center的方向发射射线
+     * 如果射线打在了面上，就把顶点移动到碰撞点
+     * 如果射线直接打在了center，就删除当前顶点，并将附近的边标记为边缘
+     * 所有顶点移动完成后，将所有边缘与center之间创建三角形，使几何体封闭
+     */
     if (input_triangles.empty())
         return {};
 
@@ -1370,9 +1381,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         input_aabbs.push_back(input_bvh.add(mn, mx, &input_indices.back()));
     }
 
-    const float input_max_dist = input_bounds_init
-                                     ? (input_max - input_min).length() * 2.0f
-                                     : 1.0f;
+    const float input_max_dist =
+        input_bounds_init ? (input_max - input_min).length() * 2.0f : 1.0f;
 
     // 1. 构建 DBVT 加速射线查询
     BVH bvh;
@@ -1569,7 +1579,7 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
             break;
         if (progress && i % 100 == 0) {
             float t = 0.85f + static_cast<float>(i) /
-                                 static_cast<float>(visible_count) * 0.05f;
+                                  static_cast<float>(visible_count) * 0.05f;
             report_progress(t, step_text("status.silhouette.extract_boundary",
                                          i, visible_count));
         }
