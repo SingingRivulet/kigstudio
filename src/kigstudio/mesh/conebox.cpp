@@ -1149,527 +1149,401 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
     return result;
 }
 
+// =====================================================================
+// Icosphere silhouette algorithm (new implementation).
+//
+// Replaces the old cone-clipping + boundary-edge-extraction approach
+// with a subdivided icosahedron: rays are cast from center outward
+// through each vertex; vertices that hit the input mesh move to the
+// surface, vertices that miss are discarded.  Boundary edges (one face
+// kept, one discarded) are sealed with triangles to center.
+// =====================================================================
 std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const std::vector<Triangle>& input_triangles,
     const vec3f& center,
     const std::function<bool()>& should_continue,
-    const std::function<void(float, const std::string&)>& progress) {
-    std::set<coneBox_node*> nodes;  // 注意需要释放内存
-    /*
-     * TODO：重新实现流程
-     * 创建一个正二十面体，中心在center
-     * 细分正二十面体每个面为多个正三角形（细分级别固定为常量，细分2级，现在先直接细分，后续将改为按物体三角形投影切割）
-     * 将input_triangles构建为bvh树
-     * 计算正二十面体细分体的每个顶点的向量，从外部沿这个顶点->center的方向发射射线
-     * 如果射线打在了面上，就把顶点移动到碰撞点
-     * 如果射线直接打在了center，就删除当前顶点，并将附近的边标记为边缘
-     * 所有顶点移动完成后，将所有边缘与center之间创建三角形，使几何体封闭
-     */
+    const std::function<void(float, const std::string&)>& progress)
+{
     if (input_triangles.empty())
         return {};
 
     auto report_progress = [&](float t, const std::string& text) {
-        if (progress) {
-            progress(t, text);
-        }
+        if (progress) progress(t, text);
     };
 
-    auto step_text = [&](const std::string& key, int cur, int total) {
-        return sinriv::locale::get_locale_string(key) + " (" +
-               std::to_string(cur) + "/" + std::to_string(total) + ")";
-    };
+    report_progress(0.0f, "Building BVH...");
 
-    report_progress(
-        0.0f, sinriv::locale::get_locale_string("status.silhouette.prepare"));
-
-    // =====================================================================
-    // Phase 0: 精确锥体裁剪 — 用每个三角形与 center 构成的三面锥去切割
-    //          被它遮挡的更远三角形，保留锥体外部（未遮挡区域）
-    // =====================================================================
-    std::vector<Triangle> fragments = input_triangles;
-    std::vector<int> frag_src(input_triangles.size());
-    std::iota(frag_src.begin(), frag_src.end(), 0);
-    std::vector<float> src_depths;
-    src_depths.reserve(input_triangles.size());
-    for (const auto& tri : input_triangles) {
-        src_depths.push_back((tri_centroid(tri) - center).length());
-    }
-
-    // 按原始三角形重心深度升序排序（近的优先处理）
-    std::vector<int> order(input_triangles.size());
-    std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(),
-              [&](int a, int b) { return src_depths[a] < src_depths[b]; });
-
-    std::vector<float> frag_depths = src_depths;
-
-    // 检测 center 是否在 mesh 内部：沿 +X 方向发射射线，数交点
-    bool center_inside = false;
-    {
-        vec3f ray_dir(1.0f, 0.0f, 0.0f);
-        float ray_max = 0.0f;
-        for (const auto& tri : input_triangles) {
-            for (const auto& v :
-                 {std::get<0>(tri), std::get<1>(tri), std::get<2>(tri)}) {
-                ray_max = std::max(ray_max, std::abs(v.x - center.x));
-            }
-        }
-        ray_max += 1.0f;
-        std::vector<float> ts;
-        for (const auto& tri : input_triangles) {
-            vec3f hit;
-            if (ray_triangle_intersect(center, ray_dir, std::get<0>(tri),
-                                       std::get<1>(tri), std::get<2>(tri),
-                                       hit)) {
-                float t = (hit - center).dot(ray_dir);
-                if (t > 1e-6f && t < ray_max) {
-                    ts.push_back(t);
-                }
-            }
-        }
-        std::sort(ts.begin(), ts.end());
-        int intersect_count = 0;
-        for (size_t i = 0; i < ts.size(); ++i) {
-            if (i == 0 || std::abs(ts[i] - ts[i - 1]) > 1e-4f) {
-                ++intersect_count;
-            }
-        }
-        center_inside = (intersect_count % 2 == 1);
-    }
-
-    report_progress(0.05f, sinriv::locale::get_locale_string(
-                               "status.silhouette.test_center"));
-
-    // 碎片数量上限，防止内存爆炸
-    const size_t MAX_FRAGMENTS =
-        std::max(input_triangles.size() * 20, size_t(10000));
-
-    // 若 center 在内部，不需要锥体裁剪（所有面都可见，无遮挡）
-    if (!center_inside) {
-        for (size_t loop_idx = 0; loop_idx < order.size(); ++loop_idx) {
-            int src_idx = order[loop_idx];
-            if (should_continue && !should_continue())
-                break;
-            if (progress && loop_idx % 10 == 0) {
-                float t = 0.1f + static_cast<float>(loop_idx) /
-                                     static_cast<float>(order.size()) * 0.35f;
-                report_progress(t, sinriv::locale::get_locale_string(
-                                       "status.silhouette.clip_cones"));
-            }
-            if (fragments.size() > MAX_FRAGMENTS)
-                break;
-
-            const auto& src_tri = input_triangles[src_idx];
-            ConePlanes cone = build_cone_planes(src_tri, center);
-
-            // 跳过退化锥体（三角形与 center 近似共面）
-            if (std::abs(cone.s01) < 1e-8f && std::abs(cone.s12) < 1e-8f &&
-                std::abs(cone.s20) < 1e-8f) {
-                continue;
-            }
-
-            vec3f cone_min, cone_max;
-            cone_aabb(src_tri, center, cone_min, cone_max);
-
-            std::vector<Triangle> new_fragments;
-            std::vector<int> new_frag_src;
-            std::vector<float> new_frag_depths;
-            new_fragments.reserve(fragments.size());
-            new_frag_src.reserve(fragments.size());
-            new_frag_depths.reserve(fragments.size());
-
-            for (size_t j = 0; j < fragments.size(); ++j) {
-                // 不切割自己
-                if (frag_src[j] == src_idx) {
-                    new_fragments.push_back(fragments[j]);
-                    new_frag_src.push_back(frag_src[j]);
-                    new_frag_depths.push_back(frag_depths[j]);
-                    continue;
-                }
-
-                // AABB 快速排斥
-                vec3f fmin, fmax;
-                tri_aabb(fragments[j], fmin, fmax);
-                if (fmax.x < cone_min.x || fmin.x > cone_max.x ||
-                    fmax.y < cone_min.y || fmin.y > cone_max.y ||
-                    fmax.z < cone_min.z || fmin.z > cone_max.z) {
-                    new_fragments.push_back(fragments[j]);
-                    new_frag_src.push_back(frag_src[j]);
-                    new_frag_depths.push_back(frag_depths[j]);
-                    continue;
-                }
-
-                // 碎片来自比 src 更近的原始三角形，不切割
-                if (frag_depths[j] < src_depths[src_idx] - 1e-4f) {
-                    new_fragments.push_back(fragments[j]);
-                    new_frag_src.push_back(frag_src[j]);
-                    new_frag_depths.push_back(frag_depths[j]);
-                    continue;
-                }
-
-                // 精确裁剪：保留锥体外部；若外部为空则保留原片
-                // （让 silhouette 步骤处理完全遮挡的情况）
-                auto clipped =
-                    clip_triangle_by_cone(fragments[j], cone, center);
-                if (clipped.empty()) {
-                    new_fragments.push_back(fragments[j]);
-                    new_frag_src.push_back(frag_src[j]);
-                    new_frag_depths.push_back(frag_depths[j]);
-                } else {
-                    for (const auto& ct : clipped) {
-                        new_fragments.push_back(ct);
-                        new_frag_src.push_back(frag_src[j]);
-                        new_frag_depths.push_back(
-                            (tri_centroid(ct) - center).length());
-                    }
-                }
-            }
-
-            fragments = std::move(new_fragments);
-            frag_src = std::move(new_frag_src);
-            frag_depths = std::move(new_frag_depths);
-        }
-    }  // if (!center_inside)
-
-    // =====================================================================
-    // Phase 1+: 基于裁剪后的碎片运行 silhouette 算法
-    // =====================================================================
-
-    report_progress(0.45f, sinriv::locale::get_locale_string(
-                               "status.silhouette.build_bvh"));
-
-    // 0. 为原始输入网格构建 DBVT，用于加速 inside 测试
+    // ---- 1. Build BVH over input triangles ----
     using BVH = sinriv::kigstudio::dbvt3d<float, int>;
-    BVH input_bvh;
-    std::vector<BVH::AABB*> input_aabbs;
-    std::vector<int> input_indices;
-    input_aabbs.reserve(input_triangles.size());
-    input_indices.reserve(input_triangles.size());
-    vec3f input_min, input_max;
-    bool input_bounds_init = false;
+    BVH bvh;
+    std::vector<BVH::AABB*> bvh_aabbs;
+    std::vector<int> bvh_indices;
+    bvh_aabbs.reserve(input_triangles.size());
+    bvh_indices.reserve(input_triangles.size());
 
     for (int i = 0; i < static_cast<int>(input_triangles.size()); ++i) {
-        if (should_continue && !should_continue())
-            break;
         const auto& tri = input_triangles[i];
         const auto& v0 = std::get<0>(tri);
         const auto& v1 = std::get<1>(tri);
         const auto& v2 = std::get<2>(tri);
-        vec3f mn(v0.x, v0.y, v0.z);
-        vec3f mx(v0.x, v0.y, v0.z);
-        mn.x = std::min(mn.x, std::min(v1.x, v2.x));
-        mn.y = std::min(mn.y, std::min(v1.y, v2.y));
-        mn.z = std::min(mn.z, std::min(v1.z, v2.z));
-        mx.x = std::max(mx.x, std::max(v1.x, v2.x));
-        mx.y = std::max(mx.y, std::max(v1.y, v2.y));
-        mx.z = std::max(mx.z, std::max(v1.z, v2.z));
-
-        if (!input_bounds_init) {
-            input_min = mn;
-            input_max = mx;
-            input_bounds_init = true;
-        } else {
-            input_min.x = std::min(input_min.x, mn.x);
-            input_min.y = std::min(input_min.y, mn.y);
-            input_min.z = std::min(input_min.z, mn.z);
-            input_max.x = std::max(input_max.x, mx.x);
-            input_max.y = std::max(input_max.y, mx.y);
-            input_max.z = std::max(input_max.z, mx.z);
-        }
-
-        input_indices.push_back(i);
-        input_aabbs.push_back(input_bvh.add(mn, mx, &input_indices.back()));
+        vec3f mn(v0.x, v0.y, v0.z), mx(mn);
+        auto expand = [&](const vec3f& v) {
+            mn.x = std::min(mn.x, v.x); mn.y = std::min(mn.y, v.y); mn.z = std::min(mn.z, v.z);
+            mx.x = std::max(mx.x, v.x); mx.y = std::max(mx.y, v.y); mx.z = std::max(mx.z, v.z);
+        };
+        expand(v1); expand(v2);
+        bvh_indices.push_back(i);
+        bvh_aabbs.push_back(
+            bvh.add(sinriv::kigstudio::vec3<float>(mn.x, mn.y, mn.z),
+                    sinriv::kigstudio::vec3<float>(mx.x, mx.y, mx.z),
+                    &bvh_indices.back()));
     }
 
-    const float input_max_dist =
-        input_bounds_init ? (input_max - input_min).length() * 2.0f : 1.0f;
-
-    // 1. 构建 DBVT 加速射线查询
-    BVH bvh;
-    std::vector<BVH::AABB*> aabbs;
-    std::vector<int> indices;
-    aabbs.reserve(fragments.size());
-    indices.reserve(fragments.size());
-
-    for (int i = 0; i < static_cast<int>(fragments.size()); ++i) {
-        if (should_continue && !should_continue())
-            break;
-        if (progress && i % 100 == 0) {
-            float t = 0.45f + static_cast<float>(i) /
-                                  static_cast<float>(fragments.size()) * 0.05f;
-            report_progress(t, sinriv::locale::get_locale_string(
-                                   "status.silhouette.build_bvh"));
-        }
-        const auto& tri = fragments[i];
-        const auto& v0 = std::get<0>(tri);
-        const auto& v1 = std::get<1>(tri);
-        const auto& v2 = std::get<2>(tri);
-        vec3f mn(v0.x, v0.y, v0.z);
-        vec3f mx(v0.x, v0.y, v0.z);
-        mn.x = std::min(mn.x, std::min(v1.x, v2.x));
-        mn.y = std::min(mn.y, std::min(v1.y, v2.y));
-        mn.z = std::min(mn.z, std::min(v1.z, v2.z));
-        mx.x = std::max(mx.x, std::max(v1.x, v2.x));
-        mx.y = std::max(mx.y, std::max(v1.y, v2.y));
-        mx.z = std::max(mx.z, std::max(v1.z, v2.z));
-        indices.push_back(i);
-        aabbs.push_back(bvh.add(mn, mx, &indices.back()));
-    }
-
-    // 2. 计算 mesh 最大范围，用于确定射线长度
-    float max_dist = 0.0f;
-    for (const auto& tri : fragments) {
-        for (const auto& v :
-             {std::get<0>(tri), std::get<1>(tri), std::get<2>(tri)}) {
-            max_dist = std::max(max_dist, (v - center).length());
+    // ---- 2. Compute enclosing radius ----
+    float max_dist2 = 0.0f;
+    for (const auto& tri : input_triangles) {
+        for (const auto& v : {std::get<0>(tri), std::get<1>(tri), std::get<2>(tri)}) {
+            float d2 = (v - center).length2();
+            if (d2 > max_dist2) max_dist2 = d2;
         }
     }
-    max_dist = std::max(max_dist, 1.0f) * 3.0f;
+    const float radius = std::sqrt(max_dist2) * 2.0f + 1.0f;
+    const float ray_len = radius * 3.0f;  // ray extends well beyond model
 
-    // 3. 对每个碎片发射射线，找最远交点
-    std::vector<int> visible_flags(fragments.size(), 0);
+    // ---- 3. Create subdivided icosahedron (level 2 → 320 faces) ----
+    const float phi = (1.0f + std::sqrt(5.0f)) / 2.0f;
+    const float inv_norm = 1.0f / std::sqrt(1.0f + phi * phi);
 
-    for (int i = 0; i < static_cast<int>(fragments.size()); ++i) {
-        if (should_continue && !should_continue())
-            break;
-        if (progress && i % 100 == 0) {
-            float t = 0.5f + static_cast<float>(i) /
-                                 static_cast<float>(fragments.size()) * 0.3f;
-            report_progress(t, step_text("status.silhouette.ray_visibility", i,
-                                         static_cast<int>(fragments.size())));
+    // 12 icosahedron vertices (normalized to radius)
+    auto icosa_v = [&](float x, float y, float z) -> vec3f {
+        float len = std::sqrt(x*x + y*y + z*z);
+        float s = radius / len;
+        return center + vec3f(x * s, y * s, z * s);
+    };
+    std::vector<vec3f> base_verts = {
+        icosa_v(0, -1, -phi), icosa_v(0, -1, phi),
+        icosa_v(0,  1, -phi), icosa_v(0,  1, phi),
+        icosa_v(-1, -phi, 0), icosa_v(-1, phi, 0),
+        icosa_v( 1, -phi, 0), icosa_v( 1, phi, 0),
+        icosa_v(-phi, 0, -1), icosa_v(-phi, 0, 1),
+        icosa_v( phi, 0, -1), icosa_v( phi, 0, 1),
+    };
+
+    // Auto-detect icosahedron edges from vertex distances.
+    // In a regular icosahedron, the shortest inter-vertex distance
+    // is the edge length; all 30 edges have this length.
+    float edge_len2 = 1e30f;
+    for (int i = 0; i < 12; ++i)
+        for (int j = i + 1; j < 12; ++j) {
+            float d2 = (base_verts[i] - base_verts[j]).length2();
+            if (d2 < edge_len2) edge_len2 = d2;
         }
-        const auto& tri = fragments[i];
-        const auto& v0 = std::get<0>(tri);
-        const auto& v1 = std::get<1>(tri);
-        const auto& v2 = std::get<2>(tri);
-        const vec3f centroid = (v0 + v1 + v2) * (1.0f / 3.0f);
-        const vec3f dir = centroid - center;
-        const float dir_len = dir.length();
-        if (dir_len < 1e-8f)
-            continue;
-        const vec3f dir_n = dir * (1.0f / dir_len);
+    edge_len2 *= 1.01f;  // slight tolerance
+
+    // Build neighbor lists from edges
+    std::vector<std::vector<int>> neighbors(12);
+    for (int i = 0; i < 12; ++i)
+        for (int j = i + 1; j < 12; ++j)
+            if ((base_verts[i] - base_verts[j]).length2() < edge_len2) {
+                neighbors[i].push_back(j);
+                neighbors[j].push_back(i);
+            }
+
+    // Find all triangles where all 3 edge pairs exist.
+    // Ensure CCW outward winding for each face.
+    std::vector<std::array<int, 3>> base_faces_vec;
+    for (int i = 0; i < 12; ++i) {
+        for (int j : neighbors[i]) {
+            if (j <= i) continue;
+            for (int k : neighbors[j]) {
+                if (k <= j) continue;
+                // Check edge i-k exists
+                bool has_ik = false;
+                for (int n : neighbors[k])
+                    if (n == i) { has_ik = true; break; }
+                if (!has_ik) continue;
+
+                // (i,j,k) is a face. Ensure outward normal.
+                vec3f n = (base_verts[j] - base_verts[i])
+                              .cross(base_verts[k] - base_verts[i]);
+                vec3f cen = (base_verts[i] + base_verts[j] +
+                             base_verts[k]) * (1.0f / 3.0f);
+                if (n.dot(cen - center) < 0.0f)
+                    base_faces_vec.push_back({i, k, j});
+                else
+                    base_faces_vec.push_back({i, j, k});
+            }
+        }
+    }
+    const int NF = (int)base_faces_vec.size();
+    CB_DBG("  auto-detected " << NF << " icosahedron faces (expect 20)");
+
+    const int SUBDIV = 4;  // 2^2 segments per edge → level 2
+
+    // Build subdivided vertices and faces.
+    // Use a map from snapped world position → vertex index for dedup.
+    const float SNAP = 1e-4f;
+    auto snap = [](float v) { return std::round(v / SNAP) * SNAP; };
+    auto snap_vec = [&](const vec3f& v) -> vec3f { return {snap(v.x), snap(v.y), snap(v.z)}; };
+
+    std::vector<vec3f> sub_verts;     // world-space vertices
+    struct Vec3fCmp { bool operator()(const vec3f& a, const vec3f& b) const {
+        if (a.x != b.x) return a.x < b.x;
+        if (a.y != b.y) return a.y < b.y;
+        return a.z < b.z; }};
+    std::map<vec3f, int, Vec3fCmp> vert_map;  // snapped pos → index
+    auto get_or_add_vert = [&](const vec3f& v) -> int {
+        vec3f sv = snap_vec(v);
+        auto it = vert_map.find(sv);
+        if (it != vert_map.end()) return it->second;
+        int idx = static_cast<int>(sub_verts.size());
+        sub_verts.push_back(v);
+        vert_map[sv] = idx;
+        return idx;
+    };
+
+    // Subdivide each base face
+    struct SubFace { int a, b, c; };
+    std::vector<SubFace> sub_faces;
+
+    for (int f = 0; f < NF; ++f) {
+        int i0 = base_faces_vec[f][0], i1 = base_faces_vec[f][1], i2 = base_faces_vec[f][2];
+        const vec3f& A = base_verts[i0];
+        const vec3f& B = base_verts[i1];
+        const vec3f& C = base_verts[i2];
+
+        // Grid: row i, col j → point (i,j) where 0≤i≤SUBDIV, 0≤j≤SUBDIV-i
+        // Position = slerp from A along AB and AC vectors, projected to sphere
+        // Store grid-point vertex indices
+        std::vector<std::vector<int>> grid(SUBDIV + 1);
+        for (int i = 0; i <= SUBDIV; ++i) {
+            grid[i].resize(SUBDIV - i + 1);
+            for (int j = 0; j <= SUBDIV - i; ++j) {
+                float bi = (float)i / SUBDIV;  // fraction along AB
+                float bj = (float)j / SUBDIV;  // fraction along AC
+                // Point = A + bi*(B-A) + bj*(C-A)
+                vec3f pt = A + (B - A) * bi + (C - A) * bj;
+                // Project to sphere
+                vec3f dir = pt - center;
+                float len = std::max(dir.length(), 1e-8f);
+                vec3f sph = center + dir * (radius / len);
+                grid[i][j] = get_or_add_vert(sph);
+            }
+        }
+
+        // Generate sub-triangles within this face
+        for (int i = 0; i < SUBDIV; ++i) {
+            for (int j = 0; j < SUBDIV - i; ++j) {
+                // "Up" triangle: (i,j), (i+1,j), (i,j+1)
+                sub_faces.push_back({grid[i][j], grid[i+1][j], grid[i][j+1]});
+                // "Down" triangle: (i+1,j), (i,j+1), (i+1,j+1) — if valid
+                if (i + j + 1 < SUBDIV) {
+                    sub_faces.push_back({grid[i+1][j], grid[i][j+1], grid[i+1][j+1]});
+                }
+            }
+        }
+    }
+
+    CB_DBG("  icosahedron: " << sub_verts.size() << " verts, "
+           << sub_faces.size() << " faces");
+
+    // ---- DEBUG: output raw icosahedron (change to #if 1 to enable) ----
+#if 0
+    {
+        std::vector<Triangle> debug_out;
+        for (const auto& sf : sub_faces) {
+            vec3f p0 = sub_verts[sf.a], p1 = sub_verts[sf.b],
+                  p2 = sub_verts[sf.c];
+            vec3f n = (p1 - p0).cross(p2 - p0);
+            vec3f cen = (p0 + p1 + p2) * (1.0f / 3.0f);
+            if (n.dot(cen - center) < 0.0f) std::swap(p1, p2);
+            debug_out.emplace_back(std::make_tuple(p0, p1, p2));
+        }
+        for (auto* aabb : bvh_aabbs) {
+            bvh.remove(aabb); bvh.delAABB(aabb);
+        }
+        CB_DBG("  DEBUG: returning raw icosahedron (" << debug_out.size()
+               << " faces)");
+        return debug_out;
+    }
+#endif
+
+    report_progress(0.1f, "Casting rays...");
+
+    // ---- 4. Ray cast: farthest hit along center→vertex direction ----
+    std::vector<bool> hit(sub_verts.size(), false);
+    std::vector<vec3f> hit_pos(sub_verts.size());
+
+    for (int vi = 0; vi < static_cast<int>(sub_verts.size()); ++vi) {
+        if (should_continue && !should_continue()) break;
+        const vec3f& vt = sub_verts[vi];
+        vec3f dir = vt - center;
+        float dir_len = dir.length();
+        if (dir_len < 1e-8f) continue;
+        vec3f dir_n = dir * (1.0f / dir_len);
 
         float farthest_t = -1.0f;
-        int farthest_idx = -1;
-
         bvh.rayTest(
-            sinriv::kigstudio::ray<float>(center, center + dir_n * max_dist),
+            sinriv::kigstudio::ray<float>(center, center + dir_n * ray_len),
             [&](const BVH::AABB* node) {
                 int idx = *node->data;
-                if (idx < 0 || idx >= static_cast<int>(fragments.size()))
+                if (idx < 0 || idx >= static_cast<int>(input_triangles.size()))
                     return;
-                const auto& t2 = fragments[idx];
-                vec3f hit;
-                if (ray_triangle_intersect(center, dir_n, std::get<0>(t2),
-                                           std::get<1>(t2), std::get<2>(t2),
-                                           hit)) {
-                    float t = (hit - center).length();
+                const auto& tri = input_triangles[idx];
+                vec3f hp;
+                if (ray_triangle_intersect(center, dir_n,
+                                           std::get<0>(tri), std::get<1>(tri),
+                                           std::get<2>(tri), hp)) {
+                    float t = (hp - center).length();
                     if (t > farthest_t) {
                         farthest_t = t;
-                        farthest_idx = idx;
+                        hit_pos[vi] = hp;
                     }
                 }
             });
 
-        if (farthest_idx >= 0) {
-            visible_flags[farthest_idx] = 1;
+        if (farthest_t > 0.0f) {
+            hit[vi] = true;
         }
     }
 
-    // 收集可见碎片
-    std::vector<Triangle> visible_tris;
-    for (int i = 0; i < static_cast<int>(fragments.size()); ++i) {
-        if (visible_flags[i]) {
-            visible_tris.push_back(fragments[i]);
-        }
-    }
-
-    if (visible_tris.empty()) {
-        for (auto* aabb : aabbs) {
-            bvh.remove(aabb);
-            bvh.delAABB(aabb);
-        }
-        for (auto* aabb : input_aabbs) {
-            input_bvh.remove(aabb);
-            input_bvh.delAABB(aabb);
-        }
-        return {};
-    }
-
-    report_progress(0.8f, sinriv::locale::get_locale_string(
-                              "status.silhouette.flip_normals"));
-
-    // 5. 调整可见面法线方向：使法线朝外（支持凹体，使用三条射线投票）
-    int visible_count = static_cast<int>(visible_tris.size());
-    for (int i = 0; i < visible_count; ++i) {
-        if (should_continue && !should_continue())
-            break;
-        if (progress && i % 100 == 0) {
-            float t = 0.80f + static_cast<float>(i) /
-                                  static_cast<float>(visible_count) * 0.05f;
-            report_progress(t, step_text("status.silhouette.flip_normals", i,
-                                         visible_count));
-        }
-        auto& tri = visible_tris[i];
-        auto& v0 = std::get<0>(tri);
-        auto& v1 = std::get<1>(tri);
-        auto& v2 = std::get<2>(tri);
-        vec3f n = (v1 - v0).cross(v2 - v0);
-        float n_len = n.length();
-        if (n_len < 1e-12f)
-            continue;
-        vec3f n_unit = n * (1.0f / n_len);
-        vec3f centroid = (v0 + v1 + v2) * (1.0f / 3.0f);
-        vec3f p_test = centroid + n_unit * 1e-3f;
-        if (is_inside_mesh_bvh(p_test, input_bvh, input_triangles,
-                               input_max_dist)) {
-            std::swap(v1, v2);
-        }
-    }
-
-    report_progress(0.85f, sinriv::locale::get_locale_string(
-                               "status.silhouette.extract_boundary"));
-
-    // 4. 提取边界边（只被一个可见三角形共享的边）
-    // 对顶点做 snap，避免浮点误差导致切割后的相邻碎片产生重叠边界边。
-    // 注意：必须在 flip_normals 之后提取，这样 EdgeKey 保存的原始方向
-    // 才是三角形最终顶点顺序的方向；侧面 (a, b, center) 的法线自然朝外。
-    struct EdgeKey {
-        static float snap(float v) {
-            const float SNAP_EPS = 1e-4f;
-            return std::round(v / SNAP_EPS) * SNAP_EPS;
-        }
-        static vec3f snap_vec(const vec3f& v) {
-            return vec3f(snap(v.x), snap(v.y), snap(v.z));
-        }
-        vec3f sorted_a, sorted_b;  // 用于去重比较
-        vec3f a, b;                // 原始方向（来自可见面顶点顺序）
-        EdgeKey(const vec3f& v0, const vec3f& v1) {
-            a = v0;
-            b = v1;
-            vec3f s0 = snap_vec(v0);
-            vec3f s1 = snap_vec(v1);
-            if (s0.x < s1.x || (s0.x == s1.x && s0.y < s1.y) ||
-                (s0.x == s1.x && s0.y == s1.y && s0.z < s1.z)) {
-                sorted_a = s0;
-                sorted_b = s1;
-            } else {
-                sorted_a = s1;
-                sorted_b = s0;
+    // ---- 4b. Verify hits are on radial direction ----
+    {
+        int off_radial = 0;
+        float max_deviation = 0;
+        for (int vi = 0; vi < static_cast<int>(sub_verts.size()); ++vi) {
+            if (!hit[vi]) continue;
+            vec3f orig_dir = sub_verts[vi] - center;
+            float orig_len = orig_dir.length();
+            if (orig_len < 1e-8f) continue;
+            orig_dir = orig_dir * (1.0f / orig_len);
+            vec3f hit_dir = hit_pos[vi] - center;
+            float hit_len = hit_dir.length();
+            if (hit_len < 1e-8f) continue;
+            hit_dir = hit_dir * (1.0f / hit_len);
+            // Angle between original direction and hit direction
+            float dot = orig_dir.dot(hit_dir);
+            if (dot > 1.0f) dot = 1.0f;
+            if (dot < -1.0f) dot = -1.0f;
+            float angle = std::acos(dot);
+            if (angle > 1e-4f) {  // > 0.0057 degrees
+                ++off_radial;
+                if (angle > max_deviation) max_deviation = angle;
             }
         }
-        bool operator<(const EdgeKey& o) const {
-            if (sorted_a.x != o.sorted_a.x)
-                return sorted_a.x < o.sorted_a.x;
-            if (sorted_a.y != o.sorted_a.y)
-                return sorted_a.y < o.sorted_a.y;
-            if (sorted_a.z != o.sorted_a.z)
-                return sorted_a.z < o.sorted_a.z;
-            if (sorted_b.x != o.sorted_b.x)
-                return sorted_b.x < o.sorted_b.x;
-            if (sorted_b.y != o.sorted_b.y)
-                return sorted_b.y < o.sorted_b.y;
-            return sorted_b.z < o.sorted_b.z;
+        if (off_radial > 0) {
+            CB_DBG("  WARNING: " << off_radial << " hits off radial, max angle="
+                   << (max_deviation * 180.0f / 3.14159f) << " deg");
+        } else {
+            CB_DBG("  all hits on radial direction (OK)");
+        }
+    }
+
+    report_progress(0.6f, "Building output mesh...");
+
+    // ---- 5. Classify faces & collect boundary edges ----
+    struct EdgeKey2 {
+        int a, b;
+        EdgeKey2(int va, int vb) : a(std::min(va, vb)), b(std::max(va, vb)) {}
+        bool operator<(const EdgeKey2& o) const {
+            return a != o.a ? a < o.a : b < o.b;
         }
     };
 
-    std::map<EdgeKey, int> edge_count;
-    for (int i = 0; i < visible_count; ++i) {
-        if (should_continue && !should_continue())
-            break;
-        if (progress && i % 100 == 0) {
-            float t = 0.85f + static_cast<float>(i) /
-                                  static_cast<float>(visible_count) * 0.05f;
-            report_progress(t, step_text("status.silhouette.extract_boundary",
-                                         i, visible_count));
-        }
-        const auto& tri = visible_tris[i];
-        const auto& v0 = std::get<0>(tri);
-        const auto& v1 = std::get<1>(tri);
-        const auto& v2 = std::get<2>(tri);
-        edge_count[EdgeKey(v0, v1)]++;
-        edge_count[EdgeKey(v1, v2)]++;
-        edge_count[EdgeKey(v2, v0)]++;
+    // 5a. Initial classification: face candidates if all 3 vertices hit
+    std::vector<bool> face_kept(sub_faces.size(), false);
+    for (size_t fi = 0; fi < sub_faces.size(); ++fi) {
+        const auto& sf = sub_faces[fi];
+        if (hit[sf.a] && hit[sf.b] && hit[sf.c])
+            face_kept[fi] = true;
     }
 
-    std::vector<EdgeKey> boundary_edges;
-    for (const auto& kv : edge_count) {
-        if (kv.second == 1) {
-            boundary_edges.push_back(kv.first);
-        }
-    }
-
-    report_progress(0.9f, sinriv::locale::get_locale_string(
-                              "status.silhouette.generate_sides"));
-
-    // 6. 生成侧面并调整法线：侧面法线应与邻接可见面法线同向（都朝外）
+    // 5b. Generate surface faces; track output vertex order (may differ
+    //     from sub_face index order due to normal-flip swaps).
+    struct SurfFace { int va, vb, vc; };  // vertex indices in output order
+    std::vector<SurfFace> surf_faces;
+    surf_faces.reserve(sub_faces.size());
     std::vector<Triangle> result;
-    result.reserve(visible_tris.size() + boundary_edges.size());
-    result.insert(result.end(), visible_tris.begin(), visible_tris.end());
+    result.reserve(sub_faces.size() + 64);
 
-    const float EDGE_EPS_SQ = 1e-10f;
-    auto edge_eq = [&](const vec3f& a, const vec3f& b) {
-        return (a - b).length2() < EDGE_EPS_SQ;
-    };
+    for (size_t fi = 0; fi < sub_faces.size(); ++fi) {
+        if (!face_kept[fi]) continue;
+        const auto& sf = sub_faces[fi];
+        int va = sf.a, vb = sf.b, vc = sf.c;
+        vec3f p0 = hit_pos[va], p1 = hit_pos[vb], p2 = hit_pos[vc];
 
-    int boundary_count = static_cast<int>(boundary_edges.size());
-    for (int i = 0; i < boundary_count; ++i) {
-        if (should_continue && !should_continue())
-            break;
-        if (progress && i % 100 == 0) {
-            float t = 0.9f + static_cast<float>(i) /
-                                 static_cast<float>(boundary_count) * 0.1f;
-            report_progress(t, step_text("status.silhouette.generate_sides", i,
-                                         boundary_count));
-        }
-        const auto& e = boundary_edges[i];
-        // 在 flip_normals 之后提取的边界边 (a, b) 已是最终顶点顺序。
-        // 相邻可见面法线 n_F 与侧面法线 n_T 都垂直于该边，
-        // 故在边垂直平面内比较二者方向即可判断侧面是否朝外。
-        vec3f a = e.a, b = e.b;
-        vec3f n_F;
-        bool found = false;
-        for (const auto& tri : visible_tris) {
-            const auto& v0 = std::get<0>(tri);
-            const auto& v1 = std::get<1>(tri);
-            const auto& v2 = std::get<2>(tri);
-            if (edge_eq(v0, e.a) && edge_eq(v1, e.b)) {
-                n_F = (b - a).cross(v2 - a);
-                found = true;
-                break;
-            }
-            if (edge_eq(v1, e.a) && edge_eq(v2, e.b)) {
-                n_F = (b - a).cross(v0 - a);
-                found = true;
-                break;
-            }
-            if (edge_eq(v2, e.a) && edge_eq(v0, e.b)) {
-                n_F = (b - a).cross(v1 - a);
-                found = true;
-                break;
-            }
-        }
+        vec3f n = (p1 - p0).cross(p2 - p0);
+        if (n.length2() < 1e-12f) { face_kept[fi] = false; continue; }
 
-        vec3f n_T = (b - a).cross(center - a);
-        if (found && n_F.dot(n_T) < 0.0f) {
-            std::swap(a, b);
+        vec3f cen = (p0 + p1 + p2) * (1.0f / 3.0f);
+        if (n.dot(cen - center) < 0.0f) {
+            std::swap(p1, p2);
+            std::swap(vb, vc);
         }
-        result.emplace_back(std::make_tuple(a, b, center));
+        result.emplace_back(std::make_tuple(p0, p1, p2));
+        surf_faces.push_back({va, vb, vc});
     }
 
-    report_progress(1.0f, sinriv::locale::get_locale_string(
-                              "status.silhouette.generate_sides"));
+    // 5c. Edge counting from OUTPUT vertex order (accounts for flips)
+    std::map<EdgeKey2, int> edge_face_count;
+    for (const auto& sf : surf_faces) {
+        edge_face_count[EdgeKey2(sf.va, sf.vb)]++;
+        edge_face_count[EdgeKey2(sf.vb, sf.vc)]++;
+        edge_face_count[EdgeKey2(sf.vc, sf.va)]++;
+    }
 
-    // 清理 DBVT
-    for (auto* aabb : aabbs) {
+    // 5d. Boundary edges: exactly one adjacent kept face
+    std::vector<EdgeKey2> boundary_edges;
+    for (const auto& [ek, cnt] : edge_face_count) {
+        if (cnt == 1) boundary_edges.push_back(ek);
+    }
+
+    // ---- 6. Build side triangles from output vertex order ----
+    result.reserve(result.size() + boundary_edges.size());
+
+    for (const auto& ek : boundary_edges) {
+        bool found = false;
+        for (const auto& sf : surf_faces) {
+            const int fe[3][2] = {{sf.va, sf.vb}, {sf.vb, sf.vc}, {sf.vc, sf.va}};
+            for (int e = 0; e < 3; ++e) {
+                EdgeKey2 ekey(fe[e][0], fe[e][1]);
+                if (ekey.a == ek.a && ekey.b == ek.b) {
+                    vec3f a = hit_pos[fe[e][0]];
+                    vec3f b = hit_pos[fe[e][1]];
+                    result.emplace_back(std::make_tuple(b, a, center));
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+    }
+
+    // Cleanup BVH
+    for (auto* aabb : bvh_aabbs) {
         bvh.remove(aabb);
         bvh.delAABB(aabb);
     }
-    for (auto* aabb : input_aabbs) {
-        input_bvh.remove(aabb);
-        input_bvh.delAABB(aabb);
-    }
+
+    report_progress(1.0f, "Done.");
+    CB_DBG("  silhouette result: " << result.size() << " triangles ("
+           << std::count(face_kept.begin(), face_kept.end(), true) << " surface + "
+           << boundary_edges.size() << " sides)");
+
     return result;
+}
+
+// =====================================================================
+// Old cone-clipping implementation (kept for reference)
+// =====================================================================
+std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_old(
+    const std::vector<Triangle>& /*input_triangles*/,
+    const vec3f& /*center*/,
+    const std::function<bool()>& /*should_continue*/,
+    const std::function<void(float, const std::string&)>& /*progress*/) {
+    // Old implementation replaced by icosahedron version.
+    // Kept as a stub for reference.
+    return {};
 }
 
 }  // namespace sinriv::kigstudio::mesh::conebox

@@ -73,10 +73,19 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
     bool auto_center = true,
     const vec3f& manual_center = vec3f{0.0f, 0.0f, 0.0f});
 
-// 3D 轮廓边算法：从外部看向 center，保留最远可见面 + 侧面
+// 3D 轮廓边算法：正二十面体射线投射版本。
+// 从 center 向外通过细分的二十面体顶点发射射线，找最远碰撞点。
+// 所有顶点命中的面保留为表面，边界边连接 center 形成侧面。
 // should_continue: 返回 false 时提前终止；
 // progress(t, step) 报告 0~1 的进度以及当前步骤的本地化描述。
 std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
+    const std::vector<Triangle>& triangles,
+    const vec3f& center,
+    const std::function<bool()>& should_continue = nullptr,
+    const std::function<void(float, const std::string&)>& progress = nullptr);
+
+// 旧版本：锥体裁剪 + 边界边提取实现，保留用于参考。
+std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_old(
     const std::vector<Triangle>& triangles,
     const vec3f& center,
     const std::function<bool()>& should_continue = nullptr,
