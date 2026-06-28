@@ -1168,6 +1168,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
 {
     if (input_triangles.empty())
         return {};
+    
+    CB_DBG("inner_wall_radius=" << inner_wall_radius);
 
     auto report_progress = [&](float t, const std::string& text) {
         if (progress) progress(t, text);
@@ -1444,6 +1446,25 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
 
     report_progress(0.6f, "Building output mesh...");
 
+    // ---- 4c. Inner wall: compute inner vertex positions ----
+    const bool has_inner_wall = (inner_wall_radius > 0.0f);
+    std::vector<vec3f> inner_pos;
+    if (has_inner_wall) {
+        inner_pos.resize(sub_verts.size());
+        for (int vi = 0; vi < static_cast<int>(sub_verts.size()); ++vi) {
+            if (!hit[vi]) continue;
+            float dist = (hit_pos[vi] - center).length();
+            if (dist <= inner_wall_radius) {
+                throw std::runtime_error(
+                    "Vertex distance " + std::to_string(dist) +
+                    " <= inner_wall_radius " +
+                    std::to_string(inner_wall_radius));
+            }
+            vec3f dir = (hit_pos[vi] - center) * (1.0f / dist);
+            inner_pos[vi] = center + dir * inner_wall_radius;
+        }
+    }
+
     // ---- 5. Classify faces & collect boundary edges ----
     struct EdgeKey2 {
         int a, b;
@@ -1461,13 +1482,12 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
             face_kept[fi] = true;
     }
 
-    // 5b. Generate surface faces; track output vertex order (may differ
-    //     from sub_face index order due to normal-flip swaps).
-    struct SurfFace { int va, vb, vc; };  // vertex indices in output order
+    // 5b. Generate surface faces; track output vertex order
+    struct SurfFace { int va, vb, vc; };
     std::vector<SurfFace> surf_faces;
     surf_faces.reserve(sub_faces.size());
     std::vector<Triangle> result;
-    result.reserve(sub_faces.size() + 64);
+    result.reserve(sub_faces.size() * (has_inner_wall ? 2 : 1) + 128);
 
     for (size_t fi = 0; fi < sub_faces.size(); ++fi) {
         if (!face_kept[fi]) continue;
@@ -1487,7 +1507,7 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         surf_faces.push_back({va, vb, vc});
     }
 
-    // 5c. Edge counting from OUTPUT vertex order (accounts for flips)
+    // 5c. Edge counting from OUTPUT vertex order
     std::map<EdgeKey2, int> edge_face_count;
     for (const auto& sf : surf_faces) {
         edge_face_count[EdgeKey2(sf.va, sf.vb)]++;
@@ -1501,8 +1521,27 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
         if (cnt == 1) boundary_edges.push_back(ek);
     }
 
-    // ---- 6. Build side triangles from output vertex order ----
-    result.reserve(result.size() + boundary_edges.size());
+    // ---- 6. Inner wall faces (if enabled) ----
+    if (has_inner_wall) {
+        for (const auto& sf : surf_faces) {
+            vec3f p0 = inner_pos[sf.va];
+            vec3f p1 = inner_pos[sf.vb];
+            vec3f p2 = inner_pos[sf.vc];
+
+            vec3f n = (p1 - p0).cross(p2 - p0);
+            if (n.length2() < 1e-12f) continue;
+
+            // Inner wall normal should point toward center
+            vec3f cen = (p0 + p1 + p2) * (1.0f / 3.0f);
+            if (n.dot(cen - center) > 0.0f) {
+                std::swap(p1, p2);
+            }
+            result.emplace_back(std::make_tuple(p0, p1, p2));
+        }
+    }
+
+    // ---- 7. Build sides: triangles to center or quads to inner wall ----
+    result.reserve(result.size() + boundary_edges.size() * (has_inner_wall ? 2 : 1));
 
     for (const auto& ek : boundary_edges) {
         bool found = false;
@@ -1511,9 +1550,25 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
             for (int e = 0; e < 3; ++e) {
                 EdgeKey2 ekey(fe[e][0], fe[e][1]);
                 if (ekey.a == ek.a && ekey.b == ek.b) {
-                    vec3f a = hit_pos[fe[e][0]];
-                    vec3f b = hit_pos[fe[e][1]];
-                    result.emplace_back(std::make_tuple(b, a, center));
+                    vec3f outer_a = hit_pos[fe[e][0]];
+                    vec3f outer_b = hit_pos[fe[e][1]];
+
+                    if (has_inner_wall) {
+                        // Side quad: outer edge + inner edge → 2 triangles
+                        // Current side direction is (outer_b, outer_a, center)
+                        // Replace center with inner positions:
+                        //   (outer_b, outer_a, inner_a)
+                        //   (inner_b, outer_b, inner_a)
+                        vec3f inner_a = inner_pos[fe[e][0]];
+                        vec3f inner_b = inner_pos[fe[e][1]];
+                        result.emplace_back(
+                            std::make_tuple(outer_b, outer_a, inner_a));
+                        result.emplace_back(
+                            std::make_tuple(inner_b, outer_b, inner_a));
+                    } else {
+                        result.emplace_back(
+                            std::make_tuple(outer_b, outer_a, center));
+                    }
                     found = true;
                     break;
                 }
@@ -1530,8 +1585,10 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
 
     report_progress(1.0f, "Done.");
     CB_DBG("  silhouette result: " << result.size() << " triangles ("
-           << std::count(face_kept.begin(), face_kept.end(), true) << " surface + "
-           << boundary_edges.size() << " sides)");
+           << surf_faces.size() << " surface"
+           << (has_inner_wall ? " + " + std::to_string(surf_faces.size()) + " inner" : "")
+           << " + " << boundary_edges.size()
+           << (has_inner_wall ? " quads (x2)" : " sides") << ")");
 
     return result;
 }
