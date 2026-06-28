@@ -1375,40 +1375,121 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
 
     report_progress(0.1f, "Casting rays...");
 
-    // ---- 4. Ray cast: farthest hit along center→vertex direction ----
-    std::vector<bool> hit(sub_verts.size(), false);
-    std::vector<vec3f> hit_pos(sub_verts.size());
-
+    // ---- 4. Build vertex neighbor graph ----
+    std::vector<std::vector<int>> vert_neighbors(sub_verts.size());
+    for (const auto& sf : sub_faces) {
+        vert_neighbors[sf.a].push_back(sf.b);
+        vert_neighbors[sf.a].push_back(sf.c);
+        vert_neighbors[sf.b].push_back(sf.a);
+        vert_neighbors[sf.b].push_back(sf.c);
+        vert_neighbors[sf.c].push_back(sf.a);
+        vert_neighbors[sf.c].push_back(sf.b);
+    }
+    // Deduplicate and sort neighbors by angle around vertex
     for (int vi = 0; vi < static_cast<int>(sub_verts.size()); ++vi) {
-        if (should_continue && !should_continue()) break;
-        const vec3f& vt = sub_verts[vi];
-        vec3f dir = vt - center;
-        float dir_len = dir.length();
-        if (dir_len < 1e-8f) continue;
-        vec3f dir_n = dir * (1.0f / dir_len);
+        auto& nb = vert_neighbors[vi];
+        std::sort(nb.begin(), nb.end());
+        nb.erase(std::unique(nb.begin(), nb.end()), nb.end());
+        // Sort by angle around the radial direction
+        vec3f radial = sub_verts[vi] - center;
+        float rlen = radial.length();
+        if (rlen < 1e-8f) continue;
+        radial = radial * (1.0f / rlen);
+        // Pick a tangent vector
+        vec3f tangent = (std::abs(radial.x) < 0.9f)
+                            ? vec3f(1, 0, 0)
+                            : vec3f(0, 1, 0);
+        tangent = (tangent - radial * radial.dot(tangent));
+        tangent = tangent * (1.0f / std::max(tangent.length(), 1e-8f));
+        vec3f bitangent = radial.cross(tangent);
+        std::sort(nb.begin(), nb.end(),
+                  [&](int a, int b) {
+                      vec3f da = (sub_verts[a] - sub_verts[vi]);
+                      vec3f db = (sub_verts[b] - sub_verts[vi]);
+                      float ang_a = std::atan2(da.dot(bitangent), da.dot(tangent));
+                      float ang_b = std::atan2(db.dot(bitangent), db.dot(tangent));
+                      return ang_a < ang_b;
+                  });
+    }
 
-        float farthest_t = -1.0f;
+    // ---- 5. Ray cast with supersampling ----
+    // For each vertex A, also cast rays through sample points between
+    // adjacent neighbor directions at 1/3 of the angular offset.
+    // Any hit → vertex is "hit".  Multiple hits → average distance.
+    auto cast_ray = [&](const vec3f& ray_origin, const vec3f& ray_dir_n,
+                        float& out_dist, vec3f& out_pos) -> bool {
+        float farthest = -1.0f;
         bvh.rayTest(
-            sinriv::kigstudio::ray<float>(center, center + dir_n * ray_len),
+            sinriv::kigstudio::ray<float>(ray_origin,
+                                          ray_origin + ray_dir_n * ray_len),
             [&](const BVH::AABB* node) {
                 int idx = *node->data;
                 if (idx < 0 || idx >= static_cast<int>(input_triangles.size()))
                     return;
                 const auto& tri = input_triangles[idx];
                 vec3f hp;
-                if (ray_triangle_intersect(center, dir_n,
+                if (ray_triangle_intersect(ray_origin, ray_dir_n,
                                            std::get<0>(tri), std::get<1>(tri),
                                            std::get<2>(tri), hp)) {
-                    float t = (hp - center).length();
-                    if (t > farthest_t) {
-                        farthest_t = t;
-                        hit_pos[vi] = hp;
+                    float t = (hp - ray_origin).length();
+                    if (t > farthest) {
+                        farthest = t;
+                        out_pos = hp;
                     }
                 }
             });
+        if (farthest > 0.0f) {
+            out_dist = farthest;
+            return true;
+        }
+        return false;
+    };
 
-        if (farthest_t > 0.0f) {
+    std::vector<bool> hit(sub_verts.size(), false);
+    std::vector<vec3f> hit_pos(sub_verts.size());
+
+    for (int vi = 0; vi < static_cast<int>(sub_verts.size()); ++vi) {
+        if (should_continue && !should_continue()) break;
+        const vec3f& vt = sub_verts[vi];
+        vec3f main_dir = vt - center;
+        float main_len = main_dir.length();
+        if (main_len < 1e-8f) continue;
+        vec3f main_dir_n = main_dir * (1.0f / main_len);
+
+        // Cast main ray through vertex
+        float dist_sum = 0.0f;
+        int hit_count = 0;
+        float dummy_dist;
+        vec3f dummy_pos;
+        if (cast_ray(center, main_dir_n, dummy_dist, dummy_pos)) {
+            dist_sum += dummy_dist;
+            ++hit_count;
+        }
+
+        // Cast sample rays between adjacent neighbor pairs
+        const auto& nb = vert_neighbors[vi];
+        const int nb_count = static_cast<int>(nb.size());
+        for (int ni = 0; ni < nb_count && nb_count >= 2; ++ni) {
+            int n_next = (ni + 1) % nb_count;
+            // Sample point: A + (AB_i + AB_{i+1})/6, projected to sphere
+            vec3f sample_pt =
+                vt + ((sub_verts[nb[ni]] - vt) +
+                       (sub_verts[nb[n_next]] - vt)) * (1.0f / 6.0f);
+            vec3f sample_dir = sample_pt - center;
+            float sample_len = sample_dir.length();
+            if (sample_len < 1e-8f) continue;
+            sample_dir = sample_dir * (1.0f / sample_len);
+
+            if (cast_ray(center, sample_dir, dummy_dist, dummy_pos)) {
+                dist_sum += dummy_dist;
+                ++hit_count;
+            }
+        }
+
+        if (hit_count > 0) {
             hit[vi] = true;
+            float avg_dist = dist_sum / static_cast<float>(hit_count);
+            hit_pos[vi] = center + main_dir_n * avg_dist;
         }
     }
 
