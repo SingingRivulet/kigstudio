@@ -402,6 +402,9 @@ void init_locale_strings() {
     add_locale_string("label.inner_wall_radius",
                       {{"en", "Inner Wall Radius"},
                        {"zh", "内壁半径"}});
+    add_locale_string("label.simplify_ratio",
+                      {{"en", "Simplify"},
+                       {"zh", "网格简化"}});
     add_locale_string(
         "action.export_source_stl",
         {{"en", "Export Source as STL"}, {"zh", "导出源模型为STL"}});

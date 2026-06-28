@@ -11,6 +11,11 @@
 
 #include "kigstudio/utils/dbvt3d.h"
 #include "kigstudio/utils/locale.h"
+#include "kigstudio/cgal/mesh_simplification.h"
+
+#include <CGAL/Simple_cartesian.h>
+#include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 
 namespace sinriv::kigstudio::mesh::conebox {
 
@@ -1164,7 +1169,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const std::function<bool()>& should_continue,
     const std::function<void(float, const std::string&)>& progress,
     int subdivision_level,
-    float inner_wall_radius)
+    float inner_wall_radius,
+    float simplify_ratio)
 {
     if (input_triangles.empty())
         return {};
@@ -1173,6 +1179,14 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
 
     auto report_progress = [&](float t, const std::string& text) {
         if (progress) progress(t, text);
+    };
+
+    // Check cancellation roughly every N iterations in hot loops
+    int cancel_step = 0;
+    auto check_cancel = [&]() -> bool {
+        if (++cancel_step < 500) return false;
+        cancel_step = 0;
+        return should_continue && !should_continue();
     };
 
     report_progress(0.0f, "Building BVH...");
@@ -1186,6 +1200,7 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     bvh_indices.reserve(input_triangles.size());
 
     for (int i = 0; i < static_cast<int>(input_triangles.size()); ++i) {
+        if (check_cancel()) return {};
         const auto& tri = input_triangles[i];
         const auto& v0 = std::get<0>(tri);
         const auto& v1 = std::get<1>(tri);
@@ -1205,7 +1220,9 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
 
     // ---- 2. Compute enclosing radius ----
     float max_dist2 = 0.0f;
-    for (const auto& tri : input_triangles) {
+    for (size_t ri = 0; ri < input_triangles.size(); ++ri) {
+        if (check_cancel()) return {};
+        const auto& tri = input_triangles[ri];
         for (const auto& v : {std::get<0>(tri), std::get<1>(tri), std::get<2>(tri)}) {
             float d2 = (v - center).length2();
             if (d2 > max_dist2) max_dist2 = d2;
@@ -1558,6 +1575,7 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     // 5a. Initial classification: face candidates if all 3 vertices hit
     std::vector<bool> face_kept(sub_faces.size(), false);
     for (size_t fi = 0; fi < sub_faces.size(); ++fi) {
+        if (check_cancel()) return {};
         const auto& sf = sub_faces[fi];
         if (hit[sf.a] && hit[sf.b] && hit[sf.c])
             face_kept[fi] = true;
@@ -1670,6 +1688,35 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
            << (has_inner_wall ? " + " + std::to_string(surf_faces.size()) + " inner" : "")
            << " + " << boundary_edges.size()
            << (has_inner_wall ? " quads (x2)" : " sides") << ")");
+
+    // ---- 7. CGAL edge-collapse simplification ----
+    // Uses the existing simplifyMesh() which performs vertex welding,
+    // edge collapse (ratio-based), and coplanar face merging.
+    // simplify_ratio < 0 → skip simplification entirely.
+    if (simplify_ratio >= 0.0f) {
+        report_progress(0.99f, "Simplifying mesh...");
+        float ratio = std::max(0.01f, std::min(1.0f, simplify_ratio));
+        std::vector<std::tuple<Triangle, vec3f>> mesh_in;
+        mesh_in.reserve(result.size());
+        for (const auto& tri : result) {
+            vec3f n = (std::get<1>(tri) - std::get<0>(tri))
+                          .cross(std::get<2>(tri) - std::get<0>(tri));
+            float nl = n.length();
+            if (nl < 1e-12f) continue;
+            mesh_in.emplace_back(tri, n * (1.0f / nl));
+        }
+
+        auto simplified = sinriv::kigstudio::cgal::simplifyMesh(
+            mesh_in, ratio);
+
+        result.clear();
+        result.reserve(simplified.size());
+        for (const auto& [tri, n] : simplified)
+            result.push_back(tri);
+
+        CB_DBG("  simplified: " << result.size() << " triangles (ratio="
+               << ratio << ")");
+    }
 
     return result;
 }

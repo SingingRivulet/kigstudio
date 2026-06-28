@@ -946,6 +946,7 @@ void RenderVoxelList::load_stl(std::string filename,
         vec3f cb_center{0.0f, 0.0f, 0.0f};
         int cb_subdiv = 4;
         float cb_inner_wall = 0.0f;
+        float cb_simplify = -1.0f;
         if (target_item_id >= 0) {
             std::lock_guard<std::mutex> lock(locker);
             auto it = items.find(target_item_id);
@@ -953,6 +954,7 @@ void RenderVoxelList::load_stl(std::string filename,
                 cb_center = it->second->silhouette_center;
                 cb_subdiv = it->second->silhouette_subdivision;
                 cb_inner_wall = it->second->inner_wall_radius;
+                cb_simplify = it->second->simplify_ratio;
             }
         }
         setQueueStatus(get_locale_string("status.generating_silhouette_mesh"));
@@ -965,7 +967,8 @@ void RenderVoxelList::load_stl(std::string filename,
                     setQueueStatus(step);
                 },
                 cb_subdiv,
-                cb_inner_wall);
+                cb_inner_wall,
+                cb_simplify);
     } else if (load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
         source_triangles = sinriv::kigstudio::cgal::convexHull3(raw_triangles);
     } else {
@@ -1322,6 +1325,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
     vec3f silhouette_center{0.0f, 0.0f, 0.0f};
     int silhouette_subdiv = 4;
     float silhouette_inner_wall = 0.0f;
+    float silhouette_simplify = -1.0f;
     std::vector<Triangle> source_triangles;
     VoxelGrid source_voxel_grid;
     std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> source_sdf;
@@ -1345,6 +1349,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
         silhouette_center = target_ptr->silhouette_center;
         silhouette_subdiv = target_ptr->silhouette_subdivision;
         silhouette_inner_wall = target_ptr->inner_wall_radius;
+        silhouette_simplify = target_ptr->simplify_ratio;
 
         source_triangles = source.source_triangles;
         source_voxel_grid = source.voxel_grid_data;
@@ -1575,7 +1580,8 @@ void RenderVoxelList::load_from_node(int target_item_id,
                         setQueueStatus(step);
                     },
                     silhouette_subdiv,
-                    silhouette_inner_wall);
+                    silhouette_inner_wall,
+                    silhouette_simplify);
             target_mesh_only = true;
         }
     } else if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY)) {

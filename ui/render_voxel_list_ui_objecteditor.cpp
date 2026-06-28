@@ -409,6 +409,24 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             item.inner_wall_radius += 0.5f;
             push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
         }
+
+        // Simplify checkbox + slider
+        bool simplify_enabled = (item.simplify_ratio >= 0.0f);
+        if (ImGui::Checkbox("##simplify_enable", &simplify_enabled)) {
+            item.simplify_ratio = simplify_enabled ? 0.15f : -1.0f;
+            push_undo_now(item.id, std::nullopt, "Simplify");
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted(get_locale_cstr("label.simplify_ratio"));
+        ImGui::SameLine();
+        if (!simplify_enabled) ImGui::BeginDisabled();
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::SliderFloat("##simplify_slider", &item.simplify_ratio,
+                               0.01f, 1.0f, "%.2f")) {
+            if (item.simplify_ratio < 0.01f) item.simplify_ratio = 0.01f;
+            push_undo_now(item.id, std::nullopt, "Simplify Ratio");
+        }
+        if (!simplify_enabled) ImGui::EndDisabled();
     }
 
     if (item.source_type == 0) {

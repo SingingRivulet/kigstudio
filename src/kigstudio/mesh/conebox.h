@@ -80,13 +80,15 @@ std::vector<Triangle> build_closed_mesh_from_triangles(
 // progress(t, step) 报告 0~1 的进度以及当前步骤的本地化描述。
 // subdivision_level: 正二十面体细分等级，每条边分割为 N 段，总面数 = 20 * N^2。
 //   默认 4（320 面），范围 1~10。
+// simplify_ratio: CGAL 边折叠简化比率（0~1），负数禁用。默认 -1.f。
 std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const std::vector<Triangle>& triangles,
     const vec3f& center,
     const std::function<bool()>& should_continue = nullptr,
     const std::function<void(float, const std::string&)>& progress = nullptr,
     int subdivision_level = 4,
-    float inner_wall_radius = 0.f);
+    float inner_wall_radius = 0.f,
+    float simplify_ratio = -1.f);
 
 // 旧版本：锥体裁剪 + 边界边提取实现，保留用于参考。
 std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_old(
