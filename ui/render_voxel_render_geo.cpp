@@ -944,11 +944,13 @@ void RenderVoxelList::load_stl(std::string filename,
     std::vector<Triangle> source_triangles;
     if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
         vec3f cb_center{0.0f, 0.0f, 0.0f};
+        int cb_subdiv = 4;
         if (target_item_id >= 0) {
             std::lock_guard<std::mutex> lock(locker);
             auto it = items.find(target_item_id);
             if (it != items.end()) {
                 cb_center = it->second->silhouette_center;
+                cb_subdiv = it->second->silhouette_subdivision;
             }
         }
         setQueueStatus(get_locale_string("status.generating_silhouette_mesh"));
@@ -959,7 +961,8 @@ void RenderVoxelList::load_stl(std::string filename,
                 [&](float t, const std::string& step) {
                     queue_progress = 0.13f + t * 0.02f;
                     setQueueStatus(step);
-                });
+                },
+                cb_subdiv);
     } else if (load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
         source_triangles = sinriv::kigstudio::cgal::convexHull3(raw_triangles);
     } else {
@@ -1314,6 +1317,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
     // responsive.
     float voxel_size = 0.0f;
     vec3f silhouette_center{0.0f, 0.0f, 0.0f};
+    int silhouette_subdiv = 4;
     std::vector<Triangle> source_triangles;
     VoxelGrid source_voxel_grid;
     std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> source_sdf;
@@ -1335,6 +1339,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
 
         voxel_size = target_ptr->stl_voxel_size;
         silhouette_center = target_ptr->silhouette_center;
+        silhouette_subdiv = target_ptr->silhouette_subdivision;
 
         source_triangles = source.source_triangles;
         source_voxel_grid = source.voxel_grid_data;
@@ -1563,7 +1568,8 @@ void RenderVoxelList::load_from_node(int target_item_id,
                     [&](float t, const std::string& step) {
                         queue_progress = t * 0.1f;
                         setQueueStatus(step);
-                    });
+                    },
+                    silhouette_subdiv);
             target_mesh_only = true;
         }
     } else if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY)) {

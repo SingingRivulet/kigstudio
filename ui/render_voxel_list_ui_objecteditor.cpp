@@ -360,6 +360,11 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         if (center_result.deactivated_after_edit) {
             push_undo_now(item.id, std::nullopt, "Silhouette Center");
         }
+        if (ImGui::SliderInt(get_locale_cstr("label.silhouette_subdivision"),
+                             &item.silhouette_subdivision, 1, 32)) {
+            push_undo_now(item.id, std::nullopt,
+                          "Silhouette Subdivision");
+        }
     }
 
     if (item.source_type == 0) {

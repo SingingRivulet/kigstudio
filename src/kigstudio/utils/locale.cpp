@@ -396,6 +396,9 @@ void init_locale_strings() {
                       {{"en", "Silhouette Center"}, {"zh", "轮廓中心"}});
     add_locale_string("label.show_silhouette_center",
                       {{"en", "Show Center"}, {"zh", "显示中心点"}});
+    add_locale_string("label.silhouette_subdivision",
+                      {{"en", "Icosahedron Subdivision"},
+                       {"zh", "二十面体细分等级"}});
     add_locale_string(
         "action.export_source_stl",
         {{"en", "Export Source as STL"}, {"zh", "导出源模型为STL"}});

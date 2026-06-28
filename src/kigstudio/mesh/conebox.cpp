@@ -1162,7 +1162,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const std::vector<Triangle>& input_triangles,
     const vec3f& center,
     const std::function<bool()>& should_continue,
-    const std::function<void(float, const std::string&)>& progress)
+    const std::function<void(float, const std::string&)>& progress,
+    int subdivision_level)
 {
     if (input_triangles.empty())
         return {};
@@ -1210,7 +1211,7 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const float radius = std::sqrt(max_dist2) * 2.0f + 1.0f;
     const float ray_len = radius * 3.0f;  // ray extends well beyond model
 
-    // ---- 3. Create subdivided icosahedron (level 2 → 320 faces) ----
+    // ---- 3. Create subdivided icosahedron ----
     const float phi = (1.0f + std::sqrt(5.0f)) / 2.0f;
     const float inv_norm = 1.0f / std::sqrt(1.0f + phi * phi);
 
@@ -1278,7 +1279,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     const int NF = (int)base_faces_vec.size();
     CB_DBG("  auto-detected " << NF << " icosahedron faces (expect 20)");
 
-    const int SUBDIV = 4;  // 2^2 segments per edge → level 2
+    // Clamp subdivision level to minimum 1 (no upper limit)
+    const int SUBDIV = std::max(1, subdivision_level);
 
     // Build subdivided vertices and faces.
     // Use a map from snapped world position → vertex index for dedup.
