@@ -179,6 +179,8 @@ struct CollisionEditorSnapshot {
     bool load_as_sdf = false;
     sinriv::kigstudio::sdf::SDFPrecision voxel_precision =
         sinriv::kigstudio::sdf::SDFPrecision::Fast;
+    sinriv::kigstudio::sdf::SDFPrecision sdf_precision_cache =
+        sinriv::kigstudio::sdf::SDFPrecision::Precise;
     bool mesh_only = false;
     int source_type = 0;
     int source_node_id = -1;
@@ -442,6 +444,8 @@ class RenderVoxelList {
         int stl_load_mode = 0;
         bool load_as_sdf = false;
         sinriv::kigstudio::sdf::SDFPrecision voxel_precision = sinriv::kigstudio::sdf::SDFPrecision::Fast;
+        sinriv::kigstudio::sdf::SDFPrecision sdf_precision_cache =
+            sinriv::kigstudio::sdf::SDFPrecision::Precise;
         bool mesh_only = false;
         int source_type = 0;
         int source_node_id = -1;

@@ -489,18 +489,10 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
             }
             
-            // SDF precision mode — show whenever load_as_sdf is on
+            // SDF precision mode — show whenever load_as_sdf is on.
+            // Value is cached on the item and synced to SDF_Mesh on load.
             if (item.load_as_sdf) {
-                // Use item's cached SDF mesh if available, otherwise
-                // show a placeholder value (will sync on next SDF load).
-                int mode = 1;  // default Precise
-                if (item.sdf_data) {
-                    auto* sdf_mesh =
-                        dynamic_cast<sinriv::kigstudio::sdf::SDF_Mesh*>(
-                            item.sdf_data.get());
-                    if (sdf_mesh)
-                        mode = static_cast<int>(sdf_mesh->precision_mode);
-                }
+                int mode = static_cast<int>(item.sdf_precision_cache);
                 const char* mode_names[] = {
                     get_locale_cstr("label.sdf_precision.fast"),
                     get_locale_cstr("label.sdf_precision.precise"),
@@ -509,16 +501,17 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 if (ImGui::Combo(
                         get_locale_cstr("label.sdf_precision_mode"),
                         &mode, mode_names, 3)) {
+                    item.sdf_precision_cache =
+                        static_cast<sinriv::kigstudio::sdf::SDFPrecision>(
+                            mode);
+                    // Also sync to live SDF_Mesh if it exists
                     if (item.sdf_data) {
                         auto* sdf_mesh =
                             dynamic_cast<sinriv::kigstudio::sdf::SDF_Mesh*>(
                                 item.sdf_data.get());
-                        if (sdf_mesh) {
+                        if (sdf_mesh)
                             sdf_mesh->precision_mode =
-                                static_cast<
-                                    sinriv::kigstudio::sdf::SDFPrecision>(
-                                    mode);
-                        }
+                                item.sdf_precision_cache;
                     }
                     push_undo_now(item.id, std::nullopt,
                                   "SDF Precision Mode");

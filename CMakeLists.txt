@@ -82,13 +82,13 @@ file(GLOB_RECURSE SRC_FILES
     ${CMAKE_SOURCE_DIR}/dep/libtinyfiledialog/tinyfiledialogs.c
     )  
 
-# 创建静态库libkigstudio.a  
-add_library(kigstudio STATIC ${SRC_FILES} ${CMAKE_SOURCE_DIR}/dep/cJSON/cJSON.c)  
-target_link_libraries(kigstudio PUBLIC OpenMP::OpenMP_CXX CGAL::CGAL)
+# 创建静态库libkigstudio_lib.a
+add_library(kigstudio_lib STATIC ${SRC_FILES} ${CMAKE_SOURCE_DIR}/dep/cJSON/cJSON.c)
+target_link_libraries(kigstudio_lib PUBLIC OpenMP::OpenMP_CXX CGAL::CGAL)
 if(TARGET CGAL::Eigen3_support)
-    target_link_libraries(kigstudio PUBLIC CGAL::Eigen3_support)
+    target_link_libraries(kigstudio_lib PUBLIC CGAL::Eigen3_support)
 else()
-    target_compile_definitions(kigstudio PUBLIC CGAL_EIGEN3_ENABLED)
+    target_compile_definitions(kigstudio_lib PUBLIC CGAL_EIGEN3_ENABLED)
 endif()
 
 # 编译可执行文件
@@ -100,7 +100,7 @@ foreach(TEST_FILE ${TEST_FILES})
     add_executable(${TEST_NAME} ${TEST_FILE})
 
     target_link_libraries(${TEST_NAME}
-        kigstudio
+        kigstudio_lib
         bgfx
         bx
         bimg
@@ -125,13 +125,13 @@ file(GLOB_RECURSE UI_FILES
 )
 
 add_executable(
-    kigstudio_ui 
+    kigstudio
     ${UI_FILES}
     ${CMAKE_SOURCE_DIR}/dep/imnodes/imnodes.cpp
     )
-    
-target_link_libraries(kigstudio_ui
-    kigstudio
+
+target_link_libraries(kigstudio
+    kigstudio_lib
     bgfx
     bx
     bimg
@@ -152,8 +152,8 @@ target_link_libraries(kigstudio_ui
 )
 
 # 构建时将 shader 目录复制到可执行文件输出目录旁
-add_custom_command(TARGET kigstudio_ui POST_BUILD
+add_custom_command(TARGET kigstudio POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CMAKE_SOURCE_DIR}/shader
-    $<TARGET_FILE_DIR:kigstudio_ui>/shader
+    $<TARGET_FILE_DIR:kigstudio>/shader
 )

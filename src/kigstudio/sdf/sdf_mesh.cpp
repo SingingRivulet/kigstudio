@@ -6,6 +6,7 @@
 #include <variant>
 #include "kigstudio/utils/vec3.h"
 #include "kigstudio/voxel/voxel2mesh.h"
+#include "kigstudio/utils/locale.h"
 
 #include <CGAL/AABB_traits_3.h>
 #include <CGAL/AABB_tree.h>
@@ -445,11 +446,17 @@ void SDF_Mesh::get(const Vec3f& begin,
 
 std::string SDF_Mesh::getInfo(int indent) const {
     std::string prefix(indent * 2, ' ');
-    const char* mode_str = "precise";
+    const char* mode_str = sinriv::locale::get_locale_cstr("label.sdf_precision_mode");
     switch (precision_mode) {
-        case SDFPrecision::Fast: mode_str = "fast"; break;
-        case SDFPrecision::Precise: mode_str = "precise"; break;
-        case SDFPrecision::Redundant: mode_str = "redundant"; break;
+        case SDFPrecision::Fast: 
+        mode_str = sinriv::locale::get_locale_cstr("label.sdf_precision.fast"); 
+        break;
+        case SDFPrecision::Precise: 
+        mode_str = sinriv::locale::get_locale_cstr("label.sdf_precision.precise"); 
+        break;
+        case SDFPrecision::Redundant: 
+        mode_str = sinriv::locale::get_locale_cstr("label.sdf_precision.redundant"); 
+        break;
     }
     return prefix + "SDF_Mesh(triangles=" + std::to_string(impl->triangles.size()) +
            ", mode=" + mode_str + ")";

@@ -21,6 +21,7 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.stl_load_mode,
             item.load_as_sdf,
             item.voxel_precision,
+            item.sdf_precision_cache,
             item.mesh_only,
             item.source_type,
             item.source_node_id,
@@ -68,6 +69,7 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.silhouette_subdivision = snapshot.silhouette_subdivision;
     item.inner_wall_radius = snapshot.inner_wall_radius;
     item.simplify_ratio = snapshot.simplify_ratio;
+    item.sdf_precision_cache = snapshot.sdf_precision_cache;
     item.joint_wireframe_dirty = true;
 }
 

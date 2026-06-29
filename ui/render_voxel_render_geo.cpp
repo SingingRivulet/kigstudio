@@ -1191,6 +1191,14 @@ void RenderVoxelList::load_stl(std::string filename,
                     item.voxel_renderer.loadChunkMeshes(chunk_meshes);
                     item.voxel_grid_data = std::move(voxel_data);
                     item.sdf_data = std::move(mesh_sdf);
+                    if (item.sdf_data) {
+                        auto* sm = dynamic_cast<
+                            sinriv::kigstudio::sdf::SDF_Mesh*>(
+                            item.sdf_data.get());
+                        if (sm)
+                            sm->precision_mode =
+                                item.sdf_precision_cache;
+                    }
                 }
                 item.source_triangles = std::move(source_triangles);
                 item.stl_path = filename;
@@ -1242,6 +1250,14 @@ void RenderVoxelList::load_stl(std::string filename,
             item->voxel_renderer.loadChunkMeshes(chunk_meshes);
             item->voxel_grid_data = std::move(voxel_data);
             item->sdf_data = std::move(mesh_sdf);
+            if (item->sdf_data) {
+                auto* sm = dynamic_cast<
+                    sinriv::kigstudio::sdf::SDF_Mesh*>(
+                    item->sdf_data.get());
+                if (sm)
+                    sm->precision_mode =
+                        item->sdf_precision_cache;
+            }
         }
         item->source_triangles = std::move(source_triangles);
         item->thumbnail_dirty = true;
