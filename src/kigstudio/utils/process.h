@@ -120,6 +120,10 @@ public:
     /// Safe to call multiple times.
     void close(bool wait_for_exit = true);
 
+    /// Return the full path of the current executable.
+    /// Falls back to "kigstudio" on platforms where detection fails.
+    static std::string self_exe_path();
+
 private:
     // -----------------------------------------------------------------------
     // Platform-specific type aliases
@@ -147,6 +151,14 @@ private:
 // Windows implementation
 // ===========================================================================
 #ifdef _WIN32
+
+inline std::string Process::self_exe_path() {
+    char buf[MAX_PATH];
+    DWORD len = GetModuleFileNameA(nullptr, buf, sizeof(buf));
+    if (len > 0 && len < sizeof(buf))
+        return std::string(buf, len);
+    return "kigstudio.exe";
+}
 
 inline bool Process::start(const std::string& cmd) {
     close();
@@ -387,6 +399,18 @@ inline void Process::close(bool wait_for_exit) {
 // ===========================================================================
 #else
 
+#include <climits>
+
+inline std::string Process::self_exe_path() {
+    char buf[PATH_MAX];
+    ssize_t len = ::readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len != -1) {
+        buf[len] = '\0';
+        return std::string(buf);
+    }
+    return "kigstudio";
+}
+
 inline bool Process::start(const std::string& cmd) {
     close();
 
@@ -597,6 +621,9 @@ inline int Process::wait(int timeout_ms) {
 inline void Process::kill() {
     if (child_handle_ != INVALID_CHILD && running_) {
         ::kill(child_handle_, SIGKILL);
+        // Reap the zombie immediately — the child is gone.
+        int status = 0;
+        ::waitpid(child_handle_, &status, 0);
         running_   = false;
         exit_code_ = -SIGKILL;
     }
@@ -610,14 +637,17 @@ inline void Process::close(bool wait_for_exit) {
     }
 
     if (child_handle_ != INVALID_CHILD) {
-        if (wait_for_exit && running_) {
+        if (wait_for_exit) {
+            // Safe even if already reaped by kill(); waitpid returns -1 on ECHILD
+            // and the > 0 guard skips overwriting exit_code_.
             int status = 0;
-            ::waitpid(child_handle_, &status, 0);
-            if (WIFEXITED(status))
-                exit_code_ = WEXITSTATUS(status);
-            else if (WIFSIGNALED(status))
-                exit_code_ = -WTERMSIG(status);
-            running_ = false;
+            if (::waitpid(child_handle_, &status, 0) > 0) {
+                if (WIFEXITED(status))
+                    exit_code_ = WEXITSTATUS(status);
+                else if (WIFSIGNALED(status))
+                    exit_code_ = -WTERMSIG(status);
+                running_ = false;
+            }
         }
         child_handle_ = INVALID_CHILD;
     }

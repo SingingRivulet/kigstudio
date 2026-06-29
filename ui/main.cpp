@@ -1,5 +1,6 @@
 #define SDL_MAIN_HANDLED
 #include "ui.hpp"
+#include "cli/cli.h"
 #include <iostream>
 #include <map>
 #include <string>
@@ -27,11 +28,18 @@ static std::map<std::string, std::string> parse_args(int argc, char** argv) {
 
 int main(int argc, char** argv) {
     auto args = parse_args(argc, argv);
+    const char* prog = (argc > 0) ? argv[0] : "kigstudio";
+
     if (args.count("help")) {
-        std::cout << "Usage: kigstudio [options]\n"
-                  << "  --tools [commond]   Use tools\n"
+        std::cout << "Usage: " << prog << " [options]\n"
+                  << "  --tools --<tool>    Run a CLI tool\n"
                   << "  --help              Show this help\n";
         return 0;
     }
+
+    if (args.count("tools")) {
+        return cli_main(prog, args);
+    }
+
     return ui_main(argc, argv);
 }

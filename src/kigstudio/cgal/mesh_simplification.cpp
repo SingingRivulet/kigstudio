@@ -6,6 +6,11 @@
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Edge_count_ratio_stop_predicate.h>
 #include <iostream>
 #include <unordered_map>
+#include <filesystem>
+#include <atomic>
+#include <chrono>
+#include <stdexcept>
+#include <cstdio>
 
 typedef CGAL::Simple_cartesian<double> Kernel;
 typedef Kernel::Point_3 Point_3;
@@ -139,6 +144,85 @@ simplifyMesh(const std::vector<std::tuple<Triangle, vec3f>>& mesh, double ratio)
     }
 
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// simplifyMesh_async — subprocess helpers
+// ---------------------------------------------------------------------------
+
+std::string simplifyMesh_async::make_temp_path(const std::string& suffix) {
+    static std::atomic<unsigned> counter{0};
+    auto dir = std::filesystem::temp_directory_path();
+    auto ts  = std::chrono::steady_clock::now().time_since_epoch().count();
+    auto name = "kgs_" + std::to_string(ts) + "_"
+              + std::to_string(counter.fetch_add(1)) + suffix;
+    return (dir / name).string();
+}
+
+simplifyMesh_async::simplifyMesh_async(
+    const std::vector<std::tuple<Triangle, vec3f>>& mesh, double ratio)
+{
+    if (mesh.empty())
+        throw std::invalid_argument("simplifyMesh_async: mesh is empty");
+
+    tmp_in_  = make_temp_path("_in.stl");
+    tmp_out_ = make_temp_path("_out.stl");
+
+    // Serialise input mesh to temporary STL
+    sinriv::kigstudio::voxel::saveMeshToBinarySTL(mesh, tmp_in_);
+
+    // Build the command line: "<self> --tools --simplifyMesh --in ... --out ... --ratio ..."
+    std::string cmd = "\"" + Process::self_exe_path() + "\""
+                    + " --tools --simplifyMesh"
+                    + " --in \""  + tmp_in_  + "\""
+                    + " --out \"" + tmp_out_ + "\""
+                    + " --ratio " + std::to_string(ratio);
+
+    if (!process_.start(cmd)) {
+        std::remove(tmp_in_.c_str());
+        throw std::runtime_error("simplifyMesh_async: failed to start subprocess: " + cmd);
+    }
+}
+
+simplifyMesh_async::~simplifyMesh_async() {
+    terminal();
+}
+
+bool simplifyMesh_async::done() {
+    return !process_.isRunning();
+}
+
+void simplifyMesh_async::terminal() {
+    if (process_.isRunning()) {
+        process_.kill();
+    }
+    if (!tmp_in_.empty()) {
+        std::remove(tmp_in_.c_str());
+        tmp_in_.clear();
+    }
+    if (!tmp_out_.empty()) {
+        std::remove(tmp_out_.c_str());
+        tmp_out_.clear();
+    }
+}
+
+std::vector<std::tuple<Triangle, vec3f>>
+simplifyMesh_async::get_result() const {
+    if (!done()) {
+        throw std::runtime_error("simplifyMesh_async::get_result(): process still running");
+    }
+
+    if (result_ready_)
+        return result_;
+
+    // Read back the simplified STL
+    auto gen = sinriv::kigstudio::voxel::readSTL(tmp_out_);
+    result_.clear();
+    for (auto it = gen.begin(); it != gen.end(); ++it) {
+        result_.push_back(std::move(*it));
+    }
+    result_ready_ = true;
+    return result_;
 }
 
 } // namespace sinriv::kigstudio::cgal
