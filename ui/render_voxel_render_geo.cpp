@@ -1148,8 +1148,22 @@ void RenderVoxelList::load_stl(std::string filename,
             generateChunkMeshData(voxel_data, isolevel, smooth_normals);
     }
 
+    // Build SDF mesh OUTSIDE the lock — loadTriangles/loadSTL does
+    // heavy CGAL work (polygon_soup_to_polygon_mesh) that can block
+    // the UI for seconds on large models if done under the locker.
+    std::shared_ptr<sinriv::kigstudio::sdf::SDF_Mesh> mesh_sdf;
+    if (load_as_sdf && load_mode != static_cast<int>(StlLoadMode::MESH_ONLY)) {
+        mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
+        if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
+            load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
+            mesh_sdf->loadTriangles(source_triangles);
+        } else {
+            mesh_sdf->loadSTL(filename);
+        }
+    }
+
     if (target_item_id >= 0) {
-        // 更新现有 item
+        // 更新现有 item — lock 内只做快速赋值，不做重计算
         {
             std::lock_guard<std::mutex> lock(locker);
             auto it = items.find(target_item_id);
@@ -1173,25 +1187,10 @@ void RenderVoxelList::load_stl(std::string filename,
                     item.sdf_data = nullptr;
                     item.mesh_only = true;
                 } else {
-                    // DEFAULT / SILHOUETTE / SURFACE_ONLY / CONVEX_HULL
                     item.voxel_renderer.clear();
                     item.voxel_renderer.loadChunkMeshes(chunk_meshes);
                     item.voxel_grid_data = std::move(voxel_data);
-                    if (load_as_sdf) {
-                        auto mesh_sdf = std::make_shared<
-                            sinriv::kigstudio::sdf::SDF_Mesh>();
-                        if (load_mode ==
-                                static_cast<int>(StlLoadMode::SILHOUETTE) ||
-                            load_mode ==
-                                static_cast<int>(StlLoadMode::CONVEX_HULL)) {
-                            mesh_sdf->loadTriangles(source_triangles);
-                        } else {
-                            mesh_sdf->loadSTL(filename);
-                        }
-                        item.sdf_data = std::move(mesh_sdf);
-                    } else {
-                        item.sdf_data = nullptr;
-                    }
+                    item.sdf_data = std::move(mesh_sdf);
                 }
                 item.source_triangles = std::move(source_triangles);
                 item.stl_path = filename;
@@ -1201,7 +1200,6 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.use_precise_voxelization = use_precise_voxelization;
                 item.thumbnail_dirty = true;
                 item.dirty = true;
-                // 重新分割 children
                 bool has_children = false;
                 for (int cid : item.children) {
                     if (cid >= 0) {
@@ -1243,19 +1241,7 @@ void RenderVoxelList::load_stl(std::string filename,
             // DEFAULT / SILHOUETTE / SURFACE_ONLY / CONVEX_HULL
             item->voxel_renderer.loadChunkMeshes(chunk_meshes);
             item->voxel_grid_data = std::move(voxel_data);
-            if (load_as_sdf) {
-                auto mesh_sdf =
-                    std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
-                if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
-                    load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
-                    mesh_sdf->loadTriangles(source_triangles);
-                } else {
-                    mesh_sdf->loadSTL(filename);
-                }
-                item->sdf_data = std::move(mesh_sdf);
-            } else {
-                item->sdf_data = nullptr;
-            }
+            item->sdf_data = std::move(mesh_sdf);
         }
         item->source_triangles = std::move(source_triangles);
         item->thumbnail_dirty = true;
