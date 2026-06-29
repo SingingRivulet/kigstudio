@@ -18,7 +18,7 @@ using SkeletonLine = std::pair<SkeletonPoint, SkeletonPoint>;
 using Triangle = sinriv::kigstudio::voxel::triangle_bvh<float>::triangle;
 using Vec3i = sinriv::kigstudio::Vec3i;
 
-// Insert candidate voxels into the grid. If use_precise_voxelization is true,
+// Insert candidate voxels into the grid. If voxel_precision is true,
 // tri-face votes are counted and only voxels seen by a single face are verified
 // with CGAL Side_of_triangle_mesh to reduce false positives.
 static void insert_voxels_with_optional_verify(
@@ -28,7 +28,7 @@ static void insert_voxels_with_optional_verify(
     const std::vector<Vec3i>& candidates_z,
     const std::vector<Triangle>& source_triangles,
     float voxel_size,
-    bool use_precise_voxelization) {
+    sinriv::kigstudio::sdf::SDFPrecision voxel_precision) {
     size_t total_candidates =
         candidates_x.size() + candidates_y.size() + candidates_z.size();
     if (total_candidates == 0)
@@ -76,7 +76,7 @@ static void insert_voxels_with_optional_verify(
 
     // 非精确模式下，只有至少两个轴都判定为有体素的候选才会被插入；
     // 精确模式下，对单轴候选再用 CGAL Side_of_triangle_mesh 做二次验证。
-    if (use_precise_voxelization && !to_verify.empty()) {
+    if (voxel_precision != sinriv::kigstudio::sdf::SDFPrecision::Fast && !to_verify.empty()) {
         sinriv::kigstudio::sdf::SDF_Mesh cgal_tester;
         bool has_tester = cgal_tester.loadTriangles(source_triangles) &&
                           cgal_tester.hasInsideTester();
@@ -903,7 +903,7 @@ void RenderVoxelList::load_stl(std::string filename,
                                int target_item_id,
                                int load_mode,
                                bool load_as_sdf,
-                               bool use_precise_voxelization) {
+                               sinriv::kigstudio::sdf::SDFPrecision voxel_precision) {
     using namespace sinriv::kigstudio::voxel;
     using MeshData = mesh_detail::AsyncVoxelMeshData;
     using Triangle = triangle_bvh<float>::triangle;
@@ -1129,7 +1129,7 @@ void RenderVoxelList::load_stl(std::string filename,
 
         insert_voxels_with_optional_verify(
             voxel_data, candidates_x, candidates_y, candidates_z,
-            source_triangles, voxel_size, use_precise_voxelization);
+            source_triangles, voxel_size, voxel_precision);
 
         queue_progress = 0.50f;
     }
@@ -1197,7 +1197,7 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.stl_voxel_size = voxel_size;
                 item.stl_load_mode = load_mode;
                 item.load_as_sdf = load_as_sdf;
-                item.use_precise_voxelization = use_precise_voxelization;
+                item.voxel_precision = voxel_precision;
                 item.thumbnail_dirty = true;
                 item.dirty = true;
                 bool has_children = false;
@@ -1250,7 +1250,7 @@ void RenderVoxelList::load_stl(std::string filename,
         item->stl_voxel_size = voxel_size;
         item->stl_load_mode = load_mode;
         item->load_as_sdf = load_as_sdf;
-        item->use_precise_voxelization = use_precise_voxelization;
+        item->voxel_precision = voxel_precision;
         item->mesh_kd_tree = kdtree::KDTree(kdtree_points);
         {
             std::lock_guard<std::mutex> lock(locker);
@@ -1299,7 +1299,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
                                      float node_source_sdf_simplify_ratio,
                                      int load_mode,
                                      bool load_as_sdf,
-                                     bool use_precise_voxelization) {
+                                     sinriv::kigstudio::sdf::SDFPrecision voxel_precision) {
     using namespace sinriv::kigstudio::voxel;
     using Triangle = triangle_bvh<float>::triangle;
     using vec3f = sinriv::kigstudio::vec3<float>;
@@ -1452,7 +1452,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
 
         insert_voxels_with_optional_verify(
             out_voxel, candidates_x, candidates_y, candidates_z, triangles,
-            voxel_size, use_precise_voxelization);
+            voxel_size, voxel_precision);
     };
 
     // Gather source mesh triangles according to node_source_data_type
@@ -1698,7 +1698,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
                 target.sdf_data = std::move(target_sdf);
             }
             target.mesh_only = target_mesh_only;
-            target.use_precise_voxelization = use_precise_voxelization;
+            target.voxel_precision = voxel_precision;
             target.thumbnail_dirty = true;
             target.dirty = true;
         }

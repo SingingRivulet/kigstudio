@@ -489,34 +489,56 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
             }
             
-            // SDF precise distance toggle — only when SDF is loaded
-            if (item.load_as_sdf && item.sdf_data) {
-                auto* sdf_mesh =
-                    dynamic_cast<sinriv::kigstudio::sdf::SDF_Mesh*>(
-                        item.sdf_data.get());
-                if (sdf_mesh) {
-                    bool precise = sdf_mesh->precise_distance;
-                    if (ImGui::Checkbox(
-                            get_locale_cstr("label.sdf_precise_distance"),
-                            &precise)) {
-                        sdf_mesh->precise_distance = precise;
-                        push_undo_now(item.id, std::nullopt,
-                                      "SDF Precise Distance");
+            // SDF precision mode — show whenever load_as_sdf is on
+            if (item.load_as_sdf) {
+                // Use item's cached SDF mesh if available, otherwise
+                // show a placeholder value (will sync on next SDF load).
+                int mode = 1;  // default Precise
+                if (item.sdf_data) {
+                    auto* sdf_mesh =
+                        dynamic_cast<sinriv::kigstudio::sdf::SDF_Mesh*>(
+                            item.sdf_data.get());
+                    if (sdf_mesh)
+                        mode = static_cast<int>(sdf_mesh->precision_mode);
+                }
+                const char* mode_names[] = {
+                    get_locale_cstr("label.sdf_precision.fast"),
+                    get_locale_cstr("label.sdf_precision.precise"),
+                    get_locale_cstr("label.sdf_precision.redundant"),
+                };
+                if (ImGui::Combo(
+                        get_locale_cstr("label.sdf_precision_mode"),
+                        &mode, mode_names, 3)) {
+                    if (item.sdf_data) {
+                        auto* sdf_mesh =
+                            dynamic_cast<sinriv::kigstudio::sdf::SDF_Mesh*>(
+                                item.sdf_data.get());
+                        if (sdf_mesh) {
+                            sdf_mesh->precision_mode =
+                                static_cast<
+                                    sinriv::kigstudio::sdf::SDFPrecision>(
+                                    mode);
+                        }
                     }
+                    push_undo_now(item.id, std::nullopt,
+                                  "SDF Precision Mode");
                 }
             }
             
-            bool use_precise_voxelization = item.use_precise_voxelization;
-            if (ImGui::Checkbox(
-                    get_locale_cstr("label.use_precise_voxelization"),
-                    &use_precise_voxelization)) {
+            int voxel_prec = static_cast<int>(item.voxel_precision);
+            const char* vp_names[] = {
+                get_locale_cstr("label.sdf_precision.fast"),
+                get_locale_cstr("label.sdf_precision.precise"),
+                get_locale_cstr("label.sdf_precision.redundant"),
+            };
+            if (ImGui::Combo(
+                    get_locale_cstr("label.voxel_precision"),
+                    &voxel_prec, vp_names, 3)) {
+                item.voxel_precision =
+                    static_cast<sinriv::kigstudio::sdf::SDFPrecision>(
+                        voxel_prec);
                 push_undo_now(item.id, std::nullopt,
-                              "Use Precise Voxelization");
-                item.use_precise_voxelization = use_precise_voxelization;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    get_locale_cstr("tooltip.use_precise_voxelization"));
+                              "Voxel Precision");
             }
         }
 
@@ -552,7 +574,7 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             if (ImGui::Button(get_locale_cstr("action.reload_stl"))) {
                 queue_reload_stl(item.id, item.stl_voxel_size, item.stl_path,
                                  item.stl_load_mode, item.load_as_sdf,
-                                 item.use_precise_voxelization);
+                                 item.voxel_precision);
             }
             first = false;
         }
@@ -742,17 +764,22 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
                 }
-                bool use_precise_voxelization = item.use_precise_voxelization;
-                if (ImGui::Checkbox(
-                        get_locale_cstr("label.use_precise_voxelization"),
-                        &use_precise_voxelization)) {
+                int voxel_prec =
+                    static_cast<int>(item.voxel_precision);
+                const char* vp_names2[] = {
+                    get_locale_cstr("label.sdf_precision.fast"),
+                    get_locale_cstr("label.sdf_precision.precise"),
+                    get_locale_cstr("label.sdf_precision.redundant"),
+                };
+                if (ImGui::Combo(
+                        get_locale_cstr("label.voxel_precision"),
+                        &voxel_prec, vp_names2, 3)) {
+                    item.voxel_precision =
+                        static_cast<
+                            sinriv::kigstudio::sdf::SDFPrecision>(
+                            voxel_prec);
                     push_undo_now(item.id, std::nullopt,
-                                  "Use Precise Voxelization");
-                    item.use_precise_voxelization = use_precise_voxelization;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(
-                        get_locale_cstr("tooltip.use_precise_voxelization"));
+                                  "Voxel Precision");
                 }
             }
 
@@ -764,7 +791,7 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 queue_reload_stl(
                     item.id, item.stl_voxel_size, item.stl_path,
                     item.stl_load_mode, item.load_as_sdf,
-                    item.use_precise_voxelization, item.source_node_id,
+                    item.voxel_precision, item.source_node_id,
                     item.node_source_data_type,
                     item.node_source_sdf_subdivisions,
                     item.node_source_sdf_simplify,

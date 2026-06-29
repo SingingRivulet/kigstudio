@@ -109,7 +109,7 @@ struct SDF_Mesh::Impl {
                   const Vec3f& voxelSize,
                   const Vec3i& voxelCount,
                   std::vector<float>& out,
-                  bool precise) const {
+                  SDFPrecision mode) const {
         const int sx = voxelCount.x;
         const int sy = voxelCount.y;
         const int sz = voxelCount.z;
@@ -123,7 +123,7 @@ struct SDF_Mesh::Impl {
             return;
         }
 
-        if (precise) {
+        if (mode == SDFPrecision::Precise) {
 #pragma omp parallel for
             for (int64_t i = 0; i < static_cast<int64_t>(total); ++i) {
                 int x = static_cast<int>(i % sx);
@@ -286,10 +286,63 @@ struct SDF_Mesh::Impl {
             }
         }
 
+        // Redundant mode: 4 diagonal rays per voxel
+        if (mode == SDFPrecision::Redundant) {
+            const double diag_eps =
+                std::max<double>(std::abs(voxelSize.x) * 1e-4, 1e-7);
+#pragma omp parallel for
+            for (int64_t vi = 0; vi < static_cast<int64_t>(total); ++vi) {
+                int x = static_cast<int>(vi % sx);
+                int y = static_cast<int>((vi / sx) % sy);
+                int z = static_cast<int>(vi / (static_cast<int64_t>(sx) * sy));
+                Point_3 query(
+                    begin.x + static_cast<float>(x) * voxelSize.x,
+                    begin.y + static_cast<float>(y) * voxelSize.y,
+                    begin.z + static_cast<float>(z) * voxelSize.z);
+                const double s = 1.0 / std::sqrt(3.0);
+                const Kernel::Direction_3 dirs[4] = {
+                    Kernel::Direction_3(s, s, s),
+                    Kernel::Direction_3(s, -s, s),
+                    Kernel::Direction_3(-s, -s, s),
+                    Kernel::Direction_3(-s, s, s),
+                };
+                for (int d = 0; d < 4; ++d) {
+                    Ray_3 ray(query, dirs[d]);
+                    std::vector<Tree::Intersection_and_primitive_id<
+                        Ray_3>::Type>
+                        intersections;
+                    tree.all_intersections(
+                        ray, std::back_inserter(intersections));
+                    std::vector<double> coords;
+                    for (const auto& item : intersections) {
+                        if (const auto* p =
+                                std::get_if<Point_3>(&item.first))
+                            coords.push_back(p->x());
+                        else if (const auto* s =
+                                     std::get_if<Segment_3>(
+                                         &item.first)) {
+                            coords.push_back(s->source().x());
+                            coords.push_back(s->target().x());
+                        }
+                    }
+                    std::sort(coords.begin(), coords.end());
+                    int ic = 0;
+                    for (size_t k = 0; k < coords.size(); ++k)
+                        if (k == 0 ||
+                            std::abs(coords[k] - coords[k - 1]) > diag_eps)
+                            ++ic;
+                    if (ic % 2 == 1)
+                        inside_votes[vi]++;
+                }
+            }
+        }
+
+        const int vote_threshold = (mode == SDFPrecision::Redundant) ? 4 : 2;
+
 #pragma omp parallel for
         for (int64_t i = 0; i < static_cast<int64_t>(total); ++i) {
-            if (inside_votes[static_cast<size_t>(i)] >= 2) {
-                if (precise && side_tester) {
+            if (inside_votes[static_cast<size_t>(i)] >= vote_threshold) {
+                if (mode == SDFPrecision::Precise && side_tester) {
                     int x = static_cast<int>(i % sx);
                     int y = static_cast<int>((i / sx) % sy);
                     int z = static_cast<int>(i / (static_cast<int64_t>(sx) * sy));
@@ -300,7 +353,7 @@ struct SDF_Mesh::Impl {
                         out[static_cast<size_t>(i)] = -out[static_cast<size_t>(i)];
                     }
                 } else {
-                    // Fast path: ray voting is sufficient
+                    // Fast / Redundant: ray voting is sufficient
                     out[static_cast<size_t>(i)] = -out[static_cast<size_t>(i)];
                 }
             }
@@ -387,19 +440,26 @@ void SDF_Mesh::get(const Vec3f& begin,
         return;
     }
 
-    impl->getBatch(begin, voxelSize, voxelCount, out, precise_distance);
+    impl->getBatch(begin, voxelSize, voxelCount, out, precision_mode);
 }
 
 std::string SDF_Mesh::getInfo(int indent) const {
     std::string prefix(indent * 2, ' ');
+    const char* mode_str = "precise";
+    switch (precision_mode) {
+        case SDFPrecision::Fast: mode_str = "fast"; break;
+        case SDFPrecision::Precise: mode_str = "precise"; break;
+        case SDFPrecision::Redundant: mode_str = "redundant"; break;
+    }
     return prefix + "SDF_Mesh(triangles=" + std::to_string(impl->triangles.size()) +
-           ", precise=" + (precise_distance ? "yes" : "no") + ")";
+           ", mode=" + mode_str + ")";
 }
 
 cJSON* SDF_Mesh::toJSON() const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "type", "mesh");
-    cJSON_AddBoolToObject(obj, "precise_distance", precise_distance);
+    cJSON_AddNumberToObject(obj, "precision_mode",
+                            static_cast<int>(precision_mode));
 
     if (!path.empty()) {
         cJSON_AddStringToObject(obj, "path", path.c_str());
@@ -457,9 +517,17 @@ void SDF_Mesh::fromJSON(const cJSON* json) {
                 impl->rebuild();
             }
             path.clear();
-        } else if (cJSON_IsBool(child) &&
-                   strcmp(child->string, "precise_distance") == 0) {
-            precise_distance = cJSON_IsTrue(child);
+        } else if (cJSON_IsNumber(child) &&
+                   strcmp(child->string, "precision_mode") == 0) {
+            int v = child->valueint;
+            if (v >= 0 && v <= 2)
+                precision_mode = static_cast<SDFPrecision>(v);
+        } else if (strcmp(child->string, "precise_distance") == 0) {
+            // Backward compat: old bool field
+            if (cJSON_IsTrue(child))
+                precision_mode = SDFPrecision::Precise;
+            else if (cJSON_IsFalse(child))
+                precision_mode = SDFPrecision::Fast;
         } else if (cJSON_IsString(child) &&
                    strcmp(child->string, "path") == 0) {
             if (child->valuestring) {

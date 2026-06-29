@@ -20,7 +20,7 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.stl_path,
             item.stl_load_mode,
             item.load_as_sdf,
-            item.use_precise_voxelization,
+            item.voxel_precision,
             item.mesh_only,
             item.source_type,
             item.source_node_id,
@@ -55,7 +55,7 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.stl_path = snapshot.stl_path;
     item.stl_load_mode = snapshot.stl_load_mode;
     item.load_as_sdf = snapshot.load_as_sdf;
-    item.use_precise_voxelization = snapshot.use_precise_voxelization;
+    item.voxel_precision = snapshot.voxel_precision;
     item.mesh_only = snapshot.mesh_only;
     item.source_type = snapshot.source_type;
     item.source_node_id = snapshot.source_node_id;

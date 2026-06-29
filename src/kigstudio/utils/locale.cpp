@@ -371,9 +371,9 @@ void init_locale_strings() {
                       {{"en", "No log entries."}, {"zh", "暂无日志记录。"}});
     add_locale_string("label.load_as_sdf",
                       {{"en", "Load as SDF"}, {"zh", "加载SDF"}});
-    add_locale_string(
-        "label.use_precise_voxelization",
-        {{"en", "Precise voxelization"}, {"zh", "精确体素化"}});
+    add_locale_string("label.voxel_precision",
+                      {{"en", "Voxel Precision"},
+                       {"zh", "体素化精度"}});
     add_locale_string("label.stl_path",
                       {{"en", "STL Path"}, {"zh", "STL 路径"}});
     add_locale_string("label.stl_load_mode",
@@ -405,9 +405,18 @@ void init_locale_strings() {
     add_locale_string("label.simplify_ratio",
                       {{"en", "Simplify"},
                        {"zh", "网格简化"}});
-    add_locale_string("label.sdf_precise_distance",
-                      {{"en", "Precise SDF Distance"},
-                       {"zh", "精确SDF距离"}});
+    add_locale_string("label.sdf_precision_mode",
+                      {{"en", "SDF Precision"},
+                       {"zh", "SDF精度"}});
+    add_locale_string("label.sdf_precision.fast",
+                      {{"en", "Fast"},
+                       {"zh", "快速"}});
+    add_locale_string("label.sdf_precision.precise",
+                      {{"en", "Precise"},
+                       {"zh", "精确"}});
+    add_locale_string("label.sdf_precision.redundant",
+                      {{"en", "Redundant"},
+                       {"zh", "冗余"}});
     add_locale_string(
         "action.export_source_stl",
         {{"en", "Export Source as STL"}, {"zh", "导出源模型为STL"}});
@@ -838,13 +847,15 @@ void init_locale_strings() {
           "加载，这将显著提升模型精度，但是输出模型将消耗更长的时间。使用部分功"
           "能时会丢失 SDF 数据（例如邻近分割）。"}});
     add_locale_string(
-        "tooltip.use_precise_voxelization",
+        "tooltip.voxel_precision",
         {{"en",
-          "Use CGAL side-of-mesh test to verify ambiguous voxels and reduce "
-          "voxelization errors. Disable for faster loading on large models."},
+          "Fast: 3-axis ray voting only.\n"
+          "Precise: Fast + CGAL inside test for ambiguous voxels.\n"
+          "Redundant: Precise + 4 diagonal rays (7 total, need >=4 votes)."},
          {"zh",
-          "使用 CGAL 体素内判定来验证可疑体素，降低体素化错误率。对大模型关闭可"
-          "以加快加载速度。"}});
+          "快速: 仅3轴射线投票。\n"
+          "精确: 快速 + CGAL 内部判定验证可疑体素。\n"
+          "冗余: 精确 + 4条对角线射线（共7条，需>=4票）。"}});
     add_locale_string(
         "tooltip.stl_load_mode",
         {{"en", "Choose how the STL file is processed before voxelization."},

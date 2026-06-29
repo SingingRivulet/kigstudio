@@ -20,6 +20,7 @@
 #include <windows.h>
 #endif
 
+#include "kigstudio/sdf/sdf_mesh.h"
 #include "kigstudio/sdf/sdf_shape.h"
 #include "kigstudio/ui/render_collision.h"
 #include "kigstudio/ui/render_mesh.h"
@@ -176,7 +177,8 @@ struct CollisionEditorSnapshot {
     std::string stl_path;
     int stl_load_mode = 0;
     bool load_as_sdf = false;
-    bool use_precise_voxelization = false;
+    sinriv::kigstudio::sdf::SDFPrecision voxel_precision =
+        sinriv::kigstudio::sdf::SDFPrecision::Fast;
     bool mesh_only = false;
     int source_type = 0;
     int source_node_id = -1;
@@ -439,7 +441,7 @@ class RenderVoxelList {
         float stl_voxel_size = 1.0f;
         int stl_load_mode = 0;
         bool load_as_sdf = false;
-        bool use_precise_voxelization = true;
+        sinriv::kigstudio::sdf::SDFPrecision voxel_precision = sinriv::kigstudio::sdf::SDFPrecision::Fast;
         bool mesh_only = false;
         int source_type = 0;
         int source_node_id = -1;
@@ -782,7 +784,7 @@ class RenderVoxelList {
                   int target_item_id = -1,
                   int load_mode = 0,
                   bool load_as_sdf = false,
-                  bool use_precise_voxelization = true);
+                  sinriv::kigstudio::sdf::SDFPrecision voxel_precision = sinriv::kigstudio::sdf::SDFPrecision::Fast);
     void load_from_node(int target_item_id,
                         int source_node_id,
                         int node_source_data_type,
@@ -791,7 +793,7 @@ class RenderVoxelList {
                         float node_source_sdf_simplify_ratio,
                         int load_mode = 0,
                         bool load_as_sdf = false,
-                        bool use_precise_voxelization = true);
+                        sinriv::kigstudio::sdf::SDFPrecision voxel_precision = sinriv::kigstudio::sdf::SDFPrecision::Fast);
 
     // Cache helpers for node sources
     std::filesystem::path get_cache_dir(const std::string& subdir) const;
@@ -841,7 +843,7 @@ class RenderVoxelList {
         float export_simplify_ratio = 0.1f;
         int load_mode = 0;
         bool load_as_sdf = false;
-        bool use_precise_voxelization = true;
+        sinriv::kigstudio::sdf::SDFPrecision voxel_precision = sinriv::kigstudio::sdf::SDFPrecision::Fast;
         int subdivisions = 3;
         bool save_to_file = true;
         int source_node_id = -1;
@@ -874,13 +876,13 @@ class RenderVoxelList {
                         float voxel_size,
                         int load_mode = 0,
                         bool load_as_sdf = false,
-                        bool use_precise_voxelization = true);
+                        sinriv::kigstudio::sdf::SDFPrecision voxel_precision = sinriv::kigstudio::sdf::SDFPrecision::Fast);
     void queue_reload_stl(int item_id,
                           float voxel_size,
                           const std::string& stl_path,
                           int load_mode = 0,
                           bool load_as_sdf = false,
-                          bool use_precise_voxelization = true,
+                          sinriv::kigstudio::sdf::SDFPrecision voxel_precision = sinriv::kigstudio::sdf::SDFPrecision::Fast,
                           int source_node_id = -1,
                           int node_source_data_type = 0,
                           int node_source_sdf_subdivisions = 2,

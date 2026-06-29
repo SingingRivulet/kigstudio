@@ -502,7 +502,7 @@ void RenderVoxelList::render_file_loader() {
     static float voxel_size = 1.0f;
     static int file_loader_load_mode = 0;
     static bool file_loader_load_as_sdf = false;
-    static bool file_loader_use_precise_voxelization = false;
+    static int file_loader_voxel_precision = 0; // Fast
     static bool last_show_file_loader = false;
     if (show_file_loader) {
         if (!last_show_file_loader) {
@@ -582,13 +582,14 @@ void RenderVoxelList::render_file_loader() {
                 if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
                 }
-                ImGui::Checkbox(
-                    get_locale_cstr("label.use_precise_voxelization"),
-                    &file_loader_use_precise_voxelization);
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(
-                        get_locale_cstr("tooltip.use_precise_voxelization"));
-                }
+                const char* vp_names[] = {
+                    get_locale_cstr("label.sdf_precision.fast"),
+                    get_locale_cstr("label.sdf_precision.precise"),
+                    get_locale_cstr("label.sdf_precision.redundant"),
+                };
+                ImGui::Combo(
+                    get_locale_cstr("label.voxel_precision"),
+                    &file_loader_voxel_precision, vp_names, 3);
             }
             if (file_loader_load_mode !=
                 static_cast<int>(StlLoadMode::MESH_ONLY)) {
@@ -617,10 +618,12 @@ void RenderVoxelList::render_file_loader() {
             }
             ImGui::BeginDisabled(stl_file_path.empty());
             if (ImGui::Button(get_locale_cstr("action.open"))) {
-                this->queue_load_stl(stl_file_path, voxel_size,
-                                     file_loader_load_mode,
-                                     file_loader_load_as_sdf,
-                                     file_loader_use_precise_voxelization);
+                this->queue_load_stl(
+                    stl_file_path, voxel_size,
+                    file_loader_load_mode,
+                    file_loader_load_as_sdf,
+                    static_cast<sinriv::kigstudio::sdf::SDFPrecision>(
+                        file_loader_voxel_precision));
                 show_file_loader = false;
             }
             ImGui::EndDisabled();

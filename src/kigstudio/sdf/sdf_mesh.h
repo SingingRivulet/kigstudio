@@ -5,6 +5,13 @@
 
 namespace sinriv::kigstudio::sdf {
 
+// SDF precision mode — shared between SDF mesh and voxelizer.
+enum class SDFPrecision {
+    Fast = 0,       // ray voting (3 axes), no AABB distance, no side_tester
+    Precise = 1,    // AABB tree distance + side_tester verification
+    Redundant = 2,  // ray voting (3 axes + 4 diagonals → 7 rays), need ≥4 inside
+};
+
 struct SDF_Mesh : public SDFBase {
     SDF_Mesh();
     ~SDF_Mesh() override;
@@ -28,10 +35,8 @@ struct SDF_Mesh : public SDFBase {
     bool isInside(const Vec3f& p) const;
     bool hasInsideTester() const;
 
-    // When false, skip AABB-tree distance computation; inside voxels get
-    // a fixed negative distance.  Much faster, especially for large
-    // meshes with many voxels (like silhouette cone-box output).
-    bool precise_distance = true;
+    // Precision mode for SDF computation.
+    SDFPrecision precision_mode = SDFPrecision::Precise;
 
     std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;

@@ -90,8 +90,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddNumberToObject(obj, "stl_voxel_size", item.stl_voxel_size);
     cJSON_AddNumberToObject(obj, "stl_load_mode", item.stl_load_mode);
     cJSON_AddBoolToObject(obj, "load_as_sdf", item.load_as_sdf);
-    cJSON_AddBoolToObject(obj, "use_precise_voxelization",
-                          item.use_precise_voxelization);
+    cJSON_AddNumberToObject(obj, "voxel_precision",
+                            static_cast<int>(item.voxel_precision));
     cJSON_AddBoolToObject(obj, "mesh_only", item.mesh_only);
     cJSON_AddNumberToObject(obj, "source_type", item.source_type);
     cJSON_AddNumberToObject(obj, "source_node_id", item.source_node_id);
@@ -207,7 +207,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
     item->showVoxel = true;
     item->showCollision = true;
     item->showCollisionBounds = true;
-    item->use_precise_voxelization = true;
+    item->voxel_precision =
+        sinriv::kigstudio::sdf::SDFPrecision::Fast;
 
     auto parse_skeleton_point = [](const cJSON* sp_obj) -> SkeletonPointPick {
         SkeletonPointPick sp;
@@ -371,8 +372,17 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->auto_segment_update = cJSON_IsTrue(child);
             } else if (strcmp(key, "load_as_sdf") == 0) {
                 item->load_as_sdf = cJSON_IsTrue(child);
-            } else if (strcmp(key, "use_precise_voxelization") == 0) {
-                item->use_precise_voxelization = cJSON_IsTrue(child);
+            } else if (strcmp(key, "voxel_precision") == 0) {
+                if (cJSON_IsBool(child))
+                    item->voxel_precision = cJSON_IsTrue(child)
+                        ? sinriv::kigstudio::sdf::SDFPrecision::Precise
+                        : sinriv::kigstudio::sdf::SDFPrecision::Fast;
+                else if (cJSON_IsNumber(child)) {
+                    int v = child->valueint;
+                    if (v >= 0 && v <= 2)
+                        item->voxel_precision =
+                            static_cast<sinriv::kigstudio::sdf::SDFPrecision>(v);
+                }
             } else if (strcmp(key, "mesh_only") == 0) {
                 item->mesh_only = cJSON_IsTrue(child);
             } else if (strcmp(key, "node_source_sdf_simplify") == 0) {
@@ -500,8 +510,8 @@ cJSON* RenderVoxelList::snapshot_to_json(
     cJSON_AddStringToObject(obj, "stl_path", snapshot.stl_path.c_str());
     cJSON_AddNumberToObject(obj, "stl_load_mode", snapshot.stl_load_mode);
     cJSON_AddBoolToObject(obj, "load_as_sdf", snapshot.load_as_sdf);
-    cJSON_AddBoolToObject(obj, "use_precise_voxelization",
-                          snapshot.use_precise_voxelization);
+    cJSON_AddNumberToObject(obj, "voxel_precision",
+                            static_cast<int>(snapshot.voxel_precision));
     cJSON_AddBoolToObject(obj, "mesh_only", snapshot.mesh_only);
     cJSON_AddNumberToObject(obj, "source_type", snapshot.source_type);
     cJSON_AddNumberToObject(obj, "source_node_id", snapshot.source_node_id);
@@ -756,8 +766,17 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.use_cgal_skeleton = cJSON_IsTrue(child);
             } else if (strcmp(key, "load_as_sdf") == 0) {
                 snapshot.load_as_sdf = cJSON_IsTrue(child);
-            } else if (strcmp(key, "use_precise_voxelization") == 0) {
-                snapshot.use_precise_voxelization = cJSON_IsTrue(child);
+            } else if (strcmp(key, "voxel_precision") == 0) {
+                if (cJSON_IsBool(child))
+                    snapshot.voxel_precision = cJSON_IsTrue(child)
+                        ? sinriv::kigstudio::sdf::SDFPrecision::Precise
+                        : sinriv::kigstudio::sdf::SDFPrecision::Fast;
+                else if (cJSON_IsNumber(child)) {
+                    int v = child->valueint;
+                    if (v >= 0 && v <= 2)
+                        snapshot.voxel_precision =
+                            static_cast<sinriv::kigstudio::sdf::SDFPrecision>(v);
+                }
             } else if (strcmp(key, "mesh_only") == 0) {
                 snapshot.mesh_only = cJSON_IsTrue(child);
             } else if (strcmp(key, "node_source_sdf_simplify") == 0) {
