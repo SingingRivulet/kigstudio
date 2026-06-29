@@ -517,9 +517,23 @@ void RenderVoxelList::queue_thread() {
                             get_locale_string("status.exporting_stl") + " " +
                             get_locale_string(
                                 "status.exporting_stl.simplifying_mesh"));
-                        mesh = sinriv::kigstudio::cgal::simplifyMesh(
-                            mesh,
-                            static_cast<double>(task.export_simplify_ratio));
+
+                        bool cancelled = false;
+                        sinriv::kigstudio::cgal::simplifyMesh_async async_simplify(
+                            mesh, static_cast<double>(task.export_simplify_ratio));
+                        while (!async_simplify.done()) {
+                            if (!queue_should_continue.load() || !queue_running.load()) {
+                                async_simplify.terminal();
+                                cancelled = true;
+                                break;
+                            }
+                            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                        }
+                        if (cancelled) {
+                            mesh.clear();
+                        } else {
+                            mesh = async_simplify.get_result();
+                        }
                         append_queue_logf("log.queue.simplify_result",
                                           task.index, static_cast<int>(before),
                                           static_cast<int>(mesh.size()));
@@ -701,9 +715,23 @@ void RenderVoxelList::queue_thread() {
                                     status_prefix + " " +
                                     get_locale_string("status.exporting_stl."
                                                       "simplifying_mesh"));
-                                mesh = sinriv::kigstudio::cgal::simplifyMesh(
-                                    mesh, static_cast<double>(
-                                              task.export_simplify_ratio));
+
+                                bool cancelled = false;
+                                sinriv::kigstudio::cgal::simplifyMesh_async async_simplify(
+                                    mesh, static_cast<double>(task.export_simplify_ratio));
+                                while (!async_simplify.done()) {
+                                    if (!queue_should_continue.load() || !queue_running.load()) {
+                                        async_simplify.terminal();
+                                        cancelled = true;
+                                        break;
+                                    }
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                                }
+                                if (cancelled) {
+                                    mesh.clear();
+                                } else {
+                                    mesh = async_simplify.get_result();
+                                }
                                 append_queue_logf(
                                     "log.queue.simplify_result", id,
                                     static_cast<int>(before),

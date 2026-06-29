@@ -1504,8 +1504,22 @@ void RenderVoxelList::load_from_node(int target_item_id,
                 mesh = cleanMesh(mesh);
             }
             if (node_source_sdf_simplify && !mesh.empty()) {
-                mesh = sinriv::kigstudio::cgal::simplifyMesh(
+                bool cancelled = false;
+                sinriv::kigstudio::cgal::simplifyMesh_async async_simplify(
                     mesh, static_cast<double>(node_source_sdf_simplify_ratio));
+                while (!async_simplify.done()) {
+                    if (!queue_should_continue.load() || !queue_running.load()) {
+                        async_simplify.terminal();
+                        cancelled = true;
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                }
+                if (cancelled) {
+                    mesh.clear();
+                } else {
+                    mesh = async_simplify.get_result();
+                }
             }
             source_mesh.reserve(mesh.size());
             for (size_t i = 0; i < mesh.size(); ++i) {

@@ -1706,8 +1706,17 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
             mesh_in.emplace_back(tri, n * (1.0f / nl));
         }
 
-        auto simplified = sinriv::kigstudio::cgal::simplifyMesh(
-            mesh_in, ratio);
+        report_progress(0.99f, "Simplifying mesh processing...");
+
+        sinriv::kigstudio::cgal::simplifyMesh_async async_simplify(mesh_in, ratio);
+        while (!async_simplify.done()) {
+            if (should_continue && !should_continue()) {
+                async_simplify.terminal();
+                return {};
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+        auto simplified = async_simplify.get_result();
 
         result.clear();
         result.reserve(simplified.size());

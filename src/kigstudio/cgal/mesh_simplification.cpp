@@ -188,7 +188,7 @@ simplifyMesh_async::~simplifyMesh_async() {
     terminal();
 }
 
-bool simplifyMesh_async::done() {
+bool simplifyMesh_async::done() const {
     return !process_.isRunning();
 }
 

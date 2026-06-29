@@ -37,7 +37,7 @@ public:
                        double ratio);
     ~simplifyMesh_async();
 
-    bool done();
+    bool done() const;
     void terminal();
     std::vector<std::tuple<Triangle, vec3f>> get_result() const;
 

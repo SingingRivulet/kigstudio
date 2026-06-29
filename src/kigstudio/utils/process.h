@@ -17,6 +17,11 @@
         #define WIN32_LEAN_AND_MEAN
     #endif
     #include <windows.h>
+    // windows.h pollutes the global namespace with near/far macros (legacy
+    // 16-bit cruft). Undefine them so they don't break code using "near"
+    // as an identifier (e.g. conebox.cpp TriangleEqual::near).
+    #undef near
+    #undef far
 #else
     #include <sys/wait.h>
     #include <sys/select.h>
@@ -102,7 +107,7 @@ public:
     int write(const void* data, size_t len, int timeout_ms = -1);
 
     /// Check whether the child process is still alive.
-    bool isRunning();
+    bool isRunning() const;
 
     /// Wait for the child to exit.
     /// @param timeout_ms timeout in milliseconds; -1 = block until exit
@@ -143,8 +148,8 @@ private:
     ChildHandle child_handle_ = INVALID_CHILD;
     PipeHandle  stdin_pipe_   = INVALID_PIPE;  // parent writes to child
     PipeHandle  stdout_pipe_  = INVALID_PIPE;  // parent reads from child
-    int         exit_code_    = -1;
-    bool        running_      = false;
+    mutable int  exit_code_   = -1;            // cached by isRunning()
+    mutable bool running_     = false;         // cached by isRunning()
 };
 
 // ===========================================================================
@@ -325,7 +330,7 @@ inline int Process::write(const void* data, size_t len, int timeout_ms) {
     return static_cast<int>(total_written);
 }
 
-inline bool Process::isRunning() {
+inline bool Process::isRunning() const {
     if (!running_)
         return false;
 
@@ -550,7 +555,7 @@ inline int Process::write(const void* data, size_t len, int timeout_ms) {
     return static_cast<int>(total);
 }
 
-inline bool Process::isRunning() {
+inline bool Process::isRunning() const {
     if (!running_)
         return false;
 
