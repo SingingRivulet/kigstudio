@@ -108,7 +108,8 @@ struct SDF_Mesh::Impl {
     void getBatch(const Vec3f& begin,
                   const Vec3f& voxelSize,
                   const Vec3i& voxelCount,
-                  std::vector<float>& out) const {
+                  std::vector<float>& out,
+                  bool precise) const {
         const int sx = voxelCount.x;
         const int sy = voxelCount.y;
         const int sz = voxelCount.z;
@@ -122,17 +123,23 @@ struct SDF_Mesh::Impl {
             return;
         }
 
+        if (precise) {
 #pragma omp parallel for
-        for (int64_t i = 0; i < static_cast<int64_t>(total); ++i) {
-            int x = static_cast<int>(i % sx);
-            int y = static_cast<int>((i / sx) % sy);
-            int z = static_cast<int>(i / (static_cast<int64_t>(sx) * sy));
+            for (int64_t i = 0; i < static_cast<int64_t>(total); ++i) {
+                int x = static_cast<int>(i % sx);
+                int y = static_cast<int>((i / sx) % sy);
+                int z = static_cast<int>(i / (static_cast<int64_t>(sx) * sy));
 
-            Point_3 query(begin.x + static_cast<float>(x) * voxelSize.x,
-                          begin.y + static_cast<float>(y) * voxelSize.y,
-                          begin.z + static_cast<float>(z) * voxelSize.z);
-            double dist = std::sqrt(tree.squared_distance(query));
-            out[static_cast<size_t>(i)] = static_cast<float>(dist);
+                Point_3 query(begin.x + static_cast<float>(x) * voxelSize.x,
+                              begin.y + static_cast<float>(y) * voxelSize.y,
+                              begin.z + static_cast<float>(z) * voxelSize.z);
+                double dist = std::sqrt(tree.squared_distance(query));
+                out[static_cast<size_t>(i)] = static_cast<float>(dist);
+            }
+        } else {
+            // Fast path: fill with a large positive constant; insider
+            // voxels will get the sign flipped below.
+            std::fill(out.begin(), out.end(), 1e6f);
         }
 
         if (!side_tester || sx <= 0 || sy <= 0 || sz <= 0)
@@ -282,14 +289,18 @@ struct SDF_Mesh::Impl {
 #pragma omp parallel for
         for (int64_t i = 0; i < static_cast<int64_t>(total); ++i) {
             if (inside_votes[static_cast<size_t>(i)] >= 2) {
-                int x = static_cast<int>(i % sx);
-                int y = static_cast<int>((i / sx) % sy);
-                int z = static_cast<int>(i / (static_cast<int64_t>(sx) * sy));
-
-                Point_3 query(begin.x + static_cast<float>(x) * voxelSize.x,
-                              begin.y + static_cast<float>(y) * voxelSize.y,
-                              begin.z + static_cast<float>(z) * voxelSize.z);
-                if ((*side_tester)(query) == CGAL::ON_BOUNDED_SIDE) {
+                if (precise && side_tester) {
+                    int x = static_cast<int>(i % sx);
+                    int y = static_cast<int>((i / sx) % sy);
+                    int z = static_cast<int>(i / (static_cast<int64_t>(sx) * sy));
+                    Point_3 query(begin.x + static_cast<float>(x) * voxelSize.x,
+                                  begin.y + static_cast<float>(y) * voxelSize.y,
+                                  begin.z + static_cast<float>(z) * voxelSize.z);
+                    if ((*side_tester)(query) == CGAL::ON_BOUNDED_SIDE) {
+                        out[static_cast<size_t>(i)] = -out[static_cast<size_t>(i)];
+                    }
+                } else {
+                    // Fast path: ray voting is sufficient
                     out[static_cast<size_t>(i)] = -out[static_cast<size_t>(i)];
                 }
             }
@@ -376,17 +387,19 @@ void SDF_Mesh::get(const Vec3f& begin,
         return;
     }
 
-    impl->getBatch(begin, voxelSize, voxelCount, out);
+    impl->getBatch(begin, voxelSize, voxelCount, out, precise_distance);
 }
 
 std::string SDF_Mesh::getInfo(int indent) const {
     std::string prefix(indent * 2, ' ');
-    return prefix + "SDF_Mesh(triangles=" + std::to_string(impl->triangles.size()) + ")";
+    return prefix + "SDF_Mesh(triangles=" + std::to_string(impl->triangles.size()) +
+           ", precise=" + (precise_distance ? "yes" : "no") + ")";
 }
 
 cJSON* SDF_Mesh::toJSON() const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "type", "mesh");
+    cJSON_AddBoolToObject(obj, "precise_distance", precise_distance);
 
     if (!path.empty()) {
         cJSON_AddStringToObject(obj, "path", path.c_str());
@@ -444,6 +457,9 @@ void SDF_Mesh::fromJSON(const cJSON* json) {
                 impl->rebuild();
             }
             path.clear();
+        } else if (cJSON_IsBool(child) &&
+                   strcmp(child->string, "precise_distance") == 0) {
+            precise_distance = cJSON_IsTrue(child);
         } else if (cJSON_IsString(child) &&
                    strcmp(child->string, "path") == 0) {
             if (child->valuestring) {

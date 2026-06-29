@@ -28,6 +28,11 @@ struct SDF_Mesh : public SDFBase {
     bool isInside(const Vec3f& p) const;
     bool hasInsideTester() const;
 
+    // When false, skip AABB-tree distance computation; inside voxels get
+    // a fixed negative distance.  Much faster, especially for large
+    // meshes with many voxels (like silhouette cone-box output).
+    bool precise_distance = true;
+
     std::string getInfo(int indent = 0) const override;
     cJSON* toJSON() const override;
     void fromJSON(const cJSON* json) override;

@@ -1,3 +1,4 @@
+#include "kigstudio/sdf/sdf_mesh.h"
 #include <dear-imgui/imgui_internal.h>
 #include <iconfontheaders/icons_font_awesome.h>
 #include <SDL.h>
@@ -487,6 +488,24 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip(get_locale_cstr("tooltip.load_as_sdf"));
             }
+            
+            // SDF precise distance toggle — only when SDF is loaded
+            if (item.load_as_sdf && item.sdf_data) {
+                auto* sdf_mesh =
+                    dynamic_cast<sinriv::kigstudio::sdf::SDF_Mesh*>(
+                        item.sdf_data.get());
+                if (sdf_mesh) {
+                    bool precise = sdf_mesh->precise_distance;
+                    if (ImGui::Checkbox(
+                            get_locale_cstr("label.sdf_precise_distance"),
+                            &precise)) {
+                        sdf_mesh->precise_distance = precise;
+                        push_undo_now(item.id, std::nullopt,
+                                      "SDF Precise Distance");
+                    }
+                }
+            }
+            
             bool use_precise_voxelization = item.use_precise_voxelization;
             if (ImGui::Checkbox(
                     get_locale_cstr("label.use_precise_voxelization"),

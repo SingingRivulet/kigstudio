@@ -405,6 +405,9 @@ void init_locale_strings() {
     add_locale_string("label.simplify_ratio",
                       {{"en", "Simplify"},
                        {"zh", "网格简化"}});
+    add_locale_string("label.sdf_precise_distance",
+                      {{"en", "Precise SDF Distance"},
+                       {"zh", "精确SDF距离"}});
     add_locale_string(
         "action.export_source_stl",
         {{"en", "Export Source as STL"}, {"zh", "导出源模型为STL"}});
