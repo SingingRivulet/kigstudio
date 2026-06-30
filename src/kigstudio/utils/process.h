@@ -43,7 +43,7 @@ class Process {
 public:
     Process() = default;
 
-    ~Process() { close(); }
+    ~Process() { close(false); }
 
     // Non-copyable
     Process(const Process&) = delete;
@@ -66,7 +66,7 @@ public:
 
     Process& operator=(Process&& other) noexcept {
         if (this != &other) {
-            close();
+            close(false);
             child_handle_  = other.child_handle_;
             stdin_pipe_    = other.stdin_pipe_;
             stdout_pipe_   = other.stdout_pipe_;
@@ -85,10 +85,11 @@ public:
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Launch a subprocess from a shell command (like popen).
-    /// The command is executed via `cmd /c` on Windows, `/bin/sh -c` on POSIX.
+    /// Start a child process directly (no shell wrapper).
+    /// @param exe  path to the executable
+    /// @param args argument list; each element is passed as one argv token
     /// Returns true on success.
-    bool start(const std::string& cmd);
+    bool start(const std::string& exe, const std::vector<std::string>& args);
 
     /// Read from the child's stdout.
     /// Blocks until at least one byte is available or the timeout expires.
@@ -165,7 +166,56 @@ inline std::string Process::self_exe_path() {
     return "kigstudio.exe";
 }
 
-inline bool Process::start(const std::string& cmd) {
+namespace {
+
+std::string quote_arg(const std::string& arg) {
+    if (arg.find_first_of(" \"\t") == std::string::npos)
+        return arg;
+    std::string out;
+    out.reserve(arg.size() + 2);
+    out.push_back('"');
+    for (size_t i = 0; i < arg.size(); ++i) {
+        char c = arg[i];
+        if (c == '"') {
+            // Escape embedded quotes so they are treated literally.
+            out.push_back('\\');
+            out.push_back('"');
+        } else if (c == '\\') {
+            // Count consecutive backslashes.
+            size_t backslash_run = 0;
+            while (i + backslash_run < arg.size() &&
+                   arg[i + backslash_run] == '\\')
+                ++backslash_run;
+            bool before_quote =
+                (i + backslash_run < arg.size() &&
+                 arg[i + backslash_run] == '"');
+            // In Windows command-line parsing, backslashes followed by a quote
+            // must be doubled to preserve them as literal backslashes.
+            size_t output_run = before_quote ? backslash_run * 2 : backslash_run;
+            out.append(output_run, '\\');
+            i += backslash_run - 1;
+        } else {
+            out.push_back(c);
+        }
+    }
+    out.push_back('"');
+    return out;
+}
+
+std::string build_cmd_line(const std::string& exe,
+                           const std::vector<std::string>& args) {
+    std::string cmd = quote_arg(exe);
+    for (const auto& a : args) {
+        cmd.push_back(' ');
+        cmd += quote_arg(a);
+    }
+    return cmd;
+}
+
+} // namespace
+
+inline bool Process::start(const std::string& exe,
+                           const std::vector<std::string>& args) {
     close();
 
     HANDLE child_stdin_read  = nullptr;
@@ -188,8 +238,9 @@ inline bool Process::start(const std::string& cmd) {
     SetHandleInformation(child_stdin_write, HANDLE_FLAG_INHERIT, 0);
     SetHandleInformation(child_stdout_read, HANDLE_FLAG_INHERIT, 0);
 
-    // Build command line: wrap in cmd /c for shell behaviour
-    std::string shell_cmd = "cmd /c \"" + cmd + "\"";
+    // Build command line directly (no shell wrapper) so child_handle_ points
+    // to the actual tool process and kill() terminates it reliably.
+    std::string shell_cmd = build_cmd_line(exe, args);
     std::vector<char> cmdline(shell_cmd.begin(), shell_cmd.end());
     cmdline.push_back('\0');
 
@@ -369,6 +420,8 @@ inline int Process::wait(int timeout_ms) {
 inline void Process::kill() {
     if (child_handle_ != INVALID_CHILD && running_) {
         TerminateProcess(child_handle_, 1);
+        // Give the process a moment to terminate before closing the handle.
+        WaitForSingleObject(child_handle_, 500);
         running_   = false;
         exit_code_ = 1;
     }
@@ -383,10 +436,15 @@ inline void Process::close(bool wait_for_exit) {
 
     if (child_handle_ != INVALID_CHILD) {
         if (wait_for_exit && running_) {
-            WaitForSingleObject(child_handle_, INFINITE);
-            DWORD code = 0;
-            if (GetExitCodeProcess(child_handle_, &code))
-                exit_code_ = static_cast<int>(code);
+            // Wait a short while, then force-kill if still alive so the
+            // destructor can never hang on a runaway child.
+            if (WaitForSingleObject(child_handle_, 2000) == WAIT_OBJECT_0) {
+                DWORD code = 0;
+                if (GetExitCodeProcess(child_handle_, &code))
+                    exit_code_ = static_cast<int>(code);
+            } else {
+                TerminateProcess(child_handle_, 1);
+            }
             running_ = false;
         }
         CloseHandle(child_handle_);
@@ -416,7 +474,8 @@ inline std::string Process::self_exe_path() {
     return "kigstudio";
 }
 
-inline bool Process::start(const std::string& cmd) {
+inline bool Process::start(const std::string& exe,
+                           const std::vector<std::string>& args) {
     close();
 
     int stdin_pair[2]  = { -1, -1 };
@@ -449,7 +508,21 @@ inline bool Process::start(const std::string& cmd) {
         ::close(stdin_pair[0]);
         ::close(stdout_pair[1]);
 
-        ::execl("/bin/sh", "sh", "-c", cmd.c_str(), (char*)nullptr);
+        // Build argv directly (no shell wrapper) so kill() targets the real
+        // tool process and the process tree is not involved.
+        std::vector<std::vector<char>> arg_storage;
+        std::vector<char*> argv;
+        arg_storage.emplace_back(exe.begin(), exe.end());
+        arg_storage.back().push_back('\0');
+        argv.push_back(arg_storage.back().data());
+        for (const auto& a : args) {
+            arg_storage.emplace_back(a.begin(), a.end());
+            arg_storage.back().push_back('\0');
+            argv.push_back(arg_storage.back().data());
+        }
+        argv.push_back(nullptr);
+
+        ::execvp(argv[0], argv.data());
         ::_exit(127);   // exec failed
     }
 

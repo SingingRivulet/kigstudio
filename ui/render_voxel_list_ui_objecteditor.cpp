@@ -362,6 +362,9 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             push_undo_now(item.id, std::nullopt, "Silhouette Center");
         }
         ImGui::TextUnformatted(get_locale_cstr("label.silhouette_subdivision"));
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(get_locale_cstr("tooltip.silhouette_subdivision"));
+        }
         ImGui::SameLine();
         const float btn_w = ImGui::GetFrameHeight();
         if (ImGui::Button("-##silhouette_subdiv", ImVec2(btn_w, 0))) {
@@ -391,6 +394,9 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
 
         // Inner wall radius
         ImGui::TextUnformatted(get_locale_cstr("label.inner_wall_radius"));
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(get_locale_cstr("tooltip.inner_wall_radius"));
+        }
         ImGui::SameLine();
         if (ImGui::Button("-##inner_wall", ImVec2(btn_w, 0))) {
             item.inner_wall_radius = std::max(0.0f, item.inner_wall_radius - 0.5f);
@@ -1017,15 +1023,21 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
                     &item.showOriginMesh);
 
     if (item.mesh_only) {
-        if (item.segment_mode != RenderVoxelItem::PLANE) {
-            item.segment_mode = RenderVoxelItem::PLANE;
+        // mesh_only 模型仅支持 Plane 与 Repair Mesh 两种处理模式
+        const char* mesh_only_mode_names[] = {
+            get_locale_cstr("mode.plane"),
+            get_locale_cstr("mode.repair")};
+        const enum RenderVoxelItem::SegmentMode mesh_only_modes[] = {
+            RenderVoxelItem::PLANE, RenderVoxelItem::REPAIR_MESH};
+        int current_mesh_only_mode =
+            (item.segment_mode == RenderVoxelItem::REPAIR_MESH) ? 1 : 0;
+        if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
+                         &current_mesh_only_mode, mesh_only_mode_names,
+                         IM_ARRAYSIZE(mesh_only_mode_names))) {
+            push_undo_now(item.id, std::nullopt,
+                          get_locale_string("label.segment_mode"));
+            item.segment_mode = mesh_only_modes[current_mesh_only_mode];
         }
-        const char* plane_mode_name = get_locale_cstr("mode.plane");
-        int plane_mode = RenderVoxelItem::PLANE;
-        ImGui::BeginDisabled(true);
-        ImGui::Combo(get_locale_cstr("label.segment_mode"), &plane_mode,
-                     &plane_mode_name, 1);
-        ImGui::EndDisabled();
     } else {
         const char* segment_mode_names[] = {
             get_locale_cstr("mode.collision"),
@@ -1079,6 +1091,9 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
             case RenderVoxelItem::SDF_NODE_SPLIT:
                 tooltip_key = "tooltip.mode.sdf_node_split";
                 break;
+            case RenderVoxelItem::REPAIR_MESH:
+                tooltip_key = "tooltip.mode.repair";
+                break;
         }
         if (tooltip_key) {
             ImGui::BeginTooltip();
@@ -1104,6 +1119,8 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
         render_object_editor_chain_mode(item);
     } else if (item.segment_mode == RenderVoxelItem::SDF_NODE_SPLIT) {
         render_object_editor_sdf_node_split_mode(item);
+    } else if (item.segment_mode == RenderVoxelItem::REPAIR_MESH) {
+        render_object_editor_repair_mode(item);
     }
 }
 
@@ -1173,6 +1190,36 @@ void RenderVoxelList::render_object_editor_sdf_node_split_mode(
         end_edit(item.id, "Source Transform");
     } else if (transform_edit_result.value_changed) {
         push_undo_now(item.id, before_transform, "Source Transform");
+    }
+}
+
+void RenderVoxelList::render_object_editor_repair_mode(
+    RenderVoxelItem& item) {
+    const char* repair_mode_names[] = {
+        get_locale_cstr("mode.repair.alpha_wrap"),
+        get_locale_cstr("mode.repair.fill_holes"),
+        get_locale_cstr("mode.repair.stitch_borders"),
+        get_locale_cstr("mode.repair.merge_duplicate_vertices"),
+        get_locale_cstr("mode.repair.orient_volume")};
+    const enum RenderVoxelItem::RepairMeshMode repair_modes[] = {
+        RenderVoxelItem::ALPHA_WRAP,
+        RenderVoxelItem::FILL_HOLES,
+        RenderVoxelItem::STITCH_BORDERS,
+        RenderVoxelItem::MERGE_DUPLICATE_VERTICES,
+        RenderVoxelItem::ORIENT_VOLUME};
+    int current_repair_mode = static_cast<int>(item.repair_mode);
+    if (ImGui::Combo(get_locale_cstr("label.repair_mode"), &current_repair_mode,
+                     repair_mode_names, IM_ARRAYSIZE(repair_mode_names))) {
+        push_undo_now(item.id, std::nullopt,
+                      get_locale_string("label.repair_mode"));
+        item.repair_mode = repair_modes[current_repair_mode];
+    }
+
+    if (item.repair_mode == RenderVoxelItem::ALPHA_WRAP) {
+        ImGui::DragFloat(get_locale_cstr("label.alpha_wrap_alpha"),
+                         &item.alpha_wrap_alpha, 0.01f, 0.01f, 100.0f);
+        ImGui::DragFloat(get_locale_cstr("label.alpha_wrap_offset"),
+                         &item.alpha_wrap_offset, 0.001f, 0.001f, 10.0f);
     }
 }
 

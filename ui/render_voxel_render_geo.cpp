@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "kigstudio/cgal/convex_hull.h"
+#include "kigstudio/cgal/mesh_repair.h"
 #include "kigstudio/cgal/mesh_simplification.h"
 #include "kigstudio/cgal/skeleton_extraction.h"
 #include "kigstudio/mesh/conebox.h"
@@ -571,6 +572,88 @@ triangle_generator_with_normals(
 }
 }  // namespace
 
+namespace {
+
+using RepairVec3f = sinriv::kigstudio::vec3<float>;
+using RepairMeshData = sinriv::kigstudio::cgal::MeshData;
+using RepairTriangle = sinriv::kigstudio::voxel::triangle_bvh<float>::triangle;
+
+RepairMeshData triangles_to_mesh_data(
+    const std::vector<RepairTriangle>& triangles) {
+    RepairMeshData mesh;
+    mesh.reserve(triangles.size());
+    for (const auto& tri : triangles) {
+        RepairVec3f n = (std::get<1>(tri) - std::get<0>(tri))
+                            .cross(std::get<2>(tri) - std::get<0>(tri));
+        float nl = n.length();
+        if (nl < 1e-12f) continue;
+        mesh.emplace_back(tri, n * (1.0f / nl));
+    }
+    return mesh;
+}
+
+std::vector<RepairTriangle> mesh_data_to_triangles(
+    const RepairMeshData& mesh) {
+    std::vector<RepairTriangle> triangles;
+    triangles.reserve(mesh.size());
+    for (const auto& [tri, n] : mesh) {
+        (void)n;
+        triangles.push_back(tri);
+    }
+    return triangles;
+}
+
+}  // namespace
+
+std::vector<RepairTriangle> RenderVoxelList::do_repair_mesh(
+    const RenderVoxelItem& item) {
+    RepairMeshData mesh_in = triangles_to_mesh_data(item.source_triangles);
+    RepairMeshData repaired;
+
+    auto wait_async = [&]<typename Async>(Async& async) {
+        while (!async.done()) {
+            if (!queue_should_continue.load() || !queue_running.load()) {
+                async.terminal();
+                throw std::runtime_error(
+                    get_locale_string("log.queue.cancelled"));
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+        return async.get_result();
+    };
+
+    switch (item.repair_mode) {
+        case RenderVoxelItem::ALPHA_WRAP: {
+            sinriv::kigstudio::cgal::alpha_wrap_async async(
+                mesh_in, item.alpha_wrap_alpha, item.alpha_wrap_offset);
+            repaired = wait_async(async);
+            break;
+        }
+        case RenderVoxelItem::FILL_HOLES: {
+            sinriv::kigstudio::cgal::fill_holes_async async(mesh_in);
+            repaired = wait_async(async);
+            break;
+        }
+        case RenderVoxelItem::STITCH_BORDERS: {
+            sinriv::kigstudio::cgal::stitch_borders_async async(mesh_in);
+            repaired = wait_async(async);
+            break;
+        }
+        case RenderVoxelItem::MERGE_DUPLICATE_VERTICES: {
+            sinriv::kigstudio::cgal::merge_vertices_async async(mesh_in);
+            repaired = wait_async(async);
+            break;
+        }
+        case RenderVoxelItem::ORIENT_VOLUME: {
+            sinriv::kigstudio::cgal::orient_volume_async async(mesh_in);
+            repaired = wait_async(async);
+            break;
+        }
+    }
+
+    return mesh_data_to_triangles(repaired);
+}
+
 std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
     int index) {
     locker.lock();
@@ -598,13 +681,21 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
               << " write_count=" << it->second->write_count << std::endl;
     try {
         if (it->second->mesh_only) {
-            auto split = split_triangles_by_plane(it->second->source_triangles,
-                                                  it->second->plane);
-            mesh_split_results.push_back(std::move(split.first));
-            mesh_split_results.push_back(std::move(split.second));
-            for (size_t i = 0; i < mesh_split_results.size(); ++i) {
+            if (it->second->segment_mode == RenderVoxelItem::REPAIR_MESH) {
+                auto repaired = do_repair_mesh(*it->second);
+                mesh_split_results.push_back(std::move(repaired));
                 sinriv::kigstudio::voxel::VoxelGrid dummy;
                 results.emplace_back(std::move(dummy), nullptr);
+            } else {
+                auto split =
+                    split_triangles_by_plane(it->second->source_triangles,
+                                             it->second->plane);
+                mesh_split_results.push_back(std::move(split.first));
+                mesh_split_results.push_back(std::move(split.second));
+                for (size_t i = 0; i < mesh_split_results.size(); ++i) {
+                    sinriv::kigstudio::voxel::VoxelGrid dummy;
+                    results.emplace_back(std::move(dummy), nullptr);
+                }
             }
         } else {
             results = it->second->do_segment();
@@ -707,6 +798,11 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
         }
         if (it->second->segment_mode == RenderVoxelItem::NEIGHBOR) {
             new_item->neighbor_max_distance = it->second->neighbor_max_distance;
+        }
+        if (it->second->segment_mode == RenderVoxelItem::REPAIR_MESH) {
+            new_item->repair_mode = it->second->repair_mode;
+            new_item->alpha_wrap_alpha = it->second->alpha_wrap_alpha;
+            new_item->alpha_wrap_offset = it->second->alpha_wrap_offset;
         }
         if (it->second->mesh_only && i < mesh_split_results.size()) {
             new_item->mesh_only = true;

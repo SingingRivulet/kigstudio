@@ -1,13 +1,16 @@
 #include <omp.h>
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <limits>
 #include <optional>
 #include <set>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
+#include "kigstudio/cgal/mesh_repair.h"
 #include "kigstudio/utils/locale.h"
 #include "kigstudio/voxel/voxel2mesh.h"
 #include "kigstudio/voxel/voxel_EDT.h"
@@ -667,7 +670,7 @@ Generator<std::tuple<Triangle, vec3f>> generateSmoothMeshFromSDF(
     bool computeNormals,
     int subdivisions,
     const sdf::SDFBase* sdf_ptr) {
-    SmoothMeshGenerator gen(voxelData, numTriangles, std::move(status_callback),
+    SmoothMeshGenerator gen(voxelData, numTriangles, status_callback,
                             computeNormals, subdivisions, sdf_ptr);
 
     std::vector<std::tuple<Triangle, vec3f>> triangles;
@@ -675,8 +678,62 @@ Generator<std::tuple<Triangle, vec3f>> generateSmoothMeshFromSDF(
         triangles.emplace_back(tri, normal);
     });
 
-    for (const auto& item : triangles) {
-        co_yield item;
+    if (triangles.empty())
+        co_return;
+
+    // ---- Repair: stitch borders then fill holes (async, cancellable) ----
+    using vec3f = sinriv::kigstudio::vec3<float>;
+    using MeshData = sinriv::kigstudio::cgal::MeshData;
+
+    auto to_mesh_data = [](const std::vector<std::tuple<Triangle, vec3f>>& v) {
+        MeshData mesh;
+        mesh.reserve(v.size());
+        for (const auto& [tri, n] : v) {
+            (void)n;
+            vec3f nn = (std::get<1>(tri) - std::get<0>(tri))
+                           .cross(std::get<2>(tri) - std::get<0>(tri));
+            float nl = nn.length();
+            if (nl < 1e-12f) continue;
+            mesh.emplace_back(tri, nn * (1.0f / nl));
+        }
+        return mesh;
+    };
+
+    auto check_continue = [&](const std::string& msg) -> bool {
+        if (!status_callback) return true;
+        return status_callback(msg);
+    };
+
+    MeshData mesh_in = to_mesh_data(triangles);
+
+    if (!check_continue(get_locale_string("progress.repair.stitching_borders")))
+        co_return;
+    sinriv::kigstudio::cgal::stitch_borders_async async_stitch(mesh_in, 0.001);
+    while (!async_stitch.done()) {
+        if (!check_continue(
+                get_locale_string("progress.repair.stitching_borders"))) {
+            async_stitch.terminal();
+            co_return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    auto stitched = async_stitch.get_result();
+
+    if (!check_continue(get_locale_string("progress.repair.filling_holes")))
+        co_return;
+    sinriv::kigstudio::cgal::fill_holes_async async_fill(stitched);
+    while (!async_fill.done()) {
+        if (!check_continue(
+                get_locale_string("progress.repair.filling_holes"))) {
+            async_fill.terminal();
+            co_return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    auto filled = async_fill.get_result();
+
+    for (const auto& item : filled) {
+        co_yield std::tuple<Triangle, vec3f>(item);
     }
 }
 

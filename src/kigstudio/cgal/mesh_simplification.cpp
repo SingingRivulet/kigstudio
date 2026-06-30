@@ -5,6 +5,7 @@
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Edge_count_ratio_stop_predicate.h>
 #include <iostream>
+#include <vector>
 #include <unordered_map>
 #include <filesystem>
 #include <atomic>
@@ -171,16 +172,17 @@ simplifyMesh_async::simplifyMesh_async(
     // Serialise input mesh to temporary STL
     sinriv::kigstudio::voxel::saveMeshToBinarySTL(mesh, tmp_in_);
 
-    // Build the command line: "<self> --tools --simplifyMesh --in ... --out ... --ratio ..."
-    std::string cmd = "\"" + Process::self_exe_path() + "\""
-                    + " --tools --simplifyMesh"
-                    + " --in \""  + tmp_in_  + "\""
-                    + " --out \"" + tmp_out_ + "\""
-                    + " --ratio " + std::to_string(ratio);
+    // Build argument list: <self> --tools --simplifyMesh --in ... --out ... --ratio ...
+    std::vector<std::string> args = {
+        "--tools", "--simplifyMesh",
+        "--in",  tmp_in_,
+        "--out", tmp_out_,
+        "--ratio", std::to_string(ratio)};
 
-    if (!process_.start(cmd)) {
+    if (!process_.start(Process::self_exe_path(), args)) {
         std::remove(tmp_in_.c_str());
-        throw std::runtime_error("simplifyMesh_async: failed to start subprocess: " + cmd);
+        throw std::runtime_error(
+            "simplifyMesh_async: failed to start subprocess");
     }
 }
 

@@ -193,6 +193,9 @@ struct CollisionEditorSnapshot {
     int silhouette_subdivision = 4;
     float inner_wall_radius = 0.0f;
     float simplify_ratio = -1.0f;  // negative = disabled
+    int repair_mode = 0;
+    float alpha_wrap_alpha = 1.0f;
+    float alpha_wrap_offset = 0.01f;
 };
 
 struct MarkedVoxelsSnapshot {
@@ -279,8 +282,19 @@ class RenderVoxelList {
             NEIGHBOR = 4,
             FILL_INTERIOR = 5,
             CHAIN = 6,
-            SDF_NODE_SPLIT = 7
+            SDF_NODE_SPLIT = 7,
+            REPAIR_MESH = 8, // 这是处理mesh的专用模式，不会输出体素和SDF
         } segment_mode = COLLISION;
+
+        enum RepairMeshMode {
+            ALPHA_WRAP = 0,
+            FILL_HOLES = 1,
+            STITCH_BORDERS = 2,
+            MERGE_DUPLICATE_VERTICES = 3,
+            ORIENT_VOLUME = 4
+        } repair_mode = FILL_HOLES;
+        float alpha_wrap_alpha = 1.0f;
+        float alpha_wrap_offset = 0.01f;
 
         sinriv::ui::render::RenderMesh origin_mesh_renderer;
         sinriv::ui::render::RenderMesh mesh_renderer;
@@ -593,6 +607,7 @@ class RenderVoxelList {
     void render_object_editor_collision_tab_content(RenderVoxelItem& item);
     void render_object_editor_chain_mode(RenderVoxelItem& item);
     void render_object_editor_sdf_node_split_mode(RenderVoxelItem& item);
+    void render_object_editor_repair_mode(RenderVoxelItem& item);
     void render_object_editor_voxel_tab_content(RenderVoxelItem& item);
     void render_object_editor_comment_tab_content(RenderVoxelItem& item);
     void render_plane_editor(RenderVoxelItem& item);
@@ -779,6 +794,8 @@ class RenderVoxelList {
     RenderVoxelItem* create_item();
 
     std::vector<RenderVoxelItem*> do_segment(int index);
+    std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
+    do_repair_mesh(const RenderVoxelItem& item);
     void extract_skeleton(int index);
 
     void load_stl(std::string filename,

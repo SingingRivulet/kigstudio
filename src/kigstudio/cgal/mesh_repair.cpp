@@ -384,14 +384,14 @@ alpha_wrap_async::alpha_wrap_async(const MeshData& mesh, double alpha, double of
     tmp_out_ = make_temp_path("_aw_out.stl");
     save_mesh(mesh, tmp_in_);
 
-    std::string cmd = "\"" + Process::self_exe_path() + "\""
-                    + " --tools --alphaWrap"
-                    + " --in \""    + tmp_in_  + "\""
-                    + " --out \""   + tmp_out_ + "\""
-                    + " --alpha "   + std::to_string(alpha_)
-                    + " --offset "  + std::to_string(offset_);
+    std::vector<std::string> args = {
+        "--tools", "--alphaWrap",
+        "--in",  tmp_in_,
+        "--out", tmp_out_,
+        "--alpha",  std::to_string(alpha_),
+        "--offset", std::to_string(offset_)};
 
-    if (!process_.start(cmd)) {
+    if (!process_.start(Process::self_exe_path(), args)) {
         std::remove(tmp_in_.c_str());
         throw std::runtime_error("alpha_wrap_async: failed to start subprocess");
     }
@@ -410,6 +410,12 @@ MeshData alpha_wrap_async::get_result() const {
     if (!done())
         throw std::runtime_error("alpha_wrap_async::get_result(): still running");
     if (result_ready_) return result_;
+    if (!std::filesystem::exists(tmp_out_)) {
+        throw std::runtime_error(
+            "alpha_wrap_async::get_result(): subprocess did not produce output "
+            "(alpha_wrap may have failed or produced an empty mesh); "
+            "try smaller alpha/offset values");
+    }
     result_ = load_mesh(tmp_out_);
     result_ready_ = true;
     return result_;
@@ -427,12 +433,12 @@ fill_holes_async::fill_holes_async(const MeshData& mesh) {
     tmp_out_ = make_temp_path("_fh_out.stl");
     save_mesh(mesh, tmp_in_);
 
-    std::string cmd = "\"" + Process::self_exe_path() + "\""
-                    + " --tools --fillHoles"
-                    + " --in \""  + tmp_in_  + "\""
-                    + " --out \"" + tmp_out_ + "\"";
+    std::vector<std::string> args = {
+        "--tools", "--fillHoles",
+        "--in",  tmp_in_,
+        "--out", tmp_out_};
 
-    if (!process_.start(cmd)) {
+    if (!process_.start(Process::self_exe_path(), args)) {
         std::remove(tmp_in_.c_str());
         throw std::runtime_error("fill_holes_async: failed to start subprocess");
     }
@@ -451,6 +457,10 @@ MeshData fill_holes_async::get_result() const {
     if (!done())
         throw std::runtime_error("fill_holes_async::get_result(): still running");
     if (result_ready_) return result_;
+    if (!std::filesystem::exists(tmp_out_)) {
+        throw std::runtime_error(
+            "fill_holes_async::get_result(): subprocess did not produce output");
+    }
     result_ = load_mesh(tmp_out_);
     result_ready_ = true;
     return result_;
@@ -470,13 +480,13 @@ stitch_borders_async::stitch_borders_async(const MeshData& mesh, double max_dist
     tmp_out_ = make_temp_path("_sb_out.stl");
     save_mesh(mesh, tmp_in_);
 
-    std::string cmd = "\"" + Process::self_exe_path() + "\""
-                    + " --tools --stitchBorders"
-                    + " --in \""     + tmp_in_  + "\""
-                    + " --out \""    + tmp_out_ + "\""
-                    + " --maxDist "  + std::to_string(max_dist_);
+    std::vector<std::string> args = {
+        "--tools", "--stitchBorders",
+        "--in",     tmp_in_,
+        "--out",    tmp_out_,
+        "--maxDist", std::to_string(max_dist_)};
 
-    if (!process_.start(cmd)) {
+    if (!process_.start(Process::self_exe_path(), args)) {
         std::remove(tmp_in_.c_str());
         throw std::runtime_error("stitch_borders_async: failed to start subprocess");
     }
@@ -495,6 +505,10 @@ MeshData stitch_borders_async::get_result() const {
     if (!done())
         throw std::runtime_error("stitch_borders_async::get_result(): still running");
     if (result_ready_) return result_;
+    if (!std::filesystem::exists(tmp_out_)) {
+        throw std::runtime_error(
+            "stitch_borders_async::get_result(): subprocess did not produce output");
+    }
     result_ = load_mesh(tmp_out_);
     result_ready_ = true;
     return result_;
@@ -514,13 +528,13 @@ merge_vertices_async::merge_vertices_async(const MeshData& mesh, double tol)
     tmp_out_ = make_temp_path("_mv_out.stl");
     save_mesh(mesh, tmp_in_);
 
-    std::string cmd = "\"" + Process::self_exe_path() + "\""
-                    + " --tools --mergeVertices"
-                    + " --in \""  + tmp_in_  + "\""
-                    + " --out \"" + tmp_out_ + "\""
-                    + " --tol "   + std::to_string(tol_);
+    std::vector<std::string> args = {
+        "--tools", "--mergeVertices",
+        "--in",  tmp_in_,
+        "--out", tmp_out_,
+        "--tol", std::to_string(tol_)};
 
-    if (!process_.start(cmd)) {
+    if (!process_.start(Process::self_exe_path(), args)) {
         std::remove(tmp_in_.c_str());
         throw std::runtime_error("merge_vertices_async: failed to start subprocess");
     }
@@ -539,6 +553,10 @@ MeshData merge_vertices_async::get_result() const {
     if (!done())
         throw std::runtime_error("merge_vertices_async::get_result(): still running");
     if (result_ready_) return result_;
+    if (!std::filesystem::exists(tmp_out_)) {
+        throw std::runtime_error(
+            "merge_vertices_async::get_result(): subprocess did not produce output");
+    }
     result_ = load_mesh(tmp_out_);
     result_ready_ = true;
     return result_;
@@ -559,13 +577,13 @@ mesh_union_async::mesh_union_async(const MeshData& mesh_a, const MeshData& mesh_
     save_mesh(mesh_a, tmp_a_);
     save_mesh(mesh_b, tmp_b_);
 
-    std::string cmd = "\"" + Process::self_exe_path() + "\""
-                    + " --tools --meshUnion"
-                    + " --inA \""  + tmp_a_   + "\""
-                    + " --inB \""  + tmp_b_   + "\""
-                    + " --out \""  + tmp_out_ + "\"";
+    std::vector<std::string> args = {
+        "--tools", "--meshUnion",
+        "--inA", tmp_a_,
+        "--inB", tmp_b_,
+        "--out", tmp_out_};
 
-    if (!process_.start(cmd)) {
+    if (!process_.start(Process::self_exe_path(), args)) {
         std::remove(tmp_a_.c_str());
         std::remove(tmp_b_.c_str());
         throw std::runtime_error("mesh_union_async: failed to start subprocess");
@@ -586,6 +604,10 @@ MeshData mesh_union_async::get_result() const {
     if (!done())
         throw std::runtime_error("mesh_union_async::get_result(): still running");
     if (result_ready_) return result_;
+    if (!std::filesystem::exists(tmp_out_)) {
+        throw std::runtime_error(
+            "mesh_union_async::get_result(): subprocess did not produce output");
+    }
     result_ = load_mesh(tmp_out_);
     result_ready_ = true;
     return result_;
@@ -603,12 +625,12 @@ orient_volume_async::orient_volume_async(const MeshData& mesh) {
     tmp_out_ = make_temp_path("_ov_out.stl");
     save_mesh(mesh, tmp_in_);
 
-    std::string cmd = "\"" + Process::self_exe_path() + "\""
-                    + " --tools --orientVolume"
-                    + " --in \""  + tmp_in_  + "\""
-                    + " --out \"" + tmp_out_ + "\"";
+    std::vector<std::string> args = {
+        "--tools", "--orientVolume",
+        "--in",  tmp_in_,
+        "--out", tmp_out_};
 
-    if (!process_.start(cmd)) {
+    if (!process_.start(Process::self_exe_path(), args)) {
         std::remove(tmp_in_.c_str());
         throw std::runtime_error("orient_volume_async: failed to start subprocess");
     }
@@ -627,6 +649,10 @@ MeshData orient_volume_async::get_result() const {
     if (!done())
         throw std::runtime_error("orient_volume_async::get_result(): still running");
     if (result_ready_) return result_;
+    if (!std::filesystem::exists(tmp_out_)) {
+        throw std::runtime_error(
+            "orient_volume_async::get_result(): subprocess did not produce output");
+    }
     result_ = load_mesh(tmp_out_);
     result_ready_ = true;
     return result_;

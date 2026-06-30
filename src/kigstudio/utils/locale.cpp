@@ -158,6 +158,9 @@ void init_locale_strings() {
     add_locale_string("log.queue.error_segment",
                       {{"en", "[Queue] Error: Segment item %d - %s"},
                        {"zh", "[队列] 错误: 分割项目 %d - %s"}});
+    add_locale_string("log.queue.cancelled",
+                      {{"en", "[Queue] Cancelled"},
+                       {"zh", "[队列] 已取消"}});
     add_locale_string(
         "log.queue.start_check_manifold",
         {{"en", "[Queue] Start: Check non-manifold edges for item %d"},
@@ -428,6 +431,12 @@ void init_locale_strings() {
     add_locale_string("tooltip.export_stl_all_empty",
                       {{"en", "No leaf nodes found to export."},
                        {"zh", "没有找到可导出的叶子节点。"}});
+    add_locale_string("tooltip.inner_wall_radius",
+                      {{"en", "Inner Wall Radius, if the sdf reconstruction outputs an empty object, you can try to adjust this parameter."},
+                       {"zh", "内壁半径，如果物体sdf重建输出空物体，可以尝试调整这个参数。"}});
+    add_locale_string("tooltip.silhouette_subdivision",
+                      {{"en", "Icosahedron Subdivision, the higher the value, the more accurate the silhouette, but the longer the calculation time."},
+                       {"zh", "调整模型精度"}});
 
     add_locale_string("action.update_collision",
                       {{"en", "update collision"}, {"zh", "更新碰撞"}});
@@ -754,6 +763,13 @@ void init_locale_strings() {
                       {{"en", "render item: %d"}, {"zh", "渲染项目: %d"}});
     add_locale_string("label.segment_mode",
                       {{"en", "process mode"}, {"zh", "处理模式"}});
+    add_locale_string("label.repair_mode",
+                      {{"en", "repair mode"}, {"zh", "修复模式"}});
+    add_locale_string("label.alpha_wrap_alpha",
+                      {{"en", "alpha wrap alpha"}, {"zh", "Alpha包裹alpha"}});
+    add_locale_string("label.alpha_wrap_offset",
+                      {{"en", "alpha wrap offset"},
+                       {"zh", "Alpha包裹offset"}});
     add_locale_string("label.auto_segment_update",
                       {{"en", "auto segment update"}, {"zh", "自动分割更新"}});
     add_locale_string("label.updating",
@@ -799,6 +815,8 @@ void init_locale_strings() {
     add_locale_string("mode.chain", {{"en", "Chain"}, {"zh", "链条化"}});
     add_locale_string("mode.sdf_node_split",
                       {{"en", "SDF Node Split"}, {"zh", "SDF节点分割"}});
+    add_locale_string("mode.repair",
+                      {{"en", "Repair Mesh"}, {"zh", "修复网格"}});
 
     add_locale_string(
         "tooltip.mode.collision",
@@ -932,6 +950,22 @@ void init_locale_strings() {
     add_locale_string("tooltip.mode.sdf_node_split",
                       {{"en", "Split current node using another node's SDF."},
                        {"zh", "使用另一个节点的SDF分割当前节点。"}});
+    add_locale_string(
+        "tooltip.mode.repair",
+        {{"en",
+          "Repair the input mesh without generating voxels or SDF."},
+         {"zh", "修复输入网格，不生成体素和SDF。"}});
+    add_locale_string("mode.repair.alpha_wrap",
+                      {{"en", "Alpha Wrap"}, {"zh", "Alpha包裹"}});
+    add_locale_string("mode.repair.fill_holes",
+                      {{"en", "Fill Holes"}, {"zh", "填补孔洞"}});
+    add_locale_string("mode.repair.stitch_borders",
+                      {{"en", "Stitch Borders"}, {"zh", "缝合边界"}});
+    add_locale_string(
+        "mode.repair.merge_duplicate_vertices",
+        {{"en", "Merge Duplicate Vertices"}, {"zh", "合并重复顶点"}});
+    add_locale_string("mode.repair.orient_volume",
+                      {{"en", "Orient Volume"}, {"zh", "定向体积"}});
     add_locale_string("tooltip.update_collision",
                       {{"en",
                         "Update collision shapes. This will clear all marked "
@@ -1045,6 +1079,10 @@ void init_locale_strings() {
                       {{"en", "emitting triangles"}, {"zh", "发射三角形"}});
     add_locale_string("progress.surface_nets.done",
                       {{"en", "done"}, {"zh", "完成"}});
+    add_locale_string("progress.repair.stitching_borders",
+                      {{"en", "stitching borders"}, {"zh", "缝合边界"}});
+    add_locale_string("progress.repair.filling_holes",
+                      {{"en", "filling holes"}, {"zh", "填补孔洞"}});
     add_locale_string("progress.surface_nets.building_voxel_sdf",
                       {{"en", "building voxel SDF"}, {"zh", "构建体素SDF"}});
     add_locale_string("progress.surface_nets.sdf_sample",
