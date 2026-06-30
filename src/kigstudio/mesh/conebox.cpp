@@ -29,12 +29,12 @@ namespace sinriv::kigstudio::mesh::conebox {
 // #endif
 
 
-static bool ray_triangle_intersect(const vec3f& origin,
-                                   const vec3f& direction,
-                                   const vec3f& v0,
-                                   const vec3f& v1,
-                                   const vec3f& v2,
-                                   vec3f& out_point) {
+bool ray_triangle_intersect(const vec3f& origin,
+                            const vec3f& direction,
+                            const vec3f& v0,
+                            const vec3f& v1,
+                            const vec3f& v2,
+                            vec3f& out_point) {
     const float EPSILON = 1e-6f;
     const vec3f edge1 = v1 - v0;
     const vec3f edge2 = v2 - v0;

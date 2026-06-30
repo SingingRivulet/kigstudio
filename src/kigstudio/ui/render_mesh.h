@@ -12,6 +12,7 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -277,18 +278,21 @@ namespace sinriv::ui::render {
 
             for (auto [tri, n] : geometry) {
                 const uint32_t base = static_cast<uint32_t>(vertices.size());
-                updateLocalBounds(
-                    {std::get<0>(tri).x, std::get<0>(tri).y, std::get<0>(tri).z});
-                updateLocalBounds(
-                    {std::get<1>(tri).x, std::get<1>(tri).y, std::get<1>(tri).z});
-                updateLocalBounds(
-                    {std::get<2>(tri).x, std::get<2>(tri).y, std::get<2>(tri).z});
-                vertices.push_back(
-                    {std::get<0>(tri).x, std::get<0>(tri).y, std::get<0>(tri).z, n.x, n.y, n.z});
-                vertices.push_back(
-                    {std::get<1>(tri).x, std::get<1>(tri).y, std::get<1>(tri).z, n.x, n.y, n.z});
-                vertices.push_back(
-                    {std::get<2>(tri).x, std::get<2>(tri).y, std::get<2>(tri).z, n.x, n.y, n.z});
+                vec3f a{std::get<0>(tri).x, std::get<0>(tri).y,
+                        std::get<0>(tri).z};
+                vec3f b{std::get<1>(tri).x, std::get<1>(tri).y,
+                        std::get<1>(tri).z};
+                vec3f c{std::get<2>(tri).x, std::get<2>(tri).y,
+                        std::get<2>(tri).z};
+                updateLocalBounds(a);
+                updateLocalBounds(b);
+                updateLocalBounds(c);
+                cpu_vertices_.push_back(a);
+                cpu_vertices_.push_back(b);
+                cpu_vertices_.push_back(c);
+                vertices.push_back({a.x, a.y, a.z, n.x, n.y, n.z});
+                vertices.push_back({b.x, b.y, b.z, n.x, n.y, n.z});
+                vertices.push_back({c.x, c.y, c.z, n.x, n.y, n.z});
 
                 indices.push_back(base);
                 indices.push_back(base + 1);
@@ -333,8 +337,11 @@ namespace sinriv::ui::render {
                 return;
             }
 
+            cpu_vertices_.reserve(vertices.size());
             for (const auto& v : vertices) {
-                updateLocalBounds({v.pos.x, v.pos.y, v.pos.z});
+                vec3f p{v.pos.x, v.pos.y, v.pos.z};
+                updateLocalBounds(p);
+                cpu_vertices_.push_back(p);
             }
 
             mesh_.vbh = bgfx::createVertexBuffer(
@@ -360,6 +367,18 @@ namespace sinriv::ui::render {
 
         inline std::pair<vec3f, vec3f> getLocalBounds() const {
             return {local_bound_min_, local_bound_max_};
+        }
+
+        /// Return the minimum Euclidean distance from `point` to any vertex
+        /// in the mesh. Returns 0 if the mesh has no vertices.
+        inline float get_min_distance(const vec3f& point) const {
+            if (cpu_vertices_.empty()) return 0.0f;
+            float min_dist = std::numeric_limits<float>::max();
+            for (const auto& v : cpu_vertices_) {
+                float d = (v - point).length();
+                if (d < min_dist) min_dist = d;
+            }
+            return min_dist;
         }
 
         inline void release() {
@@ -454,6 +473,7 @@ namespace sinriv::ui::render {
             has_local_bounds_ = false;
             local_bound_min_ = {0.0f, 0.0f, 0.0f};
             local_bound_max_ = {0.0f, 0.0f, 0.0f};
+            cpu_vertices_.clear();
         }
 
         inline void updateLocalBounds(const vec3f& point) {
@@ -528,6 +548,7 @@ namespace sinriv::ui::render {
         std::array<float, 4> base_color_ = {0.82f, 0.82f, 0.82f, 1.0f};
         float depth_bias_ = 0.0f;
         float identity_mtx_[16]{};
+        std::vector<vec3f> cpu_vertices_;
     };
 
     class AsyncVoxelLoader {

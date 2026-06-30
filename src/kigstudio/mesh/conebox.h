@@ -49,6 +49,13 @@ struct Triangle_status {
 // 透视逆变换
 vec3f perspective_inverse(const vec3f& pos, const vec3f& c, int face_index);
 
+bool ray_triangle_intersect(const vec3f& origin,
+                            const vec3f& direction,
+                            const vec3f& v0,
+                            const vec3f& v1,
+                            const vec3f& v2,
+                            vec3f& out_point);
+
 struct Triangle_group {
     std::vector<Triangle_status> triangles;
     std::array<std::vector<size_t>, 6> face_triangle_indices;

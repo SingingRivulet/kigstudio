@@ -397,7 +397,8 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
             const uint32_t center_color = pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);
             const float radius = 2.0f;
             std::vector<mesh_detail::ColorLineVertex> vertices;
-            vertices.reserve(48 * 6);
+            vertices.reserve(48 * 6 +
+                             (inner_wall_radius > 0.0f ? 48 * 6 : 0));
             append_marker_circle(vertices, silhouette_center,
                                  {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
                                  radius, center_color);
@@ -407,6 +408,19 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
             append_marker_circle(vertices, silhouette_center,
                                  {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
                                  radius, center_color);
+            if (inner_wall_radius > 0.0f) {
+                const uint32_t wall_color =
+                    pack_abgr(0.0f, 0.95f, 1.0f, 0.72f);
+                append_marker_circle(vertices, silhouette_center,
+                                     {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
+                                     inner_wall_radius, wall_color);
+                append_marker_circle(vertices, silhouette_center,
+                                     {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                     inner_wall_radius, wall_color);
+                append_marker_circle(vertices, silhouette_center,
+                                     {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                     inner_wall_radius, wall_color);
+            }
             if (!vertices.empty() &&
                 bgfx::getAvailTransientVertexBuffer(
                     static_cast<uint32_t>(vertices.size()),

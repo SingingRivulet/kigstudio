@@ -416,6 +416,13 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             item.inner_wall_radius += 0.5f;
             push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
         }
+        ImGui::SameLine();
+        if (ImGui::Button(get_locale_cstr("label.inner_wall_reset"))) {
+            float nearest = item.origin_mesh_renderer.get_min_distance(
+                item.silhouette_center);
+            item.inner_wall_radius = std::max(0.0f, nearest - 1.f);
+            push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
+        }
 
         // Simplify checkbox + slider
         bool simplify_enabled = (item.simplify_ratio >= 0.0f);
