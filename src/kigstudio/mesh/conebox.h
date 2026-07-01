@@ -73,6 +73,136 @@ struct Triangle_group {
     std::vector<Triangle> compute_visible_mesh_with_cone_sides() const;
 };
 
+// Standalone face type (3 vertex indices) shared by shape generators and builder.
+struct SubFace { int a, b, c; };
+
+// Abstract interface for generating the enclosing shape's vertices and faces.
+// Different implementations provide different sampling strategies
+// (icosahedron, cube-sphere, UV-sphere, custom mesh, etc.).
+struct ISilhouetteShapeGenerator {
+	virtual ~ISilhouetteShapeGenerator() = default;
+	// Populate out_verts (world-space positions on the enclosing surface),
+	// out_faces (triangles as index triples into out_verts), and
+	// out_min_distances (per-vertex minimum distance from center, same size as out_verts).
+	//   value <= 0: vertex behaves normally (discard if ray misses)
+	//   value > 0:  vertex always "hit", position clamped to >= this distance
+	virtual void generate(float radius, const vec3f& center,
+	                      std::vector<vec3f>& out_verts,
+	                      std::vector<SubFace>& out_faces,
+	                      std::vector<float>& out_min_distances) = 0;
+};
+
+// Default shape generator: subdivided icosahedron.
+class IcosahedronGenerator : public ISilhouetteShapeGenerator {
+public:
+	explicit IcosahedronGenerator(int subdivision_level = 4)
+	    : subdivision_level_(std::max(1, subdivision_level)) {}
+	void generate(float radius, const vec3f& center,
+	              std::vector<vec3f>& out_verts,
+	              std::vector<SubFace>& out_faces,
+	              std::vector<float>& out_min_distances) override;
+
+private:
+	int subdivision_level_;
+};
+
+// Internal builder for the icosphere-silhouette algorithm.
+// The free function build_closed_mesh_from_triangles_silhouette delegates to this.
+class IcosphereSilhouetteBuilder {
+public:
+	IcosphereSilhouetteBuilder(
+	    const std::vector<Triangle>& input_triangles,
+	    const vec3f& center,
+	    std::unique_ptr<ISilhouetteShapeGenerator> shape_generator,
+	    const std::function<bool()>& should_continue,
+	    const std::function<void(float, const std::string&)>& progress,
+	    float inner_wall_radius,
+	    float simplify_ratio);
+
+	// Run the full pipeline. This is the only public method besides the ctor.
+	std::vector<Triangle> build();
+
+private:
+	// --- Parameters (set in ctor, unchanged after) ---
+	const std::vector<Triangle>& input_triangles_;
+	vec3f center_;
+	std::function<bool()> should_continue_;
+	std::function<void(float, const std::string&)> progress_;
+	std::unique_ptr<ISilhouetteShapeGenerator> shape_generator_;
+	float inner_wall_radius_;
+	float simplify_ratio_;
+
+	// --- Derived constants ---
+	float radius_ = 0.0f;
+	float ray_len_ = 0.0f;
+
+	// --- Cancellation throttling ---
+	int cancel_step_ = 0;
+
+	// --- BVH (bvh_indices_ before bvh_: bvh_ stores int* into it) ---
+	using BVH = sinriv::kigstudio::dbvt3d<float, int>;
+	std::vector<int> bvh_indices_;
+	std::vector<BVH::AABB*> bvh_aabbs_;
+	BVH bvh_;
+
+	// --- Icosphere / shape geometry ---
+	std::vector<vec3f> sub_verts_;
+	std::vector<SubFace> sub_faces_;
+	std::vector<float> vertex_min_distances_;  // per-vertex min distance from center (<=0 = no minimum, >0 = clamped)
+
+	// --- Vertex neighbor graph ---
+	std::vector<std::vector<int>> vert_neighbors_;
+
+	// --- Ray-cast results ---
+	std::vector<bool> hit_;
+	std::vector<vec3f> hit_pos_;
+
+	// --- Inner wall ---
+	bool has_inner_wall_ = false;
+	std::vector<vec3f> inner_pos_;
+
+	// --- Output mesh state ---
+	struct SurfFace { int va, vb, vc; };
+	std::vector<SurfFace> surf_faces_;
+
+	struct EdgeKey2 {
+		int a, b;
+		EdgeKey2(int va, int vb) : a(std::min(va, vb)), b(std::max(va, vb)) {}
+		bool operator<(const EdgeKey2& o) const {
+			return a != o.a ? a < o.a : b < o.b;
+		}
+	};
+	std::vector<EdgeKey2> boundary_edges_;
+	std::vector<Triangle> result_;
+
+	struct Vec3fCmp {
+		bool operator()(const vec3f& a, const vec3f& b) const {
+			if (a.x != b.x) return a.x < b.x;
+			if (a.y != b.y) return a.y < b.y;
+			return a.z < b.z;
+		}
+	};
+
+	// --- Helper methods ---
+	void report_progress(float t, const std::string& text);
+	bool check_cancel();
+
+	// --- Phase methods ---
+	void build_bvh();
+	void compute_radius();
+	void generate_shape();
+	void build_neighbor_graph();
+	void cast_rays();
+	void verify_hits();
+	void compute_inner_wall();
+	void classify_faces_and_collect_boundaries();
+	void generate_inner_wall_faces();
+	void build_side_triangles();
+	void stitch_and_fill();
+	void simplify_mesh();
+	void cleanup_bvh();
+};
+
 // 输入三角形数组，利用 cone-box 算法生成封闭 mesh
 // auto_center=true 时自动从包围盒计算中心，否则使用 manual_center
 std::vector<Triangle> build_closed_mesh_from_triangles(
