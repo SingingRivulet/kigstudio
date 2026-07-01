@@ -106,6 +106,29 @@ private:
 	int subdivision_level_;
 };
 
+// Shape generator from user-provided vertices via CGAL Delaunay triangulation
+// on sphere. Each sample point is projected onto the enclosing sphere;
+// faces are computed by CGAL's spherical Delaunay triangulation.
+// out_min_distances = original distance of each sample point from center
+// (so the output surface is clamped to at least this distance).
+class DelaunaySphereGenerator : public ISilhouetteShapeGenerator {
+public:
+	// sample_points: world-space vertices whose directions from the
+	// (future) center define the ray directions. Duplicates that project
+	// to the same sphere position are merged (farthest distance kept).
+	explicit DelaunaySphereGenerator(
+	    std::vector<vec3f> sample_points)
+	    : sample_points_(std::move(sample_points)) {}
+
+	void generate(float radius, const vec3f& center,
+	              std::vector<vec3f>& out_verts,
+	              std::vector<SubFace>& out_faces,
+	              std::vector<float>& out_min_distances) override;
+
+private:
+	std::vector<vec3f> sample_points_;
+};
+
 // Internal builder for the icosphere-silhouette algorithm.
 // The free function build_closed_mesh_from_triangles_silhouette delegates to this.
 class IcosphereSilhouetteBuilder {

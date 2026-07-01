@@ -17,6 +17,7 @@
 
 #include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
+#include <CGAL/Delaunay_triangulation_3.h>
 #include <CGAL/Simple_cartesian.h>
 
 namespace sinriv::kigstudio::mesh::conebox {
@@ -173,6 +174,116 @@ void IcosahedronGenerator::generate(float radius, const vec3f& center,
 	CB_DBG("  icosahedron: " << out_verts.size() << " verts, "
 	                         << out_faces.size() << " faces");
 	out_min_distances.assign(out_verts.size(), -1.0f);
+}
+
+// =====================================================================
+// DelaunaySphereGenerator implementation
+// =====================================================================
+
+void DelaunaySphereGenerator::generate(float radius, const vec3f& center,
+                                       std::vector<vec3f>& out_verts,
+                                       std::vector<SubFace>& out_faces,
+                                       std::vector<float>& out_min_distances) {
+	out_verts.clear();
+	out_faces.clear();
+
+	if (sample_points_.empty())
+		return;
+
+	// ---- 1. Project sample points to sphere, deduplicate ----
+	const float SNAP = 1e-4f;
+	auto snap = [](float v) { return std::round(v / SNAP) * SNAP; };
+
+	struct Vec3fCmp {
+		bool operator()(const vec3f& a, const vec3f& b) const {
+			if (a.x != b.x) return a.x < b.x;
+			if (a.y != b.y) return a.y < b.y;
+			return a.z < b.z;
+		}
+	};
+	std::map<vec3f, int, Vec3fCmp> vert_map;       // snapped sphere pos -> index
+	std::map<vec3f, float, Vec3fCmp> dist_map;     // snapped sphere pos -> max original distance
+
+	for (const auto& pt : sample_points_) {
+		vec3f dir = pt - center;
+		float orig_dist = dir.length();
+		if (orig_dist < 1e-8f)
+			continue;  // skip points at center
+		vec3f dir_n = dir * (1.0f / orig_dist);
+		vec3f sphere_pt = center + dir_n * radius;
+
+		vec3f key = {snap(sphere_pt.x), snap(sphere_pt.y), snap(sphere_pt.z)};
+
+		auto it = vert_map.find(key);
+		if (it != vert_map.end()) {
+			// Duplicate direction: keep the larger distance
+			if (orig_dist > dist_map[key])
+				dist_map[key] = orig_dist;
+		} else {
+			int idx = static_cast<int>(out_verts.size());
+			out_verts.push_back(sphere_pt);
+			vert_map[key] = idx;
+			dist_map[key] = orig_dist;
+		}
+	}
+
+	CB_DBG("  delaunay sphere: " << sample_points_.size()
+	       << " sample points -> " << out_verts.size() << " unique verts");
+
+	if (out_verts.size() < 3) {
+		// Not enough points for triangulation
+		out_min_distances.assign(out_verts.size(), -1.0f);
+		return;
+	}
+
+	// ---- 2. CGAL 3D Delaunay triangulation (convex hull = spherical triangulation) ----
+	using Kernel = CGAL::Exact_predicates_inexact_constructions_kernel;
+	using DT3 = CGAL::Delaunay_triangulation_3<Kernel>;
+
+	DT3 dt3;
+
+	// Build a map from snapped CGAL point -> our vertex index
+	std::map<vec3f, int, Vec3fCmp> cgal_to_idx;  // snapped CGAL point -> index
+	for (size_t i = 0; i < out_verts.size(); ++i) {
+		const auto& v = out_verts[i];
+		auto vh = dt3.insert(Kernel::Point_3(v.x, v.y, v.z));
+		vec3f key = {snap(v.x), snap(v.y), snap(v.z)};
+		cgal_to_idx[key] = static_cast<int>(i);
+	}
+
+	// ---- 3. Extract convex hull faces ----
+	// Faces on the convex hull are those incident to the infinite vertex
+	auto inf_v = dt3.infinite_vertex();
+	std::vector<typename DT3::Cell_handle> inf_cells;
+	dt3.incident_cells(inf_v, std::back_inserter(inf_cells));
+
+	for (auto cell : inf_cells) {
+		// Find the index of the infinite vertex in this cell
+		int inf_idx = cell->index(inf_v);
+
+		auto get_idx = [&](typename DT3::Vertex_handle vh) -> int {
+			auto pt = vh->point();
+			vec3f key = {snap(static_cast<float>(pt.x())),
+			             snap(static_cast<float>(pt.y())),
+			             snap(static_cast<float>(pt.z()))};
+			return cgal_to_idx.at(key);
+		};
+
+		int a = get_idx(cell->vertex((inf_idx + 1) % 4));
+		int b = get_idx(cell->vertex((inf_idx + 2) % 4));
+		int c = get_idx(cell->vertex((inf_idx + 3) % 4));
+		out_faces.push_back({a, b, c});
+	}
+
+	CB_DBG("  delaunay sphere: " << out_faces.size() << " faces");
+
+	// ---- 4. Fill per-vertex min distances ----
+	out_min_distances.resize(out_verts.size());
+	for (size_t i = 0; i < out_verts.size(); ++i) {
+		vec3f key = {snap(out_verts[i].x), snap(out_verts[i].y),
+			         snap(out_verts[i].z)};
+		out_min_distances[i] = dist_map.at(key);
+	}
 }
 
 // =====================================================================
