@@ -1065,6 +1065,7 @@ void RenderVoxelList::load_stl(std::string filename,
                         queue_progress = 0.13f + t * 0.02f;
                         setQueueStatus(step);
                     },
+                    cb_subdiv,
                     cb_inner_wall,
                     cb_simplify);
         } else {
@@ -1709,6 +1710,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
                             queue_progress = t * 0.1f;
                             setQueueStatus(step);
                         },
+                        silhouette_subdiv,
                         silhouette_inner_wall,
                         silhouette_simplify);
             } else {

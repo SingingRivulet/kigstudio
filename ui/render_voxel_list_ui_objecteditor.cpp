@@ -376,7 +376,6 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         }
 
         const float btn_w = ImGui::GetFrameHeight();
-        if (item.silhouette_shape_mode == SilhouetteShapeMode::ICOSAHEDRON) {
         ImGui::TextUnformatted(get_locale_cstr("label.silhouette_subdivision"));
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip(get_locale_cstr("tooltip.silhouette_subdivision"));
@@ -405,7 +404,6 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             ++item.silhouette_subdivision;
             push_undo_now(item.id, std::nullopt,
                           "Silhouette Subdivision");
-        }
         }
 
         // Inner wall radius

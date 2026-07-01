@@ -187,10 +187,6 @@ void DelaunaySphereGenerator::generate(float radius, const vec3f& center,
 	out_verts.clear();
 	out_faces.clear();
 
-	if (sample_points_.empty())
-		return;
-
-	// ---- 1. Project sample points to sphere, deduplicate ----
 	const float SNAP = 1e-4f;
 	auto snap = [](float v) { return std::round(v / SNAP) * SNAP; };
 
@@ -201,66 +197,129 @@ void DelaunaySphereGenerator::generate(float radius, const vec3f& center,
 			return a.z < b.z;
 		}
 	};
-	std::map<vec3f, int, Vec3fCmp> vert_map;       // snapped sphere pos -> index
-	std::map<vec3f, float, Vec3fCmp> dist_map;     // snapped sphere pos -> max original distance
 
-	for (const auto& pt : sample_points_) {
-		vec3f dir = pt - center;
-		float orig_dist = dir.length();
-		if (orig_dist < 1e-8f)
-			continue;  // skip points at center
-		vec3f dir_n = dir * (1.0f / orig_dist);
-		vec3f sphere_pt = center + dir_n * radius;
+	// ---- 0. Build combined point set: icosahedron + sample points ----
+	std::map<vec3f, float, Vec3fCmp> best_dist;    // snapped pos -> best min_dist
 
+	auto add_point = [&](const vec3f& sphere_pt, float min_dist) {
 		vec3f key = {snap(sphere_pt.x), snap(sphere_pt.y), snap(sphere_pt.z)};
-
-		auto it = vert_map.find(key);
-		if (it != vert_map.end()) {
-			// Duplicate direction: keep the larger distance
-			if (orig_dist > dist_map[key])
-				dist_map[key] = orig_dist;
+		auto it = best_dist.find(key);
+		if (it != best_dist.end()) {
+			if (min_dist > it->second)  // sample(>0) wins over icosahedron(-1)
+				it->second = min_dist;
 		} else {
-			int idx = static_cast<int>(out_verts.size());
-			out_verts.push_back(sphere_pt);
-			vert_map[key] = idx;
-			dist_map[key] = orig_dist;
+			best_dist[key] = min_dist;
+		}
+	};
+
+	// 0a. Generate icosahedron vertices (min_dist = -1, normal behavior)
+	if (icosahedron_subdiv_ >= 1) {
+		const float phi = (1.0f + std::sqrt(5.0f)) / 2.0f;
+		auto icosa_v = [&](float x, float y, float z) -> vec3f {
+			float len = std::sqrt(x * x + y * y + z * z);
+			float s = radius / len;
+			return center + vec3f(x * s, y * s, z * s);
+		};
+		std::vector<vec3f> base_verts = {
+		    icosa_v(0, -1, -phi), icosa_v(0, -1, phi),  icosa_v(0, 1, -phi),
+		    icosa_v(0, 1, phi),   icosa_v(-1, -phi, 0), icosa_v(-1, phi, 0),
+		    icosa_v(1, -phi, 0),  icosa_v(1, phi, 0),   icosa_v(-phi, 0, -1),
+		    icosa_v(-phi, 0, 1),  icosa_v(phi, 0, -1),  icosa_v(phi, 0, 1),
+		};
+		float edge_len2 = 1e30f;
+		for (int i = 0; i < 12; ++i)
+			for (int j = i + 1; j < 12; ++j) {
+				float d2 = (base_verts[i] - base_verts[j]).length2();
+				if (d2 < edge_len2) edge_len2 = d2;
+			}
+		edge_len2 *= 1.01f;
+		std::vector<std::vector<int>> neighbors(12);
+		for (int i = 0; i < 12; ++i)
+			for (int j = i + 1; j < 12; ++j)
+				if ((base_verts[i] - base_verts[j]).length2() < edge_len2) {
+					neighbors[i].push_back(j);
+					neighbors[j].push_back(i);
+				}
+		std::vector<std::array<int, 3>> base_faces_vec;
+		for (int i = 0; i < 12; ++i)
+			for (int j : neighbors[i]) {
+				if (j <= i) continue;
+				for (int k : neighbors[j]) {
+					if (k <= j) continue;
+					bool has_ik = false;
+					for (int n : neighbors[k])
+						if (n == i) { has_ik = true; break; }
+					if (!has_ik) continue;
+					vec3f n = (base_verts[j] - base_verts[i])
+					              .cross(base_verts[k] - base_verts[i]);
+					vec3f cen = (base_verts[i] + base_verts[j] +
+					             base_verts[k]) * (1.0f / 3.0f);
+					if (n.dot(cen - center) < 0.0f)
+						base_faces_vec.push_back({i, k, j});
+					else
+						base_faces_vec.push_back({i, j, k});
+				}
+			}
+		const int SUBDIV = icosahedron_subdiv_;
+		for (int f = 0; f < (int)base_faces_vec.size(); ++f) {
+			int i0 = base_faces_vec[f][0], i1 = base_faces_vec[f][1],
+			    i2 = base_faces_vec[f][2];
+			const vec3f &A = base_verts[i0], &B = base_verts[i1],
+			            &C = base_verts[i2];
+			for (int i = 0; i <= SUBDIV; ++i) {
+				for (int j = 0; j <= SUBDIV - i; ++j) {
+					float bi = (float)i / SUBDIV, bj = (float)j / SUBDIV;
+					vec3f dir = (A + (B - A) * bi + (C - A) * bj) - center;
+					float len = std::max(dir.length(), 1e-8f);
+					vec3f sph = center + dir * (radius / len);
+					add_point(sph, -1.0f);
+				}
+			}
 		}
 	}
 
+	// 0b. Add sample points (min_dist = original distance, always-hit)
+	for (const auto& pt : sample_points_) {
+		vec3f dir = pt - center;
+		float orig_dist = dir.length();
+		if (orig_dist < 1e-8f) continue;
+		vec3f sphere_pt = center + dir * (1.0f / orig_dist) * radius;
+		add_point(sphere_pt, orig_dist);
+	}
+
+	// ---- 1. Build output vertex array from combined set ----
+	for (const auto& [key, dist] : best_dist)
+		out_verts.push_back({key.x, key.y, key.z});
+
 	CB_DBG("  delaunay sphere: " << sample_points_.size()
-	       << " sample points -> " << out_verts.size() << " unique verts");
+	       << " sample + icosahedron(subdiv=" << icosahedron_subdiv_
+	       << ") -> " << out_verts.size() << " unique verts");
 
 	if (out_verts.size() < 3) {
-		// Not enough points for triangulation
 		out_min_distances.assign(out_verts.size(), -1.0f);
 		return;
 	}
 
-	// ---- 2. CGAL 3D Delaunay triangulation (convex hull = spherical triangulation) ----
+	// ---- 2. CGAL 3D Delaunay triangulation ----
 	using Kernel = CGAL::Exact_predicates_inexact_constructions_kernel;
 	using DT3 = CGAL::Delaunay_triangulation_3<Kernel>;
 
 	DT3 dt3;
-
-	// Build a map from snapped CGAL point -> our vertex index
-	std::map<vec3f, int, Vec3fCmp> cgal_to_idx;  // snapped CGAL point -> index
+	std::map<vec3f, int, Vec3fCmp> cgal_to_idx;
 	for (size_t i = 0; i < out_verts.size(); ++i) {
 		const auto& v = out_verts[i];
-		auto vh = dt3.insert(Kernel::Point_3(v.x, v.y, v.z));
+		dt3.insert(Kernel::Point_3(v.x, v.y, v.z));
 		vec3f key = {snap(v.x), snap(v.y), snap(v.z)};
 		cgal_to_idx[key] = static_cast<int>(i);
 	}
 
 	// ---- 3. Extract convex hull faces ----
-	// Faces on the convex hull are those incident to the infinite vertex
 	auto inf_v = dt3.infinite_vertex();
 	std::vector<typename DT3::Cell_handle> inf_cells;
 	dt3.incident_cells(inf_v, std::back_inserter(inf_cells));
 
 	for (auto cell : inf_cells) {
-		// Find the index of the infinite vertex in this cell
 		int inf_idx = cell->index(inf_v);
-
 		auto get_idx = [&](typename DT3::Vertex_handle vh) -> int {
 			auto pt = vh->point();
 			vec3f key = {snap(static_cast<float>(pt.x())),
@@ -268,7 +327,6 @@ void DelaunaySphereGenerator::generate(float radius, const vec3f& center,
 			             snap(static_cast<float>(pt.z()))};
 			return cgal_to_idx.at(key);
 		};
-
 		int a = get_idx(cell->vertex((inf_idx + 1) % 4));
 		int b = get_idx(cell->vertex((inf_idx + 2) % 4));
 		int c = get_idx(cell->vertex((inf_idx + 3) % 4));
@@ -281,8 +339,9 @@ void DelaunaySphereGenerator::generate(float radius, const vec3f& center,
 	out_min_distances.resize(out_verts.size());
 	for (size_t i = 0; i < out_verts.size(); ++i) {
 		vec3f key = {snap(out_verts[i].x), snap(out_verts[i].y),
-			         snap(out_verts[i].z)};
-		out_min_distances[i] = dist_map.at(key);
+		             snap(out_verts[i].z)};
+		auto it = best_dist.find(key);
+		out_min_distances[i] = (it != best_dist.end()) ? it->second : -1.0f;
 	}
 }
 
@@ -882,6 +941,7 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_delaunay(
     const vec3f& center,
     const std::function<bool()>& should_continue,
     const std::function<void(float, const std::string&)>& progress,
+    int icosahedron_subdiv,
     float inner_wall_radius,
     float simplify_ratio) {
 	if (input_triangles.empty())
@@ -907,7 +967,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_delaunay(
 	}
 
 	auto generator =
-	    std::make_unique<DelaunaySphereGenerator>(std::move(sample_points));
+	    std::make_unique<DelaunaySphereGenerator>(std::move(sample_points),
+	                                              icosahedron_subdiv);
 	IcosphereSilhouetteBuilder builder(input_triangles, center,
 	                                   std::move(generator),
 	                                   should_continue, progress,

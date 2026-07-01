@@ -106,19 +106,23 @@ private:
 	int subdivision_level_;
 };
 
-// Shape generator from user-provided vertices via CGAL Delaunay triangulation
-// on sphere. Each sample point is projected onto the enclosing sphere;
-// faces are computed by CGAL's spherical Delaunay triangulation.
-// out_min_distances = original distance of each sample point from center
-// (so the output surface is clamped to at least this distance).
+// Shape generator from user-provided "always-hit" vertices mixed with
+// icosahedron vertices for global coverage, via CGAL 3D Delaunay convex hull.
+//
+// sample_points: always-hit vertices (min_dist = original distance from center).
+// icosahedron_subdiv: subdivision level for the mixed-in icosahedron vertices
+//   (min_dist = -1, normal hit-or-miss behavior). Set to 0 to disable.
+//
+// Without icosahedron vertices, all faces are kept → no boundary edges → no
+// side triangles. Mixing in icosahedron vertices ensures proper silhouette
+// boundary edges form where hit/miss icosahedron vertices meet.
 class DelaunaySphereGenerator : public ISilhouetteShapeGenerator {
 public:
-	// sample_points: world-space vertices whose directions from the
-	// (future) center define the ray directions. Duplicates that project
-	// to the same sphere position are merged (farthest distance kept).
 	explicit DelaunaySphereGenerator(
-	    std::vector<vec3f> sample_points)
-	    : sample_points_(std::move(sample_points)) {}
+	    std::vector<vec3f> sample_points,
+	    int icosahedron_subdiv = 4)
+	    : sample_points_(std::move(sample_points))
+	    , icosahedron_subdiv_(icosahedron_subdiv) {}
 
 	void generate(float radius, const vec3f& center,
 	              std::vector<vec3f>& out_verts,
@@ -127,6 +131,7 @@ public:
 
 private:
 	std::vector<vec3f> sample_points_;
+	int icosahedron_subdiv_;
 };
 
 // Internal builder for the icosphere-silhouette algorithm.
@@ -258,6 +263,7 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_delaunay(
     const vec3f& center,
     const std::function<bool()>& should_continue = nullptr,
     const std::function<void(float, const std::string&)>& progress = nullptr,
+    int icosahedron_subdiv = 4,
     float inner_wall_radius = 0.f,
     float simplify_ratio = -1.f);
 
