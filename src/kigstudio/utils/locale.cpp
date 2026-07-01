@@ -401,6 +401,15 @@ void init_locale_strings() {
                       {{"en", "Auto"}, {"zh", "自动"}});
     add_locale_string("label.show_silhouette_center",
                       {{"en", "Show Center"}, {"zh", "显示中心点"}});
+    add_locale_string("label.silhouette_shape_mode",
+                      {{"en", "Shape"},
+                       {"zh", "包围形状"}});
+    add_locale_string("label.silhouette_shape.icosahedron",
+                      {{"en", "Icosahedron"},
+                       {"zh", "正二十面体"}});
+    add_locale_string("label.silhouette_shape.delaunay",
+                      {{"en", "Delaunay Sphere"},
+                       {"zh", "Delaunay球面"}});
     add_locale_string("label.silhouette_subdivision",
                       {{"en", "Icosahedron Subdivision"},
                        {"zh", "二十面体细分等级"}});

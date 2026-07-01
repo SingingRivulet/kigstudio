@@ -361,12 +361,27 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         if (center_result.deactivated_after_edit) {
             push_undo_now(item.id, std::nullopt, "Silhouette Center");
         }
+        // Shape mode selector
+        const char* shape_mode_names[] = {
+            get_locale_cstr("label.silhouette_shape.icosahedron"),
+            get_locale_cstr("label.silhouette_shape.delaunay"),
+        };
+        int shape_mode = static_cast<int>(item.silhouette_shape_mode);
+        if (ImGui::Combo(get_locale_cstr("label.silhouette_shape_mode"),
+                         &shape_mode, shape_mode_names,
+                         IM_ARRAYSIZE(shape_mode_names))) {
+            push_undo_now(item.id, std::nullopt, "Silhouette Shape Mode");
+            item.silhouette_shape_mode =
+                static_cast<SilhouetteShapeMode>(shape_mode);
+        }
+
+        const float btn_w = ImGui::GetFrameHeight();
+        if (item.silhouette_shape_mode == SilhouetteShapeMode::ICOSAHEDRON) {
         ImGui::TextUnformatted(get_locale_cstr("label.silhouette_subdivision"));
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip(get_locale_cstr("tooltip.silhouette_subdivision"));
         }
         ImGui::SameLine();
-        const float btn_w = ImGui::GetFrameHeight();
         if (ImGui::Button("-##silhouette_subdiv", ImVec2(btn_w, 0))) {
             if (item.silhouette_subdivision > 1) {
                 --item.silhouette_subdivision;
@@ -390,6 +405,7 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             ++item.silhouette_subdivision;
             push_undo_now(item.id, std::nullopt,
                           "Silhouette Subdivision");
+        }
         }
 
         // Inner wall radius

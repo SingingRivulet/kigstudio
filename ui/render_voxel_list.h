@@ -153,6 +153,12 @@ enum class StlLoadMode : int {
     COUNT
 };
 
+enum class SilhouetteShapeMode : int {
+    ICOSAHEDRON = 0,     // subdivided icosahedron (classic)
+    DELAUNAY_SPHERE = 1, // Delaunay triangulation of input vertices on sphere
+    COUNT
+};
+
 struct CollisionEditorSnapshot {
     sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
     sinriv::kigstudio::Plane<float> plane;
@@ -190,6 +196,7 @@ struct CollisionEditorSnapshot {
     float node_source_sdf_simplify_ratio = 0.1f;
     vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
     bool show_silhouette_center = false;
+    SilhouetteShapeMode silhouette_shape_mode = SilhouetteShapeMode::ICOSAHEDRON;
     int silhouette_subdivision = 4;
     float inner_wall_radius = 0.0f;
     float simplify_ratio = -1.0f;  // negative = disabled
@@ -469,6 +476,7 @@ class RenderVoxelList {
         float node_source_sdf_simplify_ratio = 0.1f;
         vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
         bool showSilhouetteCenter = false;
+        SilhouetteShapeMode silhouette_shape_mode = SilhouetteShapeMode::ICOSAHEDRON;
         int silhouette_subdivision = 4;
         float inner_wall_radius = 0.0f;
         float simplify_ratio = -1.0f;

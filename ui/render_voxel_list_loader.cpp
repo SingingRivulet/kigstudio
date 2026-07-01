@@ -112,6 +112,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
         sinriv::kigstudio::to_json(item.silhouette_center));
     cJSON_AddBoolToObject(obj, "show_silhouette_center",
                           item.showSilhouetteCenter);
+    cJSON_AddNumberToObject(obj, "silhouette_shape_mode",
+                            static_cast<int>(item.silhouette_shape_mode));
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
                             item.silhouette_subdivision);
     cJSON_AddNumberToObject(obj, "inner_wall_radius",
@@ -355,6 +357,9 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->node_source_data_type = child->valueint;
             } else if (strcmp(key, "node_source_sdf_subdivisions") == 0) {
                 item->node_source_sdf_subdivisions = child->valueint;
+            } else if (strcmp(key, "silhouette_shape_mode") == 0) {
+                item->silhouette_shape_mode =
+                    static_cast<SilhouetteShapeMode>(child->valueint);
             } else if (strcmp(key, "silhouette_subdivision") == 0) {
                 item->silhouette_subdivision = child->valueint;
             } else if (strcmp(key, "inner_wall_radius") == 0) {
@@ -549,6 +554,8 @@ cJSON* RenderVoxelList::snapshot_to_json(
         sinriv::kigstudio::to_json(snapshot.silhouette_center));
     cJSON_AddBoolToObject(obj, "show_silhouette_center",
                           snapshot.show_silhouette_center);
+    cJSON_AddNumberToObject(obj, "silhouette_shape_mode",
+                            static_cast<int>(snapshot.silhouette_shape_mode));
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
                             snapshot.silhouette_subdivision);
     cJSON_AddNumberToObject(obj, "inner_wall_radius",
@@ -782,6 +789,9 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.node_source_data_type = child->valueint;
             } else if (strcmp(key, "node_source_sdf_subdivisions") == 0) {
                 snapshot.node_source_sdf_subdivisions = child->valueint;
+            } else if (strcmp(key, "silhouette_shape_mode") == 0) {
+                snapshot.silhouette_shape_mode =
+                    static_cast<SilhouetteShapeMode>(child->valueint);
             } else if (strcmp(key, "silhouette_subdivision") == 0) {
                 snapshot.silhouette_subdivision = child->valueint;
             } else if (strcmp(key, "inner_wall_radius") == 0) {

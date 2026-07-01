@@ -1043,6 +1043,7 @@ void RenderVoxelList::load_stl(std::string filename,
         int cb_subdiv = 4;
         float cb_inner_wall = 0.0f;
         float cb_simplify = -1.0f;
+        SilhouetteShapeMode cb_shape_mode = SilhouetteShapeMode::ICOSAHEDRON;
         if (target_item_id >= 0) {
             std::lock_guard<std::mutex> lock(locker);
             auto it = items.find(target_item_id);
@@ -1051,20 +1052,34 @@ void RenderVoxelList::load_stl(std::string filename,
                 cb_subdiv = it->second->silhouette_subdivision;
                 cb_inner_wall = it->second->inner_wall_radius;
                 cb_simplify = it->second->simplify_ratio;
+                cb_shape_mode = it->second->silhouette_shape_mode;
             }
         }
         setQueueStatus(get_locale_string("status.generating_silhouette_mesh"));
-        source_triangles = sinriv::kigstudio::mesh::conebox::
-            build_closed_mesh_from_triangles_silhouette(
-                raw_triangles, cb_center,
-                [&]() { return queue_should_continue.load(); },
-                [&](float t, const std::string& step) {
-                    queue_progress = 0.13f + t * 0.02f;
-                    setQueueStatus(step);
-                },
-                cb_subdiv,
-                cb_inner_wall,
-                cb_simplify);
+        if (cb_shape_mode == SilhouetteShapeMode::DELAUNAY_SPHERE) {
+            source_triangles = sinriv::kigstudio::mesh::conebox::
+                build_closed_mesh_from_triangles_silhouette_delaunay(
+                    raw_triangles, cb_center,
+                    [&]() { return queue_should_continue.load(); },
+                    [&](float t, const std::string& step) {
+                        queue_progress = 0.13f + t * 0.02f;
+                        setQueueStatus(step);
+                    },
+                    cb_inner_wall,
+                    cb_simplify);
+        } else {
+            source_triangles = sinriv::kigstudio::mesh::conebox::
+                build_closed_mesh_from_triangles_silhouette(
+                    raw_triangles, cb_center,
+                    [&]() { return queue_should_continue.load(); },
+                    [&](float t, const std::string& step) {
+                        queue_progress = 0.13f + t * 0.02f;
+                        setQueueStatus(step);
+                    },
+                    cb_subdiv,
+                    cb_inner_wall,
+                    cb_simplify);
+        }
     } else if (load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
         source_triangles = sinriv::kigstudio::cgal::convexHull3(raw_triangles);
     } else {
@@ -1424,6 +1439,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
     int silhouette_subdiv = 4;
     float silhouette_inner_wall = 0.0f;
     float silhouette_simplify = -1.0f;
+    SilhouetteShapeMode silhouette_shape_mode = SilhouetteShapeMode::ICOSAHEDRON;
     std::vector<Triangle> source_triangles;
     VoxelGrid source_voxel_grid;
     std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> source_sdf;
@@ -1448,6 +1464,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
         silhouette_subdiv = target_ptr->silhouette_subdivision;
         silhouette_inner_wall = target_ptr->inner_wall_radius;
         silhouette_simplify = target_ptr->simplify_ratio;
+        silhouette_shape_mode = target_ptr->silhouette_shape_mode;
 
         source_triangles = source.source_triangles;
         source_voxel_grid = source.voxel_grid_data;
@@ -1683,17 +1700,30 @@ void RenderVoxelList::load_from_node(int target_item_id,
         if (!source_mesh.empty()) {
             setQueueStatus(
                 get_locale_string("status.generating_silhouette_mesh"));
-            target_triangles = sinriv::kigstudio::mesh::conebox::
-                build_closed_mesh_from_triangles_silhouette(
-                    source_mesh, silhouette_center,
-                    [&]() { return queue_should_continue.load(); },
-                    [&](float t, const std::string& step) {
-                        queue_progress = t * 0.1f;
-                        setQueueStatus(step);
-                    },
-                    silhouette_subdiv,
-                    silhouette_inner_wall,
-                    silhouette_simplify);
+            if (silhouette_shape_mode == SilhouetteShapeMode::DELAUNAY_SPHERE) {
+                target_triangles = sinriv::kigstudio::mesh::conebox::
+                    build_closed_mesh_from_triangles_silhouette_delaunay(
+                        source_mesh, silhouette_center,
+                        [&]() { return queue_should_continue.load(); },
+                        [&](float t, const std::string& step) {
+                            queue_progress = t * 0.1f;
+                            setQueueStatus(step);
+                        },
+                        silhouette_inner_wall,
+                        silhouette_simplify);
+            } else {
+                target_triangles = sinriv::kigstudio::mesh::conebox::
+                    build_closed_mesh_from_triangles_silhouette(
+                        source_mesh, silhouette_center,
+                        [&]() { return queue_should_continue.load(); },
+                        [&](float t, const std::string& step) {
+                            queue_progress = t * 0.1f;
+                            setQueueStatus(step);
+                        },
+                        silhouette_subdiv,
+                        silhouette_inner_wall,
+                        silhouette_simplify);
+            }
             target_mesh_only = true;
         }
     } else if (load_mode == static_cast<int>(StlLoadMode::SURFACE_ONLY)) {

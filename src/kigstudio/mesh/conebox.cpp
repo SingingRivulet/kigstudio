@@ -877,4 +877,42 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
     return builder.build();
 }
 
+std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_delaunay(
+    const std::vector<Triangle>& input_triangles,
+    const vec3f& center,
+    const std::function<bool()>& should_continue,
+    const std::function<void(float, const std::string&)>& progress,
+    float inner_wall_radius,
+    float simplify_ratio) {
+	if (input_triangles.empty())
+		return {};
+
+	// Extract unique vertices from input triangles as sample points
+	std::vector<vec3f> sample_points;
+	sample_points.reserve(input_triangles.size() * 3);
+	struct Vec3Cmp {
+		bool operator()(const vec3f& a, const vec3f& b) const {
+			if (a.x != b.x) return a.x < b.x;
+			if (a.y != b.y) return a.y < b.y;
+			return a.z < b.z;
+		}
+	};
+	std::set<vec3f, Vec3Cmp> seen;
+	for (const auto& tri : input_triangles) {
+		for (const auto& v : {std::get<0>(tri), std::get<1>(tri),
+	                          std::get<2>(tri)}) {
+			if (seen.insert(v).second)
+				sample_points.push_back(v);
+		}
+	}
+
+	auto generator =
+	    std::make_unique<DelaunaySphereGenerator>(std::move(sample_points));
+	IcosphereSilhouetteBuilder builder(input_triangles, center,
+	                                   std::move(generator),
+	                                   should_continue, progress,
+	                                   inner_wall_radius, simplify_ratio);
+	return builder.build();
+}
+
 }  // namespace sinriv::kigstudio::mesh::conebox
