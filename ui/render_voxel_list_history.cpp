@@ -37,7 +37,8 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.simplify_ratio,
             item.repair_mode,
             item.alpha_wrap_alpha,
-            item.alpha_wrap_offset};
+            item.alpha_wrap_offset,
+            item.subdivide_level};
 }
 
 void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
@@ -78,6 +79,7 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
         static_cast<RenderVoxelItem::RepairMeshMode>(snapshot.repair_mode);
     item.alpha_wrap_alpha = snapshot.alpha_wrap_alpha;
     item.alpha_wrap_offset = snapshot.alpha_wrap_offset;
+    item.subdivide_level = snapshot.subdivide_level;
     item.sdf_precision_cache = snapshot.sdf_precision_cache;
     item.joint_wireframe_dirty = true;
 }

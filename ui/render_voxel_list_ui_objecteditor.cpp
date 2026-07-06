@@ -1044,14 +1044,20 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
                     &item.showOriginMesh);
 
     if (item.mesh_only) {
-        // mesh_only 模型仅支持 Plane 与 Repair Mesh 两种处理模式
+        // mesh_only 模型支持 Plane、Repair Mesh 与 Subdivide Mesh 三种处理模式
         const char* mesh_only_mode_names[] = {
             get_locale_cstr("mode.plane"),
-            get_locale_cstr("mode.repair")};
+            get_locale_cstr("mode.repair"),
+            get_locale_cstr("mode.subdivide")};
         const enum RenderVoxelItem::SegmentMode mesh_only_modes[] = {
-            RenderVoxelItem::PLANE, RenderVoxelItem::REPAIR_MESH};
-        int current_mesh_only_mode =
-            (item.segment_mode == RenderVoxelItem::REPAIR_MESH) ? 1 : 0;
+            RenderVoxelItem::PLANE,
+            RenderVoxelItem::REPAIR_MESH,
+            RenderVoxelItem::SUBDIVIDE_MESH};
+        int current_mesh_only_mode = 0;
+        if (item.segment_mode == RenderVoxelItem::REPAIR_MESH)
+            current_mesh_only_mode = 1;
+        else if (item.segment_mode == RenderVoxelItem::SUBDIVIDE_MESH)
+            current_mesh_only_mode = 2;
         if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
                          &current_mesh_only_mode, mesh_only_mode_names,
                          IM_ARRAYSIZE(mesh_only_mode_names))) {
@@ -1068,12 +1074,14 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
             get_locale_cstr("mode.neighbor"),
             get_locale_cstr("mode.fill_interior"),
             get_locale_cstr("mode.chain"),
-            get_locale_cstr("mode.sdf_node_split")};
+            get_locale_cstr("mode.sdf_node_split"),
+            get_locale_cstr("mode.subdivide")};
         const enum RenderVoxelItem::SegmentMode segment_modes[] = {
             RenderVoxelItem::COLLISION,    RenderVoxelItem::PLANE,
             RenderVoxelItem::CONCAVE_CONE, RenderVoxelItem::SPLIT_DISCONNECTED,
             RenderVoxelItem::NEIGHBOR,     RenderVoxelItem::FILL_INTERIOR,
-            RenderVoxelItem::CHAIN,        RenderVoxelItem::SDF_NODE_SPLIT};
+            RenderVoxelItem::CHAIN,        RenderVoxelItem::SDF_NODE_SPLIT,
+            RenderVoxelItem::SUBDIVIDE_MESH};
         int current_segment_mode = segment_modes[(int)item.segment_mode];
         if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
                          &current_segment_mode, segment_mode_names,
@@ -1115,6 +1123,9 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
             case RenderVoxelItem::REPAIR_MESH:
                 tooltip_key = "tooltip.mode.repair";
                 break;
+            case RenderVoxelItem::SUBDIVIDE_MESH:
+                tooltip_key = "tooltip.mode.subdivide";
+                break;
         }
         if (tooltip_key) {
             ImGui::BeginTooltip();
@@ -1142,6 +1153,8 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
         render_object_editor_sdf_node_split_mode(item);
     } else if (item.segment_mode == RenderVoxelItem::REPAIR_MESH) {
         render_object_editor_repair_mode(item);
+    } else if (item.segment_mode == RenderVoxelItem::SUBDIVIDE_MESH) {
+        render_object_editor_subdivide_mode(item);
     }
 }
 
@@ -1212,6 +1225,12 @@ void RenderVoxelList::render_object_editor_sdf_node_split_mode(
     } else if (transform_edit_result.value_changed) {
         push_undo_now(item.id, before_transform, "Source Transform");
     }
+}
+
+void RenderVoxelList::render_object_editor_subdivide_mode(
+    RenderVoxelItem& item) {
+    ImGui::DragInt(get_locale_cstr("label.subdivide_level"),
+                   &item.subdivide_level, 1, 1, 10);
 }
 
 void RenderVoxelList::render_object_editor_repair_mode(

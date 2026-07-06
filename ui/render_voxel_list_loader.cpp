@@ -51,6 +51,9 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
         case RenderVoxelItem::SDF_NODE_SPLIT:
             mode_str = "sdf_node_split";
             break;
+        case RenderVoxelItem::SUBDIVIDE_MESH:
+            mode_str = "subdivide_mesh";
+            break;
         case RenderVoxelItem::REPAIR_MESH:
             mode_str = "repair_mesh";
             break;
@@ -124,6 +127,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
                             item.alpha_wrap_alpha);
     cJSON_AddNumberToObject(obj, "alpha_wrap_offset",
                             item.alpha_wrap_offset);
+    cJSON_AddNumberToObject(obj, "subdivide_level",
+                            item.subdivide_level);
     cJSON_AddStringToObject(obj, "err_info", item.err_info.c_str());
     cJSON_AddStringToObject(obj, "title", item.title.c_str());
     cJSON_AddStringToObject(obj, "comment_text", item.comment_text.c_str());
@@ -330,6 +335,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->segment_mode = RenderVoxelItem::CHAIN;
             } else if (strcmp(mode_str, "sdf_node_split") == 0) {
                 item->segment_mode = RenderVoxelItem::SDF_NODE_SPLIT;
+            } else if (strcmp(mode_str, "subdivide_mesh") == 0) {
+                item->segment_mode = RenderVoxelItem::SUBDIVIDE_MESH;
             } else if (strcmp(mode_str, "repair_mesh") == 0) {
                 item->segment_mode = RenderVoxelItem::REPAIR_MESH;
             } else {
@@ -374,6 +381,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->alpha_wrap_alpha = static_cast<float>(value);
             } else if (strcmp(key, "alpha_wrap_offset") == 0) {
                 item->alpha_wrap_offset = static_cast<float>(value);
+            } else if (strcmp(key, "subdivide_level") == 0) {
+                item->subdivide_level = child->valueint;
             } else if (strcmp(key, "node_source_sdf_simplify_ratio") == 0) {
                 item->node_source_sdf_simplify_ratio =
                     static_cast<float>(value);
@@ -523,6 +532,9 @@ cJSON* RenderVoxelList::snapshot_to_json(
         case RenderVoxelItem::SDF_NODE_SPLIT:
             mode_str = "sdf_node_split";
             break;
+        case RenderVoxelItem::SUBDIVIDE_MESH:
+            mode_str = "subdivide_mesh";
+            break;
         case RenderVoxelItem::REPAIR_MESH:
             mode_str = "repair_mesh";
             break;
@@ -568,6 +580,8 @@ cJSON* RenderVoxelList::snapshot_to_json(
                             snapshot.alpha_wrap_alpha);
     cJSON_AddNumberToObject(obj, "alpha_wrap_offset",
                             snapshot.alpha_wrap_offset);
+    cJSON_AddNumberToObject(obj, "subdivide_level",
+                            snapshot.subdivide_level);
 
     // 仅输出当前 segment_mode 相关的编辑字段
     const auto mode =
@@ -768,6 +782,8 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.segment_mode = RenderVoxelItem::CHAIN;
             } else if (strcmp(mode_str, "sdf_node_split") == 0) {
                 snapshot.segment_mode = RenderVoxelItem::SDF_NODE_SPLIT;
+            } else if (strcmp(mode_str, "subdivide_mesh") == 0) {
+                snapshot.segment_mode = RenderVoxelItem::SUBDIVIDE_MESH;
             } else if (strcmp(mode_str, "repair_mesh") == 0) {
                 snapshot.segment_mode = RenderVoxelItem::REPAIR_MESH;
             } else {
@@ -805,6 +821,8 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.alpha_wrap_alpha = static_cast<float>(value);
             } else if (strcmp(key, "alpha_wrap_offset") == 0) {
                 snapshot.alpha_wrap_offset = static_cast<float>(value);
+            } else if (strcmp(key, "subdivide_level") == 0) {
+                snapshot.subdivide_level = child->valueint;
             }
         } else if (cJSON_IsBool(child)) {
             if (strcmp(key, "use_cgal_skeleton") == 0) {

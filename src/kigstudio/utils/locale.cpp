@@ -828,6 +828,10 @@ void init_locale_strings() {
                       {{"en", "SDF Node Split"}, {"zh", "SDF节点分割"}});
     add_locale_string("mode.repair",
                       {{"en", "Repair Mesh"}, {"zh", "修复网格"}});
+    add_locale_string("mode.subdivide",
+                      {{"en", "Subdivide Mesh"}, {"zh", "细分网格"}});
+    add_locale_string("label.subdivide_level",
+                      {{"en", "subdivide level"}, {"zh", "细分级别"}});
 
     add_locale_string(
         "tooltip.mode.collision",
@@ -966,6 +970,12 @@ void init_locale_strings() {
         {{"en",
           "Repair the input mesh without generating voxels or SDF."},
          {"zh", "修复输入网格，不生成体素和SDF。"}});
+    add_locale_string(
+        "tooltip.mode.subdivide",
+        {{"en",
+          "Subdivide the input mesh into a denser triangle mesh without "
+          "generating voxels or SDF."},
+         {"zh", "细分输入网格为更密的三角形网格，不生成体素和SDF。"}});
     add_locale_string("mode.repair.alpha_wrap",
                       {{"en", "Alpha Wrap"}, {"zh", "Alpha包裹"}});
     add_locale_string("mode.repair.fill_holes",

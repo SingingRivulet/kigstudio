@@ -203,6 +203,7 @@ struct CollisionEditorSnapshot {
     int repair_mode = 0;
     float alpha_wrap_alpha = 1.0f;
     float alpha_wrap_offset = 0.01f;
+    int subdivide_level = 1;
 };
 
 struct MarkedVoxelsSnapshot {
@@ -290,7 +291,8 @@ class RenderVoxelList {
             FILL_INTERIOR = 5,
             CHAIN = 6,
             SDF_NODE_SPLIT = 7,
-            REPAIR_MESH = 8, // 这是处理mesh的专用模式，不会输出体素和SDF
+            SUBDIVIDE_MESH = 8, // 细分三角形网格，输出更密的 mesh
+            REPAIR_MESH = 9, // 这是处理mesh的专用模式，不会输出体素和SDF
         } segment_mode = COLLISION;
 
         enum RepairMeshMode {
@@ -302,6 +304,8 @@ class RenderVoxelList {
         } repair_mode = FILL_HOLES;
         float alpha_wrap_alpha = 1.0f;
         float alpha_wrap_offset = 0.01f;
+
+        int subdivide_level = 1;  // 1 = 最粗，数值越大网格越密
 
         sinriv::ui::render::RenderMesh origin_mesh_renderer;
         sinriv::ui::render::RenderMesh mesh_renderer;
@@ -616,6 +620,7 @@ class RenderVoxelList {
     void render_object_editor_chain_mode(RenderVoxelItem& item);
     void render_object_editor_sdf_node_split_mode(RenderVoxelItem& item);
     void render_object_editor_repair_mode(RenderVoxelItem& item);
+    void render_object_editor_subdivide_mode(RenderVoxelItem& item);
     void render_object_editor_voxel_tab_content(RenderVoxelItem& item);
     void render_object_editor_comment_tab_content(RenderVoxelItem& item);
     void render_plane_editor(RenderVoxelItem& item);
@@ -804,6 +809,8 @@ class RenderVoxelList {
     std::vector<RenderVoxelItem*> do_segment(int index);
     std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
     do_repair_mesh(const RenderVoxelItem& item);
+    std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
+    do_subdivide_mesh(const RenderVoxelItem& item);
     void extract_skeleton(int index);
 
     void load_stl(std::string filename,

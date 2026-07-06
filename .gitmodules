@@ -19,3 +19,6 @@
 [submodule "dep/openvdb"]
 	path = dep/openvdb
 	url = https://github.com/AcademySoftwareFoundation/openvdb
+[submodule "dep/libpmx"]
+	path = dep/libpmx
+	url = https://github.com/felixjones/libpmx

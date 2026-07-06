@@ -6,6 +6,7 @@
 #include "kigstudio/cgal/convex_hull.h"
 #include "kigstudio/cgal/mesh_repair.h"
 #include "kigstudio/cgal/mesh_simplification.h"
+#include "kigstudio/cgal/mesh_subdivision.h"
 #include "kigstudio/cgal/skeleton_extraction.h"
 #include "kigstudio/mesh/conebox.h"
 #include "kigstudio/sdf/sdf_mesh.h"
@@ -654,6 +655,29 @@ std::vector<RepairTriangle> RenderVoxelList::do_repair_mesh(
     return mesh_data_to_triangles(repaired);
 }
 
+std::vector<RepairTriangle> RenderVoxelList::do_subdivide_mesh(
+    const RenderVoxelItem& item) {
+    RepairMeshData mesh_in = triangles_to_mesh_data(item.source_triangles);
+
+    auto wait_async = [&]<typename Async>(Async& async) {
+        while (!async.done()) {
+            if (!queue_should_continue.load() || !queue_running.load()) {
+                async.terminal();
+                throw std::runtime_error(
+                    get_locale_string("log.queue.cancelled"));
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+        return async.get_result();
+    };
+
+    sinriv::kigstudio::cgal::subdivideMeshByLevel_async async(
+        mesh_in, item.subdivide_level, 3);
+    RepairMeshData subdivided = wait_async(async);
+
+    return mesh_data_to_triangles(subdivided);
+}
+
 std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
     int index) {
     locker.lock();
@@ -684,6 +708,12 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
             if (it->second->segment_mode == RenderVoxelItem::REPAIR_MESH) {
                 auto repaired = do_repair_mesh(*it->second);
                 mesh_split_results.push_back(std::move(repaired));
+                sinriv::kigstudio::voxel::VoxelGrid dummy;
+                results.emplace_back(std::move(dummy), nullptr);
+            } else if (it->second->segment_mode ==
+                       RenderVoxelItem::SUBDIVIDE_MESH) {
+                auto subdivided = do_subdivide_mesh(*it->second);
+                mesh_split_results.push_back(std::move(subdivided));
                 sinriv::kigstudio::voxel::VoxelGrid dummy;
                 results.emplace_back(std::move(dummy), nullptr);
             } else {
@@ -803,6 +833,9 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
             new_item->repair_mode = it->second->repair_mode;
             new_item->alpha_wrap_alpha = it->second->alpha_wrap_alpha;
             new_item->alpha_wrap_offset = it->second->alpha_wrap_offset;
+        }
+        if (it->second->segment_mode == RenderVoxelItem::SUBDIVIDE_MESH) {
+            new_item->subdivide_level = it->second->subdivide_level;
         }
         if (it->second->mesh_only && i < mesh_split_results.size()) {
             new_item->mesh_only = true;
