@@ -34,7 +34,7 @@
 #include "ui/render_voxel_list.h"
 #include "ui/utils.h"
 
-int ui_main(int argc, char** argv) {
+int ui_main(int argc, const char* const* argv) {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
 #endif

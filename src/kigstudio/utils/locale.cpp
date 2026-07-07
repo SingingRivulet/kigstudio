@@ -106,6 +106,7 @@ void init_locale_strings() {
     add_locale_string("menu.debug_voxel_picking",
                       {{"en", "Voxel Picking"}, {"zh", "体素拾取"}});
     add_locale_string("menu.flow_viewer", {{"en", "Flow Viewer"}, {"zh", "工作流"}});
+    add_locale_string("menu.extract_mmd", {{"en", "Extract MMD"}, {"zh", "提取 MMD"}});
     add_locale_string(
         "menu.check_non_manifold",
         {{"en", "Check Non-Manifold Edges"}, {"zh", "检查非流形边"}});
@@ -395,6 +396,14 @@ void init_locale_strings() {
                       {{"en", "Convex Hull"}, {"zh", "凸包"}});
     add_locale_string("action.browse",
                       {{"en", "Browse..."}, {"zh", "浏览..."}});
+    add_locale_string("action.load_items",
+                      {{"en", "Load Items"}, {"zh", "加载项目"}});
+    add_locale_string("action.extract",
+                      {{"en", "Extract"}, {"zh", "提取"}});
+    add_locale_string("action.select_all_items",
+                      {{"en", "Select All"}, {"zh", "全选"}});
+    add_locale_string("action.deselect_all_items",
+                      {{"en", "Deselect All"}, {"zh", "取消全选"}});
     add_locale_string("label.silhouette_center",
                       {{"en", "Silhouette Center"}, {"zh", "轮廓中心"}});
     add_locale_string("label.inner_wall_reset",
@@ -1025,8 +1034,33 @@ void init_locale_strings() {
                        {"zh", "从 SDF 生成网格，不保存到文件"}});
     add_locale_string("dialog.stl_files",
                       {{"en", "STL files"}, {"zh", "STL 文件"}});
+    add_locale_string("label.extract_mmd_pmx",
+                      {{"en", "PMX file"}, {"zh", "PMX 文件路径"}});
+    add_locale_string("label.extract_mmd_mode",
+                      {{"en", "Mode"}, {"zh", "模式"}});
+    add_locale_string("label.extract_mmd_mode_bones",
+                      {{"en", "Bones"}, {"zh", "骨骼"}});
+    add_locale_string("label.extract_mmd_mode_materials",
+                      {{"en", "Materials"}, {"zh", "材质"}});
+    add_locale_string("label.threshold",
+                      {{"en", "Weight Threshold"}, {"zh", "权重阈值"}});
+    add_locale_string("label.case_sensitive",
+                      {{"en", "Case Sensitive"}, {"zh", "区分大小写"}});
+    add_locale_string("label.bones",
+                      {{"en", "Bones"}, {"zh", "骨骼"}});
+    add_locale_string("label.materials",
+                      {{"en", "Materials"}, {"zh", "材质"}});
+    add_locale_string("tooltip.threshold_bones_only",
+                      {{"en", "Threshold only applies to bone extraction"},
+                       {"zh", "阈值仅对骨骼提取有效"}});
     add_locale_string("dialog.export_stl_all",
                       {{"en", "Export All STL"}, {"zh", "全部导出 STL"}});
+    add_locale_string("dialog.extract_mmd",
+                      {{"en", "Extract MMD"}, {"zh", "提取 MMD"}});
+    add_locale_string("dialog.open_pmx_title",
+                      {{"en", "Open PMX"}, {"zh", "打开 PMX"}});
+    add_locale_string("dialog.pmx_files",
+                      {{"en", "PMX files"}, {"zh", "PMX 文件"}});
     add_locale_string("dialog.save_project_title",
                       {{"en", "Select Folder to Save Project"},
                        {"zh", "选择文件夹保存项目"}});
@@ -1060,6 +1094,26 @@ void init_locale_strings() {
                       {{"en", "Load Marked Voxels"}, {"zh", "加载标记体素"}});
     add_locale_string("dialog.marked_voxels_file",
                       {{"en", "Marked Voxel File"}, {"zh", "标记体素文件"}});
+    add_locale_string("error.internal",
+                      {{"en", "Internal error"}, {"zh", "内部错误"}});
+    add_locale_string("error.start_subprocess",
+                      {{"en", "Failed to start subprocess"}, {"zh", "启动子进程失败"}});
+    add_locale_string("error.subprocess_no_output",
+                      {{"en", "Subprocess produced no output"}, {"zh", "子进程无输出"}});
+    add_locale_string("error.parse_json",
+                      {{"en", "Failed to parse JSON"}, {"zh", "解析 JSON 失败"}});
+    add_locale_string("error.unknown",
+                      {{"en", "Unknown error"}, {"zh", "未知错误"}});
+    add_locale_string("error.output_missing",
+                      {{"en", "Output file is missing"}, {"zh", "输出文件丢失"}});
+    add_locale_string("status.loading_items",
+                      {{"en", "Loading item list..."}, {"zh", "正在加载项目列表..."}});
+    add_locale_string("status.items_loaded",
+                      {{"en", "Item list loaded"}, {"zh", "项目列表已加载"}});
+    add_locale_string("status.extracting_mmd",
+                      {{"en", "Extracting mesh..."}, {"zh", "正在提取网格..."}});
+    add_locale_string("status.extract_done_loading",
+                      {{"en", "Extraction done, loading mesh..."}, {"zh", "提取完成，正在加载网格..."}});
     add_locale_string("error.save_marked_failed",
                       {{"en", "Failed to save marked voxels."},
                        {"zh", "保存标记体素失败。"}});

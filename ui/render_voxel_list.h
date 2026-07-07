@@ -28,6 +28,7 @@
 #include "kigstudio/utils/KDTree.h"
 #include "kigstudio/utils/locale.h"
 #include "kigstudio/utils/plane.h"
+#include "kigstudio/utils/process.h"
 #include "kigstudio/utils/vec3.h"
 #include "kigstudio/voxel/concave.h"
 #include "kigstudio/voxel/voxel.h"
@@ -724,6 +725,28 @@ class RenderVoxelList {
     float export_stl_simplify_ratio = 0.1f;
     int export_stl_subdivisions = 2;
     bool pending_open_export_stl_all_dialog = false;
+
+    // MMD / PMX extraction dialog state
+    bool show_extract_mmd_dialog = false;
+    bool pending_open_extract_mmd_dialog = false;
+    std::string extract_mmd_pmx_path;
+    int extract_mmd_mode = 0;  // 0 = bones, 1 = materials
+    std::vector<std::pair<std::string, bool>> extract_mmd_items;
+    float extract_mmd_threshold = 0.5f;
+    bool extract_mmd_case_sensitive = false;
+    bool extract_mmd_listing = false;
+    bool extract_mmd_extracting = false;
+    sinriv::kigstudio::Process extract_mmd_process;
+    std::string extract_mmd_json_in;
+    std::string extract_mmd_json_out;
+    std::string extract_mmd_status_msg;
+    std::string extract_mmd_result_stl;
+    void render_extract_mmd_dialog();
+    void extract_mmd_start_list();
+    void extract_mmd_poll();
+    void extract_mmd_finish_list(const std::string& json_text);
+    void extract_mmd_start_extract();
+    void extract_mmd_finish_extract(const std::string& json_text);
 
     struct Icons {
         bgfx::TextureHandle hexagon = BGFX_INVALID_HANDLE;

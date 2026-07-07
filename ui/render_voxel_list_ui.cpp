@@ -138,6 +138,9 @@ void RenderVoxelList::render_ui() {
                 if (ImGui::MenuItem(get_locale_cstr("menu.flow_viewer"))) {
                     show_flow_viewer = true;
                 }
+                if (ImGui::MenuItem(get_locale_cstr("menu.extract_mmd"))) {
+                    pending_open_extract_mmd_dialog = true;
+                }
                 if (ImGui::BeginMenu(get_locale_cstr("menu.debug"))) {
                     if (ImGui::MenuItem(
                             get_locale_cstr("menu.debug_voxel_picking"))) {
@@ -232,6 +235,13 @@ void RenderVoxelList::render_ui() {
             }
             ImGui::EndPopup();
         }
+
+        // Extract MMD / PMX dialog (must be outside MenuBar)
+        if (pending_open_extract_mmd_dialog) {
+            ImGui::OpenPopup(get_locale_cstr("dialog.extract_mmd"));
+            pending_open_extract_mmd_dialog = false;
+        }
+        render_extract_mmd_dialog();
 
         const char* update_button_key = "action.update_collision";
         {
