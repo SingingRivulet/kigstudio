@@ -1074,6 +1074,7 @@ void RenderVoxelList::load_stl(std::string filename,
     if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
         vec3f cb_center{0.0f, 0.0f, 0.0f};
         int cb_subdiv = 4;
+        int cb_edge_subdiv = 0;
         float cb_inner_wall = 0.0f;
         float cb_simplify = -1.0f;
         SilhouetteShapeMode cb_shape_mode = SilhouetteShapeMode::ICOSAHEDRON;
@@ -1083,6 +1084,7 @@ void RenderVoxelList::load_stl(std::string filename,
             if (it != items.end()) {
                 cb_center = it->second->silhouette_center;
                 cb_subdiv = it->second->silhouette_subdivision;
+                cb_edge_subdiv = it->second->silhouette_edge_subdiv;
                 cb_inner_wall = it->second->inner_wall_radius;
                 cb_simplify = it->second->simplify_ratio;
                 cb_shape_mode = it->second->silhouette_shape_mode;
@@ -1100,7 +1102,8 @@ void RenderVoxelList::load_stl(std::string filename,
                     },
                     cb_subdiv,
                     cb_inner_wall,
-                    cb_simplify);
+                    cb_simplify,
+                    cb_edge_subdiv);
         } else {
             source_triangles = sinriv::kigstudio::mesh::conebox::
                 build_closed_mesh_from_triangles_silhouette(
@@ -1373,8 +1376,16 @@ void RenderVoxelList::load_stl(std::string filename,
                   << " write_count=" << item->write_count.load()
                   << " ref_count=" << item->ref_count.load() << std::endl;
         item->origin_mesh_renderer.setBaseColor(0.0f, 0.0f, 1.0f, 1.0f);
-        item->origin_mesh_renderer.loadGeometry(
-            triangle_generator_with_normals(raw_triangles));
+        // For DEFAULT / SURFACE_ONLY / MESH_ONLY, raw_triangles has been
+        // moved into source_triangles by this point. Use whichever container
+        // still holds the raw input geometry.
+        if (!raw_triangles.empty()) {
+            item->origin_mesh_renderer.loadGeometry(
+                triangle_generator_with_normals(raw_triangles));
+        } else if (!source_triangles.empty()) {
+            item->origin_mesh_renderer.loadGeometry(
+                triangle_generator_with_normals(source_triangles));
+        }
         if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
             load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
             item->mesh_renderer.loadGeometry(
@@ -1471,6 +1482,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
     float voxel_size = 0.0f;
     vec3f silhouette_center{0.0f, 0.0f, 0.0f};
     int silhouette_subdiv = 4;
+    int silhouette_edge_subdiv = 0;
     float silhouette_inner_wall = 0.0f;
     float silhouette_simplify = -1.0f;
     SilhouetteShapeMode silhouette_shape_mode = SilhouetteShapeMode::ICOSAHEDRON;
@@ -1496,6 +1508,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
         voxel_size = target_ptr->stl_voxel_size;
         silhouette_center = target_ptr->silhouette_center;
         silhouette_subdiv = target_ptr->silhouette_subdivision;
+        silhouette_edge_subdiv = target_ptr->silhouette_edge_subdiv;
         silhouette_inner_wall = target_ptr->inner_wall_radius;
         silhouette_simplify = target_ptr->simplify_ratio;
         silhouette_shape_mode = target_ptr->silhouette_shape_mode;
@@ -1745,7 +1758,8 @@ void RenderVoxelList::load_from_node(int target_item_id,
                         },
                         silhouette_subdiv,
                         silhouette_inner_wall,
-                        silhouette_simplify);
+                        silhouette_simplify,
+                        silhouette_edge_subdiv);
             } else {
                 target_triangles = sinriv::kigstudio::mesh::conebox::
                     build_closed_mesh_from_triangles_silhouette(

@@ -375,6 +375,45 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 static_cast<SilhouetteShapeMode>(shape_mode);
         }
 
+        // Edge subdivision: only meaningful for Delaunay sphere mode.
+        if (item.silhouette_shape_mode ==
+            SilhouetteShapeMode::DELAUNAY_SPHERE) {
+            const float btn_w = ImGui::GetFrameHeight();
+            ImGui::TextUnformatted(
+                get_locale_cstr("label.silhouette_edge_subdiv"));
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    get_locale_cstr("tooltip.silhouette_edge_subdiv"));
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("-##silhouette_edge_subdiv",
+                              ImVec2(btn_w, 0))) {
+                if (item.silhouette_edge_subdiv > 0) {
+                    --item.silhouette_edge_subdiv;
+                    push_undo_now(item.id, std::nullopt,
+                                  "Silhouette Edge Subdivision");
+                }
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80.0f);
+            if (ImGui::InputInt("##silhouette_edge_subdiv_val",
+                                &item.silhouette_edge_subdiv,
+                                0, 0,
+                                ImGuiInputTextFlags_CharsDecimal)) {
+                if (item.silhouette_edge_subdiv < 0)
+                    item.silhouette_edge_subdiv = 0;
+                push_undo_now(item.id, std::nullopt,
+                              "Silhouette Edge Subdivision");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("+##silhouette_edge_subdiv",
+                              ImVec2(btn_w, 0))) {
+                ++item.silhouette_edge_subdiv;
+                push_undo_now(item.id, std::nullopt,
+                              "Silhouette Edge Subdivision");
+            }
+        }
+
         const float btn_w = ImGui::GetFrameHeight();
         ImGui::TextUnformatted(get_locale_cstr("label.silhouette_subdivision"));
         if (ImGui::IsItemHovered()) {

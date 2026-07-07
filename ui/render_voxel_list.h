@@ -199,6 +199,7 @@ struct CollisionEditorSnapshot {
     bool show_silhouette_center = false;
     SilhouetteShapeMode silhouette_shape_mode = SilhouetteShapeMode::DELAUNAY_SPHERE;
     int silhouette_subdivision = 4;
+    int silhouette_edge_subdiv = 0;
     float inner_wall_radius = 0.0f;
     float simplify_ratio = -1.0f;  // negative = disabled
     int repair_mode = 0;
@@ -483,6 +484,7 @@ class RenderVoxelList {
         bool showSilhouetteCenter = false;
         SilhouetteShapeMode silhouette_shape_mode = SilhouetteShapeMode::DELAUNAY_SPHERE;
         int silhouette_subdivision = 4;
+        int silhouette_edge_subdiv = 0;
         float inner_wall_radius = 0.0f;
         float simplify_ratio = -1.0f;
 

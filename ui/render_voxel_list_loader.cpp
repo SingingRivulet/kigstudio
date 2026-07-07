@@ -119,6 +119,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
                             static_cast<int>(item.silhouette_shape_mode));
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
                             item.silhouette_subdivision);
+    cJSON_AddNumberToObject(obj, "silhouette_edge_subdiv",
+                            item.silhouette_edge_subdiv);
     cJSON_AddNumberToObject(obj, "inner_wall_radius",
                             item.inner_wall_radius);
     cJSON_AddNumberToObject(obj, "simplify_ratio",
@@ -369,6 +371,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                     static_cast<SilhouetteShapeMode>(child->valueint);
             } else if (strcmp(key, "silhouette_subdivision") == 0) {
                 item->silhouette_subdivision = child->valueint;
+            } else if (strcmp(key, "silhouette_edge_subdiv") == 0) {
+                item->silhouette_edge_subdiv = child->valueint;
             } else if (strcmp(key, "inner_wall_radius") == 0) {
                 item->inner_wall_radius = static_cast<float>(value);
             } else if (strcmp(key, "simplify_ratio") == 0) {
@@ -570,6 +574,8 @@ cJSON* RenderVoxelList::snapshot_to_json(
                             static_cast<int>(snapshot.silhouette_shape_mode));
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
                             snapshot.silhouette_subdivision);
+    cJSON_AddNumberToObject(obj, "silhouette_edge_subdiv",
+                            snapshot.silhouette_edge_subdiv);
     cJSON_AddNumberToObject(obj, "inner_wall_radius",
                             snapshot.inner_wall_radius);
     cJSON_AddNumberToObject(obj, "simplify_ratio",
@@ -810,6 +816,8 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                     static_cast<SilhouetteShapeMode>(child->valueint);
             } else if (strcmp(key, "silhouette_subdivision") == 0) {
                 snapshot.silhouette_subdivision = child->valueint;
+            } else if (strcmp(key, "silhouette_edge_subdiv") == 0) {
+                snapshot.silhouette_edge_subdiv = child->valueint;
             } else if (strcmp(key, "inner_wall_radius") == 0) {
                 snapshot.inner_wall_radius = static_cast<float>(value);
             } else if (strcmp(key, "node_source_sdf_simplify_ratio") == 0) {
@@ -1174,6 +1182,11 @@ bool RenderVoxelList::load_project(const std::string& folder) {
                         (void)n;
                         item->source_triangles.push_back(tri);
                     }
+                    item->origin_mesh_renderer.clear();
+                    item->origin_mesh_renderer.setBaseColor(0.0f, 0.0f, 1.0f,
+                                                            1.0f);
+                    item->origin_mesh_renderer.loadGeometry(
+                        sinriv::kigstudio::voxel::readSTL(utf8_stl_path));
                     if (item->load_as_sdf && !item->source_triangles.empty()) {
                         auto mesh_sdf = std::make_shared<
                             sinriv::kigstudio::sdf::SDF_Mesh>();

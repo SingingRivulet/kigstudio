@@ -518,17 +518,15 @@ void IcosphereSilhouetteBuilder::cast_rays() {
 			continue;
 		vec3f main_dir_n = main_dir * (1.0f / main_len);
 
-		// Cast main ray through vertex
+		// Cast sample rays between adjacent neighbor pairs.
+		// The central vertex ray is intentionally omitted: it can pass through
+		// narrow gaps in the input mesh, while the surrounding rays are
+		// bounded by neighboring vertices and are far less likely to slip
+		// through.
 		float dist_sum = 0.0f;
 		int hit_count = 0;
 		float dummy_dist;
 		vec3f dummy_pos;
-		if (cast_ray(center_, main_dir_n, dummy_dist, dummy_pos)) {
-			dist_sum += dummy_dist;
-			++hit_count;
-		}
-
-		// Cast sample rays between adjacent neighbor pairs
 		const auto& nb = vert_neighbors_[vi];
 		const int nb_count = static_cast<int>(nb.size());
 		for (int ni = 0; ni < nb_count && nb_count >= 2; ++ni) {
@@ -943,13 +941,16 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_delaunay(
     const std::function<void(float, const std::string&)>& progress,
     int icosahedron_subdiv,
     float inner_wall_radius,
-    float simplify_ratio) {
+    float simplify_ratio,
+    int edge_subdiv) {
 	if (input_triangles.empty())
 		return {};
 
-	// Extract unique vertices from input triangles as sample points
+	// Extract unique vertices from input triangles as sample points.
+	// When edge_subdiv > 0, also insert equally spaced points along each edge.
 	std::vector<vec3f> sample_points;
-	sample_points.reserve(input_triangles.size() * 3);
+	sample_points.reserve(input_triangles.size() *
+	                      (3 + std::max(0, edge_subdiv) * 3));
 	struct Vec3Cmp {
 		bool operator()(const vec3f& a, const vec3f& b) const {
 			if (a.x != b.x) return a.x < b.x;
@@ -958,11 +959,25 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_delaunay(
 		}
 	};
 	std::set<vec3f, Vec3Cmp> seen;
+	auto add_point = [&](const vec3f& v) {
+		if (seen.insert(v).second)
+			sample_points.push_back(v);
+	};
 	for (const auto& tri : input_triangles) {
-		for (const auto& v : {std::get<0>(tri), std::get<1>(tri),
-	                          std::get<2>(tri)}) {
-			if (seen.insert(v).second)
-				sample_points.push_back(v);
+		const vec3f& v0 = std::get<0>(tri);
+		const vec3f& v1 = std::get<1>(tri);
+		const vec3f& v2 = std::get<2>(tri);
+		add_point(v0);
+		add_point(v1);
+		add_point(v2);
+		if (edge_subdiv > 0) {
+			for (int i = 1; i <= edge_subdiv; ++i) {
+				float t = static_cast<float>(i) /
+				          static_cast<float>(edge_subdiv + 1);
+				add_point(v0 + (v1 - v0) * t);
+				add_point(v1 + (v2 - v1) * t);
+				add_point(v2 + (v0 - v2) * t);
+			}
 		}
 	}
 

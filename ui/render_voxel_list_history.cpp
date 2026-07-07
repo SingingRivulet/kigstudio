@@ -33,6 +33,7 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.showSilhouetteCenter,
             item.silhouette_shape_mode,
             item.silhouette_subdivision,
+            item.silhouette_edge_subdiv,
             item.inner_wall_radius,
             item.simplify_ratio,
             item.repair_mode,
@@ -73,6 +74,7 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.showSilhouetteCenter = snapshot.show_silhouette_center;
     item.silhouette_shape_mode = snapshot.silhouette_shape_mode;
     item.silhouette_subdivision = snapshot.silhouette_subdivision;
+    item.silhouette_edge_subdiv = snapshot.silhouette_edge_subdiv;
     item.inner_wall_radius = snapshot.inner_wall_radius;
     item.simplify_ratio = snapshot.simplify_ratio;
     item.repair_mode =

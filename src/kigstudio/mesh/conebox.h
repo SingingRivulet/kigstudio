@@ -258,6 +258,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette(
 // Delaunay 球面版本：将输入三角形的顶点投影到包围球上，
 // 用 CGAL 3D Delaunay 凸包做球面三角剖分，每个顶点以其原始
 // 到 center 的距离作为最小距离约束（始终命中，位置限制不小于此距离）。
+// edge_subdiv: 对输入三角形每条边进行等分采样。为 0 时仅插入三个顶点；
+//   大于 0 时，在三条边上额外插入 edge_subdiv 个等分点作为采样点。
 std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_delaunay(
     const std::vector<Triangle>& input_triangles,
     const vec3f& center,
@@ -265,7 +267,8 @@ std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_delaunay(
     const std::function<void(float, const std::string&)>& progress = nullptr,
     int icosahedron_subdiv = 4,
     float inner_wall_radius = 0.f,
-    float simplify_ratio = -1.f);
+    float simplify_ratio = -1.f,
+    int edge_subdiv = 0);
 
 // 旧版本：锥体裁剪 + 边界边提取实现，保留用于参考。
 std::vector<Triangle> build_closed_mesh_from_triangles_silhouette_old(

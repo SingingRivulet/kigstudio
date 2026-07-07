@@ -422,6 +422,9 @@ void init_locale_strings() {
     add_locale_string("label.silhouette_subdivision",
                       {{"en", "Icosahedron Subdivision"},
                        {"zh", "二十面体细分等级"}});
+    add_locale_string("label.silhouette_edge_subdiv",
+                      {{"en", "Edge Subdivision"},
+                       {"zh", "边等分采样"}});
     add_locale_string("label.inner_wall_radius",
                       {{"en", "Inner Wall Radius"},
                        {"zh", "内壁半径"}});
@@ -457,6 +460,9 @@ void init_locale_strings() {
     add_locale_string("tooltip.silhouette_subdivision",
                       {{"en", "Icosahedron Subdivision, the higher the value, the more accurate the silhouette, but the longer the calculation time."},
                        {"zh", "调整模型精度"}});
+    add_locale_string("tooltip.silhouette_edge_subdiv",
+                      {{"en", "Insert equally spaced sample points along each input triangle edge. Only used in Delaunay sphere mode."},
+                       {"zh", "在输入三角形每条边上插入等分采样点，仅在 Delaunay 球面模式下生效。"}});
 
     add_locale_string("action.update_collision",
                       {{"en", "update collision"}, {"zh", "更新碰撞"}});
