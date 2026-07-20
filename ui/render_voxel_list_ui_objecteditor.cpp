@@ -305,16 +305,29 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
     // 加载模式选择（File / Node 通用）
     const char* load_mode_names[] = {
         get_locale_cstr("label.stl_load_mode.default"),
-        get_locale_cstr("label.stl_load_mode.silhouette"),
         get_locale_cstr("label.stl_load_mode.surface_only"),
         get_locale_cstr("label.stl_load_mode.mesh_only"),
         get_locale_cstr("label.stl_load_mode.convex_hull"),
     };
-    int load_mode = item.stl_load_mode;
-    if (ImGui::Combo(get_locale_cstr("label.stl_load_mode"), &load_mode,
-                     load_mode_names, IM_ARRAYSIZE(load_mode_names))) {
+    const int load_mode_values[] = {
+        static_cast<int>(StlLoadMode::DEFAULT),
+        static_cast<int>(StlLoadMode::SURFACE_ONLY),
+        static_cast<int>(StlLoadMode::MESH_ONLY),
+        static_cast<int>(StlLoadMode::CONVEX_HULL),
+    };
+    constexpr int load_mode_count =
+        static_cast<int>(sizeof(load_mode_values) / sizeof(load_mode_values[0]));
+    int load_mode_idx = 0;
+    for (int i = 0; i < load_mode_count; ++i) {
+        if (load_mode_values[i] == item.stl_load_mode) {
+            load_mode_idx = i;
+            break;
+        }
+    }
+    if (ImGui::Combo(get_locale_cstr("label.stl_load_mode"), &load_mode_idx,
+                     load_mode_names, load_mode_count)) {
         push_undo_now(item.id, std::nullopt, "STL Load Mode");
-        item.stl_load_mode = load_mode;
+        item.stl_load_mode = load_mode_values[load_mode_idx];
         if (item.stl_load_mode ==
                 static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
             item.stl_load_mode ==
@@ -330,12 +343,9 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
     }
     if (ImGui::IsItemHovered()) {
         const char* tooltip_key = nullptr;
-        switch (load_mode) {
+        switch (item.stl_load_mode) {
             case static_cast<int>(StlLoadMode::DEFAULT):
                 tooltip_key = "tooltip.stl_load_mode.default";
-                break;
-            case static_cast<int>(StlLoadMode::SILHOUETTE):
-                tooltip_key = "tooltip.stl_load_mode.silhouette";
                 break;
             case static_cast<int>(StlLoadMode::SURFACE_ONLY):
                 tooltip_key = "tooltip.stl_load_mode.surface_only";
@@ -350,150 +360,6 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         if (tooltip_key) {
             ImGui::SetTooltip(get_locale_cstr(tooltip_key));
         }
-    }
-
-    // Silhouette 中心设置
-    if (item.stl_load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
-        item.showSilhouetteCenter = true;
-        auto center_result =
-            edit_vec3_stepper(get_locale_cstr("label.silhouette_center"),
-                              item.silhouette_center, 0.1f);
-        if (center_result.deactivated_after_edit) {
-            push_undo_now(item.id, std::nullopt, "Silhouette Center");
-        }
-        // Shape mode selector
-        const char* shape_mode_names[] = {
-            get_locale_cstr("label.silhouette_shape.icosahedron"),
-            get_locale_cstr("label.silhouette_shape.delaunay"),
-        };
-        int shape_mode = static_cast<int>(item.silhouette_shape_mode);
-        if (ImGui::Combo(get_locale_cstr("label.silhouette_shape_mode"),
-                         &shape_mode, shape_mode_names,
-                         IM_ARRAYSIZE(shape_mode_names))) {
-            push_undo_now(item.id, std::nullopt, "Silhouette Shape Mode");
-            item.silhouette_shape_mode =
-                static_cast<SilhouetteShapeMode>(shape_mode);
-        }
-
-        // Edge subdivision: only meaningful for Delaunay sphere mode.
-        if (item.silhouette_shape_mode ==
-            SilhouetteShapeMode::DELAUNAY_SPHERE) {
-            const float btn_w = ImGui::GetFrameHeight();
-            ImGui::TextUnformatted(
-                get_locale_cstr("label.silhouette_edge_subdiv"));
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    get_locale_cstr("tooltip.silhouette_edge_subdiv"));
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("-##silhouette_edge_subdiv",
-                              ImVec2(btn_w, 0))) {
-                if (item.silhouette_edge_subdiv > 0) {
-                    --item.silhouette_edge_subdiv;
-                    push_undo_now(item.id, std::nullopt,
-                                  "Silhouette Edge Subdivision");
-                }
-            }
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(80.0f);
-            if (ImGui::InputInt("##silhouette_edge_subdiv_val",
-                                &item.silhouette_edge_subdiv,
-                                0, 0,
-                                ImGuiInputTextFlags_CharsDecimal)) {
-                if (item.silhouette_edge_subdiv < 0)
-                    item.silhouette_edge_subdiv = 0;
-                push_undo_now(item.id, std::nullopt,
-                              "Silhouette Edge Subdivision");
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("+##silhouette_edge_subdiv",
-                              ImVec2(btn_w, 0))) {
-                ++item.silhouette_edge_subdiv;
-                push_undo_now(item.id, std::nullopt,
-                              "Silhouette Edge Subdivision");
-            }
-        }
-
-        const float btn_w = ImGui::GetFrameHeight();
-        ImGui::TextUnformatted(get_locale_cstr("label.silhouette_subdivision"));
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(get_locale_cstr("tooltip.silhouette_subdivision"));
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("-##silhouette_subdiv", ImVec2(btn_w, 0))) {
-            if (item.silhouette_subdivision > 1) {
-                --item.silhouette_subdivision;
-                push_undo_now(item.id, std::nullopt,
-                              "Silhouette Subdivision");
-            }
-        }
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(80.0f);
-        if (ImGui::InputInt("##silhouette_subdiv_val",
-                            &item.silhouette_subdivision,
-                            0, 0,
-                            ImGuiInputTextFlags_CharsDecimal)) {
-            if (item.silhouette_subdivision < 1)
-                item.silhouette_subdivision = 1;
-            push_undo_now(item.id, std::nullopt,
-                          "Silhouette Subdivision");
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("+##silhouette_subdiv", ImVec2(btn_w, 0))) {
-            ++item.silhouette_subdivision;
-            push_undo_now(item.id, std::nullopt,
-                          "Silhouette Subdivision");
-        }
-
-        // Inner wall radius
-        ImGui::TextUnformatted(get_locale_cstr("label.inner_wall_radius"));
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(get_locale_cstr("tooltip.inner_wall_radius"));
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("-##inner_wall", ImVec2(btn_w, 0))) {
-            item.inner_wall_radius = std::max(0.0f, item.inner_wall_radius - 0.5f);
-            push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
-        }
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(80.0f);
-        if (ImGui::InputFloat("##inner_wall_val", &item.inner_wall_radius,
-                              0.0f, 0.0f, "%.1f",
-                              ImGuiInputTextFlags_CharsDecimal)) {
-            if (item.inner_wall_radius < 0.0f)
-                item.inner_wall_radius = 0.0f;
-            push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("+##inner_wall", ImVec2(btn_w, 0))) {
-            item.inner_wall_radius += 0.5f;
-            push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
-        }
-        ImGui::SameLine();
-        if (ImGui::Button(get_locale_cstr("label.inner_wall_reset"))) {
-            float nearest = item.origin_mesh_renderer.get_min_distance(
-                item.silhouette_center);
-            item.inner_wall_radius = std::max(0.0f, nearest - 1.f);
-            push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
-        }
-
-        // Simplify checkbox + slider
-        bool simplify_enabled = (item.simplify_ratio >= 0.0f);
-        if (ImGui::Checkbox("##simplify_enable", &simplify_enabled)) {
-            item.simplify_ratio = simplify_enabled ? 0.15f : -1.0f;
-            push_undo_now(item.id, std::nullopt, "Simplify");
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted(get_locale_cstr("label.simplify_ratio"));
-        ImGui::SameLine();
-        if (!simplify_enabled) ImGui::BeginDisabled();
-        ImGui::SetNextItemWidth(120.0f);
-        if (ImGui::SliderFloat("##simplify_slider", &item.simplify_ratio,
-                               0.01f, 1.0f, "%.2f")) {
-            if (item.simplify_ratio < 0.01f) item.simplify_ratio = 0.01f;
-            push_undo_now(item.id, std::nullopt, "Simplify Ratio");
-        }
-        if (!simplify_enabled) ImGui::EndDisabled();
     }
 
     if (item.source_type == 0) {
@@ -1083,20 +949,24 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
                     &item.showOriginMesh);
 
     if (item.mesh_only) {
-        // mesh_only 模型支持 Plane、Repair Mesh 与 Subdivide Mesh 三种处理模式
+        // mesh_only 模型支持 Plane、Repair Mesh、Subdivide Mesh 与 Silhouette 四种处理模式
         const char* mesh_only_mode_names[] = {
             get_locale_cstr("mode.plane"),
             get_locale_cstr("mode.repair"),
-            get_locale_cstr("mode.subdivide")};
+            get_locale_cstr("mode.subdivide"),
+            get_locale_cstr("mode.silhouette")};
         const enum RenderVoxelItem::SegmentMode mesh_only_modes[] = {
             RenderVoxelItem::PLANE,
             RenderVoxelItem::REPAIR_MESH,
-            RenderVoxelItem::SUBDIVIDE_MESH};
+            RenderVoxelItem::SUBDIVIDE_MESH,
+            RenderVoxelItem::SILHOUETTE};
         int current_mesh_only_mode = 0;
         if (item.segment_mode == RenderVoxelItem::REPAIR_MESH)
             current_mesh_only_mode = 1;
         else if (item.segment_mode == RenderVoxelItem::SUBDIVIDE_MESH)
             current_mesh_only_mode = 2;
+        else if (item.segment_mode == RenderVoxelItem::SILHOUETTE)
+            current_mesh_only_mode = 3;
         if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
                          &current_mesh_only_mode, mesh_only_mode_names,
                          IM_ARRAYSIZE(mesh_only_mode_names))) {
@@ -1121,7 +991,14 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
             RenderVoxelItem::NEIGHBOR,     RenderVoxelItem::FILL_INTERIOR,
             RenderVoxelItem::CHAIN,        RenderVoxelItem::SDF_NODE_SPLIT,
             RenderVoxelItem::SUBDIVIDE_MESH};
-        int current_segment_mode = segment_modes[(int)item.segment_mode];
+        int current_segment_mode = 0;
+        for (int i = 0; i < static_cast<int>(IM_ARRAYSIZE(segment_modes));
+             ++i) {
+            if (segment_modes[i] == item.segment_mode) {
+                current_segment_mode = i;
+                break;
+            }
+        }
         if (ImGui::Combo(get_locale_cstr("label.segment_mode"),
                          &current_segment_mode, segment_mode_names,
                          IM_ARRAYSIZE(segment_mode_names))) {
@@ -1165,6 +1042,9 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
             case RenderVoxelItem::SUBDIVIDE_MESH:
                 tooltip_key = "tooltip.mode.subdivide";
                 break;
+            case RenderVoxelItem::SILHOUETTE:
+                tooltip_key = "tooltip.mode.silhouette";
+                break;
         }
         if (tooltip_key) {
             ImGui::BeginTooltip();
@@ -1194,6 +1074,8 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
         render_object_editor_repair_mode(item);
     } else if (item.segment_mode == RenderVoxelItem::SUBDIVIDE_MESH) {
         render_object_editor_subdivide_mode(item);
+    } else if (item.segment_mode == RenderVoxelItem::SILHOUETTE) {
+        render_object_editor_silhouette_mode(item);
     }
 }
 
@@ -1270,6 +1152,148 @@ void RenderVoxelList::render_object_editor_subdivide_mode(
     RenderVoxelItem& item) {
     ImGui::DragInt(get_locale_cstr("label.subdivide_level"),
                    &item.subdivide_level, 1, 1, 10);
+}
+
+void RenderVoxelList::render_object_editor_silhouette_mode(
+    RenderVoxelItem& item) {
+    item.showSilhouetteCenter = true;
+
+    // 轮廓中心
+    auto center_result =
+        edit_vec3_stepper(get_locale_cstr("label.silhouette_center"),
+                          item.silhouette_center, 0.1f);
+    if (center_result.deactivated_after_edit) {
+        push_undo_now(item.id, std::nullopt, "Silhouette Center");
+    }
+
+    // Shape mode selector
+    const char* shape_mode_names[] = {
+        get_locale_cstr("label.silhouette_shape.icosahedron"),
+        get_locale_cstr("label.silhouette_shape.delaunay"),
+    };
+    int shape_mode = static_cast<int>(item.silhouette_shape_mode);
+    if (ImGui::Combo(get_locale_cstr("label.silhouette_shape_mode"),
+                     &shape_mode, shape_mode_names,
+                     IM_ARRAYSIZE(shape_mode_names))) {
+        push_undo_now(item.id, std::nullopt, "Silhouette Shape Mode");
+        item.silhouette_shape_mode =
+            static_cast<SilhouetteShapeMode>(shape_mode);
+    }
+
+    // Edge subdivision: only meaningful for Delaunay sphere mode.
+    if (item.silhouette_shape_mode == SilhouetteShapeMode::DELAUNAY_SPHERE) {
+        const float btn_w = ImGui::GetFrameHeight();
+        ImGui::TextUnformatted(
+            get_locale_cstr("label.silhouette_edge_subdiv"));
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                get_locale_cstr("tooltip.silhouette_edge_subdiv"));
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("-##silhouette_edge_subdiv", ImVec2(btn_w, 0))) {
+            if (item.silhouette_edge_subdiv > 0) {
+                --item.silhouette_edge_subdiv;
+                push_undo_now(item.id, std::nullopt,
+                              "Silhouette Edge Subdivision");
+            }
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.0f);
+        if (ImGui::InputInt("##silhouette_edge_subdiv_val",
+                            &item.silhouette_edge_subdiv, 0, 0,
+                            ImGuiInputTextFlags_CharsDecimal)) {
+            if (item.silhouette_edge_subdiv < 0)
+                item.silhouette_edge_subdiv = 0;
+            push_undo_now(item.id, std::nullopt,
+                          "Silhouette Edge Subdivision");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("+##silhouette_edge_subdiv", ImVec2(btn_w, 0))) {
+            ++item.silhouette_edge_subdiv;
+            push_undo_now(item.id, std::nullopt,
+                          "Silhouette Edge Subdivision");
+        }
+    }
+
+    const float btn_w = ImGui::GetFrameHeight();
+    ImGui::TextUnformatted(get_locale_cstr("label.silhouette_subdivision"));
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(get_locale_cstr("tooltip.silhouette_subdivision"));
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("-##silhouette_subdiv", ImVec2(btn_w, 0))) {
+        if (item.silhouette_subdivision > 1) {
+            --item.silhouette_subdivision;
+            push_undo_now(item.id, std::nullopt, "Silhouette Subdivision");
+        }
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80.0f);
+    if (ImGui::InputInt("##silhouette_subdiv_val",
+                        &item.silhouette_subdivision, 0, 0,
+                        ImGuiInputTextFlags_CharsDecimal)) {
+        if (item.silhouette_subdivision < 1)
+            item.silhouette_subdivision = 1;
+        push_undo_now(item.id, std::nullopt, "Silhouette Subdivision");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("+##silhouette_subdiv", ImVec2(btn_w, 0))) {
+        ++item.silhouette_subdivision;
+        push_undo_now(item.id, std::nullopt, "Silhouette Subdivision");
+    }
+
+    // Inner wall radius
+    ImGui::TextUnformatted(get_locale_cstr("label.inner_wall_radius"));
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(get_locale_cstr("tooltip.inner_wall_radius"));
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("-##inner_wall", ImVec2(btn_w, 0))) {
+        item.inner_wall_radius =
+            std::max(0.0f, item.inner_wall_radius - 0.5f);
+        push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80.0f);
+    if (ImGui::InputFloat("##inner_wall_val", &item.inner_wall_radius, 0.0f,
+                          0.0f, "%.1f", ImGuiInputTextFlags_CharsDecimal)) {
+        if (item.inner_wall_radius < 0.0f)
+            item.inner_wall_radius = 0.0f;
+        push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("+##inner_wall", ImVec2(btn_w, 0))) {
+        item.inner_wall_radius += 0.5f;
+        push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(get_locale_cstr("label.inner_wall_reset"))) {
+        // do_segment 生成的 mesh_only 子节点没有 origin mesh，回退用当前 mesh
+        const auto& distance_mesh =
+            item.origin_mesh_renderer.empty() ? item.mesh_renderer
+                                              : item.origin_mesh_renderer;
+        float nearest = distance_mesh.get_min_distance(item.silhouette_center);
+        item.inner_wall_radius = std::max(0.0f, nearest - 1.f);
+        push_undo_now(item.id, std::nullopt, "Inner Wall Radius");
+    }
+
+    // Simplify checkbox + slider
+    bool simplify_enabled = (item.simplify_ratio >= 0.0f);
+    if (ImGui::Checkbox("##simplify_enable", &simplify_enabled)) {
+        item.simplify_ratio = simplify_enabled ? 0.15f : -1.0f;
+        push_undo_now(item.id, std::nullopt, "Simplify");
+    }
+    ImGui::SameLine();
+    ImGui::TextUnformatted(get_locale_cstr("label.simplify_ratio"));
+    ImGui::SameLine();
+    if (!simplify_enabled) ImGui::BeginDisabled();
+    ImGui::SetNextItemWidth(120.0f);
+    if (ImGui::SliderFloat("##simplify_slider", &item.simplify_ratio, 0.01f,
+                           1.0f, "%.2f")) {
+        if (item.simplify_ratio < 0.01f) item.simplify_ratio = 0.01f;
+        push_undo_now(item.id, std::nullopt, "Simplify Ratio");
+    }
+    if (!simplify_enabled) ImGui::EndDisabled();
 }
 
 void RenderVoxelList::render_object_editor_repair_mode(

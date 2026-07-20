@@ -390,8 +390,7 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
             }
         }
     }
-    if (showSilhouetteCenter &&
-        stl_load_mode == static_cast<int>(StlLoadMode::SILHOUETTE)) {
+    if (showSilhouetteCenter && mesh_only && segment_mode == SILHOUETTE) {
         if (mesh_shader.ensureLineProgram()) {
             bgfx::VertexLayout& layout = concave_cone_overlay_layout();
             const uint32_t center_color = pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);

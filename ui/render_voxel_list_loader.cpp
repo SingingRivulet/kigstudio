@@ -57,6 +57,9 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
         case RenderVoxelItem::REPAIR_MESH:
             mode_str = "repair_mesh";
             break;
+        case RenderVoxelItem::SILHOUETTE:
+            mode_str = "silhouette";
+            break;
         default:
             mode_str = "collision";
             break;
@@ -341,6 +344,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->segment_mode = RenderVoxelItem::SUBDIVIDE_MESH;
             } else if (strcmp(mode_str, "repair_mesh") == 0) {
                 item->segment_mode = RenderVoxelItem::REPAIR_MESH;
+            } else if (strcmp(mode_str, "silhouette") == 0) {
+                item->segment_mode = RenderVoxelItem::SILHOUETTE;
             } else {
                 item->segment_mode = RenderVoxelItem::COLLISION;
             }
@@ -541,6 +546,9 @@ cJSON* RenderVoxelList::snapshot_to_json(
             break;
         case RenderVoxelItem::REPAIR_MESH:
             mode_str = "repair_mesh";
+            break;
+        case RenderVoxelItem::SILHOUETTE:
+            mode_str = "silhouette";
             break;
         default:
             mode_str = "collision";
@@ -792,6 +800,8 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.segment_mode = RenderVoxelItem::SUBDIVIDE_MESH;
             } else if (strcmp(mode_str, "repair_mesh") == 0) {
                 snapshot.segment_mode = RenderVoxelItem::REPAIR_MESH;
+            } else if (strcmp(mode_str, "silhouette") == 0) {
+                snapshot.segment_mode = RenderVoxelItem::SILHOUETTE;
             } else {
                 snapshot.segment_mode = RenderVoxelItem::COLLISION;
             }

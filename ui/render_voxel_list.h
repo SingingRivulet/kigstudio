@@ -295,6 +295,7 @@ class RenderVoxelList {
             SDF_NODE_SPLIT = 7,
             SUBDIVIDE_MESH = 8, // 细分三角形网格，输出更密的 mesh
             REPAIR_MESH = 9, // 这是处理mesh的专用模式，不会输出体素和SDF
+            SILHOUETTE = 10, // 锥化：由输入网格生成封闭轮廓网格，不输出体素和SDF
         } segment_mode = COLLISION;
 
         enum RepairMeshMode {
@@ -624,8 +625,10 @@ class RenderVoxelList {
     void render_object_editor_sdf_node_split_mode(RenderVoxelItem& item);
     void render_object_editor_repair_mode(RenderVoxelItem& item);
     void render_object_editor_subdivide_mode(RenderVoxelItem& item);
+    void render_object_editor_silhouette_mode(RenderVoxelItem& item);
     void render_object_editor_voxel_tab_content(RenderVoxelItem& item);
     void render_object_editor_comment_tab_content(RenderVoxelItem& item);
+    // void render_object_editor_addons(RenderVoxelItem& item);
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_concave_cone_editor(RenderVoxelItem& item);
@@ -836,6 +839,8 @@ class RenderVoxelList {
     do_repair_mesh(const RenderVoxelItem& item);
     std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
     do_subdivide_mesh(const RenderVoxelItem& item);
+    std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
+    do_silhouette_mesh(const RenderVoxelItem& item);
     void extract_skeleton(int index);
 
     void load_stl(std::string filename,

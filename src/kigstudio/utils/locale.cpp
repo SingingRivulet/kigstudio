@@ -845,6 +845,8 @@ void init_locale_strings() {
                       {{"en", "Repair Mesh"}, {"zh", "修复网格"}});
     add_locale_string("mode.subdivide",
                       {{"en", "Subdivide Mesh"}, {"zh", "细分网格"}});
+    add_locale_string("mode.silhouette",
+                      {{"en", "Silhouette"}, {"zh", "锥化"}});
     add_locale_string("label.subdivide_level",
                       {{"en", "subdivide level"}, {"zh", "细分级别"}});
 
@@ -991,6 +993,12 @@ void init_locale_strings() {
           "Subdivide the input mesh into a denser triangle mesh without "
           "generating voxels or SDF."},
          {"zh", "细分输入网格为更密的三角形网格，不生成体素和SDF。"}});
+    add_locale_string(
+        "tooltip.mode.silhouette",
+        {{"en",
+          "Generate a closed silhouette (tapered) mesh from the input mesh "
+          "without generating voxels or SDF."},
+         {"zh", "由输入网格生成封闭的锥化网格，不生成体素和SDF。"}});
     add_locale_string("mode.repair.alpha_wrap",
                       {{"en", "Alpha Wrap"}, {"zh", "Alpha包裹"}});
     add_locale_string("mode.repair.fill_holes",

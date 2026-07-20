@@ -678,6 +678,30 @@ std::vector<RepairTriangle> RenderVoxelList::do_subdivide_mesh(
     return mesh_data_to_triangles(subdivided);
 }
 
+std::vector<RepairTriangle> RenderVoxelList::do_silhouette_mesh(
+    const RenderVoxelItem& item) {
+    setQueueStatus(get_locale_string("status.generating_silhouette_mesh"));
+    auto should_continue = [&]() {
+        return queue_should_continue.load() && queue_running.load();
+    };
+    auto progress = [&](float t, const std::string& step) {
+        queue_progress = t * 0.7f;
+        setQueueStatus(step);
+    };
+    if (item.silhouette_shape_mode == SilhouetteShapeMode::DELAUNAY_SPHERE) {
+        return sinriv::kigstudio::mesh::conebox::
+            build_closed_mesh_from_triangles_silhouette_delaunay(
+                item.source_triangles, item.silhouette_center, should_continue,
+                progress, item.silhouette_subdivision, item.inner_wall_radius,
+                item.simplify_ratio, item.silhouette_edge_subdiv);
+    }
+    return sinriv::kigstudio::mesh::conebox::
+        build_closed_mesh_from_triangles_silhouette(
+            item.source_triangles, item.silhouette_center, should_continue,
+            progress, item.silhouette_subdivision, item.inner_wall_radius,
+            item.simplify_ratio);
+}
+
 std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
     int index) {
     locker.lock();
@@ -714,6 +738,12 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
                        RenderVoxelItem::SUBDIVIDE_MESH) {
                 auto subdivided = do_subdivide_mesh(*it->second);
                 mesh_split_results.push_back(std::move(subdivided));
+                sinriv::kigstudio::voxel::VoxelGrid dummy;
+                results.emplace_back(std::move(dummy), nullptr);
+            } else if (it->second->segment_mode ==
+                       RenderVoxelItem::SILHOUETTE) {
+                auto tapered = do_silhouette_mesh(*it->second);
+                mesh_split_results.push_back(std::move(tapered));
                 sinriv::kigstudio::voxel::VoxelGrid dummy;
                 results.emplace_back(std::move(dummy), nullptr);
             } else {
@@ -836,6 +866,17 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
         }
         if (it->second->segment_mode == RenderVoxelItem::SUBDIVIDE_MESH) {
             new_item->subdivide_level = it->second->subdivide_level;
+        }
+        if (it->second->segment_mode == RenderVoxelItem::SILHOUETTE) {
+            new_item->silhouette_center = it->second->silhouette_center;
+            new_item->silhouette_shape_mode =
+                it->second->silhouette_shape_mode;
+            new_item->silhouette_subdivision =
+                it->second->silhouette_subdivision;
+            new_item->silhouette_edge_subdiv =
+                it->second->silhouette_edge_subdiv;
+            new_item->inner_wall_radius = it->second->inner_wall_radius;
+            new_item->simplify_ratio = it->second->simplify_ratio;
         }
         if (it->second->mesh_only && i < mesh_split_results.size()) {
             new_item->mesh_only = true;

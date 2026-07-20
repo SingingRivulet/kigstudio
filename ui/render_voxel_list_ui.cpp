@@ -546,30 +546,45 @@ void RenderVoxelList::render_file_loader() {
             }
             const char* load_mode_names[] = {
                 get_locale_cstr("label.stl_load_mode.default"),
-                get_locale_cstr("label.stl_load_mode.silhouette"),
                 get_locale_cstr("label.stl_load_mode.surface_only"),
                 get_locale_cstr("label.stl_load_mode.mesh_only"),
                 get_locale_cstr("label.stl_load_mode.convex_hull"),
             };
-            ImGui::Combo(get_locale_cstr("label.stl_load_mode"),
-                         &file_loader_load_mode, load_mode_names,
-                         IM_ARRAYSIZE(load_mode_names));
+            const int load_mode_values[] = {
+                static_cast<int>(StlLoadMode::DEFAULT),
+                static_cast<int>(StlLoadMode::SURFACE_ONLY),
+                static_cast<int>(StlLoadMode::MESH_ONLY),
+                static_cast<int>(StlLoadMode::CONVEX_HULL),
+            };
+            constexpr int load_mode_count =
+                static_cast<int>(sizeof(load_mode_values) /
+                                 sizeof(load_mode_values[0]));
+            int current_load_mode_idx = 0;
+            for (int i = 0; i < load_mode_count; ++i) {
+                if (load_mode_values[i] == file_loader_load_mode) {
+                    current_load_mode_idx = i;
+                    break;
+                }
+            }
+            if (ImGui::Combo(get_locale_cstr("label.stl_load_mode"),
+                             &current_load_mode_idx, load_mode_names,
+                             load_mode_count)) {
+                file_loader_load_mode =
+                    load_mode_values[current_load_mode_idx];
+            }
             if (ImGui::IsItemHovered()) {
                 const char* tooltip_key = nullptr;
                 switch (file_loader_load_mode) {
-                    case 0:
+                    case static_cast<int>(StlLoadMode::DEFAULT):
                         tooltip_key = "tooltip.stl_load_mode.default";
                         break;
-                    case 1:
-                        tooltip_key = "tooltip.stl_load_mode.silhouette";
-                        break;
-                    case 2:
+                    case static_cast<int>(StlLoadMode::SURFACE_ONLY):
                         tooltip_key = "tooltip.stl_load_mode.surface_only";
                         break;
-                    case 3:
+                    case static_cast<int>(StlLoadMode::MESH_ONLY):
                         tooltip_key = "tooltip.stl_load_mode.mesh_only";
                         break;
-                    case 4:
+                    case static_cast<int>(StlLoadMode::CONVEX_HULL):
                         tooltip_key = "tooltip.stl_load_mode.convex_hull";
                         break;
                 }
