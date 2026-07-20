@@ -66,8 +66,8 @@ sinriv::kigstudio::voxel::vec3f transform_point(
 void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     const float* transform,
     sinriv::ui::render::RenderMeshShader& mesh_shader) {
-    mesh_renderer.cull_backface = !mesh_only;
-    exported_mesh_renderer.cull_backface = !mesh_only;
+    mesh_renderer.cull_backface = false;
+    exported_mesh_renderer.cull_backface = false;
     if (showMesh) {
         mesh_renderer.renderGBuffer(transform, mesh_shader);
     }
