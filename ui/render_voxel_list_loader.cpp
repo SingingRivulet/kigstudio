@@ -105,6 +105,25 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddBoolToObject(obj, "mesh_only", item.mesh_only);
     cJSON_AddNumberToObject(obj, "source_type", item.source_type);
     cJSON_AddNumberToObject(obj, "source_node_id", item.source_node_id);
+    cJSON_AddNumberToObject(obj, "addon_base_node_id", item.addon_base_node_id);
+    cJSON_AddNumberToObject(obj, "addon_type", item.addon_type);
+    // hair strands
+    if (!item.hair_strands.empty()) {
+        cJSON* strands_arr = cJSON_CreateArray();
+        for (const auto& strand : item.hair_strands) {
+            cJSON* s_obj = cJSON_CreateObject();
+            cJSON_AddStringToObject(s_obj, "name", strand.name.c_str());
+            cJSON_AddBoolToObject(s_obj, "expanded", strand.expanded);
+            cJSON* pts_arr = cJSON_CreateArray();
+            for (const auto& pt : strand.guide_points) {
+                cJSON_AddItemToArray(pts_arr,
+                    sinriv::kigstudio::to_json(pt));
+            }
+            cJSON_AddItemToObject(s_obj, "guide_points", pts_arr);
+            cJSON_AddItemToArray(strands_arr, s_obj);
+        }
+        cJSON_AddItemToObject(obj, "hair_strands", strands_arr);
+    }
     cJSON_AddNumberToObject(obj, "node_source_data_type",
                             item.node_source_data_type);
     cJSON_AddNumberToObject(obj, "node_source_sdf_subdivisions",
@@ -367,6 +386,36 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->source_type = child->valueint;
             } else if (strcmp(key, "source_node_id") == 0) {
                 item->source_node_id = child->valueint;
+            } else if (strcmp(key, "addon_base_node_id") == 0) {
+                item->addon_base_node_id = child->valueint;
+            } else if (strcmp(key, "addon_type") == 0) {
+                item->addon_type = child->valueint;
+            } else if (strcmp(key, "hair_strands") == 0) {
+                item->hair_strands.clear();
+                if (cJSON_IsArray(child)) {
+                    int strand_count = cJSON_GetArraySize(child);
+                    for (int si = 0; si < strand_count; ++si) {
+                        cJSON* s_obj = cJSON_GetArrayItem(child, si);
+                        if (!s_obj) continue;
+                        HairStrand strand;
+                        cJSON* name_obj = cJSON_GetObjectItem(s_obj, "name");
+                        if (name_obj && cJSON_IsString(name_obj))
+                            strand.name = name_obj->valuestring;
+                        cJSON* exp_obj = cJSON_GetObjectItem(s_obj, "expanded");
+                        if (exp_obj)
+                            strand.expanded = exp_obj->valueint != 0;
+                        cJSON* pts_arr = cJSON_GetObjectItem(s_obj, "guide_points");
+                        if (pts_arr && cJSON_IsArray(pts_arr)) {
+                            int pt_count = cJSON_GetArraySize(pts_arr);
+                            for (int pi = 0; pi < pt_count; ++pi) {
+                                cJSON* pt_obj = cJSON_GetArrayItem(pts_arr, pi);
+                                vec3f pt = sinriv::kigstudio::vec3_from_json<vec3f>(pt_obj);
+                                strand.guide_points.push_back(pt);
+                            }
+                        }
+                        item->hair_strands.push_back(std::move(strand));
+                    }
+                }
             } else if (strcmp(key, "node_source_data_type") == 0) {
                 item->node_source_data_type = child->valueint;
             } else if (strcmp(key, "node_source_sdf_subdivisions") == 0) {

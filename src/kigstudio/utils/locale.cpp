@@ -1184,6 +1184,52 @@ void init_locale_strings() {
                       {{"en", "File"}, {"zh", "文件"}});
     add_locale_string("label.source_node",
                       {{"en", "Node"}, {"zh", "节点"}});
+    add_locale_string("label.source_addon",
+                      {{"en", "Addon"}, {"zh", "附加件"}});
+    add_locale_string("window.addon_editor",
+                      {{"en", "Addon Editor"}, {"zh", "附加件编辑器"}});
+    add_locale_string("label.addon_base_model",
+                      {{"en", "Base Model Node"}, {"zh", "底模节点"}});
+    add_locale_string("label.addon_no_base_selected",
+                      {{"en", "Select a node with SDF data as the base model."},
+                       {"zh", "选择一个有SDF数据的节点作为底模。"}});
+    add_locale_string("label.addon_no_sdf_nodes",
+                      {{"en", "No nodes with SDF data available."},
+                       {"zh", "没有可用的带SDF数据的节点。"}});
+    add_locale_string("action.addon_apply_base",
+                      {{"en", "Apply Base Model"}, {"zh", "应用底模"}});
+    add_locale_string("label.addon_base_applied",
+                      {{"en", "Base model applied: Node %d"},
+                       {"zh", "底模已应用: 节点 %d"}});
+    add_locale_string("label.addon_type",
+                      {{"en", "Addon Type"}, {"zh", "附加件类型"}});
+    add_locale_string("label.addon_type_hair",
+                      {{"en", "Hair"}, {"zh", "毛发"}});
+    add_locale_string("action.add_hair_strand",
+                      {{"en", "Add Hair Strand"}, {"zh", "添加发束"}});
+    add_locale_string("label.hair_strand",
+                      {{"en", "Strand %d"}, {"zh", "发束 %d"}});
+    add_locale_string("action.move_up",
+                      {{"en", "Up"}, {"zh", "上移"}});
+    add_locale_string("action.move_down",
+                      {{"en", "Down"}, {"zh", "下移"}});
+    add_locale_string("action.draw_guide_curve",
+                      {{"en", "Draw Guide Curve"}, {"zh", "绘制引导曲线"}});
+    add_locale_string("action.stop_drawing",
+                      {{"en", "Stop Drawing"}, {"zh", "停止绘制"}});
+    add_locale_string("window.guide_curve",
+                      {{"en", "Guide Curve Editor"}, {"zh", "引导曲线编辑器"}});
+    add_locale_string("label.guide_curve_points",
+                      {{"en", "Guide Curve Points: %d"}, {"zh", "引导曲线点数: %d"}});
+    add_locale_string("label.guide_point",
+                      {{"en", "Point %d"}, {"zh", "点 %d"}});
+    add_locale_string("label.no_guide_points",
+                      {{"en", "Click on the base model to add guide curve points."},
+                       {"zh", "在底模上点击以添加引导曲线点。"}});
+    add_locale_string("action.delete_strand",
+                      {{"en", "Delete"}, {"zh", "删除"}});
+    add_locale_string("action.clear_guide_points",
+                      {{"en", "Clear Points"}, {"zh", "清空点"}});
     add_locale_string("label.source_node_id",
                       {{"en", "Source Node"}, {"zh", "源节点"}});
     add_locale_string("label.source_data_mesh",

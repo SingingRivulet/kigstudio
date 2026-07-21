@@ -123,6 +123,21 @@ struct SkeletonPointPick {
     float rotation_angle = 0.f;
 };
 
+// 附加件类型
+enum class AddonType : int {
+    HAIR = 0,  // 毛发
+    COUNT
+};
+
+// 一根发束
+struct HairStrand {
+    std::string name;
+    // 引导曲线上的拾取点（世界坐标）
+    std::vector<sinriv::kigstudio::voxel::vec3f> guide_points;
+    // UI 折叠状态
+    bool expanded = true;
+};
+
 struct EditResult {
     bool activated = false;
     bool deactivated_after_edit = false;
@@ -319,6 +334,16 @@ class RenderVoxelList {
         // 下层模型。RenderMesh 持有 bgfx 句柄且不可拷贝，用 deque 存放
         // 以避免插入时搬移元素
         std::deque<sinriv::ui::render::RenderMesh> addon_renderers;
+
+        // 附加件模式：选中的底模节点ID（-1表示未选择）
+        int addon_base_node_id = -1;
+        // 附加件类型（0=毛发）
+        int addon_type = 0;
+        // 毛发数据
+        std::vector<HairStrand> hair_strands;
+        // 当前正在绘制引导曲线的发束索引（-1表示无）
+        int active_guide_draw_strand = -1;
+        bool guide_curve_drawing_active = false;
         sinriv::ui::render::RenderVoxel voxel_renderer;
         sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
         kdtree::KDTree mesh_kd_tree;  // 三角形顶点的kd树，用于实现自动吸附
@@ -634,7 +659,10 @@ class RenderVoxelList {
     void render_object_editor_silhouette_mode(RenderVoxelItem& item);
     void render_object_editor_voxel_tab_content(RenderVoxelItem& item);
     void render_object_editor_comment_tab_content(RenderVoxelItem& item);
-    // void render_object_editor_addons(RenderVoxelItem& item);
+    void render_object_editor_addons();
+    void render_guide_curve_window();
+    bool show_addon_window = false;
+    bool show_guide_curve_window = false;
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_concave_cone_editor(RenderVoxelItem& item);

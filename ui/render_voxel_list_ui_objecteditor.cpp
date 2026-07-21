@@ -301,6 +301,103 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         push_undo_now(item.id, std::nullopt, "Source Type");
         item.source_type = source_type;
     }
+    ImGui::SameLine();
+    if (ImGui::RadioButton(get_locale_cstr("label.source_addon"), &source_type,
+                           2)) {
+        push_undo_now(item.id, std::nullopt, "Source Type");
+        item.source_type = source_type;
+    }
+
+    // 附加件模式：显示专用UI
+    if (item.source_type == 2) {
+        ImGui::Separator();
+        // 底模节点选择器
+        std::vector<std::pair<int, std::string>> sdf_candidates;
+        if (item.manager) {
+            for (auto& [other_id, other] : item.manager->items) {
+                if (other_id == item.id)
+                    continue;
+                // 只列出有SDF数据的节点
+                if (!other->sdf_data)
+                    continue;
+                sdf_candidates.push_back(
+                    {other_id, "Node " + std::to_string(other_id)});
+            }
+        }
+        if (sdf_candidates.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "%s",
+                               get_locale_cstr("label.addon_no_sdf_nodes"));
+        } else {
+            int current_base = -1;
+            std::vector<const char*> sdf_names;
+            for (size_t i = 0; i < sdf_candidates.size(); ++i) {
+                sdf_names.push_back(sdf_candidates[i].second.c_str());
+                if (sdf_candidates[i].first == item.addon_base_node_id) {
+                    current_base = static_cast<int>(i);
+                }
+            }
+            if (ImGui::Combo(get_locale_cstr("label.addon_base_model"),
+                             &current_base, sdf_names.data(),
+                             static_cast<int>(sdf_candidates.size()))) {
+                push_undo_now(item.id, std::nullopt, "Addon Base Node");
+                if (current_base >= 0 &&
+                    current_base < static_cast<int>(sdf_candidates.size())) {
+                    item.addon_base_node_id = sdf_candidates[current_base].first;
+                }
+            }
+
+            if (item.addon_base_node_id >= 0) {
+                ImGui::Text(get_locale_cstr("label.addon_base_applied"),
+                            item.addon_base_node_id);
+            }
+
+            ImGui::Separator();
+            if (ImGui::Button(get_locale_cstr("action.addon_apply_base"))) {
+                if (item.addon_base_node_id >= 0 && item.manager) {
+                    auto base_it = item.manager->items.find(
+                        item.addon_base_node_id);
+                    if (base_it != item.manager->items.end()) {
+                        auto& base = *base_it->second;
+                        // 从源节点加载网格到origin_mesh_renderer
+                        if (!base.cached_mesh.empty()) {
+                            item.origin_mesh_renderer.clear();
+                            item.origin_mesh_renderer.loadGeometry(
+                                base.cached_mesh);
+                        } else if (!base.source_triangles.empty()) {
+                            item.origin_mesh_renderer.clear();
+                            std::vector<std::tuple<
+                                sinriv::kigstudio::voxel::Triangle,
+                                sinriv::kigstudio::voxel::vec3f>>
+                                triangles;
+                            triangles.reserve(base.source_triangles.size());
+                            for (const auto& tri : base.source_triangles) {
+                                triangles.push_back(
+                                    {tri,
+                                     sinriv::kigstudio::voxel::calcTriangleNormal(
+                                         tri)});
+                            }
+                            item.origin_mesh_renderer.loadGeometry(triangles);
+                        } else if (!base.mesh_renderer.empty()) {
+                            // 如果源节点没有source_triangles，尝试复制mesh
+                            // 由于RenderMesh不可拷贝，此处通过重新体素化网格来获取
+                            // 暂时跳过，等待后续完善
+                        }
+                        // 设置粉色
+                        item.origin_mesh_renderer.setBaseColor(1.0f, 0.4f, 0.6f,
+                                                              1.0f);
+                        item.showOriginMesh = true;
+                    }
+                }
+            }
+        }
+        // 仅在附加件模式下显示底部信息区域
+        ImGui::Separator();
+        if (item.addon_base_node_id < 0) {
+            ImGui::TextWrapped("%s",
+                               get_locale_cstr("label.addon_no_base_selected"));
+        }
+        return;  // 附加件模式不显示后面的通用加载模式等UI
+    }
 
     // 加载模式选择（File / Node 通用）
     const char* load_mode_names[] = {
@@ -744,6 +841,291 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             }
         }
     }
+}
+
+void RenderVoxelList::render_object_editor_addons() {
+    // 窗口是否可见取决于当前选中节点是否为附加件模式
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto item_it = items.find(render_id);
+        if (item_it == items.end() || item_it->second->source_type != 2) {
+            show_addon_window = false;
+            return;
+        }
+    }
+
+    show_addon_window = true;
+
+    // 无关闭按钮，窗口随附加件模式自动显示/隐藏
+    ImGui::SetNextWindowSize(ImVec2(360, 400), ImGuiCond_Once);
+    if (!ImGui::Begin(get_locale_cstr("window.addon_editor"), nullptr,
+                      ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(locker);
+    auto item_it = items.find(render_id);
+    if (item_it == items.end()) {
+        ImGui::TextUnformatted(get_locale_cstr("label.no_active_item"));
+        ImGui::End();
+        return;
+    }
+
+    RenderVoxelItem& item = *item_it->second;
+
+    // 确保当前节点是附加件模式（二次检查，持有锁）
+    if (item.source_type != 2) {
+        ImGui::End();
+        return;
+    }
+
+    // 底模可见性
+    ImGui::Checkbox(get_locale_cstr("label.show_origin_mesh"),
+                    &item.showOriginMesh);
+    ImGui::SameLine();
+    if (item.addon_base_node_id >= 0 && !item.origin_mesh_renderer.empty()) {
+        ImGui::Text(get_locale_cstr("label.addon_base_applied"),
+                    item.addon_base_node_id);
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "%s",
+                           get_locale_cstr("label.addon_no_base_selected"));
+    }
+
+    ImGui::Separator();
+
+    // 附加件类型下拉框
+    const char* addon_type_names[] = {
+        get_locale_cstr("label.addon_type_hair"),
+    };
+    if (ImGui::Combo(get_locale_cstr("label.addon_type"), &item.addon_type,
+                     addon_type_names,
+                     static_cast<int>(AddonType::COUNT))) {
+        push_undo_now(item.id, std::nullopt, "Addon Type");
+    }
+
+    ImGui::Separator();
+
+    // ===== 毛发模式 =====
+    if (item.addon_type == static_cast<int>(AddonType::HAIR)) {
+        // 添加发束按钮
+        if (ImGui::Button(get_locale_cstr("action.add_hair_strand"))) {
+            HairStrand strand;
+            strand.name = "Strand " + std::to_string(item.hair_strands.size() + 1);
+            strand.expanded = true;
+            item.hair_strands.push_back(strand);
+            push_undo_now(item.id, std::nullopt, "Add Hair Strand");
+        }
+
+        ImGui::Separator();
+
+        // 发束列表
+        int delete_idx = -1;
+        for (size_t i = 0; i < item.hair_strands.size(); ++i) {
+            auto& strand = item.hair_strands[i];
+            ImGui::PushID(static_cast<int>(i));
+
+            char header_label[64];
+            snprintf(header_label, sizeof(header_label),
+                     get_locale_cstr("label.hair_strand"),
+                     static_cast<int>(i + 1));
+            // 在CollapsingHeader右侧显示点数
+            ImGui::SameLine();
+            bool expanded = ImGui::CollapsingHeader(header_label,
+                                                     strand.expanded
+                                                         ? ImGuiTreeNodeFlags_DefaultOpen
+                                                         : 0);
+            strand.expanded = expanded;
+
+            if (expanded) {
+                // 三个按钮行
+                // 上移
+                if (i > 0) {
+                    if (ImGui::Button(get_locale_cstr("action.move_up"))) {
+                        std::swap(item.hair_strands[i],
+                                  item.hair_strands[i - 1]);
+                        push_undo_now(item.id, std::nullopt,
+                                      "Move Strand Up");
+                    }
+                    ImGui::SameLine();
+                }
+                // 下移
+                if (i < item.hair_strands.size() - 1) {
+                    if (ImGui::Button(get_locale_cstr("action.move_down"))) {
+                        std::swap(item.hair_strands[i],
+                                  item.hair_strands[i + 1]);
+                        push_undo_now(item.id, std::nullopt,
+                                      "Move Strand Down");
+                    }
+                    ImGui::SameLine();
+                }
+
+                // 绘制引导曲线（自锁按钮）
+                bool is_drawing =
+                    (item.active_guide_draw_strand == static_cast<int>(i) &&
+                     item.guide_curve_drawing_active);
+                if (is_drawing) {
+                    ImGui::PushStyleColor(ImGuiCol_Button,
+                                          ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
+                }
+                if (ImGui::Button(
+                        is_drawing
+                            ? get_locale_cstr("action.stop_drawing")
+                            : get_locale_cstr("action.draw_guide_curve"))) {
+                    if (is_drawing) {
+                        item.guide_curve_drawing_active = false;
+                        item.active_guide_draw_strand = -1;
+                        show_guide_curve_window = false;
+                    } else {
+                        // 停止其他正在绘制的
+                        item.guide_curve_drawing_active = true;
+                        item.active_guide_draw_strand = static_cast<int>(i);
+                        show_guide_curve_window = true;
+                    }
+                }
+                if (is_drawing) {
+                    ImGui::PopStyleColor();
+                }
+
+                ImGui::SameLine();
+                // 删除发束
+                if (ImGui::Button(get_locale_cstr("action.delete_strand"))) {
+                    delete_idx = static_cast<int>(i);
+                }
+
+                // 清空引导点
+                ImGui::SameLine();
+                if (ImGui::Button(get_locale_cstr("action.clear_guide_points"))) {
+                    strand.guide_points.clear();
+                }
+
+                // 显示点数信息
+                ImGui::Text(get_locale_cstr("label.guide_curve_points"),
+                            static_cast<int>(strand.guide_points.size()));
+            }
+
+            ImGui::PopID();
+        }
+
+        // 延迟删除
+        if (delete_idx >= 0) {
+            // 如果正在绘制被删除的发束，先停止
+            if (item.active_guide_draw_strand == delete_idx) {
+                item.guide_curve_drawing_active = false;
+                item.active_guide_draw_strand = -1;
+                show_guide_curve_window = false;
+            } else if (item.active_guide_draw_strand > delete_idx) {
+                item.active_guide_draw_strand--;
+            }
+            item.hair_strands.erase(item.hair_strands.begin() + delete_idx);
+            push_undo_now(item.id, std::nullopt, "Delete Hair Strand");
+        }
+    }
+
+    ImGui::End();
+}
+
+void RenderVoxelList::render_guide_curve_window() {
+    if (!show_guide_curve_window)
+        return;
+
+    ImGui::SetNextWindowSize(ImVec2(300, 350), ImGuiCond_Once);
+    if (!ImGui::Begin(get_locale_cstr("window.guide_curve"), nullptr,
+                      ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(locker);
+    auto item_it = items.find(render_id);
+    if (item_it == items.end() || item_it->second->source_type != 2) {
+        ImGui::TextUnformatted(get_locale_cstr("label.no_active_item"));
+        ImGui::End();
+        return;
+    }
+
+    RenderVoxelItem& item = *item_it->second;
+    int idx = item.active_guide_draw_strand;
+
+    if (idx < 0 || idx >= static_cast<int>(item.hair_strands.size()) ||
+        !item.guide_curve_drawing_active) {
+        show_guide_curve_window = false;
+        ImGui::End();
+        return;
+    }
+
+    auto& strand = item.hair_strands[idx];
+    ImGui::Text(get_locale_cstr("label.hair_strand"), idx + 1);
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.08f, 1.0f), "%s",
+                       get_locale_cstr("action.draw_guide_curve"));
+
+    ImGui::Separator();
+    ImGui::Text(get_locale_cstr("label.guide_curve_points"),
+                static_cast<int>(strand.guide_points.size()));
+
+    if (strand.guide_points.empty()) {
+        ImGui::TextWrapped("%s",
+                           get_locale_cstr("label.no_guide_points"));
+    } else {
+        // 可滚动的点列表
+        ImGui::BeginChild("GuidePointsList", ImVec2(0, 200), true);
+        int delete_point = -1;
+        for (size_t pi = 0; pi < strand.guide_points.size(); ++pi) {
+            const auto& pt = strand.guide_points[pi];
+            ImGui::PushID(static_cast<int>(pi));
+            ImGui::Text(get_locale_cstr("label.guide_point"),
+                        static_cast<int>(pi + 1));
+            ImGui::SameLine();
+            char coord_buf[128];
+            snprintf(coord_buf, sizeof(coord_buf), "(%.2f, %.2f, %.2f)",
+                     static_cast<double>(pt.x), static_cast<double>(pt.y),
+                     static_cast<double>(pt.z));
+            ImGui::TextUnformatted(coord_buf);
+
+            // 上移
+            if (pi > 0) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("^")) {
+                    std::swap(strand.guide_points[pi],
+                              strand.guide_points[pi - 1]);
+                }
+            }
+            // 下移
+            if (pi < strand.guide_points.size() - 1) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("v")) {
+                    std::swap(strand.guide_points[pi],
+                              strand.guide_points[pi + 1]);
+                }
+            }
+            // 删除
+            ImGui::SameLine();
+            if (ImGui::SmallButton("X")) {
+                delete_point = static_cast<int>(pi);
+            }
+
+            ImGui::PopID();
+        }
+        if (delete_point >= 0) {
+            strand.guide_points.erase(
+                strand.guide_points.begin() + delete_point);
+        }
+        ImGui::EndChild();
+    }
+
+    ImGui::Separator();
+    if (ImGui::Button(get_locale_cstr("action.clear_guide_points"))) {
+        strand.guide_points.clear();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(get_locale_cstr("action.stop_drawing"))) {
+        item.guide_curve_drawing_active = false;
+        item.active_guide_draw_strand = -1;
+        show_guide_curve_window = false;
+    }
+
+    ImGui::End();
 }
 
 void RenderVoxelList::copy_node_config(const RenderVoxelItem& item) {

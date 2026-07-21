@@ -397,6 +397,62 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
             }
         }
     }
+    // 毛发引导曲线渲染
+    if (!hair_strands.empty()) {
+        bool has_any_guide_points = false;
+        for (const auto& strand : hair_strands) {
+            if (strand.guide_points.size() >= 2) {
+                has_any_guide_points = true;
+                break;
+            }
+        }
+        if (has_any_guide_points && mesh_shader.ensureLineProgram()) {
+            bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+            const uint32_t line_color = pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);
+            const uint32_t marker_color = pack_abgr(1.0f, 0.6f, 0.1f, 1.0f);
+            std::vector<mesh_detail::ColorLineVertex> vertices;
+            for (const auto& strand : hair_strands) {
+                if (strand.guide_points.empty())
+                    continue;
+                for (size_t pi = 0; pi + 1 < strand.guide_points.size(); ++pi) {
+                    const auto& a = strand.guide_points[pi];
+                    const auto& b = strand.guide_points[pi + 1];
+                    vertices.push_back({a.x, -a.y, a.z, line_color});
+                    vertices.push_back({b.x, -b.y, b.z, line_color});
+                }
+                const float marker_size = 1.5f;
+                for (const auto& p : strand.guide_points) {
+                    vertices.push_back({p.x - marker_size, -p.y, p.z, marker_color});
+                    vertices.push_back({p.x + marker_size, -p.y, p.z, marker_color});
+                    vertices.push_back({p.x, -(p.y - marker_size), p.z, marker_color});
+                    vertices.push_back({p.x, -(p.y + marker_size), p.z, marker_color});
+                    vertices.push_back({p.x, -p.y, p.z - marker_size, marker_color});
+                    vertices.push_back({p.x, -p.y, p.z + marker_size, marker_color});
+                }
+            }
+            if (!vertices.empty() &&
+                bgfx::getAvailTransientVertexBuffer(
+                    static_cast<uint32_t>(vertices.size()),
+                    layout) >= vertices.size()) {
+                bgfx::TransientVertexBuffer tvb;
+                bgfx::allocTransientVertexBuffer(
+                    &tvb, static_cast<uint32_t>(vertices.size()),
+                    layout);
+                std::memcpy(tvb.data, vertices.data(),
+                            vertices.size() *
+                                sizeof(mesh_detail::ColorLineVertex));
+                bgfx::setTransform(model_transform);
+                bgfx::setVertexBuffer(0, &tvb);
+                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                               BGFX_STATE_WRITE_Z |
+                               BGFX_STATE_DEPTH_TEST_LESS |
+                               BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+                bgfx::submit(mesh_shader.overlay_view_id_,
+                             mesh_shader.line_program_);
+            }
+        }
+    }
+
     if (showSilhouetteCenter && mesh_only && segment_mode == SILHOUETTE) {
         if (mesh_shader.ensureLineProgram()) {
             bgfx::VertexLayout& layout = concave_cone_overlay_layout();

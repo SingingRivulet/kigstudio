@@ -51,6 +51,7 @@ int ui_main(int argc, const char* const* argv) {
     bool middleMouseDown = false;
     bool leftMouseDownOnPick = false;
     bool middleMouseDownOnPick = false;
+    bool guide_curve_click_valid = false;
     SDL_SetMainReady();
     // 显示系统 IME 候选窗口（中文/日文输入法需要）
     SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
@@ -335,6 +336,14 @@ int ui_main(int argc, const char* const* argv) {
                     if (leftMouseDownOnPick) {
                         render_items.begin_marked_edit(render_items.render_id);
                     }
+                    // 引导曲线绘制模式
+                    if (!picking_active && !io.WantCaptureMouse) {
+                        auto it = render_items.items.find(render_items.render_id);
+                        if (it != render_items.items.end() &&
+                            it->second->guide_curve_drawing_active) {
+                            guide_curve_click_valid = true;
+                        }
+                    }
                     io.MouseDown[0] = true;
                 } else if (e.button.button == SDL_BUTTON_MIDDLE) {
                     middleMouseDown = true;
@@ -360,6 +369,21 @@ int ui_main(int argc, const char* const* argv) {
                         render_items.end_marked_edit(
                             render_items.render_id,
                             shift ? "Erase" : "Brush");
+                    } else if (guide_curve_click_valid &&
+                               render_items.mouse_world_pos_valid) {
+                        // 引导曲线绘制：点击添加点
+                        auto it = render_items.items.find(render_items.render_id);
+                        if (it != render_items.items.end()) {
+                            auto& item = *it->second;
+                            if (item.guide_curve_drawing_active &&
+                                item.active_guide_draw_strand >= 0 &&
+                                item.active_guide_draw_strand <
+                                    static_cast<int>(item.hair_strands.size())) {
+                                auto& strand = item.hair_strands[item.active_guide_draw_strand];
+                                strand.guide_points.push_back(
+                                    render_items.mouse_world_pos);
+                            }
+                        }
                     } else if (leftMouseDown &&
                                (std::abs(pitch) > 1e-6f ||
                                 std::abs(yaw) > 1e-6f)) {
@@ -382,6 +406,7 @@ int ui_main(int argc, const char* const* argv) {
                     }
                     leftMouseDown = false;
                     leftMouseDownOnPick = false;
+                    guide_curve_click_valid = false;
                     io.MouseDown[0] = false;
                 } else if (e.button.button == SDL_BUTTON_MIDDLE) {
                     middleMouseDown = false;
