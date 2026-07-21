@@ -105,6 +105,11 @@ namespace sinriv::ui::render {
                 gbuffer_program_ = BGFX_INVALID_HANDLE;
                 std::cout << "RenderMeshShader shader(gbuffer_program_) destroyed" << std::endl;
             }
+            if (bgfx::isValid(gbuffer_addon_program_)) {
+                bgfx::destroy(gbuffer_addon_program_);
+                gbuffer_addon_program_ = BGFX_INVALID_HANDLE;
+                std::cout << "RenderMeshShader shader(gbuffer_addon_program_) destroyed" << std::endl;
+            }
             if (bgfx::isValid(line_program_)) {
                 bgfx::destroy(line_program_);
                 line_program_ = BGFX_INVALID_HANDLE;
@@ -166,6 +171,35 @@ namespace sinriv::ui::render {
             return bgfx::isValid(gbuffer_program_);
         }
 
+        // addon 版 GBuffer 程序：与 gbuffer_program_ 共用顶点着色器，但
+        // 片元着色器不写 world_pos 通道，使网格可见、被主模型正确遮挡，
+        // 同时鼠标拾取可穿透它拾取下层表面（用于 addon_renderers）
+        inline bool ensureGBufferAddonProgram() {
+            if (bgfx::isValid(gbuffer_addon_program_)) {
+                return true;
+            }
+            ensureUniforms();
+
+            bgfx::ShaderHandle vs =
+                sinriv::kigstudio::ui::loadShader(shader_dir_ + "vs_mesh_gbuffer.bin");
+            bgfx::ShaderHandle fs = sinriv::kigstudio::ui::loadShader(
+                shader_dir_ + "fs_mesh_gbuffer_addon.bin");
+            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
+                if (bgfx::isValid(vs)) {
+                    bgfx::destroy(vs);
+                }
+                if (bgfx::isValid(fs)) {
+                    bgfx::destroy(fs);
+                }
+                std::cerr << "RenderMesh addon gbuffer shader load failed from "
+                          << shader_dir_ << std::endl;
+                return false;
+            }
+
+            gbuffer_addon_program_ = bgfx::createProgram(vs, fs, true);
+            return bgfx::isValid(gbuffer_addon_program_);
+        }
+
         inline bool ensureLineProgram() {
             if (bgfx::isValid(line_program_)) {
                 return true;
@@ -200,6 +234,7 @@ namespace sinriv::ui::render {
         bgfx::ViewId overlay_view_id_ = 0;
         std::string shader_dir_ = "shader/base/";
         bgfx::ProgramHandle gbuffer_program_ = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle gbuffer_addon_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle line_program_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_base_color_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_depth_bias_ = BGFX_INVALID_HANDLE;
@@ -422,6 +457,39 @@ namespace sinriv::ui::render {
             }
             bgfx::setState(state);
             bgfx::submit(shader.view_id_, shader.gbuffer_program_);
+        }
+
+        // addon 版 GBuffer 渲染：写入 albedo/normal/depth（与主模型正确
+        // 互相遮挡），但不写 world_pos 通道，鼠标拾取可穿透本网格
+        void renderGBufferAddon(const float* transform, RenderMeshShader & shader) {
+            /*
+            * TODO:
+            * 把鼠标拾取用的位置图和渲染用的位置图分离开
+            * 延迟渲染和addon的着色器不传入鼠标拾取用的位置图
+            * 正常的生成gbuffer两个都传入
+            */
+            if (!layout_initialized_) {
+                mesh_detail::PosNormalVertex_bgfx::init(layout_);
+                layout_initialized_ = true;
+            }
+
+            if (empty() || !shader.ensureGBufferAddonProgram()) {
+                return;
+            }
+
+            bgfx::setTransform(transform);
+            bgfx::setVertexBuffer(0, mesh_.vbh);
+            bgfx::setIndexBuffer(mesh_.ibh);
+            shader.ensureUniforms();
+            bgfx::setUniform(shader.u_base_color_, base_color_.data());
+            uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                             BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                             BGFX_STATE_MSAA;
+            if (cull_backface) {
+                state |= BGFX_STATE_CULL_CCW;
+            }
+            bgfx::setState(state);
+            bgfx::submit(shader.view_id_, shader.gbuffer_addon_program_);
         }
 
         void renderOverlay(RenderMeshShader & shader) {

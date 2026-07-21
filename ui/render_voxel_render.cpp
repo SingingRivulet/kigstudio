@@ -83,6 +83,13 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
         exported_mesh_renderer.renderGBuffer(transform, mesh_shader);
     }
 
+    // 附加件渲染器（如毛发预览）：写入 albedo/normal/depth，与主模型正确
+    // 互相遮挡，但不写 world_pos 通道，鼠标拾取可穿透它拾取下层模型
+    for (auto& addon : addon_renderers) {
+        addon.cull_backface = false;
+        addon.renderGBufferAddon(transform, mesh_shader);
+    }
+
     if (showVoxel) {
         voxel_renderer.renderGBuffer(transform, mesh_shader);
     }

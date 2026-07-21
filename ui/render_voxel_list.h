@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdarg>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -313,6 +314,11 @@ class RenderVoxelList {
         sinriv::ui::render::RenderMesh origin_mesh_renderer;
         sinriv::ui::render::RenderMesh mesh_renderer;
         sinriv::ui::render::RenderMesh exported_mesh_renderer;
+        // 附加件渲染器数组（如毛发预览）：随 GBuffer 一同渲染，与主模型
+        // 正确互相遮挡，但不写 world_pos 通道，鼠标拾取可穿透它拾取
+        // 下层模型。RenderMesh 持有 bgfx 句柄且不可拷贝，用 deque 存放
+        // 以避免插入时搬移元素
+        std::deque<sinriv::ui::render::RenderMesh> addon_renderers;
         sinriv::ui::render::RenderVoxel voxel_renderer;
         sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
         kdtree::KDTree mesh_kd_tree;  // 三角形顶点的kd树，用于实现自动吸附
