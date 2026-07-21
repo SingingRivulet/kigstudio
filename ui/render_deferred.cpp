@@ -345,7 +345,7 @@ void RenderDeferred::render() {
     auto mouse_y = screen_mouse_pos_[1];
     if (mouse_x >= 0 && mouse_x < width_ - 2 && mouse_y >= 0 &&
         mouse_y < height_ - 2) {
-        bgfx::blit(lighting_view_id_, readback_, 0, 0, world_pos_texture_,
+        bgfx::blit(lighting_view_id_, readback_, 0, 0, world_pos_pick_texture_,
                    mouse_x, mouse_y, 2, 2);
         bgfx::readTexture(readback_, readback_buffer);
         if (readback_buffer[3] > 0.5f) {
@@ -496,6 +496,9 @@ void RenderDeferred::destroyFrameBuffer() {
     if (bgfx::isValid(world_pos_texture_)) {
         bgfx::destroy(world_pos_texture_);
     }
+    if (bgfx::isValid(world_pos_pick_texture_)) {
+        bgfx::destroy(world_pos_pick_texture_);
+    }
     if (bgfx::isValid(collision_body_texture_)) {
         bgfx::destroy(collision_body_texture_);
     }
@@ -514,6 +517,7 @@ void RenderDeferred::destroyFrameBuffer() {
     mesh_stencil_body_texture_ = BGFX_INVALID_HANDLE;
     normal_texture_ = BGFX_INVALID_HANDLE;
     world_pos_texture_ = BGFX_INVALID_HANDLE;
+    world_pos_pick_texture_ = BGFX_INVALID_HANDLE;
     depth_texture_ = BGFX_INVALID_HANDLE;
 }
 
@@ -663,6 +667,8 @@ bool RenderDeferred::ensureFrameBuffer() {
         width_, height_, false, 1, bgfx::TextureFormat::BGRA8, kSamplerFlags);
     world_pos_texture_ = bgfx::createTexture2D(
         width_, height_, false, 1, bgfx::TextureFormat::RGBA32F, kSamplerFlags);
+    world_pos_pick_texture_ = bgfx::createTexture2D(
+        width_, height_, false, 1, bgfx::TextureFormat::RGBA32F, kSamplerFlags);
     readback_ =
         bgfx::createTexture2D(2, 2, false, 1, bgfx::TextureFormat::RGBA32F,
                               BGFX_TEXTURE_READ_BACK | BGFX_TEXTURE_BLIT_DST);
@@ -673,6 +679,7 @@ bool RenderDeferred::ensureFrameBuffer() {
         albedo_texture_,
         normal_texture_,
         world_pos_texture_,
+        world_pos_pick_texture_,
         depth_texture_,
     };
     gbuffer_ = bgfx::createFrameBuffer(

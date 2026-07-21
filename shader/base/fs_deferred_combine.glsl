@@ -8,6 +8,7 @@ SAMPLER2D(s_worldPos, 2);
 SAMPLER2D(s_collision, 3);
 SAMPLER2D(s_volume, 4);
 SAMPLER2D(s_meshStencil, 5);
+SAMPLER2D(s_worldPosPick, 6);
 
 uniform vec4 u_lightDir;
 uniform vec4 u_space_div;

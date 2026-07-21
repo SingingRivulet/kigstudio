@@ -462,12 +462,8 @@ namespace sinriv::ui::render {
         // addon 版 GBuffer 渲染：写入 albedo/normal/depth（与主模型正确
         // 互相遮挡），但不写 world_pos 通道，鼠标拾取可穿透本网格
         void renderGBufferAddon(const float* transform, RenderMeshShader & shader) {
-            /*
-            * TODO:
-            * 把鼠标拾取用的位置图和渲染用的位置图分离开
-            * 延迟渲染和addon的着色器不传入鼠标拾取用的位置图
-            * 正常的生成gbuffer两个都传入
-            */
+            // Addon GBuffer 渲染写入 albedo/normal/depth，但不写 mouse pick
+            // world position 通道，从而让 addon 表面对鼠标拾取保持透明。
             if (!layout_initialized_) {
                 mesh_detail::PosNormalVertex_bgfx::init(layout_);
                 layout_initialized_ = true;

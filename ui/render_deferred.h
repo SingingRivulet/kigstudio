@@ -217,6 +217,7 @@ namespace sinriv::ui::render {
         bgfx::TextureHandle collision_volume_texture_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle normal_texture_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle world_pos_texture_ = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle world_pos_pick_texture_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle readback_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle depth_texture_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle combine_program_ = BGFX_INVALID_HANDLE;
