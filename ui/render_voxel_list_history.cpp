@@ -39,7 +39,8 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.repair_mode,
             item.alpha_wrap_alpha,
             item.alpha_wrap_offset,
-            item.subdivide_level};
+            item.subdivide_level,
+            item.hair_strands};
 }
 
 void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
@@ -82,21 +83,24 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.alpha_wrap_alpha = snapshot.alpha_wrap_alpha;
     item.alpha_wrap_offset = snapshot.alpha_wrap_offset;
     item.subdivide_level = snapshot.subdivide_level;
+    item.hair_strands = snapshot.hair_strands;
     item.sdf_precision_cache = snapshot.sdf_precision_cache;
     item.joint_wireframe_dirty = true;
 }
 
 void RenderVoxelList::begin_edit(int item_id) {
-    if (pending_undo.has_value() && pending_undo->item_id == item_id) {
-        return;  // already have pending undo for this item
-    }
-    // discard pending for different item
-    pending_undo.reset();
     auto it = items.find(item_id);
-    if (it != items.end()) {
-        pending_undo = PendingUndo{item_id, capture_snapshot(*it->second)};
-        it->second->auto_segment_update = false;
-    }
+    if (it == items.end())
+        return;
+    // Use collision_edit_active flag to prevent re-capture during multi-frame
+    // drags, instead of checking pending_undo (which can be stale from a
+    // different editor).
+    if (it->second->collision_edit_active)
+        return;
+    pending_undo.reset();
+    pending_undo = PendingUndo{item_id, capture_snapshot(*it->second)};
+    it->second->collision_edit_active = true;
+    it->second->auto_segment_update = false;
 }
 
 void RenderVoxelList::end_edit(int item_id, const std::string& desc) {
@@ -109,6 +113,7 @@ void RenderVoxelList::end_edit(int item_id, const std::string& desc) {
         it->second->undo_stack.back().description = desc;
         it->second->redo_stack.clear();
         it->second->dirty = true;
+        it->second->collision_edit_active = false;
         if (it->second->undo_stack.size() > kMaxUndoSize) {
             it->second->undo_stack.erase(it->second->undo_stack.begin());
         }
@@ -129,6 +134,7 @@ void RenderVoxelList::push_undo_now(
     it->second->redo_stack.clear();
     it->second->dirty = true;
     it->second->auto_segment_update = false;
+    it->second->collision_edit_active = false;
     if (it->second->undo_stack.size() > kMaxUndoSize) {
         it->second->undo_stack.erase(it->second->undo_stack.begin());
     }
@@ -139,8 +145,11 @@ bool RenderVoxelList::undo(int item_id) {
     auto it = items.find(item_id);
     if (it == items.end() || it->second->undo_stack.empty())
         return false;
-    // push current state to redo stack
-    it->second->redo_stack.push_back(capture_snapshot(*it->second));
+    // push current state to redo stack, preserving the undo entry's description
+    // so redo/undo filtering can track the editing context across cycles
+    auto redo_snapshot = capture_snapshot(*it->second);
+    redo_snapshot.description = it->second->undo_stack.back().description;
+    it->second->redo_stack.push_back(std::move(redo_snapshot));
     // apply undo snapshot
     apply_snapshot(*it->second, it->second->undo_stack.back());
     it->second->undo_stack.pop_back();
@@ -153,8 +162,10 @@ bool RenderVoxelList::redo(int item_id) {
     auto it = items.find(item_id);
     if (it == items.end() || it->second->redo_stack.empty())
         return false;
-    // push current state to undo stack
-    it->second->undo_stack.push_back(capture_snapshot(*it->second));
+    // push current state to undo stack, preserving the redo entry's description
+    auto undo_snapshot = capture_snapshot(*it->second);
+    undo_snapshot.description = it->second->redo_stack.back().description;
+    it->second->undo_stack.push_back(std::move(undo_snapshot));
     // apply redo snapshot
     apply_snapshot(*it->second, it->second->redo_stack.back());
     it->second->redo_stack.pop_back();

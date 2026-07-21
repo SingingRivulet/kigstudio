@@ -1230,6 +1230,35 @@ void init_locale_strings() {
                       {{"en", "Delete"}, {"zh", "删除"}});
     add_locale_string("action.clear_guide_points",
                       {{"en", "Clear Points"}, {"zh", "清空点"}});
+    add_locale_string("action.clear_width_points",
+                      {{"en", "Clear Points"}, {"zh", "清空点"}});
+    add_locale_string("action.edit_width",
+                      {{"en", "Edit Width"}, {"zh", "编辑宽度"}});
+    add_locale_string("action.stop_width_edit",
+                      {{"en", "Stop Width Edit"}, {"zh", "停止编辑宽度"}});
+    add_locale_string("window.width_editor",
+                      {{"en", "Width Editor"}, {"zh", "宽度编辑器"}});
+    add_locale_string("label.width_points",
+                      {{"en", "Width Points: %d"}, {"zh", "宽度点: %d"}});
+    add_locale_string("label.width_point_entry",
+                      {{"en", "Pt %d | guide_id=%zu"}, {"zh", "点 %d | 引导点=%zu"}});
+    add_locale_string("label.width_scale",
+                      {{"en", "Scale"}, {"zh", "缩放"}});
+    add_locale_string("label.no_width_points",
+                      {{"en", "Click on the base model to add width reference points."},
+                       {"zh", "在底模上点击以添加宽度参考点。"}});
+    add_locale_string("action.delete_width_point",
+                      {{"en", "Del"}, {"zh", "删"}});
+    add_locale_string("label.addon_reveal",
+                      {{"en", "Reveal"}, {"zh", "显露"}});
+    add_locale_string("label.addon_split",
+                      {{"en", "Split"}, {"zh", "拆分"}});
+    add_locale_string("tooltip.addon_reveal",
+                      {{"en", "The model's SDF will subtract the base model."},
+                       {"zh", "模型的SDF会减去底模。"}});
+    add_locale_string("tooltip.addon_split",
+                      {{"en", "After update, each hair strand becomes an independent node, subtracting all preceding strands."},
+                       {"zh", "点击更新碰撞后，每根发束生成独立节点，并减去所有排在前面的发束。"}});
     add_locale_string("label.source_node_id",
                       {{"en", "Source Node"}, {"zh", "源节点"}});
     add_locale_string("label.source_data_mesh",

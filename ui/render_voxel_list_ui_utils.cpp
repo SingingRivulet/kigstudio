@@ -59,16 +59,17 @@ EditResult edit_float_stepper(const char* label, float& value, float step) {
 EditResult edit_vec3_stepper(const char* label,
                              vec3f& value,
                              float step,
-                             bool normalize) {
+                             bool normalize,
+                             bool same_line) {
     EditResult result;
     const char* axis_names[] = {"X", "Y", "Z"};
     float values[3] = {value.x, value.y, value.z};
     ImGui::Text("%s", label);
     char buf[128];
     for (int i = 0; i < 3; ++i) {
-        // if (i > 0) {
-        //     ImGui::SameLine();
-        // }
+        if (same_line) {
+            ImGui::SameLine();
+        }
         snprintf(buf, sizeof(buf), "%s##%s", axis_names[i], label);
         auto r = edit_float_stepper(buf, values[i], step);
         result.activated |= r.activated;

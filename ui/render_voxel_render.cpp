@@ -14,6 +14,116 @@ bool contains_index(const std::vector<int>& indices, int value) {
     return std::find(indices.begin(), indices.end(), value) != indices.end();
 }
 
+using vec3f = sinriv::kigstudio::voxel::vec3f;
+
+// 评估三次贝塞尔曲线：B(t) = P0*(1-t)³ + P1*3(1-t)²t + P2*3(1-t)t² + P3*t³
+inline vec3f bezier_eval(const vec3f& p0, const vec3f& p1,
+                          const vec3f& p2, const vec3f& p3, float t) {
+    const float u = 1.0f - t;
+    const float u2 = u * u;
+    const float t2 = t * t;
+    return p0 * (u2 * u) +
+           p1 * (3.0f * u2 * t) +
+           p2 * (3.0f * u * t2) +
+           p3 * (t2 * t);
+}
+
+// 将 Catmull-Rom 样条的关键点转换为多段三次贝塞尔，采样为折线
+// guide_points: 用户拾取的点（曲线经过这些点）
+// samples_per_segment: 每段贝塞尔的采样数
+// 返回采样后的密集点集
+std::vector<vec3f> sample_bezier_guide_curve(
+    const std::vector<vec3f>& guide_points,
+    int samples_per_segment = 32) {
+    if (guide_points.size() < 2)
+        return guide_points;
+
+    std::vector<vec3f> result;
+    const size_t n = guide_points.size();
+
+    for (size_t i = 0; i + 1 < n; ++i) {
+        // Catmull-Rom → cubic Bézier control points
+        // 虚拟端点处理首尾
+        vec3f p0 = guide_points[i];
+        vec3f p3 = guide_points[i + 1];
+
+        // 入切线：基于前一点
+        vec3f p1;
+        if (i == 0) {
+            // 首段：反射 P₁ 得到虚拟 P₋₁
+            p1 = p0 + (p3 - p0) * (1.0f / 3.0f);
+        } else {
+            p1 = p0 + (p3 - guide_points[i - 1]) * (1.0f / 6.0f);
+        }
+
+        // 出切线：基于后一点
+        vec3f p2;
+        if (i + 2 >= n) {
+            // 末段：反射 Pₙ₋₂ 得到虚拟 Pₙ
+            p2 = p3 - (p3 - p0) * (1.0f / 3.0f);
+        } else {
+            p2 = p3 - (guide_points[i + 2] - p0) * (1.0f / 6.0f);
+        }
+
+        // 采样贝塞尔段
+        for (int s = 0; s < samples_per_segment; ++s) {
+            float t = static_cast<float>(s) / static_cast<float>(samples_per_segment);
+            result.push_back(bezier_eval(p0, p1, p2, p3, t));
+        }
+    }
+    // 加入最后一个端点
+    result.push_back(guide_points.back());
+
+    return result;
+}
+
+// 在引导曲线上查找离 world_pos 最近的点
+// 返回 {curve_id, curve_pos}，curve_id 整数部分=段索引，小数部分=段内t
+struct NearestCurveResult {
+    float curve_id = 0.0f;  // 整数部分=段索引, 小数部分=段内t
+    vec3f curve_pos{};
+};
+NearestCurveResult find_nearest_on_bezier_guide(
+    const std::vector<vec3f>& guide_points,
+    const vec3f& world_pos) {
+    NearestCurveResult result;
+    if (guide_points.size() < 2) {
+        if (!guide_points.empty()) {
+            result.curve_pos = guide_points[0];
+        }
+        return result;
+    }
+
+    auto sampled = sample_bezier_guide_curve(guide_points, 32);
+    if (sampled.empty())
+        return result;
+
+    // 在采样点中找最近点
+    float best_dist = std::numeric_limits<float>::max();
+    size_t best_sample_idx = 0;
+    for (size_t i = 0; i < sampled.size(); ++i) {
+        float d = (sampled[i] - world_pos).length();
+        if (d < best_dist) {
+            best_dist = d;
+            best_sample_idx = i;
+        }
+    }
+
+    result.curve_pos = sampled[best_sample_idx];
+
+    // 推算 curve_id：整数部分=段索引，小数部分=段内参数t
+    constexpr int kSamplesPerSegment = 32;
+    size_t seg_idx = best_sample_idx / kSamplesPerSegment;
+    if (seg_idx >= guide_points.size() - 1)
+        seg_idx = guide_points.size() - 2;
+    size_t sample_in_seg = best_sample_idx - seg_idx * kSamplesPerSegment;
+    float t = static_cast<float>(sample_in_seg) /
+              static_cast<float>(kSamplesPerSegment);
+    result.curve_id = static_cast<float>(seg_idx) + t;
+
+    return result;
+}
+
 template <class Vec3>
 Vec3 extend_cone_edge(const Vec3& apex, const Vec3& vertex) {
     constexpr float kEdgeScale = 4.0f;
@@ -62,6 +172,30 @@ sinriv::kigstudio::voxel::vec3f transform_point(
     return {v3.x, v3.y, v3.z};
 }
 }  // namespace
+
+void RenderVoxelList::RenderVoxelItem::add_width_point_at(
+    int strand_idx, const vec3f& world_pos) {
+    if (strand_idx < 0 ||
+        strand_idx >= static_cast<int>(hair_strands.size()))
+        return;
+    auto& strand = hair_strands[strand_idx];
+    if (strand.guide_points.size() < 2)
+        return;
+
+    auto nearest = find_nearest_on_bezier_guide(
+        strand.guide_points, world_pos);
+
+    vec3f diff = world_pos - nearest.curve_pos;
+    float dist = diff.length();
+    if (dist < 0.0001f)
+        return;  // 太靠近曲线，跳过
+
+    HairStrand::WidthPoint wp;
+    wp.curve_id = nearest.curve_id;
+    wp.direction = diff / dist;  // 单位方向向量
+    wp.scale = dist;
+    strand.width_points.push_back(wp);
+}
 
 void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     const float* transform,
@@ -412,11 +546,14 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
             const uint32_t marker_color = pack_abgr(1.0f, 0.6f, 0.1f, 1.0f);
             std::vector<mesh_detail::ColorLineVertex> vertices;
             for (const auto& strand : hair_strands) {
-                if (strand.guide_points.empty())
+                if (strand.guide_points.size() < 2)
                     continue;
-                for (size_t pi = 0; pi + 1 < strand.guide_points.size(); ++pi) {
-                    const auto& a = strand.guide_points[pi];
-                    const auto& b = strand.guide_points[pi + 1];
+                // 贝塞尔插值采样 → 平滑曲线折线
+                auto sampled = sample_bezier_guide_curve(
+                    strand.guide_points, 32);
+                for (size_t pi = 0; pi + 1 < sampled.size(); ++pi) {
+                    const auto& a = sampled[pi];
+                    const auto& b = sampled[pi + 1];
                     vertices.push_back({a.x, -a.y, a.z, line_color});
                     vertices.push_back({b.x, -b.y, b.z, line_color});
                 }
@@ -428,6 +565,88 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                     vertices.push_back({p.x, -(p.y + marker_size), p.z, marker_color});
                     vertices.push_back({p.x, -p.y, p.z - marker_size, marker_color});
                     vertices.push_back({p.x, -p.y, p.z + marker_size, marker_color});
+                }
+            }
+            if (!vertices.empty() &&
+                bgfx::getAvailTransientVertexBuffer(
+                    static_cast<uint32_t>(vertices.size()),
+                    layout) >= vertices.size()) {
+                bgfx::TransientVertexBuffer tvb;
+                bgfx::allocTransientVertexBuffer(
+                    &tvb, static_cast<uint32_t>(vertices.size()),
+                    layout);
+                std::memcpy(tvb.data, vertices.data(),
+                            vertices.size() *
+                                sizeof(mesh_detail::ColorLineVertex));
+                bgfx::setTransform(model_transform);
+                bgfx::setVertexBuffer(0, &tvb);
+                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                               BGFX_STATE_WRITE_Z |
+                               BGFX_STATE_DEPTH_TEST_LESS |
+                               BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+                bgfx::submit(mesh_shader.overlay_view_id_,
+                             mesh_shader.line_program_);
+            }
+        }
+    }
+
+    // 宽度编辑连接线（绿色：点击位置 → 曲线上最近点）
+    {
+        bool has_width_lines = false;
+        for (const auto& strand : hair_strands) {
+            if (!strand.width_points.empty()) {
+                has_width_lines = true;
+                break;
+            }
+        }
+        if (has_width_lines && mesh_shader.ensureLineProgram()) {
+            bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+            const uint32_t green_color = pack_abgr(0.2f, 0.9f, 0.3f, 1.0f);
+            std::vector<mesh_detail::ColorLineVertex> vertices;
+            for (const auto& strand : hair_strands) {
+                for (const auto& wp : strand.width_points) {
+                    // 越界检查：curve_id 超出有效范围则不显示
+                    if (strand.guide_points.size() < 2)
+                        continue;
+                    if (wp.curve_id < 0.0f)
+                        continue;
+                    float max_id =
+                        static_cast<float>(strand.guide_points.size() - 1);
+                    if (wp.curve_id > max_id)
+                        continue;
+                    // 从 curve_id 重建贝塞尔曲线上的点
+                    size_t seg_idx =
+                        static_cast<size_t>(wp.curve_id);
+                    if (seg_idx >= strand.guide_points.size() - 1)
+                        seg_idx = strand.guide_points.size() - 2;
+                    float t =
+                        wp.curve_id - static_cast<float>(seg_idx);
+
+                    const auto& gpts = strand.guide_points;
+                    size_t n = gpts.size();
+                    vec3f p0 = gpts[seg_idx];
+                    vec3f p3 = gpts[seg_idx + 1];
+                    vec3f p1, p2;
+                    if (seg_idx == 0) {
+                        p1 = p0 + (p3 - p0) * (1.0f / 3.0f);
+                    } else {
+                        p1 = p0 + (p3 - gpts[seg_idx - 1]) *
+                                      (1.0f / 6.0f);
+                    }
+                    if (seg_idx + 2 >= n) {
+                        p2 = p3 - (p3 - p0) * (1.0f / 3.0f);
+                    } else {
+                        p2 = p3 - (gpts[seg_idx + 2] - p0) *
+                                      (1.0f / 6.0f);
+                    }
+                    vec3f curve_pos =
+                        bezier_eval(p0, p1, p2, p3, t);
+                    vec3f end_pos =
+                        curve_pos + wp.direction * wp.scale;
+                    vertices.push_back({end_pos.x, -end_pos.y,
+                                        end_pos.z, green_color});
+                    vertices.push_back({curve_pos.x, -curve_pos.y,
+                                        curve_pos.z, green_color});
                 }
             }
             if (!vertices.empty() &&

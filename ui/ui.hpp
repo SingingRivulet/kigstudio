@@ -52,6 +52,7 @@ int ui_main(int argc, const char* const* argv) {
     bool leftMouseDownOnPick = false;
     bool middleMouseDownOnPick = false;
     bool guide_curve_click_valid = false;
+    bool width_edit_click_valid = false;
     SDL_SetMainReady();
     // 显示系统 IME 候选窗口（中文/日文输入法需要）
     SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
@@ -339,9 +340,13 @@ int ui_main(int argc, const char* const* argv) {
                     // 引导曲线绘制模式
                     if (!picking_active && !io.WantCaptureMouse) {
                         auto it = render_items.items.find(render_items.render_id);
-                        if (it != render_items.items.end() &&
-                            it->second->guide_curve_drawing_active) {
-                            guide_curve_click_valid = true;
+                        if (it != render_items.items.end()) {
+                            if (it->second->guide_curve_drawing_active) {
+                                guide_curve_click_valid = true;
+                            }
+                            if (it->second->width_editing_active) {
+                                width_edit_click_valid = true;
+                            }
                         }
                     }
                     io.MouseDown[0] = true;
@@ -379,8 +384,29 @@ int ui_main(int argc, const char* const* argv) {
                                 item.active_guide_draw_strand >= 0 &&
                                 item.active_guide_draw_strand <
                                     static_cast<int>(item.hair_strands.size())) {
+                                render_items.push_undo_now(
+                                    render_items.render_id, std::nullopt,
+                                    "Add Guide Point");
                                 auto& strand = item.hair_strands[item.active_guide_draw_strand];
                                 strand.guide_points.push_back(
+                                    render_items.mouse_world_pos);
+                            }
+                        }
+                    } else if (width_edit_click_valid &&
+                               render_items.mouse_world_pos_valid) {
+                        // 宽度编辑：点击添加宽度参考点
+                        auto it = render_items.items.find(render_items.render_id);
+                        if (it != render_items.items.end()) {
+                            auto& item = *it->second;
+                            if (item.width_editing_active &&
+                                item.active_width_edit_strand >= 0 &&
+                                item.active_width_edit_strand <
+                                    static_cast<int>(item.hair_strands.size())) {
+                                render_items.push_undo_now(
+                                    render_items.render_id, std::nullopt,
+                                    "Add Width Point");
+                                item.add_width_point_at(
+                                    item.active_width_edit_strand,
                                     render_items.mouse_world_pos);
                             }
                         }
@@ -407,6 +433,7 @@ int ui_main(int argc, const char* const* argv) {
                     leftMouseDown = false;
                     leftMouseDownOnPick = false;
                     guide_curve_click_valid = false;
+                    width_edit_click_valid = false;
                     io.MouseDown[0] = false;
                 } else if (e.button.button == SDL_BUTTON_MIDDLE) {
                     middleMouseDown = false;
@@ -480,13 +507,51 @@ int ui_main(int argc, const char* const* argv) {
                     if (render_items.object_editor_tab == 1) {
                         render_items.undo_marked(render_items.render_id);
                     } else {
-                        render_items.undo(render_items.render_id);
+                        // 上下文感知撤销：引导曲线/宽度编辑中只撤销相关操作
+                        auto it = render_items.items.find(
+                            render_items.render_id);
+                        if (it != render_items.items.end() &&
+                            !it->second->undo_stack.empty()) {
+                            const auto& desc =
+                                it->second->undo_stack.back().description;
+                            bool is_guide =
+                                it->second->guide_curve_drawing_active;
+                            bool is_width = it->second->width_editing_active;
+                            if (is_guide && desc.find("Guide Point") ==
+                                                std::string::npos) {
+                                // 引导曲线绘制中，忽略非引导曲线撤销
+                            } else if (is_width && desc.find("Width") ==
+                                                       std::string::npos) {
+                                // 宽度编辑中，忽略非宽度撤销
+                            } else {
+                                render_items.undo(render_items.render_id);
+                            }
+                        }
                     }
                 } else if (e.key.keysym.sym == SDLK_y && ctrl) {
                     if (render_items.object_editor_tab == 1) {
                         render_items.redo_marked(render_items.render_id);
                     } else {
-                        render_items.redo(render_items.render_id);
+                        // 上下文感知重做
+                        auto it = render_items.items.find(
+                            render_items.render_id);
+                        if (it != render_items.items.end() &&
+                            !it->second->redo_stack.empty()) {
+                            const auto& desc =
+                                it->second->redo_stack.back().description;
+                            bool is_guide =
+                                it->second->guide_curve_drawing_active;
+                            bool is_width = it->second->width_editing_active;
+                            if (is_guide && desc.find("Guide Point") ==
+                                                std::string::npos) {
+                                // 引导曲线绘制中，忽略非引导曲线重做
+                            } else if (is_width && desc.find("Width") ==
+                                                       std::string::npos) {
+                                // 宽度编辑中，忽略非宽度重做
+                            } else {
+                                render_items.redo(render_items.render_id);
+                            }
+                        }
                     }
                 }
             }

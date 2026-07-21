@@ -136,6 +136,18 @@ struct HairStrand {
     std::vector<sinriv::kigstudio::voxel::vec3f> guide_points;
     // UI 折叠状态
     bool expanded = true;
+
+    // 宽度编辑：每个宽度点对应引导曲线上的一个位置
+    // 只保存相对于引导曲线的数据（曲线id + 方向向量），不保存绝对坐标，
+    // 这样编辑引导曲线时绿线会自动更新
+    // curve_id: 整数部分=贝塞尔段索引，小数部分=段内参数t（0~1）
+    struct WidthPoint {
+        float curve_id = 0.0f;       // 曲线上的位置（int=段索引, frac=段内t）
+        float scale = 1.0f;          // 宽度缩放（原始距离 = 绿线长度）
+        sinriv::kigstudio::voxel::vec3f direction{};  // 从曲线指向底模的方向（单位向量）
+    };
+    std::vector<WidthPoint> width_points;
+    bool width_editing_active = false;
 };
 
 struct EditResult {
@@ -150,7 +162,8 @@ EditResult edit_float_stepper(const char* label,
 EditResult edit_vec3_stepper(const char* label,
                              vec3f& value,
                              float step = 0.5f,
-                             bool normalize = false);
+                             bool normalize = false,
+                             bool same_line = false);
 EditResult edit_local_position_stepper(const char* label,
                                        vec3f& value,
                                        float step = 0.5f,
@@ -222,6 +235,9 @@ struct CollisionEditorSnapshot {
     float alpha_wrap_alpha = 1.0f;
     float alpha_wrap_offset = 0.01f;
     int subdivide_level = 1;
+
+    // Hair strand state (guide curves, width points)
+    std::vector<HairStrand> hair_strands;
 };
 
 struct MarkedVoxelsSnapshot {
@@ -339,11 +355,17 @@ class RenderVoxelList {
         int addon_base_node_id = -1;
         // 附加件类型（0=毛发）
         int addon_type = 0;
+        // 附加件碰撞选项
+        bool addon_reveal = false;  // 显露：SDF减去底模
+        bool addon_split = false;   // 拆分：每根发束独立节点
         // 毛发数据
         std::vector<HairStrand> hair_strands;
         // 当前正在绘制引导曲线的发束索引（-1表示无）
         int active_guide_draw_strand = -1;
         bool guide_curve_drawing_active = false;
+        // 当前正在编辑宽度的发束索引（-1表示无）
+        int active_width_edit_strand = -1;
+        bool width_editing_active = false;
         sinriv::ui::render::RenderVoxel voxel_renderer;
         sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
         kdtree::KDTree mesh_kd_tree;  // 三角形顶点的kd树，用于实现自动吸附
@@ -410,6 +432,10 @@ class RenderVoxelList {
             target.order = source.order;
             sort_picked_skeleton_points();
         }
+
+        // 宽度编辑：在引导曲线上查找离 world_pos 最近的点并添加 WidthPoint
+        void add_width_point_at(int strand_idx,
+                                const sinriv::kigstudio::voxel::vec3f& world_pos);
 
         void render_gbuffer(const float* transform,
                             sinriv::ui::render::RenderMeshShader& mesh_shader);
@@ -479,6 +505,7 @@ class RenderVoxelList {
         bool showVoxelChunkBounds = false;
 
         bool auto_segment_update = true;
+        bool collision_edit_active = false;  // guard for begin_edit/end_edit
 
         // 体素刷选相关
         bool voxel_picking_enabled = false;
@@ -661,8 +688,10 @@ class RenderVoxelList {
     void render_object_editor_comment_tab_content(RenderVoxelItem& item);
     void render_object_editor_addons();
     void render_guide_curve_window();
+    void render_width_editor_window();
     bool show_addon_window = false;
     bool show_guide_curve_window = false;
+    bool show_width_editor_window = false;
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_concave_cone_editor(RenderVoxelItem& item);

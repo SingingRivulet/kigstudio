@@ -34,6 +34,7 @@ void RenderVoxelList::render_nav_map() {
 
     std::unordered_set<int> sdf_sources;
     std::unordered_set<int> node_sources;
+    std::unordered_set<int> addon_sources;
     for (auto& [id, item] : this->items) {
         if (item->segment_mode == RenderVoxelItem::SDF_NODE_SPLIT &&
             item->sdf_split_target_id >= 0) {
@@ -41,6 +42,9 @@ void RenderVoxelList::render_nav_map() {
         }
         if (item->source_type == 1 && item->source_node_id >= 0) {
             node_sources.insert(item->source_node_id);
+        }
+        if (item->source_type == 2 && item->addon_base_node_id >= 0) {
+            addon_sources.insert(item->addon_base_node_id);
         }
     }
 
@@ -84,6 +88,13 @@ void RenderVoxelList::render_nav_map() {
             if (item->source_type == 1 && item->source_node_id >= 0 &&
                 this->items.find(item->source_node_id) != this->items.end()) {
                 layout_edges.push_back({item->source_node_id, id});
+            }
+        }
+        for (auto& [id, item] : this->items) {
+            if (item->source_type == 2 && item->addon_base_node_id >= 0 &&
+                this->items.find(item->addon_base_node_id) !=
+                    this->items.end()) {
+                layout_edges.push_back({item->addon_base_node_id, id});
             }
         }
     }
@@ -289,6 +300,14 @@ void RenderVoxelList::render_nav_map() {
             ImNodes::EndInputAttribute();
         }
 
+        if (item->source_type == 2 && item->addon_base_node_id >= 0) {
+            ImGui::SameLine(0.0f, 4.0f);
+            ImNodes::BeginInputAttribute(id * 1000 + 4,
+                                         ImNodesPinShape_CircleFilled);
+            ImGui::Text("");
+            ImNodes::EndInputAttribute();
+        }
+
         // ImGui::Text(
         //     "%s",
         //     item->segment_mode == RenderVoxelItem::COLLISION ? "Collision"
@@ -355,6 +374,18 @@ void RenderVoxelList::render_nav_map() {
                                           ImNodesPinShape_CircleFilled);
             ImGui::Text("");
             ImNodes::EndOutputAttribute();
+            output_attr_on_line = true;
+        }
+
+        if (addon_sources.count(id)) {
+            if (output_attr_on_line) {
+                ImGui::SameLine(0.0f, 4.0f);
+            }
+            ImNodes::BeginOutputAttribute(id * 1000 + 4,
+                                          ImNodesPinShape_CircleFilled);
+            ImGui::Text("");
+            ImNodes::EndOutputAttribute();
+            output_attr_on_line = true;
         }
 
         ImNodes::EndNode();
@@ -402,6 +433,26 @@ void RenderVoxelList::render_nav_map() {
             this->items.find(item->source_node_id) != this->items.end()) {
             int source_attr = item->source_node_id * 1000 + 3;
             int target_attr = id * 1000 + 3;
+            ImNodes::Link(link_id++, source_attr, target_attr);
+        }
+    }
+
+    ImNodes::PopColorStyle();
+    ImNodes::PopColorStyle();
+    ImNodes::PopColorStyle();
+
+    // 绘制附加件底模依赖线（粉色）
+    const ImU32 addon_link_color = IM_COL32(255, 100, 180, 220);
+    const ImU32 addon_link_color_active = IM_COL32(255, 130, 210, 255);
+    ImNodes::PushColorStyle(ImNodesCol_Link, addon_link_color);
+    ImNodes::PushColorStyle(ImNodesCol_LinkHovered, addon_link_color_active);
+    ImNodes::PushColorStyle(ImNodesCol_LinkSelected, addon_link_color_active);
+
+    for (auto& [id, item] : this->items) {
+        if (item->source_type == 2 && item->addon_base_node_id >= 0 &&
+            this->items.find(item->addon_base_node_id) != this->items.end()) {
+            int source_attr = item->addon_base_node_id * 1000 + 4;
+            int target_attr = id * 1000 + 4;
             ImNodes::Link(link_id++, source_attr, target_attr);
         }
     }

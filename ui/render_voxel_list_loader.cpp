@@ -120,6 +120,21 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
                     sinriv::kigstudio::to_json(pt));
             }
             cJSON_AddItemToObject(s_obj, "guide_points", pts_arr);
+            // width_points
+            if (!strand.width_points.empty()) {
+                cJSON* wp_arr = cJSON_CreateArray();
+                for (const auto& wp : strand.width_points) {
+                    cJSON* wp_obj = cJSON_CreateObject();
+                    cJSON_AddNumberToObject(wp_obj, "curve_id",
+                                            static_cast<double>(wp.curve_id));
+                    cJSON_AddNumberToObject(wp_obj, "scale",
+                                            static_cast<double>(wp.scale));
+                    cJSON_AddItemToObject(wp_obj, "direction",
+                        sinriv::kigstudio::to_json(wp.direction));
+                    cJSON_AddItemToArray(wp_arr, wp_obj);
+                }
+                cJSON_AddItemToObject(s_obj, "width_points", wp_arr);
+            }
             cJSON_AddItemToArray(strands_arr, s_obj);
         }
         cJSON_AddItemToObject(obj, "hair_strands", strands_arr);
@@ -411,6 +426,53 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                                 cJSON* pt_obj = cJSON_GetArrayItem(pts_arr, pi);
                                 vec3f pt = sinriv::kigstudio::vec3_from_json<vec3f>(pt_obj);
                                 strand.guide_points.push_back(pt);
+                            }
+                        }
+                        // width_points
+                        cJSON* wp_arr = cJSON_GetObjectItem(s_obj, "width_points");
+                        if (wp_arr && cJSON_IsArray(wp_arr)) {
+                            int wp_count = cJSON_GetArraySize(wp_arr);
+                            for (int wi = 0; wi < wp_count; ++wi) {
+                                cJSON* wp_obj = cJSON_GetArrayItem(wp_arr, wi);
+                                if (!wp_obj) continue;
+                                HairStrand::WidthPoint wp;
+                                // 新格式：curve_id（浮点，整数部分=段索引，小数部分=段内t）
+                                cJSON* cid = cJSON_GetObjectItem(wp_obj, "curve_id");
+                                if (cid) {
+                                    wp.curve_id = static_cast<float>(cid->valuedouble);
+                                } else {
+                                    // 兼容旧格式：从 guide_vertex_id 转换
+                                    cJSON* gvi = cJSON_GetObjectItem(wp_obj, "guide_vertex_id");
+                                    if (gvi)
+                                        wp.curve_id = static_cast<float>(gvi->valuedouble);
+                                }
+                                cJSON* sc = cJSON_GetObjectItem(wp_obj, "scale");
+                                if (sc) wp.scale = static_cast<float>(sc->valuedouble);
+                                // direction 向量
+                                cJSON* dir = cJSON_GetObjectItem(wp_obj, "direction");
+                                if (dir) {
+                                    wp.direction = sinriv::kigstudio::vec3_from_json<vec3f>(dir);
+                                } else {
+                                    // 兼容旧格式：从 world_pos 和 curve_pos 计算 direction
+                                    cJSON* wpos = cJSON_GetObjectItem(wp_obj, "world_pos");
+                                    cJSON* cpos = cJSON_GetObjectItem(wp_obj, "curve_pos");
+                                    if (wpos && cpos) {
+                                        vec3f world_pos = sinriv::kigstudio::vec3_from_json<vec3f>(wpos);
+                                        vec3f curve_pos = sinriv::kigstudio::vec3_from_json<vec3f>(cpos);
+                                        vec3f diff = world_pos - curve_pos;
+                                        float dist = diff.length();
+                                        if (dist > 0.0001f) {
+                                            wp.direction = diff / dist;
+                                            if (wp.scale == 1.0f)
+                                                wp.scale = dist;
+                                        } else {
+                                            wp.direction = {0.0f, 1.0f, 0.0f};
+                                        }
+                                    } else {
+                                        wp.direction = {0.0f, 1.0f, 0.0f};
+                                    }
+                                }
+                                strand.width_points.push_back(wp);
                             }
                         }
                         item->hair_strands.push_back(std::move(strand));
