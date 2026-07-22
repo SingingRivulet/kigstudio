@@ -452,6 +452,19 @@ class RenderVoxelList {
         // Rebuild addon meshes from hair strand data (called from render_gbuffer)
         void update_addon_meshes();
 
+        // Build loft triangles for a single strand (for SDF construction)
+        std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
+        build_strand_loft_triangles(int strand_idx) const;
+
+        // Build SDF from all hair strands (union of per-strand SDF_Mesh)
+        std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> build_hair_sdf() const;
+
+        // Compute world-space bounding box of all hair strand loft meshes.
+        // Returns {min, max}. If no valid strands, both are {0,0,0}.
+        std::pair<sinriv::kigstudio::voxel::vec3f,
+                  sinriv::kigstudio::voxel::vec3f>
+        compute_hair_bounds() const;
+
         void render_gbuffer(const float* transform,
                             sinriv::ui::render::RenderMeshShader& mesh_shader);
         void render_overlay(
@@ -669,6 +682,7 @@ class RenderVoxelList {
     bool showExportedMesh = true;
     bool showVoxels = true;
     bool showCollision = true;
+    bool showAddonMesh = true;
 
     bool showMeshAxis = false;
     bool showVoxelAxis = false;

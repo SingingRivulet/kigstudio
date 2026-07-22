@@ -390,6 +390,75 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
 std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
                        sinriv::kigstudio::sdf::SDFBasePtr>>
 RenderVoxelList::RenderVoxelItem::do_segment() {
+    // --- Addon (hair) node handling ---
+    if (source_type == 2) {
+        using namespace sinriv::kigstudio::sdf;
+
+        // Get base model SDF for reveal mode
+        SDFBasePtr base_sdf = nullptr;
+        if (addon_reveal && addon_base_node_id >= 0 && manager) {
+            std::lock_guard<std::mutex> lock(manager->locker);
+            auto base_it = manager->items.find(addon_base_node_id);
+            if (base_it != manager->items.end()) {
+                base_sdf = base_it->second->sdf_data;
+            }
+        }
+
+        if (addon_split) {
+            // Each strand becomes an independent child node
+            std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
+                                   SDFBasePtr>>
+                result;
+            for (int i = 0; i < static_cast<int>(hair_strands.size()); ++i) {
+                auto strand_tris = build_strand_loft_triangles(i);
+                if (strand_tris.empty()) continue;
+
+                auto strand_sdf = std::make_shared<SDF_Mesh>();
+                strand_sdf->precision_mode = SDFPrecision::Precise;
+                if (!strand_sdf->loadTriangles(strand_tris)) continue;
+
+                SDFBasePtr final_sdf = strand_sdf;
+
+                // Subtract all preceding strands (0..i-1)
+                for (int j = 0; j < i; ++j) {
+                    auto prev_tris = build_strand_loft_triangles(j);
+                    if (prev_tris.empty()) continue;
+                    auto prev_sdf = std::make_shared<SDF_Mesh>();
+                    prev_sdf->precision_mode = SDFPrecision::Precise;
+                    if (!prev_sdf->loadTriangles(prev_tris)) continue;
+                    final_sdf = sdf_subtraction(final_sdf, prev_sdf);
+                }
+
+                // Subtract base model if reveal is on
+                if (addon_reveal && base_sdf) {
+                    final_sdf = sdf_subtraction(final_sdf, base_sdf);
+                }
+
+                sinriv::kigstudio::voxel::VoxelGrid dummy_grid;
+                dummy_grid.global_position = voxel_grid_data.global_position;
+                dummy_grid.voxel_size = voxel_grid_data.voxel_size;
+                result.emplace_back(std::move(dummy_grid), std::move(final_sdf));
+            }
+            if (result.empty()) {
+                return {{voxel_grid_data, nullptr}};
+            }
+            return result;
+        } else {
+            // Combined SDF from all strands
+            auto hair_sdf = build_hair_sdf();
+            if (!hair_sdf) {
+                return {{voxel_grid_data, nullptr}};
+            }
+
+            // Subtract base model if reveal is on
+            if (addon_reveal && base_sdf) {
+                hair_sdf = sdf_subtraction(hair_sdf, base_sdf);
+            }
+
+            return {{voxel_grid_data, std::move(hair_sdf)}};
+        }
+    }
+
     if (segment_mode == COLLISION) {
         auto res = voxel_grid_data.segment(collision_group);
         sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;

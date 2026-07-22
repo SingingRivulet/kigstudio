@@ -542,6 +542,8 @@ void init_locale_strings() {
     add_locale_string("action.pick_pos_auto_snapping_stop",
                       {{"en", "stop auto snapping"}, {"zh", "取消自动吸附"}});
 
+    add_locale_string("label.show_addon_mesh",
+                      {{"en", "addon"}, {"zh", "附加件"}});
     add_locale_string("label.show_origin_mesh",
                       {{"en", "show origin mesh"}, {"zh", "显示原始网格"}});
     add_locale_string("label.show_mesh",
@@ -1283,6 +1285,24 @@ void init_locale_strings() {
                       {{"en", "Not applied yet."}, {"zh", "尚未应用。"}});
     add_locale_string("label.section_rotation",
                       {{"en", "Rotation"}, {"zh", "旋转"}});
+    add_locale_string("action.update_hair_sdf",
+                      {{"en", "Update Hair SDF"}, {"zh", "更新毛发SDF"}});
+    add_locale_string("tooltip.update_hair_sdf",
+                      {{"en", "Build SDF from all hair strands. The node will become SDF-capable for collision and rendering."},
+                       {"zh", "从所有发束构建SDF。节点将具备SDF功能，可用于碰撞和渲染。"}});
+    add_locale_string("label.sdf_ready",
+                      {{"en", "SDF ready"}, {"zh", "SDF就绪"}});
+    add_locale_string("label.sdf_not_built",
+                      {{"en", "SDF not built"}, {"zh", "SDF未构建"}});
+    add_locale_string("tooltip.hair_voxel_size",
+                      {{"en", "Voxel size for hair SDF mesh generation. Smaller = finer detail but slower."},
+                       {"zh", "毛发SDF网格生成的体素大小。越小细节越精细，但速度越慢。"}});
+    add_locale_string("log.queue.build_hair_sdf",
+                      {{"en", "[Queue] Building hair SDF from %zu strands..."},
+                       {"zh", "[队列] 从 %zu 根发束构建毛发SDF..."}});
+    add_locale_string("log.queue.hair_sdf_done",
+                      {{"en", "[Queue] Hair SDF built successfully."},
+                       {"zh", "[队列] 毛发SDF构建完成。"}});
 
     add_locale_string("label.source_node_id",
                       {{"en", "Source Node"}, {"zh", "源节点"}});

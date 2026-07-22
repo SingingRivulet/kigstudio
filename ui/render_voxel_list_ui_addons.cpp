@@ -492,8 +492,6 @@ void RenderVoxelList::render_object_editor_addons() {
             snprintf(header_label, sizeof(header_label),
                      get_locale_cstr("label.hair_strand"),
                      static_cast<int>(i + 1));
-            // 在CollapsingHeader右侧显示点数
-            ImGui::SameLine();
             bool expanded = ImGui::CollapsingHeader(header_label,
                                                      strand.expanded
                                                          ? ImGuiTreeNodeFlags_DefaultOpen
@@ -687,6 +685,7 @@ void RenderVoxelList::render_object_editor_addons() {
             push_undo_now(item.id, std::nullopt, "Delete Hair Strand");
             for (auto& s : item.hair_strands) s.mesh_dirty = true;
         }
+
     }
 
     ImGui::End();

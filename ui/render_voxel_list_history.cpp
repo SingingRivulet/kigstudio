@@ -155,6 +155,9 @@ bool RenderVoxelList::undo(int item_id) {
     it->second->undo_stack.pop_back();
     it->second->dirty = true;
     it->second->auto_segment_update = false;
+    // Mark all hair strand meshes dirty so they regenerate
+    for (auto& strand : it->second->hair_strands)
+        strand.mesh_dirty = true;
     return true;
 }
 
@@ -171,6 +174,9 @@ bool RenderVoxelList::redo(int item_id) {
     it->second->redo_stack.pop_back();
     it->second->dirty = true;
     it->second->auto_segment_update = false;
+    // Mark all hair strand meshes dirty so they regenerate
+    for (auto& strand : it->second->hair_strands)
+        strand.mesh_dirty = true;
     return true;
 }
 

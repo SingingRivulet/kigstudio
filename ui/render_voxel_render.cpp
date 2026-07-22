@@ -468,6 +468,73 @@ void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
 	}
 }
 
+std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
+RenderVoxelList::RenderVoxelItem::build_strand_loft_triangles(
+    int strand_idx) const {
+	std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle> result;
+	if (strand_idx < 0 ||
+	    strand_idx >= static_cast<int>(hair_strands.size()))
+		return result;
+
+	auto tris_with_normals = build_hair_strand_mesh(hair_strands[strand_idx]);
+	result.reserve(tris_with_normals.size());
+	for (const auto& [tri, n] : tris_with_normals) {
+		(void)n;
+		result.push_back(tri);
+	}
+	return result;
+}
+
+std::shared_ptr<sinriv::kigstudio::sdf::SDFBase>
+RenderVoxelList::RenderVoxelItem::build_hair_sdf() const {
+	using namespace sinriv::kigstudio::sdf;
+
+	std::vector<SDFBasePtr> strand_sdfs;
+	for (size_t i = 0; i < hair_strands.size(); ++i) {
+		auto tris = build_strand_loft_triangles(static_cast<int>(i));
+		if (tris.empty()) continue;
+
+		auto mesh_sdf = std::make_shared<SDF_Mesh>();
+		mesh_sdf->precision_mode = SDFPrecision::Precise;
+		if (!mesh_sdf->loadTriangles(tris)) continue;
+		strand_sdfs.push_back(mesh_sdf);
+	}
+
+	if (strand_sdfs.empty()) return nullptr;
+	if (strand_sdfs.size() == 1) return strand_sdfs[0];
+	return sdf_group(strand_sdfs);
+}
+
+std::pair<sinriv::kigstudio::voxel::vec3f, sinriv::kigstudio::voxel::vec3f>
+RenderVoxelList::RenderVoxelItem::compute_hair_bounds() const {
+	using vec3f = sinriv::kigstudio::voxel::vec3f;
+	bool first = true;
+	vec3f bmin{0, 0, 0}, bmax{0, 0, 0};
+
+	for (size_t si = 0; si < hair_strands.size(); ++si) {
+		auto tris = build_strand_loft_triangles(static_cast<int>(si));
+		for (const auto& tri : tris) {
+			for (const auto& v :
+			     {std::get<0>(tri), std::get<1>(tri), std::get<2>(tri)}) {
+				if (first) {
+					bmin = vec3f{v.x, v.y, v.z};
+					bmax = vec3f{v.x, v.y, v.z};
+					first = false;
+				} else {
+					if (v.x < bmin.x) bmin.x = v.x;
+					if (v.y < bmin.y) bmin.y = v.y;
+					if (v.z < bmin.z) bmin.z = v.z;
+					if (v.x > bmax.x) bmax.x = v.x;
+					if (v.y > bmax.y) bmax.y = v.y;
+					if (v.z > bmax.z) bmax.z = v.z;
+				}
+			}
+		}
+	}
+
+	return {bmin, bmax};
+}
+
 void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     const float* transform,
     sinriv::ui::render::RenderMeshShader& mesh_shader) {
@@ -506,9 +573,11 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
 
     // 附加件渲染器（如毛发预览）：写入 albedo/normal/depth，与主模型正确
     // 互相遮挡，但不写 world_pos 通道，鼠标拾取可穿透它拾取下层模型
-    for (auto& addon : addon_renderers) {
-        addon.cull_backface = false;
-        addon.renderGBufferAddon(transform, mesh_shader);
+    if (!manager || manager->showAddonMesh) {
+        for (auto& addon : addon_renderers) {
+            addon.cull_backface = false;
+            addon.renderGBufferAddon(transform, mesh_shader);
+        }
     }
 
     if (showVoxel) {

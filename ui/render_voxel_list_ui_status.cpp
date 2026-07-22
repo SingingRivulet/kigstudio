@@ -132,6 +132,131 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 }
             }
         }
+        // Voxel Size (with +/- buttons like other node types)
+        ImGui::Separator();
+        ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
+        ImGui::SameLine();
+        const float button_size = ImGui::GetFrameHeight();
+        if (ImGui::Button("-##hairvoxelsize", ImVec2(button_size, 0))) {
+            auto tmp = item.stl_voxel_size / 2.0f;
+            if (tmp >= 0.01f) {
+                item.stl_voxel_size = tmp;
+            }
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.0f);
+        ImGui::DragFloat("##HairVoxelSize", &item.stl_voxel_size, 0.1f, 0.0f,
+                         0.0f, "%.3f");
+        ImGui::SameLine();
+        if (ImGui::Button("+##hairvoxelsize", ImVec2(button_size, 0))) {
+            item.stl_voxel_size = item.stl_voxel_size * 2.0f;
+            if (item.stl_voxel_size > 100.0f) {
+                item.stl_voxel_size = 100.0f;
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s",
+                get_locale_cstr("tooltip.hair_voxel_size"));
+        }
+
+        // Update Hair SDF button
+        {
+            bool has_strands = false;
+            for (const auto& s : item.hair_strands) {
+                if (s.guide_points.size() >= 2 &&
+                    !s.width_points.empty()) {
+                    has_strands = true;
+                    break;
+                }
+            }
+            if (!has_strands) ImGui::BeginDisabled();
+            if (ImGui::Button(get_locale_cstr("action.update_hair_sdf"),
+                              ImVec2(-1, 0))) {
+                // Compute bounding box and set up voxel grid
+                auto [bmin, bmax] = item.compute_hair_bounds();
+                item.voxel_grid_data.global_position = bmin;
+                float vs = item.stl_voxel_size;
+                item.voxel_grid_data.voxel_size = {vs, vs, vs};
+
+                // Populate voxel chunks to cover the bounding box
+                item.voxel_grid_data.chunks.clear();
+                if (bmin.x < bmax.x && bmin.y < bmax.y &&
+                    bmin.z < bmax.z) {
+                    auto worldToVoxel =
+                        [&](float wx, float wy,
+                            float wz) -> sinriv::kigstudio::Vec3i {
+                        return {
+                            static_cast<int32_t>(std::floor(
+                                (wx - bmin.x) / vs)),
+                            static_cast<int32_t>(std::floor(
+                                (wy - bmin.y) / vs)),
+                            static_cast<int32_t>(std::floor(
+                                (wz - bmin.z) / vs))};
+                    };
+                    auto min_voxel = worldToVoxel(bmin.x, bmin.y, bmin.z);
+                    auto max_voxel = worldToVoxel(bmax.x, bmax.y, bmax.z);
+                    // Expand slightly to ensure coverage
+                    min_voxel.x -= 1;
+                    min_voxel.y -= 1;
+                    min_voxel.z -= 1;
+                    max_voxel.x += 1;
+                    max_voxel.y += 1;
+                    max_voxel.z += 1;
+                    int min_cx = min_voxel.x >> 5;
+                    int min_cy = min_voxel.y >> 5;
+                    int min_cz = min_voxel.z >> 5;
+                    int max_cx = max_voxel.x >> 5;
+                    int max_cy = max_voxel.y >> 5;
+                    int max_cz = max_voxel.z >> 5;
+                    // Limit chunk count to prevent excessive memory
+                    int total_c =
+                        (max_cx - min_cx + 1) *
+                        (max_cy - min_cy + 1) *
+                        (max_cz - min_cz + 1);
+                    if (total_c <= 4096) {
+                        for (int cx = min_cx; cx <= max_cx; ++cx)
+                            for (int cy = min_cy; cy <= max_cy; ++cy)
+                                for (int cz = min_cz; cz <= max_cz; ++cz) {
+                                    uint64_t key =
+                                        sinriv::kigstudio::voxel::packChunkKey(
+                                            cx, cy, cz);
+                                    item.voxel_grid_data.chunks.try_emplace(
+                                        key);
+                                }
+                    }
+                }
+
+                // Build SDF
+                auto hair_sdf = item.build_hair_sdf();
+                if (hair_sdf && item.addon_reveal &&
+                    item.addon_base_node_id >= 0) {
+                    auto base_it =
+                        items.find(item.addon_base_node_id);
+                    if (base_it != items.end() && base_it->second->sdf_data) {
+                        hair_sdf =
+                            sinriv::kigstudio::sdf::sdf_subtraction(
+                                hair_sdf, base_it->second->sdf_data);
+                    }
+                }
+                item.sdf_data = hair_sdf;
+                item.dirty = true;
+            }
+            if (!has_strands) ImGui::EndDisabled();
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s",
+                    get_locale_cstr("tooltip.update_hair_sdf"));
+            }
+            // Show SDF status
+            ImGui::SameLine();
+            if (item.sdf_data) {
+                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "%s",
+                                   get_locale_cstr("label.sdf_ready"));
+            } else {
+                ImGui::TextDisabled("%s",
+                                    get_locale_cstr("label.sdf_not_built"));
+            }
+        }
+
         // 仅在附加件模式下显示底部信息区域
         ImGui::Separator();
         if (item.addon_base_node_id < 0) {

@@ -98,6 +98,8 @@ void RenderVoxelList::render_ui() {
                                     &showCollision);
                     ImGui::Checkbox(get_locale_cstr("label.show_voxels"),
                                     &showVoxels);
+                    ImGui::Checkbox(get_locale_cstr("label.show_addon_mesh"),
+                                    &showAddonMesh);
                     ImGui::EndMenu();
                 }
                 if (ImGui::BeginMenu(get_locale_cstr("menu.axis"))) {
@@ -326,25 +328,27 @@ void RenderVoxelList::render_ui() {
         ImGui::Text(get_locale_cstr("label.current_fps"), fps);
         ImGui::SameLine();
         {
-            const char* labels[] = {get_locale_cstr("label.show_origin_mesh"),
+            const char* labels[] = {get_locale_cstr("label.show_addon_mesh"),
+                                    get_locale_cstr("label.show_origin_mesh"),
                                     get_locale_cstr("label.show_mesh"),
                                     get_locale_cstr("label.show_exported_mesh"),
                                     get_locale_cstr("label.show_collision"),
                                     get_locale_cstr("label.show_voxels")};
-            bool* states[] = {&showOriginMesh, &showMesh, &showExportedMesh,
-                              &showCollision, &showVoxels};
+            bool* states[] = {&showAddonMesh, &showOriginMesh, &showMesh,
+                              &showExportedMesh, &showCollision, &showVoxels};
+            constexpr int kNumButtons = 6;
             float buttonSpacing = ImGui::GetStyle().ItemSpacing.x;
             float totalWidth = 0;
-            for (int i = 0; i < 5; ++i) {
+            for (int i = 0; i < kNumButtons; ++i) {
                 ImVec2 size = ImGui::CalcTextSize(labels[i]);
                 totalWidth += size.x + ImGui::GetStyle().FramePadding.x * 2.0f;
-                if (i < 4)
+                if (i < kNumButtons - 1)
                     totalWidth += buttonSpacing;
             }
             float windowWidth = ImGui::GetWindowSize().x;
             ImGui::SetCursorPosX(windowWidth - totalWidth -
                                  ImGui::GetStyle().WindowPadding.x);
-            for (int i = 0; i < 5; ++i) {
+            for (int i = 0; i < kNumButtons; ++i) {
                 if (*states[i]) {
                     ImGui::PushStyleColor(ImGuiCol_Button,
                                           ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
@@ -364,7 +368,7 @@ void RenderVoxelList::render_ui() {
                     *states[i] = !*states[i];
                 }
                 ImGui::PopStyleColor(3);
-                if (i < 4)
+                if (i < kNumButtons - 1)
                     ImGui::SameLine();
             }
         }

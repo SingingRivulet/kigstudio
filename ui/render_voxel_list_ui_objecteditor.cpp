@@ -101,15 +101,20 @@ void RenderVoxelList::render_object_editor() {
                         get_locale_cstr("tooltip.collision_edit"));
                 }
 
-                // ===== Tab: Voxel Picking =====
-                if (ImGui::BeginTabItem(get_locale_cstr("tab.voxel_picking"),
-                                        nullptr, flags_voxel)) {
-                    object_editor_tab = 1;
-                    render_object_editor_voxel_tab_content(item);
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(get_locale_cstr("tooltip.voxel_picking"));
+                // ===== Tab: Voxel Picking (hidden in addon mode) =====
+                if (item.source_type != 2) {
+                    if (ImGui::BeginTabItem(get_locale_cstr("tab.voxel_picking"),
+                                            nullptr, flags_voxel)) {
+                        object_editor_tab = 1;
+                        render_object_editor_voxel_tab_content(item);
+                        ImGui::EndTabItem();
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip(get_locale_cstr("tooltip.voxel_picking"));
+                    }
+                } else if (object_editor_tab == 1) {
+                    // 附加件模式下不显示体素选择Tab，回退到碰撞编辑Tab
+                    object_editor_tab = 0;
                 }
                 if (item_it->second->root_id == item_it->second->id) {
                     if (ImGui::BeginTabItem(get_locale_cstr("tab.file_status"),
