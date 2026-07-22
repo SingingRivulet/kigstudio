@@ -614,6 +614,29 @@ void RenderVoxelList::render_cross_section_editor() {
             ImGui::BeginDisabled();
         if (ImGui::Button(get_locale_cstr("action.apply_section"))) {
             state.push_undo("Apply");
+            // Normalize section vertices to [-1, 1] range before committing
+            {
+                float min_x = verts[0].x, max_x = verts[0].x;
+                float min_y = verts[0].y, max_y = verts[0].y;
+                for (const auto& v : verts) {
+                    if (v.x < min_x) min_x = v.x;
+                    if (v.x > max_x) max_x = v.x;
+                    if (v.y < min_y) min_y = v.y;
+                    if (v.y > max_y) max_y = v.y;
+                }
+                float range_x = max_x - min_x;
+                float range_y = max_y - min_y;
+                if (range_x > 1e-8f && range_y > 1e-8f) {
+                    float cx = (min_x + max_x) * 0.5f;
+                    float cy = (min_y + max_y) * 0.5f;
+                    float scale_x = range_x * 0.5f;
+                    float scale_y = range_y * 0.5f;
+                    for (auto& v : verts) {
+                        v.x = (v.x - cx) / scale_x;
+                        v.y = (v.y - cy) / scale_y;
+                    }
+                }
+            }
             state.committed = verts;
             strand.mesh_dirty = true;
         }

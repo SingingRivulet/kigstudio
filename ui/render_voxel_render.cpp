@@ -268,6 +268,21 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 		          return a.curve_id < b.curve_id;
 	          });
 
+	// Ensure consistent direction orientation along the guide curve.
+	// If a width point's direction is >90° from the previous one (dot < 0),
+	// flip it to prevent the loft mesh from twisting/knotting.
+	for (size_t wi = 1; wi < sorted_wp.size(); ++wi) {
+		const auto& prev_dir = sorted_wp[wi - 1].direction;
+		auto& cur_dir = sorted_wp[wi].direction;
+		float dot = prev_dir.x * cur_dir.x + prev_dir.y * cur_dir.y +
+		            prev_dir.z * cur_dir.z;
+		if (dot < 0.0f) {
+			cur_dir.x = -cur_dir.x;
+			cur_dir.y = -cur_dir.y;
+			cur_dir.z = -cur_dir.z;
+		}
+	}
+
 	const int M = static_cast<int>(guide_curve.size());
 	const int N = static_cast<int>(strand.guide_points.size());
 
@@ -299,19 +314,91 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 				    loft_vec3f{wp_a->direction.x, wp_a->direction.y,
 				               wp_a->direction.z};
 			} else {
+				// Catmull-Rom spline interpolation for smooth width transitions
+				auto catmull_rom = [](float p0, float p1, float p2, float p3,
+				                      float t) -> float {
+					float t2 = t * t;
+					float t3 = t2 * t;
+					return 0.5f *
+					       ((2.0f * p1) + (-p0 + p2) * t +
+					        (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
+					        (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
+				};
+
 				float t =
 				    (curve_id - wp_a->curve_id) /
 				    (wp_b->curve_id - wp_a->curve_id + 1e-10f);
 				t = std::clamp(t, 0.0f, 1.0f);
-				scales[i] = wp_a->scale + (wp_b->scale - wp_a->scale) * t;
-				// Linear interpolate direction
-				directions[i] =
-				    loft_vec3f{wp_a->direction.x +
-				                   (wp_b->direction.x - wp_a->direction.x) * t,
-				               wp_a->direction.y +
-				                   (wp_b->direction.y - wp_a->direction.y) * t,
-				               wp_a->direction.z +
-				                   (wp_b->direction.z - wp_a->direction.z) * t};
+
+				int idx_a = static_cast<int>(wp_a - sorted_wp.data());
+				int idx_b = idx_a + 1;
+				int wp_count = static_cast<int>(sorted_wp.size());
+
+				// Gather 4 control points (P0, P1, P2, P3) for Catmull-Rom.
+				// P1 = wp_a, P2 = wp_b. P0/P3 are neighbors or mirrored.
+				auto mirror_before = [](float ref, float next) {
+					return ref - (next - ref);
+				};
+				auto mirror_after = [](float ref, float prev) {
+					return ref + (ref - prev);
+				};
+
+				// --- Scale ---
+				float p0_s = (idx_a > 0)
+				                 ? sorted_wp[idx_a - 1].scale
+				                 : mirror_before(wp_a->scale, wp_b->scale);
+				float p1_s = wp_a->scale;
+				float p2_s = wp_b->scale;
+				float p3_s = (idx_b < wp_count - 1)
+				                 ? sorted_wp[idx_b + 1].scale
+				                 : mirror_after(wp_b->scale, wp_a->scale);
+				scales[i] = catmull_rom(p0_s, p1_s, p2_s, p3_s, t);
+
+				// --- Direction (Catmull-Rom per component, then normalize) ---
+				auto mirror_vec_before =
+				    [](const loft_vec3f& ref, const loft_vec3f& next) {
+					    return loft_vec3f{
+					        ref.x - (next.x - ref.x),
+					        ref.y - (next.y - ref.y),
+					        ref.z - (next.z - ref.z),
+					    };
+				    };
+				auto mirror_vec_after =
+				    [](const loft_vec3f& ref, const loft_vec3f& prev) {
+					    return loft_vec3f{
+					        ref.x + (ref.x - prev.x),
+					        ref.y + (ref.y - prev.y),
+					        ref.z + (ref.z - prev.z),
+					    };
+				    };
+
+				loft_vec3f p1_d{wp_a->direction.x, wp_a->direction.y,
+				                wp_a->direction.z};
+				loft_vec3f p2_d{wp_b->direction.x, wp_b->direction.y,
+				                wp_b->direction.z};
+
+				loft_vec3f p0_d =
+				    (idx_a > 0)
+				        ? loft_vec3f{sorted_wp[idx_a - 1].direction.x,
+				                     sorted_wp[idx_a - 1].direction.y,
+				                     sorted_wp[idx_a - 1].direction.z}
+				        : mirror_vec_before(p1_d, p2_d);
+
+				loft_vec3f p3_d =
+				    (idx_b < wp_count - 1)
+				        ? loft_vec3f{sorted_wp[idx_b + 1].direction.x,
+				                     sorted_wp[idx_b + 1].direction.y,
+				                     sorted_wp[idx_b + 1].direction.z}
+				        : mirror_vec_after(p2_d, p1_d);
+
+				float dirx =
+				    catmull_rom(p0_d.x, p1_d.x, p2_d.x, p3_d.x, t);
+				float diry =
+				    catmull_rom(p0_d.y, p1_d.y, p2_d.y, p3_d.y, t);
+				float dirz =
+				    catmull_rom(p0_d.z, p1_d.z, p2_d.z, p3_d.z, t);
+				directions[i] = safe_normalize(
+				    loft_vec3f{dirx, diry, dirz}, loft_vec3f{0, 1, 0});
 			}
 		} else if (wp_a) {
 			// After last width_point: use tip falloff
