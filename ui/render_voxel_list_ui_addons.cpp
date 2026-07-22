@@ -111,6 +111,7 @@ void RenderVoxelList::render_guide_curve_window() {
             ImGui::BeginDisabled();
         if (ImGui::SmallButton(get_locale_cstr("action.undo"))) {
             undo(item.id);
+            for (auto& s : item.hair_strands) s.mesh_dirty = true;
         }
         if (undo_disabled)
             ImGui::EndDisabled();
@@ -119,6 +120,7 @@ void RenderVoxelList::render_guide_curve_window() {
             ImGui::BeginDisabled();
         if (ImGui::SmallButton(get_locale_cstr("action.redo"))) {
             redo(item.id);
+            for (auto& s : item.hair_strands) s.mesh_dirty = true;
         }
         if (redo_disabled)
             ImGui::EndDisabled();
@@ -182,8 +184,10 @@ void RenderVoxelList::render_guide_curve_window() {
         }
         if (all_edits.deactivated_after_edit) {
             end_edit(item.id, "Guide Point Edit");
+            strand.mesh_dirty = true;
         } else if (all_edits.value_changed) {
             push_undo_now(item.id, before_edit, "Guide Point Edit");
+            strand.mesh_dirty = true;
         }
 
         // 处理上移
@@ -191,18 +195,21 @@ void RenderVoxelList::render_guide_curve_window() {
             push_undo_now(item.id, std::nullopt, "Move Guide Point Up");
             std::swap(strand.guide_points[swap_up],
                       strand.guide_points[swap_up - 1]);
+            strand.mesh_dirty = true;
         }
         // 处理下移
         if (swap_down >= 0) {
             push_undo_now(item.id, std::nullopt, "Move Guide Point Down");
             std::swap(strand.guide_points[swap_down],
                       strand.guide_points[swap_down + 1]);
+            strand.mesh_dirty = true;
         }
         // 处理删除
         if (delete_point >= 0) {
             push_undo_now(item.id, std::nullopt, "Delete Guide Point");
             strand.guide_points.erase(
                 strand.guide_points.begin() + delete_point);
+            strand.mesh_dirty = true;
         }
 
         ImGui::EndChild();
@@ -212,6 +219,7 @@ void RenderVoxelList::render_guide_curve_window() {
     if (ImGui::Button(get_locale_cstr("action.clear_guide_points"))) {
         push_undo_now(item.id, std::nullopt, "Clear Guide Points");
         strand.guide_points.clear();
+        strand.mesh_dirty = true;
     }
 
     ImGui::End();
@@ -301,6 +309,7 @@ void RenderVoxelList::render_width_editor_window() {
             ImGui::BeginDisabled();
         if (ImGui::SmallButton(get_locale_cstr("action.undo"))) {
             undo(item.id);
+            for (auto& s : item.hair_strands) s.mesh_dirty = true;
         }
         if (undo_disabled)
             ImGui::EndDisabled();
@@ -309,6 +318,7 @@ void RenderVoxelList::render_width_editor_window() {
             ImGui::BeginDisabled();
         if (ImGui::SmallButton(get_locale_cstr("action.redo"))) {
             redo(item.id);
+            for (auto& s : item.hair_strands) s.mesh_dirty = true;
         }
         if (redo_disabled)
             ImGui::EndDisabled();
@@ -367,8 +377,10 @@ void RenderVoxelList::render_width_editor_window() {
         }
         if (all_edits.deactivated_after_edit) {
             end_edit(item.id, "Width Scale Edit");
+            strand.mesh_dirty = true;
         } else if (all_edits.value_changed) {
             push_undo_now(item.id, before_edit, "Width Scale Edit");
+            strand.mesh_dirty = true;
         }
 
         // 处理删除
@@ -376,6 +388,7 @@ void RenderVoxelList::render_width_editor_window() {
             push_undo_now(item.id, std::nullopt, "Delete Width Point");
             strand.width_points.erase(
                 strand.width_points.begin() + delete_wp);
+            strand.mesh_dirty = true;
         }
 
         ImGui::EndChild();
@@ -385,6 +398,7 @@ void RenderVoxelList::render_width_editor_window() {
     if (ImGui::Button(get_locale_cstr("action.clear_width_points"))) {
         push_undo_now(item.id, std::nullopt, "Clear Width Points");
         strand.width_points.clear();
+        strand.mesh_dirty = true;
     }
 
     ImGui::End();
@@ -495,6 +509,8 @@ void RenderVoxelList::render_object_editor_addons() {
                                   item.hair_strands[i - 1]);
                         push_undo_now(item.id, std::nullopt,
                                       "Move Strand Up");
+                        item.hair_strands[i].mesh_dirty = true;
+                        item.hair_strands[i - 1].mesh_dirty = true;
                     }
                     ImGui::SameLine();
                 }
@@ -505,6 +521,8 @@ void RenderVoxelList::render_object_editor_addons() {
                                   item.hair_strands[i + 1]);
                         push_undo_now(item.id, std::nullopt,
                                       "Move Strand Down");
+                        item.hair_strands[i].mesh_dirty = true;
+                        item.hair_strands[i + 1].mesh_dirty = true;
                     }
                     ImGui::SameLine();
                 }
@@ -627,6 +645,16 @@ void RenderVoxelList::render_object_editor_addons() {
                 ImGui::SameLine();
                 ImGui::Text(get_locale_cstr("label.width_points"),
                             static_cast<int>(strand.width_points.size()));
+
+                // Section rotation slider
+                ImGui::SetNextItemWidth(160);
+                float old_rot = strand.section_rotation;
+                ImGui::SliderFloat(get_locale_cstr("label.section_rotation"),
+                                   &strand.section_rotation, -180.0f, 180.0f,
+                                   "%.0f deg");
+                if (old_rot != strand.section_rotation) {
+                    strand.mesh_dirty = true;
+                }
             }
 
             ImGui::PopID();
@@ -657,6 +685,7 @@ void RenderVoxelList::render_object_editor_addons() {
             }
             item.hair_strands.erase(item.hair_strands.begin() + delete_idx);
             push_undo_now(item.id, std::nullopt, "Delete Hair Strand");
+            for (auto& s : item.hair_strands) s.mesh_dirty = true;
         }
     }
 

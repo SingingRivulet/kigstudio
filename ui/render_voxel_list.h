@@ -152,6 +152,12 @@ struct HairStrand {
 
     // Cross-section path (2D closed polygon) and independent undo/redo state
     SectionEditorState section_state;
+
+    // Section rotation around the guide curve tangent (-180 to 180 degrees)
+    float section_rotation = 0.0f;
+
+    // Dirty flag: set to true when any data affecting the loft mesh changes
+    bool mesh_dirty = true;
 };
 
 struct EditResult {
@@ -442,6 +448,9 @@ class RenderVoxelList {
         // 宽度编辑：在引导曲线上查找离 world_pos 最近的点并添加 WidthPoint
         void add_width_point_at(int strand_idx,
                                 const sinriv::kigstudio::voxel::vec3f& world_pos);
+
+        // Rebuild addon meshes from hair strand data (called from render_gbuffer)
+        void update_addon_meshes();
 
         void render_gbuffer(const float* transform,
                             sinriv::ui::render::RenderMeshShader& mesh_shader);

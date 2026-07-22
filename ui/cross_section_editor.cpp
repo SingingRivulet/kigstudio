@@ -16,6 +16,7 @@ namespace sinriv::ui::render {
 void SectionEditorState::push_undo(const std::string& desc) {
     undo_stack.push_back({vertices, desc});
     redo_stack.clear();
+    committed.clear();  // editing after Apply → no longer applied
     if (undo_stack.size() > kMaxUndoSize) {
         undo_stack.erase(undo_stack.begin());
     }
@@ -31,6 +32,7 @@ bool SectionEditorState::undo() {
     // Restore undo state
     vertices = undo_stack.back().vertices;
     undo_stack.pop_back();
+    committed.clear();  // undo changes → no longer applied
     return true;
 }
 
@@ -44,6 +46,7 @@ bool SectionEditorState::redo() {
     // Restore redo state
     vertices = redo_stack.back().vertices;
     redo_stack.pop_back();
+    committed.clear();  // redo changes → no longer applied
     return true;
 }
 
@@ -332,6 +335,7 @@ void RenderVoxelList::render_cross_section_editor() {
             ImGui::BeginDisabled();
         if (ImGui::SmallButton(get_locale_cstr("action.undo"))) {
             state.undo();
+            strand.mesh_dirty = true;
         }
         if (undo_disabled)
             ImGui::EndDisabled();
@@ -340,6 +344,7 @@ void RenderVoxelList::render_cross_section_editor() {
             ImGui::BeginDisabled();
         if (ImGui::SmallButton(get_locale_cstr("action.redo"))) {
             state.redo();
+            strand.mesh_dirty = true;
         }
         if (redo_disabled)
             ImGui::EndDisabled();
@@ -348,6 +353,16 @@ void RenderVoxelList::render_cross_section_editor() {
     ImGui::SameLine();
     ImGui::Text(get_locale_cstr("label.cross_section_vertices"),
                 static_cast<int>(verts.size()));
+
+    // Section rotation
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(100);
+    float old_rot = strand.section_rotation;
+    ImGui::SliderFloat(get_locale_cstr("label.section_rotation"),
+                       &strand.section_rotation, -180.0f, 180.0f, "%.0f");
+    if (old_rot != strand.section_rotation) {
+        strand.mesh_dirty = true;
+    }
 
     ImGui::Separator();
 
@@ -598,8 +613,9 @@ void RenderVoxelList::render_cross_section_editor() {
         if (apply_disabled)
             ImGui::BeginDisabled();
         if (ImGui::Button(get_locale_cstr("action.apply_section"))) {
-            state.committed = verts;
             state.push_undo("Apply");
+            state.committed = verts;
+            strand.mesh_dirty = true;
         }
         if (apply_disabled)
             ImGui::EndDisabled();
@@ -622,9 +638,11 @@ void RenderVoxelList::render_cross_section_editor() {
     if (ImGui::IsWindowFocused()) {
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) {
             state.undo();
+            strand.mesh_dirty = true;
         }
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Y)) {
             state.redo();
+            strand.mesh_dirty = true;
         }
     }
 

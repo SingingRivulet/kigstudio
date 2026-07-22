@@ -1,5 +1,6 @@
 #include "render_voxel_list.h"
 #include <bx/math.h>
+#include "kigstudio/mesh/loft.h"
 namespace sinriv::ui::render {
 namespace {
 uint32_t pack_abgr(float r, float g, float b, float a) {
@@ -173,6 +174,260 @@ sinriv::kigstudio::voxel::vec3f transform_point(
 }
 }  // namespace
 
+// ============================================================================
+// Hair strand loft mesh builder
+// ============================================================================
+namespace {
+
+using loft_vec3f = sinriv::kigstudio::vec3<float>;
+using loft_Triangle = sinriv::kigstudio::voxel::triangle_bvh<float>::triangle;
+
+// Safe normalize: returns fallback if vector is too short
+loft_vec3f safe_normalize(const loft_vec3f& v, const loft_vec3f& fallback) {
+	float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+	if (len < 1e-8f) return fallback;
+	float inv = 1.0f / len;
+	return loft_vec3f{v.x * inv, v.y * inv, v.z * inv};
+}
+
+// Compute triangle normal via cross product
+loft_vec3f compute_triangle_normal(const loft_Triangle& tri) {
+	const auto& v0 = std::get<0>(tri);
+	const auto& v1 = std::get<1>(tri);
+	const auto& v2 = std::get<2>(tri);
+	float dx1 = v1.x - v0.x, dy1 = v1.y - v0.y, dz1 = v1.z - v0.z;
+	float dx2 = v2.x - v0.x, dy2 = v2.y - v0.y, dz2 = v2.z - v0.z;
+	float nx = dy1 * dz2 - dz1 * dy2;
+	float ny = dz1 * dx2 - dx1 * dz2;
+	float nz = dx1 * dy2 - dy1 * dx2;
+	float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+	if (len < 1e-8f) return loft_vec3f{0, 0, 1};
+	float inv = 1.0f / len;
+	return loft_vec3f{nx * inv, ny * inv, nz * inv};
+}
+
+// Compute tangent at sample point i along the sampled curve
+loft_vec3f tangent_at_sample(const std::vector<loft_vec3f>& sampled, int i) {
+	int n = static_cast<int>(sampled.size());
+	if (n < 2) return loft_vec3f{0, 0, 1};
+	if (i <= 0)
+		return safe_normalize(
+		    loft_vec3f{sampled[1].x - sampled[0].x, sampled[1].y - sampled[0].y,
+		               sampled[1].z - sampled[0].z},
+		    loft_vec3f{0, 0, 1});
+	if (i >= n - 1)
+		return safe_normalize(
+		    loft_vec3f{sampled[n - 1].x - sampled[n - 2].x,
+		               sampled[n - 1].y - sampled[n - 2].y,
+		               sampled[n - 1].z - sampled[n - 2].z},
+		    loft_vec3f{0, 0, 1});
+	return safe_normalize(
+	    loft_vec3f{sampled[i + 1].x - sampled[i - 1].x,
+	               sampled[i + 1].y - sampled[i - 1].y,
+	               sampled[i + 1].z - sampled[i - 1].z},
+	    loft_vec3f{0, 0, 1});
+}
+
+constexpr float kMinTipWidth = 0.02f;
+
+// Build loft mesh triangles from a single hair strand.
+// Returns (Triangle, normal) pairs suitable for RenderMesh::loadGeometry().
+std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
+    const HairStrand& strand) {
+	using namespace sinriv::kigstudio::mesh::loft;
+	std::vector<std::tuple<loft_Triangle, loft_vec3f>> result;
+
+	if (strand.guide_points.size() < 2) return result;
+	if (strand.width_points.empty()) return result;
+	// Use committed section if applied; otherwise fall back to vertices;
+	// if neither is set, use a default unit square.
+	static const std::vector<sinriv::kigstudio::vec2<float>> kDefaultSection = {
+	    {-0.5f, -0.5f}, {0.5f, -0.5f}, {0.5f, 0.5f}, {-0.5f, 0.5f}};
+	const auto& section_path =
+	    strand.section_state.committed.size() >= 3
+	        ? strand.section_state.committed
+	        : (strand.section_state.vertices.size() >= 3
+	               ? strand.section_state.vertices
+	               : kDefaultSection);
+
+	// Step 1: Sample guide curve as dense polyline
+	auto sampled = sample_bezier_guide_curve(strand.guide_points, 32);
+	if (sampled.size() < 2) return result;
+
+	// Convert sampled to loft_vec3f
+	std::vector<loft_vec3f> guide_curve;
+	guide_curve.reserve(sampled.size());
+	for (const auto& p : sampled)
+		guide_curve.push_back(loft_vec3f{p.x, p.y, p.z});
+
+	// Step 2: Sort width_points by curve_id for interpolation
+	auto sorted_wp = strand.width_points;
+	std::sort(sorted_wp.begin(), sorted_wp.end(),
+	          [](const HairStrand::WidthPoint& a,
+	             const HairStrand::WidthPoint& b) {
+		          return a.curve_id < b.curve_id;
+	          });
+
+	const int M = static_cast<int>(guide_curve.size());
+	const int N = static_cast<int>(strand.guide_points.size());
+
+	// Pre-compute width interpolation for every sample point
+	std::vector<float> scales(M);
+	std::vector<loft_vec3f> directions(M);
+
+	for (int i = 0; i < M; ++i) {
+		// Map sample index to curve_id in guide_point space
+		float curve_id =
+		    static_cast<float>(i) / static_cast<float>(M - 1) *
+		    static_cast<float>(N - 1);
+
+		// Find bracketing width_points
+		const HairStrand::WidthPoint* wp_a = nullptr;
+		const HairStrand::WidthPoint* wp_b = nullptr;
+
+		for (const auto& wp : sorted_wp) {
+			if (wp.curve_id <= curve_id + 1e-6f)
+				wp_a = &wp;
+			if (wp.curve_id >= curve_id - 1e-6f && !wp_b)
+				wp_b = &wp;
+		}
+
+		if (wp_a && wp_b) {
+			if (wp_a == wp_b) {
+				scales[i] = wp_a->scale;
+				directions[i] =
+				    loft_vec3f{wp_a->direction.x, wp_a->direction.y,
+				               wp_a->direction.z};
+			} else {
+				float t =
+				    (curve_id - wp_a->curve_id) /
+				    (wp_b->curve_id - wp_a->curve_id + 1e-10f);
+				t = std::clamp(t, 0.0f, 1.0f);
+				scales[i] = wp_a->scale + (wp_b->scale - wp_a->scale) * t;
+				// Linear interpolate direction
+				directions[i] =
+				    loft_vec3f{wp_a->direction.x +
+				                   (wp_b->direction.x - wp_a->direction.x) * t,
+				               wp_a->direction.y +
+				                   (wp_b->direction.y - wp_a->direction.y) * t,
+				               wp_a->direction.z +
+				                   (wp_b->direction.z - wp_a->direction.z) * t};
+			}
+		} else if (wp_a) {
+			// After last width_point: use tip falloff
+			float tip_t = 0.0f;
+			if (!sorted_wp.empty()) {
+				float last_id = sorted_wp.back().curve_id;
+				float range = static_cast<float>(N - 1) - last_id;
+				if (range > 1e-4f)
+					tip_t = std::clamp(
+					    (curve_id - last_id) / range, 0.0f, 1.0f);
+			}
+			scales[i] = wp_a->scale * (1.0f - tip_t) + kMinTipWidth * tip_t;
+			directions[i] =
+			    safe_normalize(
+			        loft_vec3f{wp_a->direction.x, wp_a->direction.y,
+			                   wp_a->direction.z},
+			        loft_vec3f{0, 1, 0});
+		} else if (wp_b) {
+			// Before first width_point: use tip falloff
+			float tip_t = 0.0f;
+			if (!sorted_wp.empty()) {
+				float first_id = sorted_wp.front().curve_id;
+				if (first_id > 1e-4f)
+					tip_t =
+					    std::clamp(1.0f - curve_id / first_id, 0.0f, 1.0f);
+			}
+			scales[i] = wp_b->scale * (1.0f - tip_t) + kMinTipWidth * tip_t;
+			directions[i] =
+			    safe_normalize(
+			        loft_vec3f{wp_b->direction.x, wp_b->direction.y,
+			                   wp_b->direction.z},
+			        loft_vec3f{0, 1, 0});
+		} else {
+			scales[i] = kMinTipWidth;
+			directions[i] = loft_vec3f{0, 1, 0};
+		}
+
+		// Clamp minimum
+		if (scales[i] < kMinTipWidth) scales[i] = kMinTipWidth;
+	}
+
+	// Step 3: Build LoftSections
+	std::vector<LoftSection> sections;
+	const float rot_rad = strand.section_rotation * 3.14159265358979f / 180.0f;
+	const float cos_r = std::cos(rot_rad);
+	const float sin_r = std::sin(rot_rad);
+
+	for (int i = 0; i < M; ++i) {
+		float scale = scales[i];
+
+		// Compute local frame
+		loft_vec3f tangent = tangent_at_sample(guide_curve, i);
+
+		// axis_v = direction projected perpendicular to tangent
+		float dot_vt = directions[i].x * tangent.x +
+		               directions[i].y * tangent.y +
+		               directions[i].z * tangent.z;
+		loft_vec3f axis_v_raw{directions[i].x - tangent.x * dot_vt,
+		                      directions[i].y - tangent.y * dot_vt,
+		                      directions[i].z - tangent.z * dot_vt};
+		loft_vec3f axis_v = safe_normalize(axis_v_raw, loft_vec3f{0, 1, 0});
+
+		// axis_u = cross(tangent, axis_v)
+		loft_vec3f axis_u{
+		    tangent.y * axis_v.z - tangent.z * axis_v.y,
+		    tangent.z * axis_v.x - tangent.x * axis_v.z,
+		    tangent.x * axis_v.y - tangent.y * axis_v.x,
+		};
+		axis_u = safe_normalize(axis_u, loft_vec3f{1, 0, 0});
+
+		// Re-orthogonalize axis_v = cross(axis_u, tangent)
+		axis_v = loft_vec3f{
+		    axis_u.y * tangent.z - axis_u.z * tangent.y,
+		    axis_u.z * tangent.x - axis_u.x * tangent.z,
+		    axis_u.x * tangent.y - axis_u.y * tangent.x,
+		};
+		axis_v = safe_normalize(axis_v, loft_vec3f{0, 1, 0});
+
+		// Build rotated + scaled path
+		std::vector<sinriv::kigstudio::vec2<float>> path;
+		path.reserve(section_path.size());
+		for (const auto& v : section_path) {
+			float rx = v.x * cos_r - v.y * sin_r;
+			float ry = v.x * sin_r + v.y * cos_r;
+			path.push_back({rx * scale, ry * scale});
+		}
+
+		LoftSection sec;
+		sec.guide_vertex_id = static_cast<size_t>(i);
+		sec.axis_u = axis_u;
+		sec.axis_v = axis_v;
+		sec.path = std::move(path);
+		sections.push_back(std::move(sec));
+	}
+
+	if (sections.size() < 2) return result;
+
+	// Step 4: Build loft mesh
+	LoftOptions opts;
+	opts.cap_first = true;
+	opts.cap_last = true;
+	opts.orient_faces = true;
+
+	auto loft_tris = build_loft_mesh(guide_curve, sections, opts);
+
+	// Step 5: Wrap triangles with normals
+	result.reserve(loft_tris.size());
+	for (const auto& tri : loft_tris) {
+		result.emplace_back(tri, compute_triangle_normal(tri));
+	}
+
+	return result;
+}
+
+}  // namespace
+
 void RenderVoxelList::RenderVoxelItem::add_width_point_at(
     int strand_idx, const vec3f& world_pos) {
     if (strand_idx < 0 ||
@@ -197,6 +452,22 @@ void RenderVoxelList::RenderVoxelItem::add_width_point_at(
     strand.width_points.push_back(wp);
 }
 
+void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
+	addon_renderers.clear();
+	for (auto& strand : hair_strands) {
+		try {
+			auto tris = build_hair_strand_mesh(strand);
+			if (tris.empty()) continue;
+			addon_renderers.emplace_back();
+			addon_renderers.back().setBaseColor(0.3f, 0.65f, 0.42f, 1.0f);
+			addon_renderers.back().loadGeometry(tris);
+		} catch (const std::exception& e) {
+			std::cerr << "[addon_mesh] build failed for strand: " << e.what()
+			          << std::endl;
+		}
+	}
+}
+
 void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     const float* transform,
     sinriv::ui::render::RenderMeshShader& mesh_shader) {
@@ -215,6 +486,22 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
             cached_mesh_dirty = true;
         }
         exported_mesh_renderer.renderGBuffer(transform, mesh_shader);
+    }
+
+    // Rebuild addon meshes if any strand is dirty
+    {
+        bool any_dirty = false;
+        for (const auto& strand : hair_strands) {
+            if (strand.mesh_dirty) {
+                any_dirty = true;
+                break;
+            }
+        }
+        if (any_dirty) {
+            update_addon_meshes();
+            for (auto& strand : hair_strands)
+                strand.mesh_dirty = false;
+        }
     }
 
     // 附加件渲染器（如毛发预览）：写入 albedo/normal/depth，与主模型正确

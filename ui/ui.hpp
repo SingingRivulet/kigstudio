@@ -390,6 +390,7 @@ int ui_main(int argc, const char* const* argv) {
                                 auto& strand = item.hair_strands[item.active_guide_draw_strand];
                                 strand.guide_points.push_back(
                                     render_items.mouse_world_pos);
+                                strand.mesh_dirty = true;
                             }
                         }
                     } else if (width_edit_click_valid &&
@@ -408,6 +409,8 @@ int ui_main(int argc, const char* const* argv) {
                                 item.add_width_point_at(
                                     item.active_width_edit_strand,
                                     render_items.mouse_world_pos);
+                                item.hair_strands[item.active_width_edit_strand]
+                                    .mesh_dirty = true;
                             }
                         }
                     } else if (leftMouseDown &&

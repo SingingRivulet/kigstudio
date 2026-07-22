@@ -1281,6 +1281,8 @@ void init_locale_strings() {
                       {{"en", "Section applied."}, {"zh", "截面已应用。"}});
     add_locale_string("label.cross_section_not_applied",
                       {{"en", "Not applied yet."}, {"zh", "尚未应用。"}});
+    add_locale_string("label.section_rotation",
+                      {{"en", "Rotation"}, {"zh", "旋转"}});
 
     add_locale_string("label.source_node_id",
                       {{"en", "Source Node"}, {"zh", "源节点"}});
