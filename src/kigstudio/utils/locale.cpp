@@ -1259,6 +1259,29 @@ void init_locale_strings() {
     add_locale_string("tooltip.addon_split",
                       {{"en", "After update, each hair strand becomes an independent node, subtracting all preceding strands."},
                        {"zh", "点击更新碰撞后，每根发束生成独立节点，并减去所有排在前面的发束。"}});
+
+    // Cross-section editor
+    add_locale_string("window.cross_section_editor",
+                      {{"en", "Cross Section Editor"}, {"zh", "截面编辑器"}});
+    add_locale_string("label.cross_section_vertices",
+                      {{"en", "Vertices: %d"}, {"zh", "顶点数: %d"}});
+    add_locale_string("action.edit_section",
+                      {{"en", "Edit Section"}, {"zh", "编辑截面"}});
+    add_locale_string("action.stop_edit_section",
+                      {{"en", "Stop Edit"}, {"zh", "停止编辑"}});
+    add_locale_string("label.cross_section_hint",
+                      {{"en", "Drag vertices | Click edge to add | Right-click vertex to delete"},
+                       {"zh", "拖拽顶点 | 点击边添加顶点 | 右键删除顶点"}});
+    add_locale_string("label.cross_section_error",
+                      {{"en", "Error: polygon self-intersects"},
+                       {"zh", "错误：多边形自相交"}});
+    add_locale_string("action.apply_section",
+                      {{"en", "Apply"}, {"zh", "应用"}});
+    add_locale_string("label.cross_section_applied",
+                      {{"en", "Section applied."}, {"zh", "截面已应用。"}});
+    add_locale_string("label.cross_section_not_applied",
+                      {{"en", "Not applied yet."}, {"zh", "尚未应用。"}});
+
     add_locale_string("label.source_node_id",
                       {{"en", "Source Node"}, {"zh", "源节点"}});
     add_locale_string("label.source_data_mesh",

@@ -411,6 +411,7 @@ void RenderVoxelList::render_ui() {
     render_object_editor_addons();
     render_guide_curve_window();
     render_width_editor_window();
+    render_cross_section_editor();
     render_file_loader();
     render_save_dialog();
     render_load_dialog();

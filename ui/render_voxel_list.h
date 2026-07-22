@@ -35,6 +35,7 @@
 #include "kigstudio/voxel/voxel.h"
 #include "kigstudio/voxel/voxel_EDT.h"
 #include "kigstudio/voxel/voxelizer_svo.h"
+#include "ui/cross_section_editor.h"
 #include "ui/render_deferred.h"
 
 namespace sinriv::ui::render {
@@ -148,6 +149,9 @@ struct HairStrand {
     };
     std::vector<WidthPoint> width_points;
     bool width_editing_active = false;
+
+    // Cross-section path (2D closed polygon) and independent undo/redo state
+    SectionEditorState section_state;
 };
 
 struct EditResult {
@@ -366,6 +370,8 @@ class RenderVoxelList {
         // 当前正在编辑宽度的发束索引（-1表示无）
         int active_width_edit_strand = -1;
         bool width_editing_active = false;
+        // 当前正在编辑截面的发束索引（-1表示无）
+        int active_section_edit_strand = -1;
         sinriv::ui::render::RenderVoxel voxel_renderer;
         sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
         kdtree::KDTree mesh_kd_tree;  // 三角形顶点的kd树，用于实现自动吸附
@@ -689,9 +695,11 @@ class RenderVoxelList {
     void render_object_editor_addons();
     void render_guide_curve_window();
     void render_width_editor_window();
+    void render_cross_section_editor();
     bool show_addon_window = false;
     bool show_guide_curve_window = false;
     bool show_width_editor_window = false;
+    bool show_cross_section_editor_window = false;
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_concave_cone_editor(RenderVoxelItem& item);

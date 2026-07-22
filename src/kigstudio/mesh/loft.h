@@ -21,6 +21,7 @@ using Triangle = sinriv::kigstudio::voxel::triangle_bvh<float>::triangle;
 * 渲染器中新增RenderMesh的vector addon_renderer，用于管理多个mesh网格，此成员渲染位于鼠标捕获之后，不会参与鼠标拾取
 * 操作流程：
 * 1.选择一个预设截面样式，创建发束（预设截面样式使用txt格式放在程序目录中，每个坐标一行，加载前自动归一化，cmake自动复制）
+* 	TODO: 截面编辑器应用以后，继续编辑需要变回未应用
 * 2.使用鼠标在底模上从发根开始依次拾取点，系统通过贝塞尔曲线插值成guide_curve
 * 3.生成截面：
 * 	在底模上拾取一个点，计算这个点离guide_curve的距离，作为发束的宽度

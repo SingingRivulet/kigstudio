@@ -542,12 +542,30 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
         }
         if (has_any_guide_points && mesh_shader.ensureLineProgram()) {
             bgfx::VertexLayout& layout = concave_cone_overlay_layout();
-            const uint32_t line_color = pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);
-            const uint32_t marker_color = pack_abgr(1.0f, 0.6f, 0.1f, 1.0f);
+            const uint32_t active_line_color =
+                pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);   // yellow
+            const uint32_t active_marker_color =
+                pack_abgr(1.0f, 0.6f, 0.1f, 1.0f);     // orange-yellow
+            const uint32_t idle_line_color =
+                pack_abgr(1.0f, 1.0f, 1.0f, 0.7f);     // white
+            const uint32_t idle_marker_color =
+                pack_abgr(0.8f, 0.8f, 0.8f, 0.5f);     // grey-white
             std::vector<mesh_detail::ColorLineVertex> vertices;
-            for (const auto& strand : hair_strands) {
+            for (size_t si = 0; si < hair_strands.size(); ++si) {
+                const auto& strand = hair_strands[si];
                 if (strand.guide_points.size() < 2)
                     continue;
+                // Active strand (drawing guide or editing width) → yellow;
+                // idle strands → white
+                bool is_active =
+                    (guide_curve_drawing_active &&
+                     active_guide_draw_strand == static_cast<int>(si)) ||
+                    (width_editing_active &&
+                     active_width_edit_strand == static_cast<int>(si));
+                uint32_t line_color =
+                    is_active ? active_line_color : idle_line_color;
+                uint32_t marker_color =
+                    is_active ? active_marker_color : idle_marker_color;
                 // 贝塞尔插值采样 → 平滑曲线折线
                 auto sampled = sample_bezier_guide_curve(
                     strand.guide_points, 32);
