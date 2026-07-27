@@ -152,6 +152,11 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
         sinriv::kigstudio::to_json(item.silhouette_center));
     cJSON_AddBoolToObject(obj, "show_silhouette_center",
                           item.showSilhouetteCenter);
+    cJSON_AddItemToObject(
+        obj, "addon_center_point",
+        sinriv::kigstudio::to_json(item.addon_center_point));
+    cJSON_AddBoolToObject(obj, "show_addon_center",
+                          item.show_addon_center);
     cJSON_AddNumberToObject(obj, "silhouette_shape_mode",
                             static_cast<int>(item.silhouette_shape_mode));
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
@@ -541,6 +546,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->node_source_sdf_simplify = cJSON_IsTrue(child);
             } else if (strcmp(key, "show_silhouette_center") == 0) {
                 item->showSilhouetteCenter = cJSON_IsTrue(child);
+            } else if (strcmp(key, "show_addon_center") == 0) {
+                item->show_addon_center = cJSON_IsTrue(child);
             } else if (strcmp(key, "voxel_picking_enabled") == 0) {
                 item->voxel_picking_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "use_cgal_skeleton") == 0) {
@@ -570,6 +577,10 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                     sinriv::kigstudio::vec3_from_json<vec3f>(child);
             } else if (strcmp(key, "silhouette_center") == 0) {
                 item->silhouette_center =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "addon_center_point") == 0) {
+                item->addon_center_point =
                     sinriv::kigstudio::vec3_from_json<
                         sinriv::kigstudio::vec3<float>>(child);
             } else if (strcmp(key, "voxel_global_position") == 0) {
@@ -689,6 +700,11 @@ cJSON* RenderVoxelList::snapshot_to_json(
         sinriv::kigstudio::to_json(snapshot.silhouette_center));
     cJSON_AddBoolToObject(obj, "show_silhouette_center",
                           snapshot.show_silhouette_center);
+    cJSON_AddItemToObject(
+        obj, "addon_center_point",
+        sinriv::kigstudio::to_json(snapshot.addon_center_point));
+    cJSON_AddBoolToObject(obj, "show_addon_center",
+                          snapshot.show_addon_center);
     cJSON_AddNumberToObject(obj, "silhouette_shape_mode",
                             static_cast<int>(snapshot.silhouette_shape_mode));
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
@@ -975,6 +991,8 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.node_source_sdf_simplify = cJSON_IsTrue(child);
             } else if (strcmp(key, "show_silhouette_center") == 0) {
                 snapshot.show_silhouette_center = cJSON_IsTrue(child);
+            } else if (strcmp(key, "show_addon_center") == 0) {
+                snapshot.show_addon_center = cJSON_IsTrue(child);
             }
         } else if (cJSON_IsString(child)) {
             if (strcmp(key, "stl_path") == 0) {
@@ -1000,6 +1018,10 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                     sinriv::kigstudio::vec3_from_json<vec3f>(child);
             } else if (strcmp(key, "silhouette_center") == 0) {
                 snapshot.silhouette_center =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "addon_center_point") == 0) {
+                snapshot.addon_center_point =
                     sinriv::kigstudio::vec3_from_json<
                         sinriv::kigstudio::vec3<float>>(child);
             }

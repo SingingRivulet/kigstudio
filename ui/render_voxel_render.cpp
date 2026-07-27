@@ -243,12 +243,58 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 	// if neither is set, use a default unit square.
 	static const std::vector<sinriv::kigstudio::vec2<float>> kDefaultSection = {
 	    {-0.5f, -0.5f}, {0.5f, -0.5f}, {0.5f, 0.5f}, {-0.5f, 0.5f}};
-	const auto& section_path =
+	const auto& raw_section_path =
 	    strand.section_state.committed.size() >= 3
 	        ? strand.section_state.committed
 	        : (strand.section_state.vertices.size() >= 3
 	               ? strand.section_state.vertices
 	               : kDefaultSection);
+
+	// Optional Catmull-Rom smoothing for Bézier section mode
+	std::vector<sinriv::kigstudio::vec2<float>> smoothed_section_path;
+	const std::vector<sinriv::kigstudio::vec2<float>>* section_path_ptr =
+	    &raw_section_path;
+
+	if (strand.section_state.use_bezier_section &&
+	    raw_section_path.size() >= 3) {
+		const int kSubdiv = 8;  // samples per segment
+		const int n = static_cast<int>(raw_section_path.size());
+
+		// Catmull-Rom interpolation for a single float component
+		auto catmull_rom_2d = [](float p0, float p1, float p2,
+		                         float p3, float t) -> float {
+			float t2 = t * t;
+			float t3 = t2 * t;
+			return 0.5f *
+			       ((2.0f * p1) + (-p0 + p2) * t +
+			        (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
+			        (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
+		};
+
+		smoothed_section_path.reserve(n * kSubdiv);
+		for (int i = 0; i < n; ++i) {
+			int i0 = (i - 1 + n) % n;  // wrap for closed loop
+			int i1 = i;
+			int i2 = (i + 1) % n;
+			int i3 = (i + 2) % n;
+
+			const auto& p0 = raw_section_path[i0];
+			const auto& p1 = raw_section_path[i1];
+			const auto& p2 = raw_section_path[i2];
+			const auto& p3 = raw_section_path[i3];
+
+			for (int s = 0; s < kSubdiv; ++s) {
+				float t = static_cast<float>(s) /
+				          static_cast<float>(kSubdiv);
+				float sx = catmull_rom_2d(p0.x, p1.x, p2.x, p3.x, t);
+				float sy = catmull_rom_2d(p0.y, p1.y, p2.y, p3.y, t);
+				smoothed_section_path.push_back({sx, sy});
+			}
+		}
+		section_path_ptr = &smoothed_section_path;
+	}
+
+	const auto& section_path = *section_path_ptr;
 
 	// Step 1: Sample guide curve as dense polyline
 	auto sampled = sample_bezier_guide_curve(strand.guide_points, 32);
@@ -440,13 +486,39 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 		if (scales[i] < kMinTipWidth) scales[i] = kMinTipWidth;
 	}
 
+	// Compute section range from width points: cap at first/last width
+	// point instead of converging to a tip at guide curve endpoints.
+	int first_section_idx = 0;
+	int last_section_idx = M - 1;
+	if (!sorted_wp.empty()) {
+		auto curve_id_to_sample = [&](float curve_id) -> int {
+			int idx = static_cast<int>(std::round(
+			    curve_id * static_cast<float>(M - 1) /
+			    static_cast<float>(N - 1)));
+			return std::clamp(idx, 0, M - 1);
+		};
+		first_section_idx =
+		    curve_id_to_sample(sorted_wp.front().curve_id);
+		last_section_idx =
+		    curve_id_to_sample(sorted_wp.back().curve_id);
+		if (first_section_idx > last_section_idx)
+			std::swap(first_section_idx, last_section_idx);
+		// Ensure at least 2 sections for a valid loft mesh
+		if (last_section_idx - first_section_idx < 1) {
+			last_section_idx =
+			    std::min(first_section_idx + 1, M - 1);
+			first_section_idx =
+			    std::max(last_section_idx - 1, 0);
+		}
+	}
+
 	// Step 3: Build LoftSections
 	std::vector<LoftSection> sections;
 	const float rot_rad = strand.section_rotation * 3.14159265358979f / 180.0f;
 	const float cos_r = std::cos(rot_rad);
 	const float sin_r = std::sin(rot_rad);
 
-	for (int i = 0; i < M; ++i) {
+	for (int i = first_section_idx; i <= last_section_idx; ++i) {
 		float scale = scales[i];
 
 		// Compute local frame
@@ -515,6 +587,62 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 
 }  // namespace
 
+bool compute_auto_section_rotation(const vec3f& point, const vec3f& tangent,
+                                   const vec3f& center,
+                                   float& out_angle_deg) {
+    const vec3f& P = point;
+    const vec3f& T = tangent;
+    const vec3f& C = center;
+
+    vec3f V = {C.x - P.x, C.y - P.y, C.z - P.z};
+    float v_dot_t = V.x * T.x + V.y * T.y + V.z * T.z;
+    vec3f V_perp = {V.x - T.x * v_dot_t, V.y - T.y * v_dot_t,
+                    V.z - T.z * v_dot_t};
+
+    vec3f D = {0.0f, -1.0f, 0.0f};
+    float d_dot_t = D.x * T.x + D.y * T.y + D.z * T.z;
+    vec3f D_perp = {D.x - T.x * d_dot_t, D.y - T.y * d_dot_t,
+                    D.z - T.z * d_dot_t};
+
+    float v_perp_len =
+        std::sqrt(V_perp.x * V_perp.x + V_perp.y * V_perp.y +
+                  V_perp.z * V_perp.z);
+    float d_perp_len =
+        std::sqrt(D_perp.x * D_perp.x + D_perp.y * D_perp.y +
+                  D_perp.z * D_perp.z);
+
+    const float kEps = 0.0001f;
+    if (v_perp_len <= kEps || d_perp_len <= kEps)
+        return false;
+
+    // Normalize
+    V_perp.x /= v_perp_len;
+    V_perp.y /= v_perp_len;
+    V_perp.z /= v_perp_len;
+    D_perp.x /= d_perp_len;
+    D_perp.y /= d_perp_len;
+    D_perp.z /= d_perp_len;
+
+    // Cross product of V_perp and D_perp (angle from D_perp to V_perp)
+    vec3f cross_vd = {V_perp.y * D_perp.z - V_perp.z * D_perp.y,
+                      V_perp.z * D_perp.x - V_perp.x * D_perp.z,
+                      V_perp.x * D_perp.y - V_perp.y * D_perp.x};
+    float dot_val =
+        D_perp.x * V_perp.x + D_perp.y * V_perp.y + D_perp.z * V_perp.z;
+    float sign =
+        cross_vd.x * T.x + cross_vd.y * T.y + cross_vd.z * T.z;
+
+    float angle_rad = std::atan2(sign, dot_val);
+    float angle_deg = angle_rad * 180.0f / 3.14159265358979f;
+
+    // Clamp to [-180, 180]
+    if (angle_deg > 180.0f) angle_deg -= 360.0f;
+    if (angle_deg < -180.0f) angle_deg += 360.0f;
+
+    out_angle_deg = angle_deg;
+    return true;
+}
+
 void RenderVoxelList::RenderVoxelItem::add_width_point_at(
     int strand_idx, const vec3f& world_pos) {
     if (strand_idx < 0 ||
@@ -537,6 +665,59 @@ void RenderVoxelList::RenderVoxelItem::add_width_point_at(
     wp.direction = diff / dist;  // 单位方向向量
     wp.scale = dist;
     strand.width_points.push_back(wp);
+
+    // 添加第一个宽度向量时，若中心点存在，自动计算截面旋转角度
+    if (strand.width_points.size() == 1 && show_addon_center) {
+        auto sample = sample_guide_curve_at(strand_idx, wp.curve_id);
+        float angle_deg = 0.0f;
+        if (compute_auto_section_rotation(sample.position, sample.tangent,
+                                          addon_center_point, angle_deg)) {
+            strand.section_rotation = angle_deg;
+        }
+    }
+}
+
+GuideCurveSample
+RenderVoxelList::RenderVoxelItem::sample_guide_curve_at(
+    int strand_idx, float curve_id) const {
+    GuideCurveSample result;
+    if (strand_idx < 0 ||
+        strand_idx >= static_cast<int>(hair_strands.size()))
+        return result;
+    const auto& strand = hair_strands[strand_idx];
+    if (strand.guide_points.size() < 2)
+        return result;
+
+    auto sampled = sample_bezier_guide_curve(strand.guide_points, 32);
+    if (sampled.size() < 2)
+        return result;
+
+    // Convert curve_id to sample index in the sampled curve
+    const int N = static_cast<int>(strand.guide_points.size());
+    constexpr int kSubdiv = 32;
+    int seg_idx = static_cast<int>(curve_id);
+    float t = curve_id - static_cast<float>(seg_idx);
+    if (seg_idx < 0) { seg_idx = 0; t = 0.0f; }
+    if (seg_idx > N - 2) { seg_idx = N - 2; t = 1.0f; }
+
+    int sample_idx =
+        seg_idx * kSubdiv +
+        static_cast<int>(std::round(t * static_cast<float>(kSubdiv)));
+    if (sample_idx < 0) sample_idx = 0;
+    if (sample_idx >= static_cast<int>(sampled.size()))
+        sample_idx = static_cast<int>(sampled.size()) - 1;
+
+    result.position = sampled[sample_idx];
+
+    // Convert sampled points to loft_vec3f for tangent_at_sample
+    std::vector<loft_vec3f> loft_sampled;
+    loft_sampled.reserve(sampled.size());
+    for (const auto& p : sampled)
+        loft_sampled.push_back(loft_vec3f{p.x, p.y, p.z});
+    auto tang = tangent_at_sample(loft_sampled, sample_idx);
+    result.tangent = {tang.x, tang.y, tang.z};
+
+    return result;
 }
 
 void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
@@ -1063,8 +1244,13 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
         if (has_width_lines && mesh_shader.ensureLineProgram()) {
             bgfx::VertexLayout& layout = concave_cone_overlay_layout();
             const uint32_t green_color = pack_abgr(0.2f, 0.9f, 0.3f, 1.0f);
+            const uint32_t cyan_color = pack_abgr(0.0f, 1.0f, 1.0f, 1.0f);
             std::vector<mesh_detail::ColorLineVertex> vertices;
+            int si = 0;
             for (const auto& strand : hair_strands) {
+                bool is_active_strand =
+                    (si == active_width_edit_strand);
+                int wi = 0;
                 for (const auto& wp : strand.width_points) {
                     // 越界检查：curve_id 超出有效范围则不显示
                     if (strand.guide_points.size() < 2)
@@ -1075,6 +1261,14 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                         static_cast<float>(strand.guide_points.size() - 1);
                     if (wp.curve_id > max_id)
                         continue;
+
+                    // Highlight the hovered row in cyan (0,1,1)
+                    uint32_t color = green_color;
+                    if (is_active_strand &&
+                        wi == hovered_width_point_index) {
+                        color = cyan_color;
+                    }
+
                     // 从 curve_id 重建贝塞尔曲线上的点
                     size_t seg_idx =
                         static_cast<size_t>(wp.curve_id);
@@ -1105,10 +1299,12 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                     vec3f end_pos =
                         curve_pos + wp.direction * wp.scale;
                     vertices.push_back({end_pos.x, -end_pos.y,
-                                        end_pos.z, green_color});
+                                        end_pos.z, color});
                     vertices.push_back({curve_pos.x, -curve_pos.y,
-                                        curve_pos.z, green_color});
+                                        curve_pos.z, color});
+                    ++wi;
                 }
+                ++si;
             }
             if (!vertices.empty() &&
                 bgfx::getAvailTransientVertexBuffer(
@@ -1163,6 +1359,46 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                                      {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
                                      inner_wall_radius, wall_color);
             }
+            if (!vertices.empty() &&
+                bgfx::getAvailTransientVertexBuffer(
+                    static_cast<uint32_t>(vertices.size()),
+                    layout) >= vertices.size()) {
+                bgfx::TransientVertexBuffer tvb;
+                bgfx::allocTransientVertexBuffer(
+                    &tvb, static_cast<uint32_t>(vertices.size()),
+                    layout);
+                std::memcpy(tvb.data, vertices.data(),
+                            vertices.size() *
+                                sizeof(mesh_detail::ColorLineVertex));
+                bgfx::setTransform(model_transform);
+                bgfx::setVertexBuffer(0, &tvb);
+                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                               BGFX_STATE_WRITE_Z |
+                               BGFX_STATE_DEPTH_TEST_LESS |
+                               BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+                bgfx::submit(mesh_shader.overlay_view_id_,
+                             mesh_shader.line_program_);
+            }
+        }
+    }
+
+    // Addon center point rendering (three yellow circles, same style as silhouette)
+    if (show_addon_center && source_type == 2) {
+        if (mesh_shader.ensureLineProgram()) {
+            bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+            const uint32_t center_color = pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);
+            const float radius = 2.0f;
+            std::vector<mesh_detail::ColorLineVertex> vertices;
+            vertices.reserve(48 * 3);
+            append_marker_circle(vertices, addon_center_point,
+                                 {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
+                                 radius, center_color);
+            append_marker_circle(vertices, addon_center_point,
+                                 {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                 radius, center_color);
+            append_marker_circle(vertices, addon_center_point,
+                                 {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                 radius, center_color);
             if (!vertices.empty() &&
                 bgfx::getAvailTransientVertexBuffer(
                     static_cast<uint32_t>(vertices.size()),

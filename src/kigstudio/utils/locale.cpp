@@ -1250,7 +1250,25 @@ void init_locale_strings() {
                       {{"en", "Click on the base model to add width reference points."},
                        {"zh", "在底模上点击以添加宽度参考点。"}});
     add_locale_string("action.delete_width_point",
-                      {{"en", "Del"}, {"zh", "删"}});
+                      {{"en", "Del"}, {"zh", "删除"}});
+    add_locale_string("tooltip.move_toward_center",
+                      {{"en", "Move toward the center point along the connecting line "
+                               "(right-click to set distance and step)"},
+                       {"zh", "沿到中心点的连线向中心点移动（右键设置距离和步长）"}});
+    add_locale_string("tooltip.move_away_from_center",
+                      {{"en", "Move away from the center point along the connecting line "
+                               "(right-click to set distance and step)"},
+                       {"zh", "沿到中心点的连线远离中心点移动（右键设置距离和步长）"}});
+    add_locale_string("tooltip.move_point_up",
+                      {{"en", "Move this point earlier in the curve order"},
+                       {"zh", "将该点在曲线顺序中前移"}});
+    add_locale_string("tooltip.move_point_down",
+                      {{"en", "Move this point later in the curve order"},
+                       {"zh", "将该点在曲线顺序中后移"}});
+    add_locale_string("label.dist_to_center",
+                      {{"en", "Distance to center"}, {"zh", "离中心距离"}});
+    add_locale_string("label.move_step",
+                      {{"en", "Move step"}, {"zh", "移动步长"}});
     add_locale_string("label.addon_reveal",
                       {{"en", "Reveal"}, {"zh", "显露"}});
     add_locale_string("label.addon_split",
@@ -1283,6 +1301,26 @@ void init_locale_strings() {
                       {{"en", "Section applied."}, {"zh", "截面已应用。"}});
     add_locale_string("label.cross_section_not_applied",
                       {{"en", "Not applied yet."}, {"zh", "尚未应用。"}});
+    add_locale_string("label.width_vector_length",
+                      {{"en", "Vector Length"}, {"zh", "向量长度"}});
+    add_locale_string("label.width_direction",
+                      {{"en", "Direction"}, {"zh", "方向"}});
+    add_locale_string("label.addon_center_point",
+                      {{"en", "Center Point"}, {"zh", "中心点"}});
+    // TODO 1: Keypoint movement toward/away from center
+    add_locale_string("label.dist_to_center",
+                      {{"en", "Dist to center:"}, {"zh", "距中心："}});
+    add_locale_string("label.move_amount",
+                      {{"en", "Step"}, {"zh", "步长"}});
+    add_locale_string("action.move_toward_center",
+                      {{"en", "Toward"}, {"zh", "靠近"}});
+    add_locale_string("action.move_away_center",
+                      {{"en", "Away"}, {"zh", "远离"}});
+    // TODO 2: Auto-rotate section toward center
+    add_locale_string("action.auto_rotate_section",
+                      {{"en", "Auto-Rot"}, {"zh", "自动旋转"}});
+    add_locale_string("label.use_bezier_section",
+                      {{"en", "Bezier"}, {"zh", "贝塞尔"}});
     add_locale_string("label.section_rotation",
                       {{"en", "Rotation"}, {"zh", "旋转"}});
     add_locale_string("action.update_hair_sdf",

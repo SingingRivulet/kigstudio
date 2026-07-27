@@ -160,6 +160,12 @@ struct HairStrand {
     bool mesh_dirty = true;
 };
 
+// Result of sampling the guide curve at a given curve_id
+struct GuideCurveSample {
+    sinriv::kigstudio::voxel::vec3f position{};
+    sinriv::kigstudio::voxel::vec3f tangent{};
+};
+
 struct EditResult {
     bool activated = false;
     bool deactivated_after_edit = false;
@@ -180,6 +186,13 @@ EditResult edit_local_position_stepper(const char* label,
                                        bool normalize = false,
                                        bool show_label = true);
 EditResult edit_transform_controls(Transform& transform);
+// 计算截面自动旋转角度：给定引导曲线上一点 point、切线 tangent 与中心点
+// center，返回使中心点位于曲线方向与截面正下方所构成平面上的旋转角
+// （度，[-180,180]）。退化情况（向量与切线平行）返回 false。
+bool compute_auto_section_rotation(const vec3f& point,
+                                   const vec3f& tangent,
+                                   const vec3f& center,
+                                   float& out_angle_deg);
 const char* geometry_type_name(const GeometryInstance& instance);
 EditResult edit_geometry_shape(GeometryInstance& instance);
 void add_collision_geometry(CollisionGroup& group, int type_index);
@@ -236,6 +249,9 @@ struct CollisionEditorSnapshot {
     float node_source_sdf_simplify_ratio = 0.1f;
     vec3f silhouette_center = {0.0f, 0.0f, 0.0f};
     bool show_silhouette_center = false;
+    // 附加件中心点（所有发束共享）
+    vec3f addon_center_point = {0.0f, 0.0f, 0.0f};
+    bool show_addon_center = false;
     SilhouetteShapeMode silhouette_shape_mode = SilhouetteShapeMode::DELAUNAY_SPHERE;
     int silhouette_subdivision = 4;
     int silhouette_edge_subdiv = 0;
@@ -368,6 +384,9 @@ class RenderVoxelList {
         // 附加件碰撞选项
         bool addon_reveal = false;  // 显露：SDF减去底模
         bool addon_split = false;   // 拆分：每根发束独立节点
+        // 附加件中心点（所有发束共享），用于发根汇聚与反翘控制
+        vec3f addon_center_point = {0.0f, 0.0f, 0.0f};
+        bool show_addon_center = false;  // 是否显示/启用中心点
         // 毛发数据
         std::vector<HairStrand> hair_strands;
         // 当前正在绘制引导曲线的发束索引（-1表示无）
@@ -376,6 +395,8 @@ class RenderVoxelList {
         // 当前正在编辑宽度的发束索引（-1表示无）
         int active_width_edit_strand = -1;
         bool width_editing_active = false;
+        // Width point index highlighted in 3D viewport (hovered in width editor UI)
+        int hovered_width_point_index = -1;
         // 当前正在编辑截面的发束索引（-1表示无）
         int active_section_edit_strand = -1;
         sinriv::ui::render::RenderVoxel voxel_renderer;
@@ -448,6 +469,10 @@ class RenderVoxelList {
         // 宽度编辑：在引导曲线上查找离 world_pos 最近的点并添加 WidthPoint
         void add_width_point_at(int strand_idx,
                                 const sinriv::kigstudio::voxel::vec3f& world_pos);
+
+        // 在引导曲线上查找 curve_id 对应的世界坐标位置与切线方向
+        GuideCurveSample sample_guide_curve_at(int strand_idx,
+                                               float curve_id) const;
 
         // Rebuild addon meshes from hair strand data (called from render_gbuffer)
         void update_addon_meshes();

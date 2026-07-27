@@ -232,6 +232,7 @@ static const ImU32 kColorEdgeHover = IM_COL32(255, 220, 80, 255);
 static const ImU32 kColorVertex = IM_COL32(220, 220, 230, 255);
 static const ImU32 kColorVertexHover = IM_COL32(255, 220, 80, 255);
 static const ImU32 kColorVertexDrag = IM_COL32(255, 150, 50, 255);
+static const ImU32 kColorBezierPreview = IM_COL32(100, 220, 255, 200);
 
 // ============================================================================
 // render_cross_section_editor
@@ -353,6 +354,15 @@ void RenderVoxelList::render_cross_section_editor() {
     ImGui::SameLine();
     ImGui::Text(get_locale_cstr("label.cross_section_vertices"),
                 static_cast<int>(verts.size()));
+
+    // Bézier interpolation toggle
+    ImGui::SameLine();
+    bool old_bezier = state.use_bezier_section;
+    ImGui::Checkbox(get_locale_cstr("label.use_bezier_section"),
+                    &state.use_bezier_section);
+    if (old_bezier != state.use_bezier_section) {
+        strand.mesh_dirty = true;
+    }
 
     // Section rotation
     ImGui::SameLine();
@@ -578,6 +588,56 @@ void RenderVoxelList::render_cross_section_editor() {
         if (is_hovered) {
             ImVec2 mid((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
             dl->AddCircleFilled(mid, 3.5f, kColorEdgeHover);
+        }
+    }
+
+    // --- Draw Bézier curve preview overlay ---
+    // When Bézier mode is on, overlay the Catmull-Rom smoothed curve so the
+    // user can preview the shape the loft mesh will actually use. The formula
+    // and kSubdiv=8 must match build_hair_strand_mesh() in render_voxel_render.cpp.
+    if (state.use_bezier_section && verts.size() >= 3) {
+        const int n = static_cast<int>(verts.size());
+        constexpr int kSubdiv = 8;
+
+        auto catmull_rom_2d = [](float p0, float p1, float p2, float p3,
+                                 float t) -> float {
+            float t2 = t * t;
+            float t3 = t2 * t;
+            return 0.5f *
+                   ((2.0f * p1) + (-p0 + p2) * t +
+                    (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
+                    (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
+        };
+
+        // Generate smoothed points on the closed polygon
+        std::vector<ImVec2> smooth_pts;
+        smooth_pts.reserve(n * kSubdiv + 1);
+        for (int i = 0; i < n; ++i) {
+            int i0 = (i - 1 + n) % n;
+            int i1 = i;
+            int i2 = (i + 1) % n;
+            int i3 = (i + 2) % n;
+
+            const auto& p0 = verts[i0];
+            const auto& p1 = verts[i1];
+            const auto& p2 = verts[i2];
+            const auto& p3 = verts[i3];
+
+            for (int s = 0; s < kSubdiv; ++s) {
+                float t = static_cast<float>(s) /
+                          static_cast<float>(kSubdiv);
+                float sx = catmull_rom_2d(p0.x, p1.x, p2.x, p3.x, t);
+                float sy = catmull_rom_2d(p0.y, p1.y, p2.y, p3.y, t);
+                smooth_pts.push_back(world_to_canvas(vec2f{sx, sy}));
+            }
+        }
+
+        // Close the loop and draw as a smooth polyline
+        if (smooth_pts.size() >= 2) {
+            smooth_pts.push_back(smooth_pts[0]);
+            dl->AddPolyline(smooth_pts.data(),
+                            static_cast<int>(smooth_pts.size()),
+                            kColorBezierPreview, 0, 2.5f);
         }
     }
 

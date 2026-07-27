@@ -22,6 +22,9 @@ struct SectionEditorState {
     std::vector<vec2f> vertices;      // working copy (editable in canvas)
     std::vector<vec2f> committed;     // committed copy (set by Apply button)
 
+    // --- Bézier interpolation ---
+    bool use_bezier_section = false;  // smooth cross-section via Catmull-Rom
+
     // --- independent undo/redo ---
     std::vector<SectionEditorSnapshot> undo_stack;
     std::vector<SectionEditorSnapshot> redo_stack;

@@ -134,8 +134,11 @@ void RenderVoxelList::render_guide_curve_window() {
         ImGui::TextWrapped("%s",
                            get_locale_cstr("label.no_guide_points"));
     } else {
-        // 可滚动的点列表（可编辑坐标）
-        ImGui::BeginChild("GuidePointsList", ImVec2(0, 280), true);
+        // 可滚动的点列表（可编辑坐标），高度随窗口变化，
+        // 负高度为底部的分隔线和清空按钮预留空间
+        float bottom_reserve = ImGui::GetFrameHeightWithSpacing() +
+                               ImGui::GetStyle().ItemSpacing.y;
+        ImGui::BeginChild("GuidePointsList", ImVec2(0, -bottom_reserve), true);
 
         // 在循环前保存快照，用于撤销按钮+/-等即时修改
         auto before_edit = capture_snapshot(item);
@@ -148,8 +151,9 @@ void RenderVoxelList::render_guide_curve_window() {
             ImGui::PushID(static_cast<int>(pi));
 
             char label_buf[64];
-            snprintf(label_buf, sizeof(label_buf), "%s %zu",
-                     get_locale_cstr("label.guide_point"), pi + 1);
+            snprintf(label_buf, sizeof(label_buf),
+                     get_locale_cstr("label.guide_point"),
+                     static_cast<int>(pi + 1));
 
             auto r = edit_vec3_stepper(label_buf, strand.guide_points[pi],
                                        0.5f, false, true);
@@ -157,18 +161,90 @@ void RenderVoxelList::render_guide_curve_window() {
             all_edits.deactivated_after_edit |= r.deactivated_after_edit;
             all_edits.value_changed |= r.value_changed;
 
+            // --- 中心点方向移动控件（仅当中心点启用时显示）---
+            if (item.show_addon_center) {
+                vec3f to_center =
+                    item.addon_center_point - strand.guide_points[pi];
+                float dist = to_center.length();
+                ImGui::SameLine();
+                ImGui::TextDisabled("dist=%.2f", dist);
+
+                if (dist > 0.0001f) {
+                    vec3f dir = to_center / dist;
+
+                    // 移动步长（静态变量，所有关键点共享，右键菜单中可调）
+                    static float kp_move_step = 0.5f;
+
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("+")) {
+                        strand.guide_points[pi] =
+                            strand.guide_points[pi] + dir * kp_move_step;
+                        all_edits.value_changed = true;
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "%s",
+                            get_locale_cstr("tooltip.move_toward_center"));
+                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                        ImGui::OpenPopup("kp_center_menu");
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("-")) {
+                        strand.guide_points[pi] =
+                            strand.guide_points[pi] - dir * kp_move_step;
+                        all_edits.value_changed = true;
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "%s",
+                            get_locale_cstr("tooltip.move_away_from_center"));
+                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                        ImGui::OpenPopup("kp_center_menu");
+
+                    // 右键菜单：直接编辑离中心距离与移动步长
+                    if (ImGui::BeginPopup("kp_center_menu")) {
+                        float new_dist = dist;
+                        ImGui::SetNextItemWidth(120);
+                        ImGui::DragFloat(
+                            get_locale_cstr("label.dist_to_center"),
+                            &new_dist, 0.01f, 0.0001f, 100000.0f, "%.3f");
+                        if (ImGui::IsItemActivated())
+                            all_edits.activated = true;
+                        if (ImGui::IsItemDeactivatedAfterEdit())
+                            all_edits.deactivated_after_edit = true;
+                        if (new_dist != dist) {
+                            strand.guide_points[pi] =
+                                item.addon_center_point - dir * new_dist;
+                            // 历史记录由 activated/deactivated 在释放时创建，
+                            // 拖动过程中只更新网格，避免每帧产生历史记录
+                            strand.mesh_dirty = true;
+                        }
+                        ImGui::SetNextItemWidth(120);
+                        ImGui::DragFloat(get_locale_cstr("label.move_step"),
+                                         &kp_move_step, 0.01f, 0.01f, 10.0f,
+                                         "%.2f");
+                        ImGui::EndPopup();
+                    }
+                }
+            }
+
             // 操作按钮放在同一行
             if (pi > 0) {
                 ImGui::SameLine();
                 if (ImGui::SmallButton("^")) {
                     swap_up = static_cast<int>(pi);
                 }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip(
+                        "%s", get_locale_cstr("tooltip.move_point_up"));
             }
             if (pi < strand.guide_points.size() - 1) {
                 ImGui::SameLine();
                 if (ImGui::SmallButton("v")) {
                     swap_down = static_cast<int>(pi);
                 }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip(
+                        "%s", get_locale_cstr("tooltip.move_point_down"));
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("X")) {
@@ -332,11 +408,17 @@ void RenderVoxelList::render_width_editor_window() {
         ImGui::TextWrapped("%s",
                            get_locale_cstr("label.no_width_points"));
     } else {
-        ImGui::BeginChild("WidthPointsList", ImVec2(0, 280), true);
+        // 高度随窗口变化，负高度为底部的分隔线和清空按钮预留空间
+        float bottom_reserve = ImGui::GetFrameHeightWithSpacing() +
+                               ImGui::GetStyle().ItemSpacing.y;
+        ImGui::BeginChild("WidthPointsList", ImVec2(0, -bottom_reserve), true);
 
         auto before_edit = capture_snapshot(item);
         EditResult all_edits;
         int delete_wp = -1;
+
+        // Reset hover highlight each frame
+        item.hovered_width_point_index = -1;
 
         for (size_t wi = 0; wi < strand.width_points.size(); ++wi) {
             auto& wp = strand.width_points[wi];
@@ -352,14 +434,130 @@ void RenderVoxelList::render_width_editor_window() {
                      static_cast<double>(wp.scale));
             ImGui::TextDisabled("%s", dist_buf);
 
-            // 缩放滑条
+            // Save row top for hover→cyan line in 3D viewport
+            ImVec2 row_min = ImGui::GetItemRectMin();
+
+            // 向量长度（scale = 从引导曲线到表面的距离）
+            float old_scale = wp.scale;
             ImGui::SetNextItemWidth(140);
-            ImGui::DragFloat(get_locale_cstr("label.width_scale"),
+            ImGui::DragFloat(get_locale_cstr("label.width_vector_length"),
                              &wp.scale, 0.01f, 0.01f, 10.0f, "%.2f");
             if (ImGui::IsItemActivated())
                 all_edits.activated = true;
             if (ImGui::IsItemDeactivatedAfterEdit())
                 all_edits.deactivated_after_edit = true;
+            if (old_scale != wp.scale)
+                all_edits.value_changed = true;
+
+            // 方向向量编辑器（允许手动调整方向）
+            {
+                auto dir_edit = edit_vec3_stepper(
+                    get_locale_cstr("label.width_direction"),
+                    wp.direction, 0.1f, true);
+                all_edits.activated |= dir_edit.activated;
+                all_edits.deactivated_after_edit |=
+                    dir_edit.deactivated_after_edit;
+                all_edits.value_changed |= dir_edit.value_changed;
+            }
+
+            // --- 自动旋转按钮（仅当中心点启用时显示）---
+            if (item.show_addon_center) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton(
+                        get_locale_cstr("action.auto_rotate_section"))) {
+                    auto sample = item.sample_guide_curve_at(idx, wp.curve_id);
+                    float angle_deg = 0.0f;
+                    if (compute_auto_section_rotation(
+                            sample.position, sample.tangent,
+                            item.addon_center_point, angle_deg)) {
+                        push_undo_now(item.id, std::nullopt,
+                                      "Auto-Rotate Section");
+                        strand.section_rotation = angle_deg;
+                        strand.mesh_dirty = true;
+                    }
+                }
+
+                // --- 沿中心点连线移动（端点朝/背中心点方向移动）---
+                // 移动步长（静态变量，所有宽度向量共享，右键菜单中可调）
+                static float wp_move_step = 0.5f;
+
+                auto move_along_center = [&](float sign) {
+                    auto sample =
+                        item.sample_guide_curve_at(idx, wp.curve_id);
+                    vec3f P = sample.position;
+                    vec3f W = P + wp.direction * wp.scale;  // 向量端点
+                    vec3f to_center = item.addon_center_point - W;
+                    float dist = to_center.length();
+                    if (dist < 0.0001f)
+                        return;
+                    vec3f dir = to_center / dist;
+                    vec3f new_W = W + dir * (sign * wp_move_step);
+                    vec3f v = new_W - P;
+                    float len = v.length();
+                    if (len < 0.0001f)
+                        return;
+                    wp.scale = len;
+                    wp.direction = v / len;
+                    all_edits.value_changed = true;
+                };
+                ImGui::SameLine();
+                if (ImGui::SmallButton("+")) {
+                    move_along_center(1.0f);
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip(
+                        "%s", get_locale_cstr("tooltip.move_toward_center"));
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                    ImGui::OpenPopup("wp_center_menu");
+                ImGui::SameLine();
+                if (ImGui::SmallButton("-")) {
+                    move_along_center(-1.0f);
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip(
+                        "%s", get_locale_cstr("tooltip.move_away_from_center"));
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                    ImGui::OpenPopup("wp_center_menu");
+
+                // 右键菜单：直接编辑端点离中心距离与移动步长
+                if (ImGui::BeginPopup("wp_center_menu")) {
+                    auto sample = item.sample_guide_curve_at(idx, wp.curve_id);
+                    vec3f P = sample.position;
+                    vec3f W = P + wp.direction * wp.scale;  // 向量端点
+                    vec3f to_center = item.addon_center_point - W;
+                    float dist = to_center.length();
+                    if (dist > 0.0001f) {
+                        vec3f dir = to_center / dist;
+                        float new_dist = dist;
+                        ImGui::SetNextItemWidth(120);
+                        ImGui::DragFloat(
+                            get_locale_cstr("label.dist_to_center"),
+                            &new_dist, 0.01f, 0.0001f, 100000.0f, "%.3f");
+                        if (ImGui::IsItemActivated())
+                            all_edits.activated = true;
+                        if (ImGui::IsItemDeactivatedAfterEdit())
+                            all_edits.deactivated_after_edit = true;
+                        if (new_dist != dist) {
+                            vec3f new_W =
+                                item.addon_center_point - dir * new_dist;
+                            vec3f v = new_W - P;
+                            float len = v.length();
+                            if (len > 0.0001f) {
+                                wp.scale = len;
+                                wp.direction = v / len;
+                                // 历史记录由 activated/deactivated 在释放时创建，
+                                // 拖动过程中只更新网格，避免每帧产生历史记录
+                                strand.mesh_dirty = true;
+                            }
+                        }
+                    }
+                    ImGui::SetNextItemWidth(120);
+                    ImGui::DragFloat(get_locale_cstr("label.move_step"),
+                                     &wp_move_step, 0.01f, 0.01f, 10.0f,
+                                     "%.2f");
+                    ImGui::EndPopup();
+                }
+            }
 
             ImGui::SameLine();
             if (ImGui::SmallButton(
@@ -368,6 +566,17 @@ void RenderVoxelList::render_width_editor_window() {
             }
 
             ImGui::Separator();
+
+            // If mouse is over this row, highlight the corresponding
+            // width line in the 3D viewport in cyan (0, 1, 1).
+            ImVec2 row_max = ImGui::GetItemRectMax();
+            row_min.x = ImGui::GetWindowPos().x;
+            row_max.x = ImGui::GetWindowPos().x +
+                        ImGui::GetWindowWidth();
+            if (ImGui::IsMouseHoveringRect(row_min, row_max)) {
+                item.hovered_width_point_index = static_cast<int>(wi);
+            }
+
             ImGui::PopID();
         }
 
@@ -453,6 +662,33 @@ void RenderVoxelList::render_object_editor_addons() {
     } else {
         ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "%s",
                            get_locale_cstr("label.addon_no_base_selected"));
+    }
+
+    ImGui::Separator();
+
+    // 中心点（发根汇聚点，所有发束共享）
+    {
+        bool old_show = item.show_addon_center;
+        ImGui::Checkbox(get_locale_cstr("label.addon_center_point"),
+                        &item.show_addon_center);
+        if (old_show != item.show_addon_center) {
+            push_undo_now(item.id, std::nullopt, "Toggle Center Point");
+        }
+        if (item.show_addon_center) {
+            auto cp_edit = edit_vec3_stepper(
+                get_locale_cstr("label.addon_center_point"),
+                item.addon_center_point, 0.1f);
+            if (cp_edit.activated) {
+                begin_edit(item.id);
+            }
+            if (cp_edit.deactivated_after_edit) {
+                end_edit(item.id, "Center Point Edit");
+                for (auto& s : item.hair_strands) s.mesh_dirty = true;
+            } else if (cp_edit.value_changed) {
+                push_undo_now(item.id, std::nullopt, "Center Point Edit");
+                for (auto& s : item.hair_strands) s.mesh_dirty = true;
+            }
+        }
     }
 
     ImGui::Separator();

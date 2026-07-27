@@ -338,7 +338,11 @@ int ui_main(int argc, const char* const* argv) {
                         render_items.begin_marked_edit(render_items.render_id);
                     }
                     // 引导曲线绘制模式
-                    if (!picking_active && !io.WantCaptureMouse) {
+                    // Require mouse to be over valid geometry at press time,
+                    // so clicking outside the model (empty space or UI panel)
+                    // and releasing on the model doesn't trigger point addition.
+                    if (!picking_active && !io.WantCaptureMouse &&
+                        render_items.mouse_world_pos_valid) {
                         auto it = render_items.items.find(render_items.render_id);
                         if (it != render_items.items.end()) {
                             if (it->second->guide_curve_drawing_active) {
@@ -364,6 +368,8 @@ int ui_main(int argc, const char* const* argv) {
                     middleMouseDownOnPick = picking_active &&
                                             render_items.mouse_world_pos_valid;
                     io.MouseDown[2] = true;
+                } else if (e.button.button == SDL_BUTTON_RIGHT) {
+                    io.MouseDown[1] = true;
                 }
             }
 
@@ -442,6 +448,8 @@ int ui_main(int argc, const char* const* argv) {
                     middleMouseDown = false;
                     middleMouseDownOnPick = false;
                     io.MouseDown[2] = false;
+                } else if (e.button.button == SDL_BUTTON_RIGHT) {
+                    io.MouseDown[1] = false;
                 }
             }
 
