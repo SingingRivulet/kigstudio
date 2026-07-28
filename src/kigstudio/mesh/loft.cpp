@@ -42,15 +42,6 @@ vec2f lerp_vec2(const vec2f& a, const vec2f& b, float t) {
 	return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t};
 }
 
-float path_area(const std::vector<vec2f>& path) {
-	float area = 0.0f;
-	const int n = static_cast<int>(path.size());
-	for (int i = 0; i < n; ++i) {
-		const int j = (i + 1) % n;
-		area += path[i].x * path[j].y - path[j].x * path[i].y;
-	}
-	return area * 0.5f;
-}
 
 Triangle make_oriented_triangle(vec3f a, vec3f b, vec3f c,
                                 const vec3f& desired_normal) {
@@ -152,7 +143,6 @@ Ring make_ring(const std::vector<vec3f>& guide,
 
 void add_cap(std::vector<Triangle>& mesh,
              const Ring& ring,
-             const std::vector<vec2f>& path,
              const vec3f& tangent,
              bool first,
              bool orient_faces) {
@@ -161,11 +151,34 @@ void add_cap(std::vector<Triangle>& mesh,
 		cap_center += v;
 	cap_center = cap_center * (1.0f / static_cast<float>(ring.vertices.size()));
 
-	vec3f desired = first ? -tangent : tangent;
-	if (path_area(path) < 0.0f)
-		desired = -desired;
-
+	// Compute the ring's polygon normal via Newell's method.
+	// This follows the same vertex winding used by the side triangles,
+	// ensuring the cap halfedges correctly oppose the side-triangle
+	// halfedges on the shared ring boundary — producing a watertight mesh.
+	// The old approach used ±tangent, which is independent of the side-
+	// triangle radial-based orientation and produced mismatched halfedges.
+	vec3f ring_normal = {0.0f, 0.0f, 0.0f};
 	const int n = static_cast<int>(ring.vertices.size());
+	for (int i = 0; i < n; ++i) {
+		const int j = (i + 1) % n;
+		const vec3f& a = ring.vertices[i];
+		const vec3f& b = ring.vertices[j];
+		ring_normal.x += (a.y - b.y) * (a.z + b.z);
+		ring_normal.y += (a.z - b.z) * (a.x + b.x);
+		ring_normal.z += (a.x - b.x) * (a.y + b.y);
+	}
+
+	// Normalize; fall back to tangent for degenerate rings
+	float len = ring_normal.length();
+	if (len < EPS)
+		ring_normal = tangent;
+	else
+		ring_normal = ring_normal * (1.0f / len);
+
+	// The ring normal from CCW winding points along the tangent direction.
+	// First cap outer normal opposes tangent, last cap aligns with tangent.
+	vec3f desired = first ? -ring_normal : ring_normal;
+
 	for (int i = 0; i < n; ++i) {
 		const int j = (i + 1) % n;
 		if (orient_faces)
@@ -237,13 +250,13 @@ std::vector<Triangle> build_loft_mesh(
 
 	if (options.cap_first) {
 		const Ring& ring = rings.front();
-		add_cap(mesh, ring, prepared.front().path,
+		add_cap(mesh, ring,
 		        tangent_at(guide_curve, static_cast<int>(ring.guide_id)), true,
 		        options.orient_faces);
 	}
 	if (options.cap_last) {
 		const Ring& ring = rings.back();
-		add_cap(mesh, ring, prepared.back().path,
+		add_cap(mesh, ring,
 		        tangent_at(guide_curve, static_cast<int>(ring.guide_id)), false,
 		        options.orient_faces);
 	}

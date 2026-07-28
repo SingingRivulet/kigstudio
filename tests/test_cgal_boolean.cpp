@@ -185,8 +185,30 @@ Surface_mesh to_surface_mesh(const kcgal::MeshData& mesh) {
 	return sm;
 }
 
-bool is_inside(const kcgal::MeshData& md, float x, float y, float z) {
+// Ensure a mesh is closed for Side_of_triangle_mesh by applying the
+// same repair pipeline used in production boolean operations.
+// Returns the repaired Surface_mesh (empty on failure).
+Surface_mesh ensure_closed(const kcgal::MeshData& md) {
 	Surface_mesh sm = to_surface_mesh(md);
+	if (CGAL::is_closed(sm)) return sm;
+
+	kcgal::MeshData repaired = kcgal::fill_holes(md);
+	if (!repaired.empty()) {
+		repaired = kcgal::orient_volume(repaired);
+		sm = to_surface_mesh(repaired);
+	}
+	if (CGAL::is_closed(sm)) return sm;
+
+	kcgal::MeshData wrapped = kcgal::alpha_wrap(md, 10.0, 0.1);
+	if (!wrapped.empty()) {
+		sm = to_surface_mesh(wrapped);
+	}
+	return sm;  // may still not be closed — caller checks
+}
+
+bool is_inside(const Surface_mesh& sm, float x, float y, float z) {
+	if (sm.number_of_faces() == 0 || !CGAL::is_closed(sm))
+		return false;
 	CGAL::Side_of_triangle_mesh<Surface_mesh, Kernel> inside(sm);
 	return inside(Point_3(x, y, z)) == CGAL::ON_BOUNDED_SIDE;
 }
@@ -475,10 +497,12 @@ void test_user_project_strands() {
 	// 找出一个同时位于两根发束内部的点（取 strand2 的一个顶点，
 	// 若其在 strand1 内部即为重叠证据）
 	float px = 0, py = 0, pz = 0;
+	auto sm1_closed = ensure_closed(md1);
+	auto sm2_closed = ensure_closed(md2);
 	bool found_overlap = false;
 	for (const auto& [tri, n] : md2) {
 		const auto& a = std::get<0>(tri);
-		if (is_inside(md1, a.x, a.y, a.z)) {
+		if (is_inside(sm1_closed, a.x, a.y, a.z)) {
 			px = a.x;
 			py = a.y;
 			pz = a.z;
@@ -503,7 +527,7 @@ void test_user_project_strands() {
 				vec3f mid{(a.x + b.x + c.x) / 3.0f,
 				          (a.y + b.y + c.y) / 3.0f,
 				          (a.z + b.z + c.z) / 3.0f};
-				if (is_inside(md2, mid.x, mid.y, mid.z)) {
+				if (is_inside(sm2_closed, mid.x, mid.y, mid.z)) {
 					px = mid.x;
 					py = mid.y;
 					pz = mid.z;
@@ -559,7 +583,7 @@ void test_user_project_strands() {
 	}
 	std::cout << "user strand2-strand1: " << diff.size() << " tris, volume "
 	          << soup_volume(diff) << "\n";
-	expect(!is_inside(diff, px, py, pz),
+	expect(!is_inside(ensure_closed(diff), px, py, pz),
 	       "overlap point should be removed from strand2-strand1");
 }
 
@@ -597,11 +621,14 @@ int main() {
 	// - a point in the overlap zone (inside both A and B) must NOT be
 	//   inside A-B;
 	// - a point inside A but far from B must stay inside A-B.
-	expect(is_inside(md_a, 0.5f, 0.6f, 0.0f), "p1 should be inside A");
-	expect(is_inside(md_b, 0.5f, 0.6f, 0.0f), "p1 should be inside B");
-	expect(!is_inside(diff, 0.5f, 0.6f, 0.0f),
+	auto sm_a = ensure_closed(md_a);
+	auto sm_b = ensure_closed(md_b);
+	auto sm_diff = ensure_closed(diff);
+	expect(is_inside(sm_a, 0.5f, 0.6f, 0.0f), "p1 should be inside A");
+	expect(is_inside(sm_b, 0.5f, 0.6f, 0.0f), "p1 should be inside B");
+	expect(!is_inside(sm_diff, 0.5f, 0.6f, 0.0f),
 	       "overlap point should be removed from A-B");
-	expect(is_inside(diff, 0.5f, -0.5f, 0.0f),
+	expect(is_inside(sm_diff, 0.5f, -0.5f, 0.0f),
 	       "non-overlap point of A should remain in A-B");
 
 	// Curved strands with coincident roots (realistic hair setup).
@@ -618,7 +645,8 @@ int main() {
 	          << soup_volume(cur_a) << ")\n";
 	// Roots coincide at x=-7: a point between the two root centers must be
 	// removed from A-B.
-	expect(!is_inside(cur_diff, -6.5f, 0.0f, 0.4f),
+	auto sm_cur_diff = ensure_closed(cur_diff);
+	expect(!is_inside(sm_cur_diff, -6.5f, 0.0f, 0.4f),
 	       "curved root overlap point should be removed from A-B");
 
 	test_user_project_strands();
