@@ -470,7 +470,24 @@ void RenderVoxelList::queue_thread() {
                                            sinriv::kigstudio::voxel::vec3f>>
                         mesh;
                     int numTriangles = 0;
-                    if (task.export_mode == 1) {
+                    if (task.export_mode == 2 &&
+                        item_ptr->source_type == 2) {
+                        // 附加件：直接导出 loft 网格（不经体素/SDF 重采样）
+                        for (int si = 0;
+                             si < static_cast<int>(
+                                     item_ptr->hair_strands.size());
+                             ++si) {
+                            auto tris =
+                                item_ptr->build_strand_loft_triangles(si);
+                            for (const auto& t : tris) {
+                                const auto& a = std::get<0>(t);
+                                const auto& b = std::get<1>(t);
+                                const auto& c = std::get<2>(t);
+                                auto n = (b - a).cross(c - a).normalize();
+                                mesh.emplace_back(t, n);
+                            }
+                        }
+                    } else if (task.export_mode == 1) {
                         for (auto triangles : sinriv::kigstudio::voxel::
                                  generateSmoothMeshFromSDF(
                                      item_ptr->voxel_grid_data, numTriangles,

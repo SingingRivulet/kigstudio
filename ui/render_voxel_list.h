@@ -146,6 +146,8 @@ struct HairStrand {
         float curve_id = 0.0f;       // 曲线上的位置（int=段索引, frac=段内t）
         float scale = 1.0f;          // 宽度缩放（原始距离 = 绿线长度）
         sinriv::kigstudio::voxel::vec3f direction{};  // 从曲线指向底模的方向（单位向量）
+        // Per-point independent section override (non-empty vertices = custom section)
+        SectionEditorState section_state;
     };
     std::vector<WidthPoint> width_points;
     bool width_editing_active = false;
@@ -384,6 +386,10 @@ class RenderVoxelList {
         // 附加件碰撞选项
         bool addon_reveal = false;  // 显露：SDF减去底模
         bool addon_split = false;   // 拆分：每根发束独立节点
+        // 显露时勾选=用SDF减底模，未勾选=用几何布尔减底模
+        bool addon_sdf_boolean = true;
+        // 拆分时勾选=发束之间用SDF相减，未勾选=用几何布尔相减
+        bool addon_sdf_split = true;
         // 附加件中心点（所有发束共享），用于发根汇聚与反翘控制
         vec3f addon_center_point = {0.0f, 0.0f, 0.0f};
         bool show_addon_center = false;  // 是否显示/启用中心点
@@ -399,6 +405,10 @@ class RenderVoxelList {
         int hovered_width_point_index = -1;
         // 当前正在编辑截面的发束索引（-1表示无）
         int active_section_edit_strand = -1;
+        // Per-point section editor state
+        int active_perpoint_section_edit_strand = -1;
+        int active_perpoint_section_edit_width_idx = -1;
+        bool perpoint_section_editing_active = false;
         sinriv::ui::render::RenderVoxel voxel_renderer;
         sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
         kdtree::KDTree mesh_kd_tree;  // 三角形顶点的kd树，用于实现自动吸附
@@ -540,8 +550,13 @@ class RenderVoxelList {
                 sdf_split_inverse_transform_matrix(), target_sdf);
         }
 
+        // 返回每个子节点的 (体素网格, SDF, 几何三角形)。
+        // 第三个元素非空表示该子节点走纯几何路径（直接渲染三角形网格），
+        // 此时 SDF 为 nullptr；为空则走原 SDF 路径。
         std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
-                               sinriv::kigstudio::sdf::SDFBasePtr>>
+                               sinriv::kigstudio::sdf::SDFBasePtr,
+                               std::vector<sinriv::kigstudio::voxel::
+                                               triangle_bvh<float>::triangle>>>
         do_segment();
 
         std::atomic<int> ref_count = 1;
@@ -744,10 +759,16 @@ class RenderVoxelList {
     void render_guide_curve_window();
     void render_width_editor_window();
     void render_cross_section_editor();
+    void render_perpoint_section_editor();
     bool show_addon_window = false;
     bool show_guide_curve_window = false;
     bool show_width_editor_window = false;
     bool show_cross_section_editor_window = false;
+    bool show_perpoint_section_editor_window = false;
+    // Per-point section conflict confirmation dialogs
+    bool show_perpoint_confirm_global_open = false;
+    bool show_perpoint_confirm_global_apply = false;
+    int pending_global_section_strand = -1;
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_concave_cone_editor(RenderVoxelItem& item);

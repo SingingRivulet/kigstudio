@@ -1,6 +1,6 @@
 #include "kigstudio/cgal/mesh_simplification.h"
 
-#include <CGAL/Simple_cartesian.h>
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Edge_count_ratio_stop_predicate.h>
@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <cstdio>
 
-typedef CGAL::Simple_cartesian<double> Kernel;
+typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
 typedef Kernel::Point_3 Point_3;
 typedef CGAL::Surface_mesh<Point_3> Surface_mesh;
 

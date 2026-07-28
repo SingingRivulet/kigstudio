@@ -480,6 +480,7 @@ void init_locale_strings() {
                       {{"en", "Open File Dialog"}, {"zh", "选择文件"}});
     add_locale_string("action.open", {{"en", "Open"}, {"zh", "打开"}});
     add_locale_string("action.cancel", {{"en", "Cancel"}, {"zh", "取消"}});
+    add_locale_string("action.yes", {{"en", "Yes"}, {"zh", "是"}});
     add_locale_string("action.add_shape",
                       {{"en", "Add shape"}, {"zh", "添加形状"}});
     add_locale_string("action.delete", {{"en", "Delete"}, {"zh", "删除"}});
@@ -520,6 +521,12 @@ void init_locale_strings() {
                       {{"en", "Standard"}, {"zh", "标准"}});
     add_locale_string("label.export_mode_smooth",
                       {{"en", "Smooth SDF"}, {"zh", "SDF 平滑"}});
+    add_locale_string("label.export_mode_mesh",
+                      {{"en", "Mesh (direct)"}, {"zh", "网格（直接导出）"}});
+    add_locale_string("tooltip.export_mode_mesh",
+                      {{"en", "Export the loft-generated triangle mesh directly "
+                               "(no voxel/SDF resampling)."},
+                       {"zh", "直接导出loft生成的三角形网格（不经体素/SDF重采样）。"}});
     add_locale_string("label.simplify_model",
                       {{"en", "Simplify model"}, {"zh", "简化模型"}});
     add_locale_string("label.simplification_ratio",
@@ -1279,6 +1286,18 @@ void init_locale_strings() {
     add_locale_string("tooltip.addon_split",
                       {{"en", "After update, each hair strand becomes an independent node, subtracting all preceding strands."},
                        {"zh", "点击更新碰撞后，每根发束生成独立节点，并减去所有排在前面的发束。"}});
+    add_locale_string("label.addon_sdf_boolean",
+                      {{"en", "SDF boolean"}, {"zh", "SDF布尔"}});
+    add_locale_string("tooltip.addon_sdf_boolean",
+                      {{"en", "Checked: subtract the base model via SDF. "
+                               "Unchecked: subtract the base model with geometry booleans."},
+                       {"zh", "勾选时用SDF减去底模，未勾选时用几何体布尔减去底模。"}});
+    add_locale_string("label.addon_sdf_split",
+                      {{"en", "SDF split"}, {"zh", "SDF拆分"}});
+    add_locale_string("tooltip.addon_sdf_split",
+                      {{"en", "Checked: strands subtract each other via SDF. "
+                               "Unchecked: strands subtract each other with geometry booleans."},
+                       {"zh", "勾选时发束之间用SDF相减，未勾选时用几何体布尔相减。"}});
 
     // Cross-section editor
     add_locale_string("window.cross_section_editor",
@@ -1323,6 +1342,30 @@ void init_locale_strings() {
                       {{"en", "Bezier"}, {"zh", "贝塞尔"}});
     add_locale_string("label.section_rotation",
                       {{"en", "Rotation"}, {"zh", "旋转"}});
+    // Per-point section editor
+    add_locale_string("window.perpoint_section_editor",
+                      {{"en", "Per-Point Section"}, {"zh", "逐点截面"}});
+    add_locale_string("action.edit_perpoint_section",
+                      {{"en", "Shape"}, {"zh", "截面"}});
+    add_locale_string("action.stop_edit_perpoint_section",
+                      {{"en", "Stop Edit"}, {"zh", "停止编辑"}});
+    add_locale_string("label.perpoint_section_hint",
+                      {{"en", "Drag vertices only | No add/delete | No self-intersection"},
+                       {"zh", "仅可拖拽顶点 | 禁止增删 | 禁止自相交"}});
+    add_locale_string("label.perpoint_section_indicator",
+                      {{"en", "[custom]"}, {"zh", "[自定义]"}});
+    add_locale_string("action.clear_perpoint_section",
+                      {{"en", "Clear"}, {"zh", "清除"}});
+    add_locale_string("dialog.confirm_global_section_open_title",
+                      {{"en", "Per-Point Sections Active"}, {"zh", "存在逐点截面"}});
+    add_locale_string("dialog.confirm_global_section_open_message",
+                      {{"en", "Opening the global section editor will clear all per-point section overrides. Continue?"},
+                       {"zh", "打开全局截面编辑器将清除所有逐点截面覆盖。是否继续？"}});
+    add_locale_string("dialog.confirm_global_section_apply_title",
+                      {{"en", "Clear Per-Point Sections?"}, {"zh", "清除逐点截面？"}});
+    add_locale_string("dialog.confirm_global_section_apply_message",
+                      {{"en", "Applying the global section will clear all per-point section overrides. Continue?"},
+                       {"zh", "应用全局截面将清除所有逐点截面覆盖。是否继续？"}});
     add_locale_string("action.update_hair_sdf",
                       {{"en", "Update Hair SDF"}, {"zh", "更新毛发SDF"}});
     add_locale_string("tooltip.update_hair_sdf",

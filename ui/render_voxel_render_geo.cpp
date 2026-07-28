@@ -721,7 +721,8 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
     setQueueStatus(get_locale_string("status.segmenting"));
     queue_progress = 0.0f;
     std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
-                           std::shared_ptr<sinriv::kigstudio::sdf::SDFBase>>>
+                           std::shared_ptr<sinriv::kigstudio::sdf::SDFBase>,
+                           std::vector<Triangle>>>
         results;
     std::vector<std::vector<Triangle>> mesh_split_results;
     std::cout << "[do_segment] start item=" << index
@@ -733,19 +734,22 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
                 auto repaired = do_repair_mesh(*it->second);
                 mesh_split_results.push_back(std::move(repaired));
                 sinriv::kigstudio::voxel::VoxelGrid dummy;
-                results.emplace_back(std::move(dummy), nullptr);
+                results.emplace_back(std::move(dummy), nullptr,
+                                     std::vector<Triangle>{});
             } else if (it->second->segment_mode ==
                        RenderVoxelItem::SUBDIVIDE_MESH) {
                 auto subdivided = do_subdivide_mesh(*it->second);
                 mesh_split_results.push_back(std::move(subdivided));
                 sinriv::kigstudio::voxel::VoxelGrid dummy;
-                results.emplace_back(std::move(dummy), nullptr);
+                results.emplace_back(std::move(dummy), nullptr,
+                                     std::vector<Triangle>{});
             } else if (it->second->segment_mode ==
                        RenderVoxelItem::SILHOUETTE) {
                 auto tapered = do_silhouette_mesh(*it->second);
                 mesh_split_results.push_back(std::move(tapered));
                 sinriv::kigstudio::voxel::VoxelGrid dummy;
-                results.emplace_back(std::move(dummy), nullptr);
+                results.emplace_back(std::move(dummy), nullptr,
+                                     std::vector<Triangle>{});
             } else {
                 auto split =
                     split_triangles_by_plane(it->second->source_triangles,
@@ -754,7 +758,8 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
                 mesh_split_results.push_back(std::move(split.second));
                 for (size_t i = 0; i < mesh_split_results.size(); ++i) {
                     sinriv::kigstudio::voxel::VoxelGrid dummy;
-                    results.emplace_back(std::move(dummy), nullptr);
+                    results.emplace_back(std::move(dummy), nullptr,
+                                     std::vector<Triangle>{});
                 }
             }
         } else {
@@ -886,6 +891,13 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
                     triangle_generator_with_normals(
                         new_item->source_triangles));
             }
+        }
+        // 附加件几何布尔路径：子节点直接渲染布尔结果网格
+        if (!std::get<2>(results[i]).empty()) {
+            new_item->source_triangles = std::move(std::get<2>(results[i]));
+            new_item->mesh_renderer.loadGeometry(
+                triangle_generator_with_normals(
+                    new_item->source_triangles));
         }
         auto ptr = new_item.get();
         result_ptrs.push_back(ptr);

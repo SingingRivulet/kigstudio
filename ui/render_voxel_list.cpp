@@ -6,6 +6,7 @@
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
+#include "kigstudio/cgal/mesh_repair.h"
 #include "kigstudio/sdf/sdf_chain_joint.h"
 namespace sinriv::ui::render {
 
@@ -388,66 +389,174 @@ void RenderVoxelList::pick_skeleton_point_from_mouse() {
 }
 
 std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
-                       sinriv::kigstudio::sdf::SDFBasePtr>>
+                       sinriv::kigstudio::sdf::SDFBasePtr,
+                       std::vector<sinriv::kigstudio::voxel::
+                                       triangle_bvh<float>::triangle>>>
 RenderVoxelList::RenderVoxelItem::do_segment() {
     // --- Addon (hair) node handling ---
     if (source_type == 2) {
         using namespace sinriv::kigstudio::sdf;
+        namespace kcgal = sinriv::kigstudio::cgal;
+        using Tri = sinriv::kigstudio::voxel::triangle_bvh<float>::triangle;
+        using ResultT =
+            std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
+                                   SDFBasePtr, std::vector<Tri>>>;
 
-        // Get base model SDF for reveal mode
+        // 三角形列表 <-> CGAL MeshData 转换（法线仅为占位，布尔不使用）
+        auto to_mesh_data = [](const std::vector<Tri>& tris) {
+            kcgal::MeshData md;
+            md.reserve(tris.size());
+            for (const auto& t : tris) {
+                md.emplace_back(t, kcgal::vec3f{});
+            }
+            return md;
+        };
+        auto strip_tris = [](const kcgal::MeshData& md) {
+            std::vector<Tri> tris;
+            tris.reserve(md.size());
+            for (const auto& [t, n] : md) {
+                tris.push_back(t);
+            }
+            return tris;
+        };
+
+        // Get base model SDF / triangles for reveal mode
         SDFBasePtr base_sdf = nullptr;
+        kcgal::MeshData base_mesh;
         if (addon_reveal && addon_base_node_id >= 0 && manager) {
             std::lock_guard<std::mutex> lock(manager->locker);
             auto base_it = manager->items.find(addon_base_node_id);
             if (base_it != manager->items.end()) {
                 base_sdf = base_it->second->sdf_data;
+                if (!base_it->second->source_triangles.empty()) {
+                    base_mesh =
+                        to_mesh_data(base_it->second->source_triangles);
+                }
             }
         }
+        // 几何显露：关闭“SDF布尔”且底模有几何数据时启用
+        const bool geo_reveal =
+            addon_reveal && !addon_sdf_boolean && !base_mesh.empty();
+        // 几何拆分：关闭“SDF拆分”时启用
+        const bool geo_split = addon_split && !addon_sdf_split;
 
         if (addon_split) {
             // Each strand becomes an independent child node
-            std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
-                                   SDFBasePtr>>
-                result;
+            ResultT result;
             for (int i = 0; i < static_cast<int>(hair_strands.size()); ++i) {
                 auto strand_tris = build_strand_loft_triangles(i);
                 if (strand_tris.empty()) continue;
 
+                sinriv::kigstudio::voxel::VoxelGrid dummy_grid;
+                dummy_grid.global_position = voxel_grid_data.global_position;
+                dummy_grid.voxel_size = voxel_grid_data.voxel_size;
+
+                // 集合差可交换：先做几何域减法，再按需转 SDF
+                // 几何显露：从发束网格中减去底模
+                if (geo_reveal) {
+                    auto diffed = kcgal::mesh_difference(
+                        to_mesh_data(strand_tris), base_mesh);
+                    if (!diffed.empty()) {
+                        strand_tris = strip_tris(diffed);
+                    } else {
+                        std::cerr << "[do_segment] geometry reveal failed for"
+                                  << " strand " << i
+                                  << ", keeping original mesh.\n";
+                    }
+                }
+
+                // 几何拆分：发束之间用几何布尔相减
+                if (geo_split) {
+                    auto m = to_mesh_data(strand_tris);
+                    for (int j = 0; j < i; ++j) {
+                        auto prev_tris = build_strand_loft_triangles(j);
+                        if (prev_tris.empty()) continue;
+                        auto diffed = kcgal::mesh_difference(
+                            m, to_mesh_data(prev_tris));
+                        // 布尔失败时保留当前网格（尽可能渲染）
+                        if (!diffed.empty()) m = std::move(diffed);
+                    }
+                    strand_tris = strip_tris(m);
+                }
+
+                const bool sdf_split_needed = !geo_split;
+                const bool sdf_reveal_needed =
+                    addon_reveal && !geo_reveal && base_sdf != nullptr;
+
+                if (!sdf_split_needed && !sdf_reveal_needed) {
+                    // 纯几何路径：子节点直接渲染三角形网格
+                    result.emplace_back(std::move(dummy_grid), nullptr,
+                                        std::move(strand_tris));
+                    continue;
+                }
+
+                // SDF 路径（输入可能已被几何布尔削减过）
                 auto strand_sdf = std::make_shared<SDF_Mesh>();
                 strand_sdf->precision_mode = SDFPrecision::Precise;
                 if (!strand_sdf->loadTriangles(strand_tris)) continue;
 
                 SDFBasePtr final_sdf = strand_sdf;
 
-                // Subtract all preceding strands (0..i-1)
-                for (int j = 0; j < i; ++j) {
-                    auto prev_tris = build_strand_loft_triangles(j);
-                    if (prev_tris.empty()) continue;
-                    auto prev_sdf = std::make_shared<SDF_Mesh>();
-                    prev_sdf->precision_mode = SDFPrecision::Precise;
-                    if (!prev_sdf->loadTriangles(prev_tris)) continue;
-                    final_sdf = sdf_subtraction(final_sdf, prev_sdf);
+                if (sdf_split_needed) {
+                    // Subtract all preceding strands (0..i-1)
+                    for (int j = 0; j < i; ++j) {
+                        auto prev_tris = build_strand_loft_triangles(j);
+                        if (prev_tris.empty()) continue;
+                        auto prev_sdf = std::make_shared<SDF_Mesh>();
+                        prev_sdf->precision_mode = SDFPrecision::Precise;
+                        if (!prev_sdf->loadTriangles(prev_tris)) continue;
+                        final_sdf = sdf_subtraction(final_sdf, prev_sdf);
+                    }
                 }
 
-                // Subtract base model if reveal is on
-                if (addon_reveal && base_sdf) {
+                // Subtract base model if reveal is on (SDF 显露)
+                if (sdf_reveal_needed) {
                     final_sdf = sdf_subtraction(final_sdf, base_sdf);
                 }
 
-                sinriv::kigstudio::voxel::VoxelGrid dummy_grid;
-                dummy_grid.global_position = voxel_grid_data.global_position;
-                dummy_grid.voxel_size = voxel_grid_data.voxel_size;
-                result.emplace_back(std::move(dummy_grid), std::move(final_sdf));
+                result.emplace_back(std::move(dummy_grid),
+                                    std::move(final_sdf),
+                                    std::vector<Tri>{});
             }
             if (result.empty()) {
-                return {{voxel_grid_data, nullptr}};
+                return {{voxel_grid_data, nullptr, {}}};
             }
             return result;
         } else {
+            if (geo_reveal) {
+                // 纯几何路径：合并所有发束后用几何布尔减底模
+                kcgal::MeshData merged;
+                for (int i = 0; i < static_cast<int>(hair_strands.size());
+                     ++i) {
+                    auto tris = build_strand_loft_triangles(i);
+                    if (tris.empty()) continue;
+                    if (merged.empty()) {
+                        merged = to_mesh_data(tris);
+                        continue;
+                    }
+                    auto united =
+                        kcgal::mesh_union(merged, to_mesh_data(tris));
+                    if (!united.empty()) {
+                        merged = std::move(united);
+                    } else {
+                        // 并集失败时直接拼接（尽可能保留几何）
+                        auto extra = to_mesh_data(tris);
+                        merged.insert(merged.end(), extra.begin(),
+                                      extra.end());
+                    }
+                }
+                if (merged.empty()) {
+                    return {{voxel_grid_data, nullptr, {}}};
+                }
+                auto diffed = kcgal::mesh_difference(merged, base_mesh);
+                if (!diffed.empty()) merged = std::move(diffed);
+                return {{voxel_grid_data, nullptr, strip_tris(merged)}};
+            }
+
             // Combined SDF from all strands
             auto hair_sdf = build_hair_sdf();
             if (!hair_sdf) {
-                return {{voxel_grid_data, nullptr}};
+                return {{voxel_grid_data, nullptr, {}}};
             }
 
             // Subtract base model if reveal is on
@@ -455,7 +564,7 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
                 hair_sdf = sdf_subtraction(hair_sdf, base_sdf);
             }
 
-            return {{voxel_grid_data, std::move(hair_sdf)}};
+            return {{voxel_grid_data, std::move(hair_sdf), {}}};
         }
     }
 
@@ -470,8 +579,8 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
             right_sdf = sinriv::kigstudio::sdf::sdf_intersection(sdf_data,
                                                                  collision_sdf);
         }
-        return {{std::move(std::get<0>(res)), std::move(right_sdf)},
-                {std::move(std::get<1>(res)), std::move(left_sdf)}};
+        return {{std::move(std::get<0>(res)), std::move(right_sdf), {}},
+                {std::move(std::get<1>(res)), std::move(left_sdf), {}}};
     } else if (segment_mode == PLANE) {
         auto res = voxel_grid_data.segment(plane);
         sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;
@@ -490,8 +599,8 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
             right_sdf = sinriv::kigstudio::sdf::sdf_intersection(sdf_data,
                                                                  plane_sdf_neg);
         }
-        return {{std::move(std::get<0>(res)), std::move(right_sdf)},
-                {std::move(std::get<1>(res)), std::move(left_sdf)}};
+        return {{std::move(std::get<0>(res)), std::move(right_sdf), {}},
+                {std::move(std::get<1>(res)), std::move(left_sdf), {}}};
     } else if (segment_mode == CONCAVE_CONE) {
         auto res = voxel_grid_data.segment(concave_cone);
         sinriv::kigstudio::sdf::SDFBasePtr left_sdf = nullptr;
@@ -503,16 +612,21 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
             right_sdf =
                 sinriv::kigstudio::sdf::sdf_intersection(sdf_data, cone_sdf);
         }
-        return {{std::move(std::get<0>(res)), std::move(right_sdf)},
-                {std::move(std::get<1>(res)), std::move(left_sdf)}};
+        return {{std::move(std::get<0>(res)), std::move(right_sdf), {}},
+                {std::move(std::get<1>(res)), std::move(left_sdf), {}}};
     } else if (segment_mode == SPLIT_DISCONNECTED) {
         auto splits = voxel_grid_data.splitDisconnected(true);
         std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
-                               sinriv::kigstudio::sdf::SDFBasePtr>>
+                               sinriv::kigstudio::sdf::SDFBasePtr,
+                               std::vector<sinriv::kigstudio::voxel::
+                                               triangle_bvh<float>::triangle>>>
             result;
         result.reserve(splits.size());
         for (auto& grid : splits) {
-            result.emplace_back(std::move(grid), nullptr);
+            result.emplace_back(
+                std::move(grid), nullptr,
+                std::vector<
+                    sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>{});
         }
         return result;
     } else if (segment_mode == NEIGHBOR) {
@@ -521,13 +635,15 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
             seeds.push_back(v);
         }
         auto res = voxel_grid_data.bfsSplit(seeds, neighbor_max_distance, true);
-        return {{std::move(std::get<0>(res)), nullptr},
-                {std::move(std::get<1>(res)), nullptr}};
+        return {{std::move(std::get<0>(res)), nullptr, {}},
+                {std::move(std::get<1>(res)), nullptr, {}}};
     } else if (segment_mode == FILL_INTERIOR) {
         auto filled = voxel_grid_data.fillInterior(true);
-        return {{std::move(filled), nullptr}};
+        return {{std::move(filled), nullptr, {}}};
     } else if (segment_mode == CHAIN) {
-        return {do_segment_chain()};
+        auto chain_res = do_segment_chain();
+        return {{std::move(chain_res.first), std::move(chain_res.second),
+                 {}}};
     } else if (segment_mode == SDF_NODE_SPLIT) {
         if (sdf_split_target_id >= 0 && manager) {
             std::lock_guard<std::mutex> lock(manager->locker);
@@ -563,11 +679,11 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
                         sdf_data, target_sdf);
                 }
 
-                return {{std::move(outside), std::move(left_sdf)},
-                        {std::move(inside), std::move(right_sdf)}};
+                return {{std::move(outside), std::move(left_sdf), {}},
+                        {std::move(inside), std::move(right_sdf), {}}};
             }
         }
-        return {{voxel_grid_data, sdf_data}};
+        return {{voxel_grid_data, sdf_data, {}}};
     } else {
         throw std::runtime_error("Unknown method");
     }

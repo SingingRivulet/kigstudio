@@ -20,6 +20,7 @@ MeshData fill_holes(const MeshData& mesh);
 MeshData stitch_borders(const MeshData& mesh, double max_dist = 0.001);
 MeshData merge_duplicate_vertices(const MeshData& mesh, double tol = 1e-6);
 MeshData mesh_union(const MeshData& mesh_a, const MeshData& mesh_b);
+MeshData mesh_difference(const MeshData& mesh_a, const MeshData& mesh_b);
 MeshData orient_volume(const MeshData& mesh);
 
 // ===========================================================================

@@ -1,6 +1,7 @@
 #include "kigstudio/cgal/mesh_repair.h"
 
-#include <CGAL/Simple_cartesian.h>
+#include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_hole.h>
 #include <CGAL/Polygon_mesh_processing/stitch_borders.h>
@@ -20,7 +21,7 @@
 #include <stdexcept>
 #include <cstdio>
 
-typedef CGAL::Simple_cartesian<double> Kernel;
+typedef CGAL::Exact_predicates_exact_constructions_kernel Kernel;
 typedef Kernel::Point_3 Point_3;
 typedef CGAL::Surface_mesh<Point_3> Surface_mesh;
 
@@ -78,7 +79,10 @@ Surface_mesh to_surface_mesh(const MeshData& mesh) {
 }
 
 /// Convert CGAL Surface_mesh → MeshData.
-MeshData from_surface_mesh(const Surface_mesh& sm) {
+/// Templated on the mesh type so both EPECK and EPICK meshes can be
+/// converted (CGAL::to_double is the identity for EPICK's double FT).
+template <typename SMesh>
+MeshData from_surface_mesh(const SMesh& sm) {
     MeshData result;
     result.reserve(sm.number_of_faces());
     for (auto f : sm.faces()) {
@@ -86,9 +90,15 @@ MeshData from_surface_mesh(const Surface_mesh& sm) {
         auto p0 = sm.point(sm.source(hd));
         auto p1 = sm.point(sm.target(hd));
         auto p2 = sm.point(sm.target(sm.next(hd)));
-        vec3f a(p0.x(), p0.y(), p0.z());
-        vec3f b(p1.x(), p1.y(), p1.z());
-        vec3f c(p2.x(), p2.y(), p2.z());
+        vec3f a(static_cast<float>(CGAL::to_double(p0.x())),
+                static_cast<float>(CGAL::to_double(p0.y())),
+                static_cast<float>(CGAL::to_double(p0.z())));
+        vec3f b(static_cast<float>(CGAL::to_double(p1.x())),
+                static_cast<float>(CGAL::to_double(p1.y())),
+                static_cast<float>(CGAL::to_double(p1.z())));
+        vec3f c(static_cast<float>(CGAL::to_double(p2.x())),
+                static_cast<float>(CGAL::to_double(p2.y())),
+                static_cast<float>(CGAL::to_double(p2.z())));
         vec3f n = (b - a).cross(c - a).normalize();
         result.emplace_back(std::make_tuple(a, b, c), n);
     }
@@ -102,10 +112,16 @@ MeshData from_surface_mesh(const Surface_mesh& sm) {
 // ===========================================================================
 
 MeshData alpha_wrap(const MeshData& mesh, double alpha, double offset) {
+    // alpha_wrap_3 内部静态断言要求 FT 是浮点类型（显式禁用精确核），
+    // 因此这里单独使用 EPICK（精确谓词 + 非精确构造）。
+    using AW_Kernel = CGAL::Exact_predicates_inexact_constructions_kernel;
+    using AW_Point = AW_Kernel::Point_3;
+    using AW_Mesh = CGAL::Surface_mesh<AW_Point>;
+
     if (mesh.empty()) return {};
 
     // Collect all points from the triangle soup
-    std::vector<Point_3> points;
+    std::vector<AW_Point> points;
     std::vector<std::vector<std::size_t>> faces;
     points.reserve(mesh.size() * 3);
     faces.reserve(mesh.size());
@@ -138,7 +154,7 @@ MeshData alpha_wrap(const MeshData& mesh, double alpha, double offset) {
     if (points.size() < 3 || faces.empty()) return {};
 
     try {
-        Surface_mesh out;
+        AW_Mesh out;
         CGAL::alpha_wrap_3(points, faces, alpha, offset, out);
         if (out.number_of_faces() == 0) return {};
         return from_surface_mesh(out);
@@ -307,6 +323,51 @@ MeshData mesh_union(const MeshData& mesh_a, const MeshData& mesh_b) {
         return from_surface_mesh(out);
     } catch (const std::exception& e) {
         std::cerr << "[mesh_union] " << e.what() << "\n";
+        return {};
+    }
+}
+
+// ===========================================================================
+// 5b. Boolean Difference (A - B)
+// ===========================================================================
+
+MeshData mesh_difference(const MeshData& mesh_a, const MeshData& mesh_b) {
+    if (mesh_a.empty() || mesh_b.empty()) return {};
+
+    Surface_mesh sm_a = to_surface_mesh(mesh_a);
+    Surface_mesh sm_b = to_surface_mesh(mesh_b);
+
+    if (sm_a.number_of_faces() == 0 || sm_b.number_of_faces() == 0)
+        return {};
+
+    try {
+        // Ensure meshes are closed before boolean operations
+        if (!CGAL::is_closed(sm_a)) {
+            std::cerr << "[mesh_difference] Warning: mesh A is not closed; "
+                      << "result may be incomplete.\n";
+        }
+        if (!CGAL::is_closed(sm_b)) {
+            std::cerr << "[mesh_difference] Warning: mesh B is not closed; "
+                      << "result may be incomplete.\n";
+        }
+
+        Surface_mesh out;
+        bool valid = PMP::corefine_and_compute_difference(sm_a, sm_b, out,
+            CGAL::parameters::vertex_point_map(get(CGAL::vertex_point, sm_a)),
+            CGAL::parameters::vertex_point_map(get(CGAL::vertex_point, sm_b)),
+            CGAL::parameters::vertex_point_map(get(CGAL::vertex_point, out)));
+
+        if (!valid || out.number_of_faces() == 0) {
+            std::cerr << "[mesh_difference] Difference produced empty or "
+                      << "invalid mesh.\n";
+            return {};
+        }
+
+        std::cerr << "[mesh_difference] Result: " << out.number_of_vertices()
+                  << " vertices, " << out.number_of_faces() << " faces.\n";
+        return from_surface_mesh(out);
+    } catch (const std::exception& e) {
+        std::cerr << "[mesh_difference] " << e.what() << "\n";
         return {};
     }
 }

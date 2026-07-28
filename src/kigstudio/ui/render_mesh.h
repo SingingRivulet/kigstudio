@@ -352,7 +352,7 @@ namespace sinriv::ui::render {
             mesh_.index_count = static_cast<uint32_t>(indices.size());
             axis_state_.axis_length =
                 axis_gizmo::estimateAxisLengthFromBounds(local_bound_min_, local_bound_max_);
-            std::cout << "mesh loaded: " << mesh_.index_count << " indices" << std::endl;
+            // std::cout << "mesh loaded: " << mesh_.index_count << " indices" << std::endl;
         }
 
         inline void loadSTL(const std::string& filename) {
@@ -392,7 +392,7 @@ namespace sinriv::ui::render {
             mesh_.index_count = static_cast<uint32_t>(indices.size());
             axis_state_.axis_length =
                 axis_gizmo::estimateAxisLengthFromBounds(local_bound_min_, local_bound_max_);
-            std::cout << "mesh loaded: " << mesh_.index_count << " indices" << std::endl;
+            // std::cout << "mesh loaded: " << mesh_.index_count << " indices" << std::endl;
         }
 
         inline bool empty() const {

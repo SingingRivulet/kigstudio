@@ -225,12 +225,30 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
         ImGui::TextUnformatted(get_locale_cstr("dialog.choose_export_method"));
 
         // Export mode selection
-        ImGui::RadioButton(get_locale_cstr("label.export_mode_standard"),
-                           &export_stl_mode, 0);
-        ImGui::RadioButton(get_locale_cstr("label.export_mode_smooth"),
-                           &export_stl_mode, 1);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(get_locale_cstr("tooltip.export_mode_smooth"));
+        if (item.source_type == 2) {
+            // 附加件节点：可直接导出 loft 网格，或走 SDF 平滑导出
+            if (export_stl_mode == 0) export_stl_mode = 2;
+            ImGui::RadioButton(get_locale_cstr("label.export_mode_mesh"),
+                               &export_stl_mode, 2);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    get_locale_cstr("tooltip.export_mode_mesh"));
+            }
+            ImGui::RadioButton(get_locale_cstr("label.export_mode_smooth"),
+                               &export_stl_mode, 1);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    get_locale_cstr("tooltip.export_mode_smooth"));
+            }
+        } else {
+            ImGui::RadioButton(get_locale_cstr("label.export_mode_standard"),
+                               &export_stl_mode, 0);
+            ImGui::RadioButton(get_locale_cstr("label.export_mode_smooth"),
+                               &export_stl_mode, 1);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    get_locale_cstr("tooltip.export_mode_smooth"));
+            }
         }
 
         ImGui::Separator();
@@ -386,11 +404,31 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip(get_locale_cstr("tooltip.addon_reveal"));
         }
+        if (item.addon_reveal) {
+            ImGui::Indent();
+            ImGui::Checkbox(get_locale_cstr("label.addon_sdf_boolean"),
+                            &item.addon_sdf_boolean);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    get_locale_cstr("tooltip.addon_sdf_boolean"));
+            }
+            ImGui::Unindent();
+        }
 
         ImGui::Checkbox(get_locale_cstr("label.addon_split"),
                         &item.addon_split);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip(get_locale_cstr("tooltip.addon_split"));
+        }
+        if (item.addon_split) {
+            ImGui::Indent();
+            ImGui::Checkbox(get_locale_cstr("label.addon_sdf_split"),
+                            &item.addon_sdf_split);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    get_locale_cstr("tooltip.addon_sdf_split"));
+            }
+            ImGui::Unindent();
         }
 
         ImGui::Separator();

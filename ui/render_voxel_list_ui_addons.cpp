@@ -49,6 +49,16 @@ void RenderVoxelList::render_guide_curve_window() {
         }
         show_cross_section_editor_window = false;
     }
+    // 互斥：打开引导曲线窗口时关闭逐点截面编辑器
+    if (show_perpoint_section_editor_window) {
+        auto pit = items.find(render_id);
+        if (pit != items.end()) {
+            pit->second->perpoint_section_editing_active = false;
+            pit->second->active_perpoint_section_edit_strand = -1;
+            pit->second->active_perpoint_section_edit_width_idx = -1;
+        }
+        show_perpoint_section_editor_window = false;
+    }
 
     ImGui::SetNextWindowSize(ImVec2(520, 400), ImGuiCond_Once);
     bool window_open = true;
@@ -338,8 +348,12 @@ void RenderVoxelList::render_width_editor_window() {
         if (it != items.end()) {
             it->second->width_editing_active = false;
             it->second->active_width_edit_strand = -1;
+            it->second->perpoint_section_editing_active = false;
+            it->second->active_perpoint_section_edit_strand = -1;
+            it->second->active_perpoint_section_edit_width_idx = -1;
         }
         show_width_editor_window = false;
+        show_perpoint_section_editor_window = false;
         ImGui::End();
         return;
     }
@@ -357,6 +371,10 @@ void RenderVoxelList::render_width_editor_window() {
     if (idx < 0 || idx >= static_cast<int>(item.hair_strands.size()) ||
         !item.width_editing_active) {
         show_width_editor_window = false;
+        show_perpoint_section_editor_window = false;
+        item.perpoint_section_editing_active = false;
+        item.active_perpoint_section_edit_strand = -1;
+        item.active_perpoint_section_edit_width_idx = -1;
         ImGui::End();
         return;
     }
@@ -559,6 +577,50 @@ void RenderVoxelList::render_width_editor_window() {
                 }
             }
 
+            // --- Per-point section editor button ---
+            ImGui::SameLine();
+            bool is_perpoint_editing =
+                (item.active_perpoint_section_edit_strand == idx &&
+                 item.active_perpoint_section_edit_width_idx ==
+                     static_cast<int>(wi));
+            if (is_perpoint_editing) {
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImVec4(0.5f, 0.5f, 0.9f, 1.0f));
+            }
+            if (ImGui::SmallButton(
+                    is_perpoint_editing
+                        ? get_locale_cstr("action.stop_edit_perpoint_section")
+                        : get_locale_cstr("action.edit_perpoint_section"))) {
+                if (is_perpoint_editing) {
+                    item.perpoint_section_editing_active = false;
+                    item.active_perpoint_section_edit_strand = -1;
+                    item.active_perpoint_section_edit_width_idx = -1;
+                    show_perpoint_section_editor_window = false;
+                } else {
+                    // Close global section editor (mutual exclusion)
+                    if (show_cross_section_editor_window) {
+                        item.active_section_edit_strand = -1;
+                        show_cross_section_editor_window = false;
+                    }
+                    item.perpoint_section_editing_active = true;
+                    item.active_perpoint_section_edit_strand = idx;
+                    item.active_perpoint_section_edit_width_idx =
+                        static_cast<int>(wi);
+                    show_perpoint_section_editor_window = true;
+                }
+            }
+            if (is_perpoint_editing) {
+                ImGui::PopStyleColor();
+            }
+
+            // Show [custom] indicator if this width point has an override
+            if (wp.section_state.vertices.size() >= 3) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "%s",
+                                   get_locale_cstr(
+                                       "label.perpoint_section_indicator"));
+            }
+
             ImGui::SameLine();
             if (ImGui::SmallButton(
                     get_locale_cstr("action.delete_width_point"))) {
@@ -594,6 +656,19 @@ void RenderVoxelList::render_width_editor_window() {
 
         // 处理删除
         if (delete_wp >= 0) {
+            // Clean up per-point section editor if the deleted point was
+            // being edited
+            if (item.active_perpoint_section_edit_strand == idx &&
+                item.active_perpoint_section_edit_width_idx == delete_wp) {
+                item.perpoint_section_editing_active = false;
+                item.active_perpoint_section_edit_strand = -1;
+                item.active_perpoint_section_edit_width_idx = -1;
+                show_perpoint_section_editor_window = false;
+            } else if (item.active_perpoint_section_edit_strand == idx &&
+                       item.active_perpoint_section_edit_width_idx >
+                           delete_wp) {
+                item.active_perpoint_section_edit_width_idx--;
+            }
             push_undo_now(item.id, std::nullopt, "Delete Width Point");
             strand.width_points.erase(
                 strand.width_points.begin() + delete_wp);
@@ -842,19 +917,36 @@ void RenderVoxelList::render_object_editor_addons() {
                         item.active_section_edit_strand = -1;
                         show_cross_section_editor_window = false;
                     } else {
-                        // 互斥：打开截面编辑器时关闭引导曲线和宽度编辑器
-                        if (item.guide_curve_drawing_active) {
-                            item.guide_curve_drawing_active = false;
-                            item.active_guide_draw_strand = -1;
-                            show_guide_curve_window = false;
+                        // Check for per-point section overrides before
+                        // opening global section editor
+                        bool has_overrides = false;
+                        for (const auto& wp :
+                             item.hair_strands[i].width_points) {
+                            if (wp.section_state.vertices.size() >= 3) {
+                                has_overrides = true;
+                                break;
+                            }
                         }
-                        if (item.width_editing_active) {
-                            item.width_editing_active = false;
-                            item.active_width_edit_strand = -1;
-                            show_width_editor_window = false;
+                        if (has_overrides) {
+                            show_perpoint_confirm_global_open = true;
+                            pending_global_section_strand =
+                                static_cast<int>(i);
+                        } else {
+                            // 互斥：打开截面编辑器时关闭引导曲线和宽度编辑器
+                            if (item.guide_curve_drawing_active) {
+                                item.guide_curve_drawing_active = false;
+                                item.active_guide_draw_strand = -1;
+                                show_guide_curve_window = false;
+                            }
+                            if (item.width_editing_active) {
+                                item.width_editing_active = false;
+                                item.active_width_edit_strand = -1;
+                                show_width_editor_window = false;
+                            }
+                            item.active_section_edit_strand =
+                                static_cast<int>(i);
+                            show_cross_section_editor_window = true;
                         }
-                        item.active_section_edit_strand = static_cast<int>(i);
-                        show_cross_section_editor_window = true;
                     }
                 }
                 if (is_section_editing) {
@@ -916,6 +1008,16 @@ void RenderVoxelList::render_object_editor_addons() {
                 show_cross_section_editor_window = false;
             } else if (item.active_section_edit_strand > delete_idx) {
                 item.active_section_edit_strand--;
+            }
+            // Clean up per-point section editor
+            if (item.active_perpoint_section_edit_strand == delete_idx) {
+                item.perpoint_section_editing_active = false;
+                item.active_perpoint_section_edit_strand = -1;
+                item.active_perpoint_section_edit_width_idx = -1;
+                show_perpoint_section_editor_window = false;
+            } else if (item.active_perpoint_section_edit_strand >
+                       delete_idx) {
+                item.active_perpoint_section_edit_strand--;
             }
             item.hair_strands.erase(item.hair_strands.begin() + delete_idx);
             push_undo_now(item.id, std::nullopt, "Delete Hair Strand");

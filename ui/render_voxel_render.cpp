@@ -230,6 +230,40 @@ loft_vec3f tangent_at_sample(const std::vector<loft_vec3f>& sampled, int i) {
 
 constexpr float kMinTipWidth = 0.02f;
 
+// Catmull-Rom smoothing for a closed 2D polygon (matching the section editor
+// preview).  Used for both global and per-point section Bézier mode.
+inline void catmull_rom_smooth_closed(
+    const std::vector<sinriv::kigstudio::vec2<float>>& input,
+    std::vector<sinriv::kigstudio::vec2<float>>& output,
+    int kSubdiv = 8) {
+    const int n = static_cast<int>(input.size());
+    if (n < 3) { output = input; return; }
+    auto cr = [](float p0, float p1, float p2, float p3, float t) -> float {
+        float t2 = t * t;
+        float t3 = t2 * t;
+        return 0.5f * ((2.0f * p1) + (-p0 + p2) * t +
+                       (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
+                       (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
+    };
+    output.clear();
+    output.reserve(n * kSubdiv);
+    for (int i = 0; i < n; ++i) {
+        int i0 = (i - 1 + n) % n;
+        int i1 = i;
+        int i2 = (i + 1) % n;
+        int i3 = (i + 2) % n;
+        const auto& p0 = input[i0];
+        const auto& p1 = input[i1];
+        const auto& p2 = input[i2];
+        const auto& p3 = input[i3];
+        for (int s = 0; s < kSubdiv; ++s) {
+            float t = static_cast<float>(s) / static_cast<float>(kSubdiv);
+            output.push_back({cr(p0.x, p1.x, p2.x, p3.x, t),
+                              cr(p0.y, p1.y, p2.y, p3.y, t)});
+        }
+    }
+}
+
 // Build loft mesh triangles from a single hair strand.
 // Returns (Triangle, normal) pairs suitable for RenderMesh::loadGeometry().
 std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
@@ -251,50 +285,17 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 	               : kDefaultSection);
 
 	// Optional Catmull-Rom smoothing for Bézier section mode
-	std::vector<sinriv::kigstudio::vec2<float>> smoothed_section_path;
+	std::vector<sinriv::kigstudio::vec2<float>> global_smoothed_path;
 	const std::vector<sinriv::kigstudio::vec2<float>>* section_path_ptr =
 	    &raw_section_path;
 
 	if (strand.section_state.use_bezier_section &&
 	    raw_section_path.size() >= 3) {
-		const int kSubdiv = 8;  // samples per segment
-		const int n = static_cast<int>(raw_section_path.size());
-
-		// Catmull-Rom interpolation for a single float component
-		auto catmull_rom_2d = [](float p0, float p1, float p2,
-		                         float p3, float t) -> float {
-			float t2 = t * t;
-			float t3 = t2 * t;
-			return 0.5f *
-			       ((2.0f * p1) + (-p0 + p2) * t +
-			        (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
-			        (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
-		};
-
-		smoothed_section_path.reserve(n * kSubdiv);
-		for (int i = 0; i < n; ++i) {
-			int i0 = (i - 1 + n) % n;  // wrap for closed loop
-			int i1 = i;
-			int i2 = (i + 1) % n;
-			int i3 = (i + 2) % n;
-
-			const auto& p0 = raw_section_path[i0];
-			const auto& p1 = raw_section_path[i1];
-			const auto& p2 = raw_section_path[i2];
-			const auto& p3 = raw_section_path[i3];
-
-			for (int s = 0; s < kSubdiv; ++s) {
-				float t = static_cast<float>(s) /
-				          static_cast<float>(kSubdiv);
-				float sx = catmull_rom_2d(p0.x, p1.x, p2.x, p3.x, t);
-				float sy = catmull_rom_2d(p0.y, p1.y, p2.y, p3.y, t);
-				smoothed_section_path.push_back({sx, sy});
-			}
-		}
-		section_path_ptr = &smoothed_section_path;
+		catmull_rom_smooth_closed(raw_section_path, global_smoothed_path);
+		section_path_ptr = &global_smoothed_path;
 	}
 
-	const auto& section_path = *section_path_ptr;
+	const auto& global_section_path = *section_path_ptr;
 
 	// Step 1: Sample guide curve as dense polyline
 	auto sampled = sample_bezier_guide_curve(strand.guide_points, 32);
@@ -549,10 +550,42 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 		};
 		axis_v = safe_normalize(axis_v, loft_vec3f{0, 1, 0});
 
+		// Determine per-sample section path: use per-point override
+		// if the nearest width point has a custom section, otherwise
+		// fall back to the global section.
+		const auto* per_sample_path = &global_section_path;
+		std::vector<sinriv::kigstudio::vec2<float>> temp_smoothed;
+
+		float curve_id =
+		    static_cast<float>(i) / static_cast<float>(M - 1) *
+		    static_cast<float>(N - 1);
+		const HairStrand::WidthPoint* nearest_wp = nullptr;
+		float nearest_dist = 1e10f;
+		for (const auto& wp : sorted_wp) {
+			float d = std::abs(wp.curve_id - curve_id);
+			if (d < nearest_dist) {
+				nearest_dist = d;
+				nearest_wp = &wp;
+			}
+		}
+
+		if (nearest_wp &&
+		    nearest_wp->section_state.vertices.size() >= 3) {
+			if (nearest_wp->section_state.use_bezier_section) {
+				catmull_rom_smooth_closed(
+				    nearest_wp->section_state.vertices,
+				    temp_smoothed);
+				per_sample_path = &temp_smoothed;
+			} else {
+				per_sample_path =
+				    &nearest_wp->section_state.vertices;
+			}
+		}
+
 		// Build rotated + scaled path
 		std::vector<sinriv::kigstudio::vec2<float>> path;
-		path.reserve(section_path.size());
-		for (const auto& v : section_path) {
+		path.reserve(per_sample_path->size());
+		for (const auto& v : *per_sample_path) {
 			float rx = v.x * cos_r - v.y * sin_r;
 			float ry = v.x * sin_r + v.y * cos_r;
 			path.push_back({rx * scale, ry * scale});

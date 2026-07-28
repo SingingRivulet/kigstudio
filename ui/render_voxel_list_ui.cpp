@@ -416,6 +416,7 @@ void RenderVoxelList::render_ui() {
     render_guide_curve_window();
     render_width_editor_window();
     render_cross_section_editor();
+    render_perpoint_section_editor();
     render_file_loader();
     render_save_dialog();
     render_load_dialog();
@@ -489,6 +490,103 @@ void RenderVoxelList::render_ui() {
         }
         ImGui::EndPopup();
     }
+
+    // Per-point section confirmation: open global section editor
+    if (show_perpoint_confirm_global_open) {
+        ImGui::OpenPopup(
+            get_locale_cstr("dialog.confirm_global_section_open_title"));
+        show_perpoint_confirm_global_open = false;
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(
+            get_locale_cstr("dialog.confirm_global_section_open_title"),
+            nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted(
+            get_locale_cstr("dialog.confirm_global_section_open_message"));
+        ImGui::Separator();
+        if (ImGui::Button(get_locale_cstr("action.yes"))) {
+            {
+                std::lock_guard<std::mutex> lock(locker);
+                auto it = items.find(render_id);
+                if (it != items.end() &&
+                    pending_global_section_strand >= 0 &&
+                    pending_global_section_strand <
+                        static_cast<int>(
+                            it->second->hair_strands.size())) {
+                    // Clear all per-point overrides
+                    for (auto& wp :
+                         it->second
+                             ->hair_strands[pending_global_section_strand]
+                             .width_points) {
+                        wp.section_state = SectionEditorState{};
+                    }
+                    it->second->hair_strands[pending_global_section_strand]
+                        .mesh_dirty = true;
+                    // Open global section editor
+                    it->second->active_section_edit_strand =
+                        pending_global_section_strand;
+                    show_cross_section_editor_window = true;
+                }
+                pending_global_section_strand = -1;
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(get_locale_cstr("action.cancel"))) {
+            pending_global_section_strand = -1;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    // Per-point section confirmation: apply global section
+    if (show_perpoint_confirm_global_apply) {
+        ImGui::OpenPopup(
+            get_locale_cstr("dialog.confirm_global_section_apply_title"));
+        show_perpoint_confirm_global_apply = false;
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(
+            get_locale_cstr("dialog.confirm_global_section_apply_title"),
+            nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted(
+            get_locale_cstr("dialog.confirm_global_section_apply_message"));
+        ImGui::Separator();
+        if (ImGui::Button(get_locale_cstr("action.yes"))) {
+            {
+                std::lock_guard<std::mutex> lock(locker);
+                auto it = items.find(render_id);
+                if (it != items.end()) {
+                    int idx = -1;
+                    // Find the strand that triggered this confirmation
+                    for (size_t si = 0;
+                         si < it->second->hair_strands.size(); ++si) {
+                        // Clear per-point overrides on all strands
+                        for (auto& wp :
+                             it->second->hair_strands[si].width_points) {
+                            wp.section_state = SectionEditorState{};
+                        }
+                    }
+                    it->second
+                        ->hair_strands[pending_global_section_strand >= 0
+                                           ? pending_global_section_strand
+                                           : 0]
+                        .mesh_dirty = true;
+                }
+                pending_global_section_strand = -1;
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(get_locale_cstr("action.cancel"))) {
+            pending_global_section_strand = -1;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
     if (show_license_window) {
         ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_Once);
         if (ImGui::Begin("License", &show_license_window,
