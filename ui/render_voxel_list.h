@@ -266,6 +266,12 @@ struct CollisionEditorSnapshot {
 
     // Hair strand state (guide curves, width points)
     std::vector<HairStrand> hair_strands;
+
+    // Addon (hair) boolean mode flags
+    bool addon_reveal = false;
+    bool addon_split = false;
+    bool addon_sdf_boolean = true;
+    bool addon_sdf_split = true;
 };
 
 struct MarkedVoxelsSnapshot {

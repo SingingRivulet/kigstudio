@@ -42,7 +42,11 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.alpha_wrap_alpha,
             item.alpha_wrap_offset,
             item.subdivide_level,
-            item.hair_strands};
+            item.hair_strands,
+            item.addon_reveal,
+            item.addon_split,
+            item.addon_sdf_boolean,
+            item.addon_sdf_split};
 }
 
 void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
@@ -88,6 +92,10 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.alpha_wrap_offset = snapshot.alpha_wrap_offset;
     item.subdivide_level = snapshot.subdivide_level;
     item.hair_strands = snapshot.hair_strands;
+    item.addon_reveal = snapshot.addon_reveal;
+    item.addon_split = snapshot.addon_split;
+    item.addon_sdf_boolean = snapshot.addon_sdf_boolean;
+    item.addon_sdf_split = snapshot.addon_sdf_split;
     item.sdf_precision_cache = snapshot.sdf_precision_cache;
     item.joint_wireframe_dirty = true;
 }

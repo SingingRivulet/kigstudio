@@ -6,6 +6,185 @@
 #include "kigstudio/sdf/sdf_mesh.h"
 namespace sinriv::ui::render {
 
+namespace {
+
+cJSON* vec2f_to_json(const vec2f& v) {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddNumberToObject(obj, "x", static_cast<double>(v.x));
+    cJSON_AddNumberToObject(obj, "y", static_cast<double>(v.y));
+    return obj;
+}
+
+vec2f vec2f_from_json(const cJSON* json) {
+    vec2f v = {0.0f, 0.0f};
+    if (!json) return v;
+    cJSON* x = cJSON_GetObjectItem(json, "x");
+    cJSON* y = cJSON_GetObjectItem(json, "y");
+    if (x && cJSON_IsNumber(x)) v.x = static_cast<float>(x->valuedouble);
+    if (y && cJSON_IsNumber(y)) v.y = static_cast<float>(y->valuedouble);
+    return v;
+}
+
+cJSON* vec2f_array_to_json(const std::vector<vec2f>& points) {
+    cJSON* arr = cJSON_CreateArray();
+    for (const auto& p : points)
+        cJSON_AddItemToArray(arr, vec2f_to_json(p));
+    return arr;
+}
+
+std::vector<vec2f> vec2f_array_from_json(const cJSON* arr) {
+    std::vector<vec2f> points;
+    if (!arr || !cJSON_IsArray(arr)) return points;
+    int count = cJSON_GetArraySize(arr);
+    points.reserve(count);
+    for (int i = 0; i < count; ++i)
+        points.push_back(vec2f_from_json(cJSON_GetArrayItem(arr, i)));
+    return points;
+}
+
+bool section_state_has_data(const SectionEditorState& state) {
+    return !state.vertices.empty() || !state.committed.empty() ||
+           state.use_bezier_section;
+}
+
+cJSON* section_state_to_json(const SectionEditorState& state) {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddItemToObject(obj, "vertices",
+                          vec2f_array_to_json(state.vertices));
+    cJSON_AddItemToObject(obj, "committed",
+                          vec2f_array_to_json(state.committed));
+    cJSON_AddBoolToObject(obj, "use_bezier_section",
+                          state.use_bezier_section);
+    return obj;
+}
+
+void section_state_from_json(const cJSON* obj, SectionEditorState& state) {
+    if (!obj || !cJSON_IsObject(obj)) return;
+    state.vertices =
+        vec2f_array_from_json(cJSON_GetObjectItem(obj, "vertices"));
+    state.committed =
+        vec2f_array_from_json(cJSON_GetObjectItem(obj, "committed"));
+    cJSON* bez = cJSON_GetObjectItem(obj, "use_bezier_section");
+    if (bez && cJSON_IsBool(bez))
+        state.use_bezier_section = cJSON_IsTrue(bez);
+}
+
+cJSON* hair_strand_to_json(const HairStrand& strand) {
+    cJSON* s_obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(s_obj, "name", strand.name.c_str());
+    cJSON_AddBoolToObject(s_obj, "expanded", strand.expanded);
+    cJSON_AddNumberToObject(s_obj, "section_rotation",
+                            static_cast<double>(strand.section_rotation));
+    if (section_state_has_data(strand.section_state)) {
+        cJSON_AddItemToObject(s_obj, "section_state",
+                              section_state_to_json(strand.section_state));
+    }
+    cJSON* pts_arr = cJSON_CreateArray();
+    for (const auto& pt : strand.guide_points) {
+        cJSON_AddItemToArray(pts_arr, sinriv::kigstudio::to_json(pt));
+    }
+    cJSON_AddItemToObject(s_obj, "guide_points", pts_arr);
+    if (!strand.width_points.empty()) {
+        cJSON* wp_arr = cJSON_CreateArray();
+        for (const auto& wp : strand.width_points) {
+            cJSON* wp_obj = cJSON_CreateObject();
+            cJSON_AddNumberToObject(wp_obj, "curve_id",
+                                    static_cast<double>(wp.curve_id));
+            cJSON_AddNumberToObject(wp_obj, "scale",
+                                    static_cast<double>(wp.scale));
+            cJSON_AddItemToObject(wp_obj, "direction",
+                                  sinriv::kigstudio::to_json(wp.direction));
+            if (section_state_has_data(wp.section_state)) {
+                cJSON_AddItemToObject(
+                    wp_obj, "section_state",
+                    section_state_to_json(wp.section_state));
+            }
+            cJSON_AddItemToArray(wp_arr, wp_obj);
+        }
+        cJSON_AddItemToObject(s_obj, "width_points", wp_arr);
+    }
+    return s_obj;
+}
+
+HairStrand hair_strand_from_json(const cJSON* s_obj) {
+    HairStrand strand;
+    if (!s_obj || !cJSON_IsObject(s_obj)) return strand;
+    cJSON* name_obj = cJSON_GetObjectItem(s_obj, "name");
+    if (name_obj && cJSON_IsString(name_obj))
+        strand.name = name_obj->valuestring;
+    cJSON* exp_obj = cJSON_GetObjectItem(s_obj, "expanded");
+    if (exp_obj)
+        strand.expanded = exp_obj->valueint != 0;
+    cJSON* rot_obj = cJSON_GetObjectItem(s_obj, "section_rotation");
+    if (rot_obj && cJSON_IsNumber(rot_obj))
+        strand.section_rotation = static_cast<float>(rot_obj->valuedouble);
+    section_state_from_json(cJSON_GetObjectItem(s_obj, "section_state"),
+                            strand.section_state);
+    cJSON* pts_arr = cJSON_GetObjectItem(s_obj, "guide_points");
+    if (pts_arr && cJSON_IsArray(pts_arr)) {
+        int pt_count = cJSON_GetArraySize(pts_arr);
+        for (int pi = 0; pi < pt_count; ++pi) {
+            cJSON* pt_obj = cJSON_GetArrayItem(pts_arr, pi);
+            vec3f pt = sinriv::kigstudio::vec3_from_json<vec3f>(pt_obj);
+            strand.guide_points.push_back(pt);
+        }
+    }
+    cJSON* wp_arr = cJSON_GetObjectItem(s_obj, "width_points");
+    if (wp_arr && cJSON_IsArray(wp_arr)) {
+        int wp_count = cJSON_GetArraySize(wp_arr);
+        for (int wi = 0; wi < wp_count; ++wi) {
+            cJSON* wp_obj = cJSON_GetArrayItem(wp_arr, wi);
+            if (!wp_obj) continue;
+            HairStrand::WidthPoint wp;
+            // 新格式：curve_id（浮点，整数部分=段索引，小数部分=段内t）
+            cJSON* cid = cJSON_GetObjectItem(wp_obj, "curve_id");
+            if (cid) {
+                wp.curve_id = static_cast<float>(cid->valuedouble);
+            } else {
+                // 兼容旧格式：从 guide_vertex_id 转换
+                cJSON* gvi = cJSON_GetObjectItem(wp_obj, "guide_vertex_id");
+                if (gvi)
+                    wp.curve_id = static_cast<float>(gvi->valuedouble);
+            }
+            cJSON* sc = cJSON_GetObjectItem(wp_obj, "scale");
+            if (sc) wp.scale = static_cast<float>(sc->valuedouble);
+            // direction 向量
+            cJSON* dir = cJSON_GetObjectItem(wp_obj, "direction");
+            if (dir) {
+                wp.direction = sinriv::kigstudio::vec3_from_json<vec3f>(dir);
+            } else {
+                // 兼容旧格式：从 world_pos 和 curve_pos 计算 direction
+                cJSON* wpos = cJSON_GetObjectItem(wp_obj, "world_pos");
+                cJSON* cpos = cJSON_GetObjectItem(wp_obj, "curve_pos");
+                if (wpos && cpos) {
+                    vec3f world_pos =
+                        sinriv::kigstudio::vec3_from_json<vec3f>(wpos);
+                    vec3f curve_pos =
+                        sinriv::kigstudio::vec3_from_json<vec3f>(cpos);
+                    vec3f diff = world_pos - curve_pos;
+                    float dist = diff.length();
+                    if (dist > 0.0001f) {
+                        wp.direction = diff / dist;
+                        if (wp.scale == 1.0f)
+                            wp.scale = dist;
+                    } else {
+                        wp.direction = {0.0f, 1.0f, 0.0f};
+                    }
+                } else {
+                    wp.direction = {0.0f, 1.0f, 0.0f};
+                }
+            }
+            section_state_from_json(
+                cJSON_GetObjectItem(wp_obj, "section_state"),
+                wp.section_state);
+            strand.width_points.push_back(wp);
+        }
+    }
+    return strand;
+}
+
+}  // namespace
+
 cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON* obj = cJSON_CreateObject();
     cJSON_AddNumberToObject(obj, "id", item.id);
@@ -107,35 +286,15 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddNumberToObject(obj, "source_node_id", item.source_node_id);
     cJSON_AddNumberToObject(obj, "addon_base_node_id", item.addon_base_node_id);
     cJSON_AddNumberToObject(obj, "addon_type", item.addon_type);
+    cJSON_AddBoolToObject(obj, "addon_reveal", item.addon_reveal);
+    cJSON_AddBoolToObject(obj, "addon_split", item.addon_split);
+    cJSON_AddBoolToObject(obj, "addon_sdf_boolean", item.addon_sdf_boolean);
+    cJSON_AddBoolToObject(obj, "addon_sdf_split", item.addon_sdf_split);
     // hair strands
     if (!item.hair_strands.empty()) {
         cJSON* strands_arr = cJSON_CreateArray();
         for (const auto& strand : item.hair_strands) {
-            cJSON* s_obj = cJSON_CreateObject();
-            cJSON_AddStringToObject(s_obj, "name", strand.name.c_str());
-            cJSON_AddBoolToObject(s_obj, "expanded", strand.expanded);
-            cJSON* pts_arr = cJSON_CreateArray();
-            for (const auto& pt : strand.guide_points) {
-                cJSON_AddItemToArray(pts_arr,
-                    sinriv::kigstudio::to_json(pt));
-            }
-            cJSON_AddItemToObject(s_obj, "guide_points", pts_arr);
-            // width_points
-            if (!strand.width_points.empty()) {
-                cJSON* wp_arr = cJSON_CreateArray();
-                for (const auto& wp : strand.width_points) {
-                    cJSON* wp_obj = cJSON_CreateObject();
-                    cJSON_AddNumberToObject(wp_obj, "curve_id",
-                                            static_cast<double>(wp.curve_id));
-                    cJSON_AddNumberToObject(wp_obj, "scale",
-                                            static_cast<double>(wp.scale));
-                    cJSON_AddItemToObject(wp_obj, "direction",
-                        sinriv::kigstudio::to_json(wp.direction));
-                    cJSON_AddItemToArray(wp_arr, wp_obj);
-                }
-                cJSON_AddItemToObject(s_obj, "width_points", wp_arr);
-            }
-            cJSON_AddItemToArray(strands_arr, s_obj);
+            cJSON_AddItemToArray(strands_arr, hair_strand_to_json(strand));
         }
         cJSON_AddItemToObject(obj, "hair_strands", strands_arr);
     }
@@ -410,79 +569,6 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->addon_base_node_id = child->valueint;
             } else if (strcmp(key, "addon_type") == 0) {
                 item->addon_type = child->valueint;
-            } else if (strcmp(key, "hair_strands") == 0) {
-                item->hair_strands.clear();
-                if (cJSON_IsArray(child)) {
-                    int strand_count = cJSON_GetArraySize(child);
-                    for (int si = 0; si < strand_count; ++si) {
-                        cJSON* s_obj = cJSON_GetArrayItem(child, si);
-                        if (!s_obj) continue;
-                        HairStrand strand;
-                        cJSON* name_obj = cJSON_GetObjectItem(s_obj, "name");
-                        if (name_obj && cJSON_IsString(name_obj))
-                            strand.name = name_obj->valuestring;
-                        cJSON* exp_obj = cJSON_GetObjectItem(s_obj, "expanded");
-                        if (exp_obj)
-                            strand.expanded = exp_obj->valueint != 0;
-                        cJSON* pts_arr = cJSON_GetObjectItem(s_obj, "guide_points");
-                        if (pts_arr && cJSON_IsArray(pts_arr)) {
-                            int pt_count = cJSON_GetArraySize(pts_arr);
-                            for (int pi = 0; pi < pt_count; ++pi) {
-                                cJSON* pt_obj = cJSON_GetArrayItem(pts_arr, pi);
-                                vec3f pt = sinriv::kigstudio::vec3_from_json<vec3f>(pt_obj);
-                                strand.guide_points.push_back(pt);
-                            }
-                        }
-                        // width_points
-                        cJSON* wp_arr = cJSON_GetObjectItem(s_obj, "width_points");
-                        if (wp_arr && cJSON_IsArray(wp_arr)) {
-                            int wp_count = cJSON_GetArraySize(wp_arr);
-                            for (int wi = 0; wi < wp_count; ++wi) {
-                                cJSON* wp_obj = cJSON_GetArrayItem(wp_arr, wi);
-                                if (!wp_obj) continue;
-                                HairStrand::WidthPoint wp;
-                                // 新格式：curve_id（浮点，整数部分=段索引，小数部分=段内t）
-                                cJSON* cid = cJSON_GetObjectItem(wp_obj, "curve_id");
-                                if (cid) {
-                                    wp.curve_id = static_cast<float>(cid->valuedouble);
-                                } else {
-                                    // 兼容旧格式：从 guide_vertex_id 转换
-                                    cJSON* gvi = cJSON_GetObjectItem(wp_obj, "guide_vertex_id");
-                                    if (gvi)
-                                        wp.curve_id = static_cast<float>(gvi->valuedouble);
-                                }
-                                cJSON* sc = cJSON_GetObjectItem(wp_obj, "scale");
-                                if (sc) wp.scale = static_cast<float>(sc->valuedouble);
-                                // direction 向量
-                                cJSON* dir = cJSON_GetObjectItem(wp_obj, "direction");
-                                if (dir) {
-                                    wp.direction = sinriv::kigstudio::vec3_from_json<vec3f>(dir);
-                                } else {
-                                    // 兼容旧格式：从 world_pos 和 curve_pos 计算 direction
-                                    cJSON* wpos = cJSON_GetObjectItem(wp_obj, "world_pos");
-                                    cJSON* cpos = cJSON_GetObjectItem(wp_obj, "curve_pos");
-                                    if (wpos && cpos) {
-                                        vec3f world_pos = sinriv::kigstudio::vec3_from_json<vec3f>(wpos);
-                                        vec3f curve_pos = sinriv::kigstudio::vec3_from_json<vec3f>(cpos);
-                                        vec3f diff = world_pos - curve_pos;
-                                        float dist = diff.length();
-                                        if (dist > 0.0001f) {
-                                            wp.direction = diff / dist;
-                                            if (wp.scale == 1.0f)
-                                                wp.scale = dist;
-                                        } else {
-                                            wp.direction = {0.0f, 1.0f, 0.0f};
-                                        }
-                                    } else {
-                                        wp.direction = {0.0f, 1.0f, 0.0f};
-                                    }
-                                }
-                                strand.width_points.push_back(wp);
-                            }
-                        }
-                        item->hair_strands.push_back(std::move(strand));
-                    }
-                }
             } else if (strcmp(key, "node_source_data_type") == 0) {
                 item->node_source_data_type = child->valueint;
             } else if (strcmp(key, "node_source_sdf_subdivisions") == 0) {
@@ -552,6 +638,14 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->voxel_picking_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "use_cgal_skeleton") == 0) {
                 item->use_cgal_skeleton = cJSON_IsTrue(child);
+            } else if (strcmp(key, "addon_reveal") == 0) {
+                item->addon_reveal = cJSON_IsTrue(child);
+            } else if (strcmp(key, "addon_split") == 0) {
+                item->addon_split = cJSON_IsTrue(child);
+            } else if (strcmp(key, "addon_sdf_boolean") == 0) {
+                item->addon_sdf_boolean = cJSON_IsTrue(child);
+            } else if (strcmp(key, "addon_sdf_split") == 0) {
+                item->addon_sdf_split = cJSON_IsTrue(child);
             }
         } else if (cJSON_IsString(child)) {
             if (strcmp(key, "stl_path") == 0) {
@@ -617,6 +711,13 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                         item->picked_skeleton_points.push_back(
                             parse_skeleton_point(sp_obj));
                     }
+                }
+            } else if (strcmp(key, "hair_strands") == 0) {
+                item->hair_strands.clear();
+                int strand_count = cJSON_GetArraySize(child);
+                for (int si = 0; si < strand_count; ++si) {
+                    item->hair_strands.push_back(hair_strand_from_json(
+                        cJSON_GetArrayItem(child, si)));
                 }
             }
         }
@@ -687,6 +788,11 @@ cJSON* RenderVoxelList::snapshot_to_json(
     cJSON_AddBoolToObject(obj, "mesh_only", snapshot.mesh_only);
     cJSON_AddNumberToObject(obj, "source_type", snapshot.source_type);
     cJSON_AddNumberToObject(obj, "source_node_id", snapshot.source_node_id);
+    cJSON_AddBoolToObject(obj, "addon_reveal", snapshot.addon_reveal);
+    cJSON_AddBoolToObject(obj, "addon_split", snapshot.addon_split);
+    cJSON_AddBoolToObject(obj, "addon_sdf_boolean",
+                          snapshot.addon_sdf_boolean);
+    cJSON_AddBoolToObject(obj, "addon_sdf_split", snapshot.addon_sdf_split);
     cJSON_AddNumberToObject(obj, "node_source_data_type",
                             snapshot.node_source_data_type);
     cJSON_AddNumberToObject(obj, "node_source_sdf_subdivisions",
@@ -993,6 +1099,14 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.show_silhouette_center = cJSON_IsTrue(child);
             } else if (strcmp(key, "show_addon_center") == 0) {
                 snapshot.show_addon_center = cJSON_IsTrue(child);
+            } else if (strcmp(key, "addon_reveal") == 0) {
+                snapshot.addon_reveal = cJSON_IsTrue(child);
+            } else if (strcmp(key, "addon_split") == 0) {
+                snapshot.addon_split = cJSON_IsTrue(child);
+            } else if (strcmp(key, "addon_sdf_boolean") == 0) {
+                snapshot.addon_sdf_boolean = cJSON_IsTrue(child);
+            } else if (strcmp(key, "addon_sdf_split") == 0) {
+                snapshot.addon_sdf_split = cJSON_IsTrue(child);
             }
         } else if (cJSON_IsString(child)) {
             if (strcmp(key, "stl_path") == 0) {
@@ -1459,8 +1573,24 @@ bool RenderVoxelList::load_project(const std::string& folder) {
             if (it == items.end())
                 continue;
             auto& item = *it->second;
-            if (!item.sdf_data)
+            const bool is_addon = (item.source_type == 2);
+            if (!item.sdf_data && !is_addon)
                 continue;
+
+            // 附加件节点：重建自身SDF（各发束SDF的并集，按需减去底模），
+            // 与文件Tab中的“更新SDF”按钮行为一致
+            if (is_addon && !item.sdf_data && !item.hair_strands.empty()) {
+                item.sdf_data = item.build_hair_sdf();
+                if (item.sdf_data && item.addon_reveal &&
+                    item.addon_base_node_id >= 0) {
+                    auto base_it = items.find(item.addon_base_node_id);
+                    if (base_it != items.end() && base_it->second->sdf_data) {
+                        item.sdf_data =
+                            sinriv::kigstudio::sdf::sdf_subtraction(
+                                item.sdf_data, base_it->second->sdf_data);
+                    }
+                }
+            }
 
             bool has_valid_children = false;
             for (int child_id : item.children) {
@@ -1490,6 +1620,34 @@ bool RenderVoxelList::load_project(const std::string& folder) {
                     if (!child_it->second->sdf_data) {
                         child_it->second->sdf_data =
                             std::move(std::get<1>(results[i]));
+                    }
+                    // 附加件几何布尔路径：恢复子节点的布尔结果网格
+                    auto& result_tris = std::get<2>(results[i]);
+                    if (!result_tris.empty()) {
+                        child_it->second->source_triangles =
+                            std::move(result_tris);
+                        using VoxelTriangle =
+                            sinriv::kigstudio::voxel::Triangle;
+                        using Vec3f = sinriv::kigstudio::vec3<float>;
+                        std::vector<std::tuple<VoxelTriangle, Vec3f>>
+                            mesh_data;
+                        mesh_data.reserve(
+                            child_it->second->source_triangles.size());
+                        for (const auto& t :
+                             child_it->second->source_triangles) {
+                            const auto& a = std::get<0>(t);
+                            const auto& b = std::get<1>(t);
+                            const auto& c = std::get<2>(t);
+                            auto n = (b - a).cross(c - a);
+                            const float len = n.length();
+                            if (len > 1e-8f)
+                                n = n / len;
+                            else
+                                n = Vec3f{0.0f, 0.0f, 0.0f};
+                            mesh_data.emplace_back(t, n);
+                        }
+                        child_it->second->mesh_renderer.loadGeometry(
+                            std::move(mesh_data));
                     }
                 }
             } catch (const std::exception& e) {
