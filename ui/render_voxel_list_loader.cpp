@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <queue>
@@ -75,6 +76,9 @@ cJSON* hair_strand_to_json(const HairStrand& strand) {
     cJSON_AddBoolToObject(s_obj, "expanded", strand.expanded);
     cJSON_AddNumberToObject(s_obj, "section_rotation",
                             static_cast<double>(strand.section_rotation));
+    cJSON_AddNumberToObject(s_obj, "guide_samples_per_segment",
+                            strand.guide_samples_per_segment);
+    cJSON_AddNumberToObject(s_obj, "section_subdiv", strand.section_subdiv);
     if (section_state_has_data(strand.section_state)) {
         cJSON_AddItemToObject(s_obj, "section_state",
                               section_state_to_json(strand.section_state));
@@ -118,6 +122,12 @@ HairStrand hair_strand_from_json(const cJSON* s_obj) {
     cJSON* rot_obj = cJSON_GetObjectItem(s_obj, "section_rotation");
     if (rot_obj && cJSON_IsNumber(rot_obj))
         strand.section_rotation = static_cast<float>(rot_obj->valuedouble);
+    cJSON* gsub_obj = cJSON_GetObjectItem(s_obj, "guide_samples_per_segment");
+    if (gsub_obj && cJSON_IsNumber(gsub_obj))
+        strand.guide_samples_per_segment = std::max(gsub_obj->valueint, 1);
+    cJSON* ssub_obj = cJSON_GetObjectItem(s_obj, "section_subdiv");
+    if (ssub_obj && cJSON_IsNumber(ssub_obj))
+        strand.section_subdiv = std::max(ssub_obj->valueint, 1);
     section_state_from_json(cJSON_GetObjectItem(s_obj, "section_state"),
                             strand.section_state);
     cJSON* pts_arr = cJSON_GetObjectItem(s_obj, "guide_points");

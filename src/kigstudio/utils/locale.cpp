@@ -1342,6 +1342,10 @@ void init_locale_strings() {
                       {{"en", "Bezier"}, {"zh", "贝塞尔"}});
     add_locale_string("label.section_rotation",
                       {{"en", "Rotation"}, {"zh", "旋转"}});
+    add_locale_string("label.guide_subdiv",
+                      {{"en", "Curve Precision"}, {"zh", "曲线精度"}});
+    add_locale_string("label.section_subdiv",
+                      {{"en", "Section Precision"}, {"zh", "截面精度"}});
     // Per-point section editor
     add_locale_string("window.perpoint_section_editor",
                       {{"en", "Per-Point Section"}, {"zh", "逐点截面"}});

@@ -981,6 +981,23 @@ void RenderVoxelList::render_object_editor_addons() {
                 if (old_rot != strand.section_rotation) {
                     strand.mesh_dirty = true;
                 }
+
+                // 细分精度：引导曲线贝塞尔插值 / 截面贝塞尔平滑
+                ImGui::SetNextItemWidth(160);
+                int old_guide_subdiv = strand.guide_samples_per_segment;
+                ImGui::SliderInt(get_locale_cstr("label.guide_subdiv"),
+                                 &strand.guide_samples_per_segment, 4, 128);
+                if (old_guide_subdiv != strand.guide_samples_per_segment) {
+                    strand.mesh_dirty = true;
+                }
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(160);
+                int old_section_subdiv = strand.section_subdiv;
+                ImGui::SliderInt(get_locale_cstr("label.section_subdiv"),
+                                 &strand.section_subdiv, 1, 32);
+                if (old_section_subdiv != strand.section_subdiv) {
+                    strand.mesh_dirty = true;
+                }
             }
 
             ImGui::PopID();

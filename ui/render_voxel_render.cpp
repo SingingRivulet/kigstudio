@@ -86,7 +86,8 @@ struct NearestCurveResult {
 };
 NearestCurveResult find_nearest_on_bezier_guide(
     const std::vector<vec3f>& guide_points,
-    const vec3f& world_pos) {
+    const vec3f& world_pos,
+    int samples_per_segment = 32) {
     NearestCurveResult result;
     if (guide_points.size() < 2) {
         if (!guide_points.empty()) {
@@ -95,7 +96,7 @@ NearestCurveResult find_nearest_on_bezier_guide(
         return result;
     }
 
-    auto sampled = sample_bezier_guide_curve(guide_points, 32);
+    auto sampled = sample_bezier_guide_curve(guide_points, samples_per_segment);
     if (sampled.empty())
         return result;
 
@@ -113,7 +114,7 @@ NearestCurveResult find_nearest_on_bezier_guide(
     result.curve_pos = sampled[best_sample_idx];
 
     // 推算 curve_id：整数部分=段索引，小数部分=段内参数t
-    constexpr int kSamplesPerSegment = 32;
+    const int kSamplesPerSegment = std::max(samples_per_segment, 1);
     size_t seg_idx = best_sample_idx / kSamplesPerSegment;
     if (seg_idx >= guide_points.size() - 1)
         seg_idx = guide_points.size() - 2;
@@ -291,14 +292,16 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 
 	if (strand.section_state.use_bezier_section &&
 	    raw_section_path.size() >= 3) {
-		catmull_rom_smooth_closed(raw_section_path, global_smoothed_path);
+		catmull_rom_smooth_closed(raw_section_path, global_smoothed_path,
+		                          std::max(strand.section_subdiv, 1));
 		section_path_ptr = &global_smoothed_path;
 	}
 
 	const auto& global_section_path = *section_path_ptr;
 
 	// Step 1: Sample guide curve as dense polyline
-	auto sampled = sample_bezier_guide_curve(strand.guide_points, 32);
+	auto sampled = sample_bezier_guide_curve(
+	    strand.guide_points, std::max(strand.guide_samples_per_segment, 1));
 	if (sampled.size() < 2) return result;
 
 	// Convert sampled to loft_vec3f
@@ -574,7 +577,8 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 			if (nearest_wp->section_state.use_bezier_section) {
 				catmull_rom_smooth_closed(
 				    nearest_wp->section_state.vertices,
-				    temp_smoothed);
+				    temp_smoothed,
+				    std::max(strand.section_subdiv, 1));
 				per_sample_path = &temp_smoothed;
 			} else {
 				per_sample_path =
@@ -684,7 +688,7 @@ void RenderVoxelList::RenderVoxelItem::add_width_point_at(
         return;
 
     auto nearest = find_nearest_on_bezier_guide(
-        strand.guide_points, world_pos);
+        strand.guide_points, world_pos, strand.guide_samples_per_segment);
 
     vec3f diff = world_pos - nearest.curve_pos;
     float dist = diff.length();
@@ -719,13 +723,14 @@ RenderVoxelList::RenderVoxelItem::sample_guide_curve_at(
     if (strand.guide_points.size() < 2)
         return result;
 
-    auto sampled = sample_bezier_guide_curve(strand.guide_points, 32);
+    const int subdiv = std::max(strand.guide_samples_per_segment, 1);
+    auto sampled = sample_bezier_guide_curve(strand.guide_points, subdiv);
     if (sampled.size() < 2)
         return result;
 
     // Convert curve_id to sample index in the sampled curve
     const int N = static_cast<int>(strand.guide_points.size());
-    constexpr int kSubdiv = 32;
+    const int kSubdiv = subdiv;
     int seg_idx = static_cast<int>(curve_id);
     float t = curve_id - static_cast<float>(seg_idx);
     if (seg_idx < 0) { seg_idx = 0; t = 0.0f; }
@@ -1223,7 +1228,8 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                     is_active ? active_marker_color : idle_marker_color;
                 // 贝塞尔插值采样 → 平滑曲线折线
                 auto sampled = sample_bezier_guide_curve(
-                    strand.guide_points, 32);
+                    strand.guide_points,
+                    std::max(strand.guide_samples_per_segment, 1));
                 for (size_t pi = 0; pi + 1 < sampled.size(); ++pi) {
                     const auto& a = sampled[pi];
                     const auto& b = sampled[pi + 1];

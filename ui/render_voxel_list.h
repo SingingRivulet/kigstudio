@@ -158,6 +158,11 @@ struct HairStrand {
     // Section rotation around the guide curve tangent (-180 to 180 degrees)
     float section_rotation = 0.0f;
 
+    // 细分精度：引导曲线贝塞尔插值每段采样数
+    int guide_samples_per_segment = 32;
+    // 细分精度：截面贝塞尔（Catmull-Rom 平滑）每条边细分数
+    int section_subdiv = 8;
+
     // Dirty flag: set to true when any data affecting the loft mesh changes
     bool mesh_dirty = true;
 };
