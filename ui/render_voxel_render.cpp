@@ -1,5 +1,8 @@
 #include "render_voxel_list.h"
 #include <bx/math.h>
+#include <map>
+#include <unordered_map>
+#include "kigstudio/cgal/mesh_repair.h"
 #include "kigstudio/mesh/loft.h"
 namespace sinriv::ui::render {
 namespace {
@@ -263,6 +266,53 @@ inline void catmull_rom_smooth_closed(
                               cr(p0.y, p1.y, p2.y, p3.y, t)});
         }
     }
+}
+
+// 封闭性（watertight）检测：量化顶点后统计每条无向边的引用次数，
+// 封闭网格中每条边应恰好被两个三角形共享。
+bool is_mesh_watertight(const std::vector<loft_Triangle>& tris) {
+	if (tris.empty()) return false;
+	std::map<std::tuple<int32_t, int32_t, int32_t>, uint32_t> vertex_ids;
+	std::unordered_map<uint64_t, uint32_t> edge_count;
+	auto get_id = [&vertex_ids](const loft_vec3f& p) -> uint32_t {
+		auto key = std::make_tuple(
+		    static_cast<int32_t>(std::lround(p.x * 1e5)),
+		    static_cast<int32_t>(std::lround(p.y * 1e5)),
+		    static_cast<int32_t>(std::lround(p.z * 1e5)));
+		auto it = vertex_ids.find(key);
+		if (it != vertex_ids.end()) return it->second;
+		uint32_t id = static_cast<uint32_t>(vertex_ids.size());
+		vertex_ids.emplace(key, id);
+		return id;
+	};
+	for (const auto& tri : tris) {
+		uint32_t v[3] = {get_id(std::get<0>(tri)), get_id(std::get<1>(tri)),
+		                 get_id(std::get<2>(tri))};
+		for (int e = 0; e < 3; ++e) {
+			uint32_t lo = std::min(v[e], v[(e + 1) % 3]);
+			uint32_t hi = std::max(v[e], v[(e + 1) % 3]);
+			edge_count[(static_cast<uint64_t>(lo) << 32) | hi]++;
+		}
+	}
+	for (const auto& [key, count] : edge_count) {
+		(void)key;
+		if (count != 2) return false;
+	}
+	return true;
+}
+
+sinriv::kigstudio::cgal::MeshData addon_triangles_to_mesh_data(
+    const std::vector<loft_Triangle>& triangles) {
+	sinriv::kigstudio::cgal::MeshData mesh;
+	mesh.reserve(triangles.size());
+	for (const auto& tri : triangles) {
+		loft_vec3f n = (std::get<1>(tri) - std::get<0>(tri))
+		                   .cross(std::get<2>(tri) - std::get<0>(tri));
+		float nl = n.length();
+		if (nl < 1e-12f) continue;
+		mesh.emplace_back(tri, n * (1.0f / nl));
+	}
+	return mesh;
 }
 
 // Build loft mesh triangles from a single hair strand.
@@ -762,14 +812,55 @@ void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
 		try {
 			auto tris = build_hair_strand_mesh(strand);
 			if (tris.empty()) continue;
+
+			// 提交显示前检测网格是否需要修复（不封闭 或 自相交），
+			// 需要时用 alpha_wrap 修复（参数为每根发束独立调节）
+			std::vector<loft_Triangle> plain;
+			plain.reserve(tris.size());
+			for (const auto& [tri, n] : tris) {
+				(void)n;
+				plain.push_back(tri);
+			}
+			if (!is_mesh_watertight(plain) ||
+			    !sinriv::kigstudio::cgal::is_boolean_ready(
+			        addon_triangles_to_mesh_data(plain))) {
+				auto mesh_in = addon_triangles_to_mesh_data(plain);
+				auto wrapped = sinriv::kigstudio::cgal::alpha_wrap(
+				    mesh_in,
+				    static_cast<double>(strand.repair_alpha),
+				    static_cast<double>(strand.repair_offset));
+				if (!wrapped.empty()) {
+					strand.repair_failed = false;
+					plain.clear();
+					plain.reserve(wrapped.size());
+					for (const auto& [tri, n] : wrapped) {
+						(void)n;
+						plain.push_back(tri);
+					}
+				} else {
+					strand.repair_failed = true;
+					std::cerr
+					    << "[addon_mesh] alpha_wrap failed for strand \""
+					    << strand.name
+					    << "\", rendering original mesh.\n";
+				}
+			} else {
+				strand.repair_failed = false;
+			}
+
+			std::vector<std::tuple<loft_Triangle, loft_vec3f>> out;
+			out.reserve(plain.size());
+			for (const auto& tri : plain) {
+				out.emplace_back(tri, compute_triangle_normal(tri));
+			}
 			addon_renderers.emplace_back();
 			addon_renderers.back().setBaseColor(0.3f, 0.65f, 0.42f, 1.0f);
-			addon_renderers.back().loadGeometry(tris);
+			addon_renderers.back().loadGeometry(out);
 		} catch (const std::exception& e) {
 			std::cerr << "[addon_mesh] build failed for strand: " << e.what()
 			          << std::endl;
 		}
-	}
+}
 }
 
 std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
@@ -780,7 +871,42 @@ RenderVoxelList::RenderVoxelItem::build_strand_loft_triangles(
 	    strand_idx >= static_cast<int>(hair_strands.size()))
 		return result;
 
-	auto tris_with_normals = build_hair_strand_mesh(hair_strands[strand_idx]);
+	const auto& strand = hair_strands[strand_idx];
+	auto tris_with_normals = build_hair_strand_mesh(strand);
+	if (tris_with_normals.empty()) return result;
+
+	// 提取纯三角形用于水密性和自相交检测
+	std::vector<loft_Triangle> plain;
+	plain.reserve(tris_with_normals.size());
+	for (const auto& [tri, n] : tris_with_normals) {
+		(void)n;
+		plain.push_back(tri);
+	}
+
+	// 与 update_addon_meshes() 保持一致的修复逻辑：
+	// 检测网格是否需要修复（不封闭 或 自相交），
+	// 需要时用 alpha_wrap 修复（参数为每根发束独立调节）
+	if (!is_mesh_watertight(plain) ||
+	    !sinriv::kigstudio::cgal::is_boolean_ready(
+	        addon_triangles_to_mesh_data(plain))) {
+		auto mesh_in = addon_triangles_to_mesh_data(plain);
+		auto wrapped = sinriv::kigstudio::cgal::alpha_wrap(
+		    mesh_in,
+		    static_cast<double>(strand.repair_alpha),
+		    static_cast<double>(strand.repair_offset));
+		if (!wrapped.empty()) {
+			result.reserve(wrapped.size());
+			for (const auto& [tri, n] : wrapped) {
+				(void)n;
+				result.push_back(tri);
+			}
+			return result;
+		}
+		std::cerr << "[addon_split] alpha_wrap failed for strand \""
+		          << strand.name << "\", using original mesh.\n";
+	}
+
+	// 无需修复或修复失败：使用原始网格
 	result.reserve(tris_with_normals.size());
 	for (const auto& [tri, n] : tris_with_normals) {
 		(void)n;

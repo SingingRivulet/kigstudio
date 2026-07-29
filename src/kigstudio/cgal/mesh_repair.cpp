@@ -7,6 +7,7 @@
 #include <CGAL/Polygon_mesh_processing/stitch_borders.h>
 #include <CGAL/Polygon_mesh_processing/orientation.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
+#include <CGAL/Polygon_mesh_processing/self_intersections.h>
 #include <CGAL/alpha_wrap_3.h>
 #include <CGAL/IO/polygon_soup_io.h>
 
@@ -619,6 +620,25 @@ MeshData orient_volume(const MeshData& mesh) {
         std::cerr << "[orient_volume] " << e.what() << "\n";
         return {};
     }
+}
+
+// ===========================================================================
+// 7. Boolean readiness check (closed + no self-intersections)
+// ===========================================================================
+
+bool is_boolean_ready(const MeshData& mesh) {
+    if (mesh.empty()) return false;
+
+    Surface_mesh sm = to_surface_mesh(mesh);
+    if (sm.number_of_faces() == 0) return false;
+
+    if (!CGAL::is_closed(sm)) return false;
+
+    // does_self_intersect works with any kernel; performance is
+    // acceptable for strand meshes (hundreds to low-thousands of tris).
+    if (PMP::does_self_intersect(sm)) return false;
+
+    return true;
 }
 
 // ===========================================================================

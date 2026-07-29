@@ -805,6 +805,9 @@ void init_locale_strings() {
     add_locale_string("label.alpha_wrap_offset",
                       {{"en", "alpha wrap offset"},
                        {"zh", "Alpha包裹offset"}});
+    add_locale_string("label.repair_failed",
+                      {{"en", "(!) Repair failed"},
+                       {"zh", "(!) 修复失败"}});
     add_locale_string("label.auto_segment_update",
                       {{"en", "auto segment update"}, {"zh", "自动分割更新"}});
     add_locale_string("label.updating",

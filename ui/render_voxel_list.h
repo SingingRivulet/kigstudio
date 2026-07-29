@@ -163,6 +163,16 @@ struct HairStrand {
     // 细分精度：截面贝塞尔（Catmull-Rom 平滑）每条边细分数
     int section_subdiv = 8;
 
+    // Alpha wrap repair parameters (per-strand, shown inline below section
+    // precision). When the loft mesh is not boolean-ready, alpha_wrap
+    // is applied with these values before rendering.
+    float repair_alpha = 1.0f;
+    float repair_offset = 0.01f;
+
+    // Set to true when the loft mesh needs repair but alpha_wrap fails.
+    // Reset on every rebuild; shown as a warning indicator in the UI.
+    bool repair_failed = false;
+
     // Dirty flag: set to true when any data affecting the loft mesh changes
     bool mesh_dirty = true;
 };

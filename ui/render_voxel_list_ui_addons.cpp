@@ -809,6 +809,13 @@ void RenderVoxelList::render_object_editor_addons() {
                                                          : 0);
             strand.expanded = expanded;
 
+            // Show warning indicator when alpha_wrap repair failed for this strand
+            if (strand.repair_failed) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.0f, 1.0f), " %s",
+                                   get_locale_cstr("label.repair_failed"));
+            }
+
             if (expanded) {
                 // 三个按钮行
                 // 上移
@@ -990,12 +997,29 @@ void RenderVoxelList::render_object_editor_addons() {
                 if (old_guide_subdiv != strand.guide_samples_per_segment) {
                     strand.mesh_dirty = true;
                 }
-                ImGui::SameLine();
+                // ImGui::SameLine();
                 ImGui::SetNextItemWidth(160);
                 int old_section_subdiv = strand.section_subdiv;
                 ImGui::SliderInt(get_locale_cstr("label.section_subdiv"),
                                  &strand.section_subdiv, 1, 32);
                 if (old_section_subdiv != strand.section_subdiv) {
+                    strand.mesh_dirty = true;
+                }
+
+                // Alpha wrap 修复参数（每根发束独立调节）
+                ImGui::SetNextItemWidth(160);
+                float old_repair_alpha = strand.repair_alpha;
+                ImGui::SliderFloat(get_locale_cstr("label.alpha_wrap_alpha"),
+                                   &strand.repair_alpha, 0.01f, 100.0f, "%.2f");
+                if (old_repair_alpha != strand.repair_alpha) {
+                    strand.mesh_dirty = true;
+                }
+                // ImGui::SameLine();
+                ImGui::SetNextItemWidth(160);
+                float old_repair_offset = strand.repair_offset;
+                ImGui::SliderFloat(get_locale_cstr("label.alpha_wrap_offset"),
+                                   &strand.repair_offset, 0.001f, 10.0f, "%.3f");
+                if (old_repair_offset != strand.repair_offset) {
                     strand.mesh_dirty = true;
                 }
             }

@@ -1666,6 +1666,36 @@ bool RenderVoxelList::load_project(const std::string& folder) {
             }
         }
     }
+	// 自动加载附加件节点的底模到 origin_mesh_renderer，
+	// 避免用户每次打开工程后都要手动点击"应用基础模型"
+	for (auto& [id, item_ptr] : items) {
+		(void)id;
+		auto& item = *item_ptr;
+		if (item.source_type != 2) continue;
+		if (item.addon_base_node_id < 0) continue;
+		auto base_it = items.find(item.addon_base_node_id);
+		if (base_it == items.end()) continue;
+		auto& base = *base_it->second;
+		if (!base.cached_mesh.empty()) {
+			item.origin_mesh_renderer.clear();
+			item.origin_mesh_renderer.loadGeometry(base.cached_mesh);
+		} else if (!base.source_triangles.empty()) {
+			item.origin_mesh_renderer.clear();
+			using VoxelTriangle =
+			    sinriv::kigstudio::voxel::Triangle;
+			using Vec3f = sinriv::kigstudio::vec3<float>;
+			std::vector<std::tuple<VoxelTriangle, Vec3f>> triangles;
+			triangles.reserve(base.source_triangles.size());
+			for (const auto& tri : base.source_triangles) {
+				triangles.emplace_back(
+				    tri,
+				    sinriv::kigstudio::voxel::calcTriangleNormal(tri));
+			}
+			item.origin_mesh_renderer.loadGeometry(triangles);
+		}
+		item.origin_mesh_renderer.setBaseColor(1.0f, 0.4f, 0.6f, 1.0f);
+		item.showOriginMesh = true;
+	}
 
     cJSON_Delete(root);
     if (!items.empty()) {

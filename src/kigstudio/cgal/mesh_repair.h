@@ -23,6 +23,11 @@ MeshData mesh_union(const MeshData& mesh_a, const MeshData& mesh_b);
 MeshData mesh_difference(const MeshData& mesh_a, const MeshData& mesh_b);
 MeshData orient_volume(const MeshData& mesh);
 
+/// Check whether \p mesh is closed, consistently oriented, and free of
+/// self-intersections — i.e. it should work directly in a CGAL boolean.
+/// Returns false for empty meshes.
+bool is_boolean_ready(const MeshData& mesh);
+
 // ===========================================================================
 // Asynchronous API — runs each operation in a subprocess via the CLI tool.
 //
