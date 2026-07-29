@@ -163,7 +163,6 @@ void test_s_curve_flattening_hex_loft() {
 	LoftOptions options;
 	options.cap_first = true;
 	options.cap_last = true;
-	options.orient_faces = true;
 
 	const auto mesh = build_loft_mesh(guide, sections, options);
 	expect(mesh.size() == 300,

@@ -605,8 +605,6 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 	LoftOptions opts;
 	opts.cap_first = true;
 	opts.cap_last = true;
-	opts.orient_faces = true;
-
 	auto loft_tris = build_loft_mesh(guide_curve, sections, opts);
 
 	// Step 5: Wrap triangles with normals

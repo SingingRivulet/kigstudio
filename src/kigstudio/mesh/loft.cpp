@@ -21,19 +21,6 @@ vec3f safe_normalize(const vec3f& v, const vec3f& fallback) {
 	return (len < EPS) ? fallback : v * (1.0f / len);
 }
 
-vec3f tangent_at(const std::vector<vec3f>& guide, int index) {
-	const int n = static_cast<int>(guide.size());
-	if (n < 2)
-		return {0.0f, 0.0f, 1.0f};
-	if (index <= 0)
-		return safe_normalize(guide[1] - guide[0], {0.0f, 0.0f, 1.0f});
-	if (index >= n - 1)
-		return safe_normalize(guide[n - 1] - guide[n - 2],
-		                      {0.0f, 0.0f, 1.0f});
-	return safe_normalize(guide[index + 1] - guide[index - 1],
-	                      {0.0f, 0.0f, 1.0f});
-}
-
 vec3f lerp_vec3(const vec3f& a, const vec3f& b, float t) {
 	return a + (b - a) * t;
 }
@@ -42,14 +29,6 @@ vec2f lerp_vec2(const vec2f& a, const vec2f& b, float t) {
 	return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t};
 }
 
-
-Triangle make_oriented_triangle(vec3f a, vec3f b, vec3f c,
-                                const vec3f& desired_normal) {
-	const vec3f n = (b - a).cross(c - a);
-	if (n.dot(desired_normal) < 0.0f)
-		std::swap(b, c);
-	return std::make_tuple(a, b, c);
-}
 
 struct PreparedSection {
 	size_t id = 0;
@@ -143,49 +122,35 @@ Ring make_ring(const std::vector<vec3f>& guide,
 
 void add_cap(std::vector<Triangle>& mesh,
              const Ring& ring,
-             const vec3f& tangent,
-             bool first,
-             bool orient_faces) {
+             bool first) {
 	vec3f cap_center = {0.0f, 0.0f, 0.0f};
 	for (const auto& v : ring.vertices)
 		cap_center += v;
 	cap_center = cap_center * (1.0f / static_cast<float>(ring.vertices.size()));
 
-	// Compute the ring's polygon normal via Newell's method.
-	// This follows the same vertex winding used by the side triangles,
-	// ensuring the cap halfedges correctly oppose the side-triangle
-	// halfedges on the shared ring boundary — producing a watertight mesh.
-	// The old approach used ±tangent, which is independent of the side-
-	// triangle radial-based orientation and produced mismatched halfedges.
-	vec3f ring_normal = {0.0f, 0.0f, 0.0f};
+	// Use fixed winding that produces halfedges opposite to the side-
+	// triangle boundary halfedges, guaranteeing a watertight mesh.
+	//
+	// Side triangles (fixed winding):
+	//   T1 = (a0, b1, b0)  → ring-b boundary edge: b.pn → b.pi
+	//   T2 = (a0, a1, b1)  → ring-a boundary edge: a.pi → a.pn
+	//
+	// First cap (ring a):  (C, a.pn, a.pi)  → edge a.pn → a.pi  ← opposes T2 ✓
+	// Last  cap (ring b):  (C, b.pi, b.pn)  → edge b.pi → b.pn  ← opposes T1 ✓
 	const int n = static_cast<int>(ring.vertices.size());
 	for (int i = 0; i < n; ++i) {
 		const int j = (i + 1) % n;
-		const vec3f& a = ring.vertices[i];
-		const vec3f& b = ring.vertices[j];
-		ring_normal.x += (a.y - b.y) * (a.z + b.z);
-		ring_normal.y += (a.z - b.z) * (a.x + b.x);
-		ring_normal.z += (a.x - b.x) * (a.y + b.y);
-	}
-
-	// Normalize; fall back to tangent for degenerate rings
-	float len = ring_normal.length();
-	if (len < EPS)
-		ring_normal = tangent;
-	else
-		ring_normal = ring_normal * (1.0f / len);
-
-	// The ring normal from CCW winding points along the tangent direction.
-	// First cap outer normal opposes tangent, last cap aligns with tangent.
-	vec3f desired = first ? -ring_normal : ring_normal;
-
-	for (int i = 0; i < n; ++i) {
-		const int j = (i + 1) % n;
-		if (orient_faces)
-			mesh.push_back(make_oriented_triangle(cap_center, ring.vertices[i],
-			                                      ring.vertices[j], desired));
+		// Side triangles: T1=(a0,b1,b0) gives ring-b edge b.pn→b.pi
+		//                T2=(a0,a1,b1) gives ring-a edge a.pi→a.pn
+		// First cap (ring a): (C,a.pn,a.pi) ← opposes T2 ✓
+		// Last  cap (ring b): (C,b.pi,b.pn) ← opposes T1 ✓
+		if (first)
+			mesh.emplace_back(std::make_tuple(cap_center,
+			                                  ring.vertices[j],
+			                                  ring.vertices[i]));
 		else
-			mesh.emplace_back(std::make_tuple(cap_center, ring.vertices[i],
+			mesh.emplace_back(std::make_tuple(cap_center,
+			                                  ring.vertices[i],
 			                                  ring.vertices[j]));
 	}
 }
@@ -235,30 +200,39 @@ std::vector<Triangle> build_loft_mesh(
 			const vec3f b0 = b.vertices[pi];
 			const vec3f b1 = b.vertices[pn];
 
-			const vec3f radial =
-			    ((a0 + a1 + b0 + b1) * 0.25f) -
-			    ((a.center + b.center) * 0.5f);
-			if (options.orient_faces) {
-				mesh.push_back(make_oriented_triangle(a0, b0, b1, radial));
-				mesh.push_back(make_oriented_triangle(a0, b1, a1, radial));
-			} else {
-				mesh.emplace_back(std::make_tuple(a0, b0, b1));
-				mesh.emplace_back(std::make_tuple(a0, b1, a1));
-			}
+			// Fixed winding — (a0,b1,b0) + (a0,a1,b1).
+			// Guarantees watertight halfedge pairings across all quads
+			// regardless of section shape, with outward-facing normals.
+			mesh.emplace_back(std::make_tuple(a0, b1, b0));
+			mesh.emplace_back(std::make_tuple(a0, a1, b1));
 		}
 	}
 
 	if (options.cap_first) {
-		const Ring& ring = rings.front();
-		add_cap(mesh, ring,
-		        tangent_at(guide_curve, static_cast<int>(ring.guide_id)), true,
-		        options.orient_faces);
+		add_cap(mesh, rings.front(), true);
 	}
 	if (options.cap_last) {
-		const Ring& ring = rings.back();
-		add_cap(mesh, ring,
-		        tangent_at(guide_curve, static_cast<int>(ring.guide_id)), false,
-		        options.orient_faces);
+		add_cap(mesh, rings.back(), false);
+	}
+
+	// Compute signed volume to ensure outward-facing normals.
+	// The fixed winding (a0,b1,b0)+(a0,a1,b1) produces outward normals
+	// for right-handed (u,v,tangent) systems. Left-handed systems (e.g.
+	// u = tangent × v) produce inward normals → flip all triangles.
+	{
+		float vol = 0.0f;
+		for (const auto& tri : mesh) {
+			const auto& a = std::get<0>(tri);
+			const auto& b = std::get<1>(tri);
+			const auto& c = std::get<2>(tri);
+			vol += a.x * (b.y * c.z - b.z * c.y) +
+			       a.y * (b.z * c.x - b.x * c.z) +
+			       a.z * (b.x * c.y - b.y * c.x);
+		}
+		if (vol < 0.0f) {
+			for (auto& tri : mesh)
+				std::swap(std::get<1>(tri), std::get<2>(tri));
+		}
 	}
 
 	return mesh;

@@ -72,7 +72,6 @@ std::vector<Triangle> build_strand(float y_offset, float z_offset) {
 	LoftOptions options;
 	options.cap_first = true;
 	options.cap_last = true;
-	options.orient_faces = true;
 	return build_loft_mesh(guide, sections, options);
 }
 
@@ -122,7 +121,6 @@ std::vector<Triangle> build_curved_strand(float y_amp, float z_offset) {
 	LoftOptions options;
 	options.cap_first = true;
 	options.cap_last = true;
-	options.orient_faces = true;
 	return build_loft_mesh(guide, sections, options);
 }
 
@@ -444,7 +442,6 @@ std::vector<Triangle> build_user_strand(const std::vector<vec3f>& guide_points,
 	LoftOptions opts;
 	opts.cap_first = true;
 	opts.cap_last = true;
-	opts.orient_faces = true;
 	return build_loft_mesh(guide_curve, sections, opts);
 }
 

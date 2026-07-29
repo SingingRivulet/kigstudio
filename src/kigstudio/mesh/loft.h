@@ -70,7 +70,6 @@ struct LoftSection {
 struct LoftOptions {
 	bool cap_first = true;
 	bool cap_last = true;
-	bool orient_faces = true;
 };
 
 std::vector<Triangle> build_loft_mesh(
