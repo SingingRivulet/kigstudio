@@ -1233,7 +1233,14 @@ inline cJSON* h_strand_update(cJSON* params, List& list) {
 	}
 	if (cJSON_HasObjectItem(params, "section_use_bezier")) {
 		strand->section_state.use_bezier_section =
-		    json_bool(params, "section_use_bezier", false);
+		    json_bool(params, "section_use_bezier", true);
+		strand->mesh_dirty = true;
+	}
+	if (cJSON_HasObjectItem(params, "section_normalize_mode")) {
+		int mode = json_int(params, "section_normalize_mode", 2);
+		strand->section_state.normalize_mode =
+		    static_cast<sinriv::ui::render::NormalizeMode>(
+		        std::clamp(mode, 0, 2));
 		strand->mesh_dirty = true;
 	}
 

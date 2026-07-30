@@ -228,6 +228,18 @@ public:
 		// Nothing to do — sessions auto-clean on SSE disconnect
 	}
 
+	/// Close all SSE sessions. Unblocks content providers so the
+	/// HTTP server can shut down cleanly.
+	void shutdown() {
+		std::lock_guard<std::mutex> lk(sessions_mtx_);
+		for (auto& [id, sess] : sessions_) {
+			std::lock_guard<std::mutex> slk(sess->mtx);
+			sess->closed = true;
+			sess->cv.notify_all();
+		}
+		sessions_.clear();
+	}
+
 private:
 	AgentCommandQueue& queue_;
 	std::mutex sessions_mtx_;
@@ -936,7 +948,12 @@ private:
 			    p, "section_use_bezier",
 			    prop_bool("section_use_bezier",
 			              "Use Catmull-Rom smoothing on section",
-			              false));
+			              true));
+			cJSON_AddItemToObject(
+			    p, "section_normalize_mode",
+			    prop_int("section_normalize_mode",
+			             "Normalization mode: 0=X, 1=Y, 2=XY (default)",
+			             2));
 			add_tool(
 			    "strand_update",
 			    "Update hair strand properties (all fields optional, replacing arrays replaces entire data)",

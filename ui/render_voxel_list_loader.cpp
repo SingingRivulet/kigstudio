@@ -45,7 +45,8 @@ std::vector<vec2f> vec2f_array_from_json(const cJSON* arr) {
 
 bool section_state_has_data(const SectionEditorState& state) {
     return !state.vertices.empty() || !state.committed.empty() ||
-           state.use_bezier_section;
+           !state.use_bezier_section ||  // true is default, save only when false
+           state.normalize_mode != NormalizeMode::NORMALIZE_XY;
 }
 
 cJSON* section_state_to_json(const SectionEditorState& state) {
@@ -56,6 +57,8 @@ cJSON* section_state_to_json(const SectionEditorState& state) {
                           vec2f_array_to_json(state.committed));
     cJSON_AddBoolToObject(obj, "use_bezier_section",
                           state.use_bezier_section);
+    cJSON_AddNumberToObject(obj, "normalize_mode",
+                            static_cast<int>(state.normalize_mode));
     return obj;
 }
 
@@ -68,6 +71,9 @@ void section_state_from_json(const cJSON* obj, SectionEditorState& state) {
     cJSON* bez = cJSON_GetObjectItem(obj, "use_bezier_section");
     if (bez && cJSON_IsBool(bez))
         state.use_bezier_section = cJSON_IsTrue(bez);
+    cJSON* norm = cJSON_GetObjectItem(obj, "normalize_mode");
+    if (norm && cJSON_IsNumber(norm))
+        state.normalize_mode = static_cast<NormalizeMode>(norm->valueint);
 }
 
 cJSON* hair_strand_to_json(const HairStrand& strand) {

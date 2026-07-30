@@ -1358,6 +1358,14 @@ void init_locale_strings() {
                       {{"en", "Auto-Rot"}, {"zh", "自动旋转"}});
     add_locale_string("label.use_bezier_section",
                       {{"en", "Bezier"}, {"zh", "贝塞尔"}});
+    add_locale_string("label.normalize_mode",
+                      {{"en", "Norm"}, {"zh", "归一化"}});
+    add_locale_string("label.normalize_x",
+                      {{"en", "X"}, {"zh", "X"}});
+    add_locale_string("label.normalize_y",
+                      {{"en", "Y"}, {"zh", "Y"}});
+    add_locale_string("label.normalize_xy",
+                      {{"en", "XY"}, {"zh", "XY"}});
     add_locale_string("label.section_rotation",
                       {{"en", "Rotation"}, {"zh", "旋转"}});
     add_locale_string("label.guide_subdiv",

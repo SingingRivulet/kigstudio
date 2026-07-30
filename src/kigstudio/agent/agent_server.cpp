@@ -122,14 +122,24 @@ bool AgentServer::start(std::uint16_t port) {
 void AgentServer::stop() {
 	if (!running_.load(std::memory_order_acquire)) return;
 
+	// Mark as stopping first — new requests will get 503 immediately
+	running_.store(false, std::memory_order_release);
+
+	// 1. Close all MCP SSE sessions so their content providers unblock
+	if (impl_->mcp_handler) {
+		impl_->mcp_handler->shutdown();
+	}
+
+	// 2. Drain the command queue — resolves all pending promises to
+	//    nullptr so any blocked tools/call or run_command futures wake up
+	queue_.drain();
+
+	// 3. Now stop the HTTP server — content providers and request
+	//    handlers are no longer blocked, so this returns promptly
 	impl_->svr->stop();
 	if (impl_->listen_thread.joinable()) {
 		impl_->listen_thread.join();
 	}
-
-	// Drain any remaining commands so promises don't hang
-	// (we can't process them, so set them to nullptr)
-	running_.store(false, std::memory_order_release);
 }
 
 // ==========================================================================

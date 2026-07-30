@@ -315,15 +315,15 @@ void RenderVoxelList::render_cross_section_editor() {
 
     // Ensure we have at least 3 vertices (closed polygon)
     if (verts.size() < 3) {
-        // If committed path exists, use it; otherwise default square
+        // If committed path exists, use it; otherwise default rectangle (w=1, h=0.5)
         if (state.committed.size() >= 3) {
             verts = state.committed;
         } else {
             verts.clear();
-            verts.push_back({-0.5f, -0.5f});
-            verts.push_back({0.5f, -0.5f});
-            verts.push_back({0.5f, 0.5f});
-            verts.push_back({-0.5f, 0.5f});
+            verts.push_back({-0.5f, -0.25f});
+            verts.push_back({0.5f, -0.25f});
+            verts.push_back({0.5f, 0.25f});
+            verts.push_back({-0.5f, 0.25f});
         }
     }
 
@@ -370,6 +370,22 @@ void RenderVoxelList::render_cross_section_editor() {
                     &state.use_bezier_section);
     if (old_bezier != state.use_bezier_section) {
         strand.mesh_dirty = true;
+    }
+
+    // Normalize mode combo
+    ImGui::SameLine();
+    int old_norm = static_cast<int>(state.normalize_mode);
+    const char* norm_items[] = {
+        get_locale_cstr("label.normalize_x"),
+        get_locale_cstr("label.normalize_y"),
+        get_locale_cstr("label.normalize_xy"),
+    };
+    ImGui::SetNextItemWidth(60);
+    int norm_mode = old_norm;
+    ImGui::Combo(get_locale_cstr("label.normalize_mode"), &norm_mode,
+                 norm_items, IM_ARRAYSIZE(norm_items));
+    if (norm_mode != old_norm) {
+        state.normalize_mode = static_cast<NormalizeMode>(norm_mode);
     }
 
     // Section rotation
@@ -694,7 +710,7 @@ void RenderVoxelList::render_cross_section_editor() {
                 pending_global_section_strand = idx;
             } else {
             state.push_undo("Apply");
-            // Normalize section vertices to [-1, 1] range before committing
+            // Normalize section vertices according to selected mode
             {
                 float min_x = verts[0].x, max_x = verts[0].x;
                 float min_y = verts[0].y, max_y = verts[0].y;
@@ -706,15 +722,29 @@ void RenderVoxelList::render_cross_section_editor() {
                 }
                 float range_x = max_x - min_x;
                 float range_y = max_y - min_y;
-                if (range_x > 1e-8f && range_y > 1e-8f) {
-                    float cx = (min_x + max_x) * 0.5f;
-                    float cy = (min_y + max_y) * 0.5f;
-                    float scale_x = range_x * 0.5f;
-                    float scale_y = range_y * 0.5f;
-                    for (auto& v : verts) {
-                        v.x = (v.x - cx) / scale_x;
-                        v.y = (v.y - cy) / scale_y;
-                    }
+                if (range_x < 1e-8f) range_x = 1e-8f;
+                if (range_y < 1e-8f) range_y = 1e-8f;
+                float cx = (min_x + max_x) * 0.5f;
+                float cy = (min_y + max_y) * 0.5f;
+                float half_x = range_x * 0.5f;
+                float half_y = range_y * 0.5f;
+                float scale;
+                switch (state.normalize_mode) {
+                case NormalizeMode::NORMALIZE_X:
+                    scale = half_x;  // X half-extent → 1, Y scaled proportionally
+                    break;
+                case NormalizeMode::NORMALIZE_Y:
+                    scale = half_y;  // Y half-extent → 1, X scaled proportionally
+                    break;
+                case NormalizeMode::NORMALIZE_XY:
+                default:
+                    scale = std::max(half_x, half_y);  // max dim half-extent → 1
+                    break;
+                }
+                if (scale < 1e-8f) scale = 1e-8f;
+                for (auto& v : verts) {
+                    v.x = (v.x - cx) / scale;
+                    v.y = (v.y - cy) / scale;
                 }
             }
             state.committed = verts;
@@ -841,10 +871,10 @@ void RenderVoxelList::render_perpoint_section_editor() {
             verts = strand.section_state.vertices;
         else {
             verts.clear();
-            verts.push_back({-0.5f, -0.5f});
-            verts.push_back({0.5f, -0.5f});
-            verts.push_back({0.5f, 0.5f});
-            verts.push_back({-0.5f, 0.5f});
+            verts.push_back({-0.5f, -0.25f});
+            verts.push_back({0.5f, -0.25f});
+            verts.push_back({0.5f, 0.25f});
+            verts.push_back({-0.5f, 0.25f});
         }
     }
 
@@ -891,6 +921,22 @@ void RenderVoxelList::render_perpoint_section_editor() {
                     &state.use_bezier_section);
     if (old_bezier != state.use_bezier_section) {
         strand.mesh_dirty = true;
+    }
+
+    // Normalize mode combo (per-point)
+    ImGui::SameLine();
+    int old_norm_pp = static_cast<int>(state.normalize_mode);
+    const char* norm_items_pp[] = {
+        get_locale_cstr("label.normalize_x"),
+        get_locale_cstr("label.normalize_y"),
+        get_locale_cstr("label.normalize_xy"),
+    };
+    ImGui::SetNextItemWidth(60);
+    int norm_mode_pp = old_norm_pp;
+    ImGui::Combo(get_locale_cstr("label.normalize_mode"), &norm_mode_pp,
+                 norm_items_pp, IM_ARRAYSIZE(norm_items_pp));
+    if (norm_mode_pp != old_norm_pp) {
+        state.normalize_mode = static_cast<NormalizeMode>(norm_mode_pp);
     }
 
     ImGui::Separator();
@@ -1104,7 +1150,7 @@ void RenderVoxelList::render_perpoint_section_editor() {
             ImGui::BeginDisabled();
         if (ImGui::Button(get_locale_cstr("action.apply_section"))) {
             state.push_undo("Apply");
-            // Normalize vertices to [-1, 1] range (same as global editor)
+            // Normalize section vertices according to selected mode
             {
                 float min_x = verts[0].x, max_x = verts[0].x;
                 float min_y = verts[0].y, max_y = verts[0].y;
@@ -1116,15 +1162,29 @@ void RenderVoxelList::render_perpoint_section_editor() {
                 }
                 float range_x = max_x - min_x;
                 float range_y = max_y - min_y;
-                if (range_x > 1e-8f && range_y > 1e-8f) {
-                    float cx = (min_x + max_x) * 0.5f;
-                    float cy = (min_y + max_y) * 0.5f;
-                    float scale_x = range_x * 0.5f;
-                    float scale_y = range_y * 0.5f;
-                    for (auto& v : verts) {
-                        v.x = (v.x - cx) / scale_x;
-                        v.y = (v.y - cy) / scale_y;
-                    }
+                if (range_x < 1e-8f) range_x = 1e-8f;
+                if (range_y < 1e-8f) range_y = 1e-8f;
+                float cx = (min_x + max_x) * 0.5f;
+                float cy = (min_y + max_y) * 0.5f;
+                float half_x = range_x * 0.5f;
+                float half_y = range_y * 0.5f;
+                float scale;
+                switch (state.normalize_mode) {
+                case NormalizeMode::NORMALIZE_X:
+                    scale = half_x;
+                    break;
+                case NormalizeMode::NORMALIZE_Y:
+                    scale = half_y;
+                    break;
+                case NormalizeMode::NORMALIZE_XY:
+                default:
+                    scale = std::max(half_x, half_y);
+                    break;
+                }
+                if (scale < 1e-8f) scale = 1e-8f;
+                for (auto& v : verts) {
+                    v.x = (v.x - cx) / scale;
+                    v.y = (v.y - cy) / scale;
                 }
             }
             strand.mesh_dirty = true;

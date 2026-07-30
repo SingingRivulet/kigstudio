@@ -103,6 +103,19 @@ public:
 		}
 	}
 
+	/// Drain all pending commands, resolving each promise to nullptr.
+	/// Used during shutdown to unblock any waiting HTTP/MCP threads.
+	void drain() {
+		std::lock_guard<std::mutex> lk(mutex_);
+		for (auto& cmd : queue_) {
+			if (cmd.params)
+				cJSON_Delete(cmd.params);
+			cmd.result_promise.set_value(nullptr);
+		}
+		queue_.clear();
+		cv_full_.notify_all();
+	}
+
 	/// Non-blocking check — true when the queue is empty.
 	bool empty() const {
 		std::lock_guard<std::mutex> lk(mutex_);

@@ -9,6 +9,14 @@ namespace sinriv::ui::render {
 
 using vec2f = sinriv::kigstudio::vec2<float>;
 
+/// Normalization mode for cross-section vertices on Apply.
+/// The polygon is uniformly scaled so the chosen dimension has half-extent = 1.
+enum class NormalizeMode {
+    NORMALIZE_X = 0,   // scale proportionally so X half-extent = 1
+    NORMALIZE_Y = 1,   // scale proportionally so Y half-extent = 1
+    NORMALIZE_XY = 2,  // scale proportionally so max(|x|, |y|) half-extent = 1
+};
+
 /// Snapshot for the cross-section editor's independent undo/redo.
 struct SectionEditorSnapshot {
     std::vector<vec2f> vertices;
@@ -23,7 +31,10 @@ struct SectionEditorState {
     std::vector<vec2f> committed;     // committed copy (set by Apply button)
 
     // --- Bézier interpolation ---
-    bool use_bezier_section = false;  // smooth cross-section via Catmull-Rom
+    bool use_bezier_section = true;  // smooth cross-section via Catmull-Rom
+
+    // --- Normalization mode ---
+    NormalizeMode normalize_mode = NormalizeMode::NORMALIZE_XY;
 
     // --- independent undo/redo ---
     std::vector<SectionEditorSnapshot> undo_stack;
