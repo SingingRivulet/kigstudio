@@ -21,6 +21,7 @@ inline int cli_main(const std::string& prog, const std::map<std::string, std::st
     if (args.count("mergeVertices"))   return mergeVertices_main(prog, args);
     if (args.count("meshUnion"))       return meshUnion_main(prog, args);
     if (args.count("orientVolume"))    return orientVolume_main(prog, args);
+    if (args.count("repairWorker"))    return repairWorker_main(prog, args);
 
     std::cerr << "Error: unknown tool. Available tools:\n"
               << "  " << prog << " --tools --simplifyMesh    Simplify mesh (edge collapse)\n"

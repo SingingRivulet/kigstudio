@@ -1,8 +1,10 @@
 #include "render_voxel_list.h"
 #include <bx/math.h>
+#include <chrono>
 #include <map>
 #include <unordered_map>
 #include "kigstudio/cgal/mesh_repair.h"
+#include "kigstudio/cgal/repair_ipc.h"
 #include "kigstudio/mesh/loft.h"
 namespace sinriv::ui::render {
 namespace {
@@ -824,25 +826,45 @@ void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
 			if (!is_mesh_watertight(plain) ||
 			    !sinriv::kigstudio::cgal::is_boolean_ready(
 			        addon_triangles_to_mesh_data(plain))) {
+				// 持久 worker 进程（共享内存 IPC），按需启动，常驻复用。
+				// 首帧首次调用时 spawn worker，后续帧零启动开销。
+				static sinriv::kigstudio::cgal::RepairWorkerIPC
+				    g_repair_worker;
+
 				auto mesh_in = addon_triangles_to_mesh_data(plain);
-				auto wrapped = sinriv::kigstudio::cgal::alpha_wrap(
-				    mesh_in,
-				    static_cast<double>(strand.repair_alpha),
-				    static_cast<double>(strand.repair_offset));
-				if (!wrapped.empty()) {
-					strand.repair_failed = false;
-					plain.clear();
-					plain.reserve(wrapped.size());
-					for (const auto& [tri, n] : wrapped) {
-						(void)n;
-						plain.push_back(tri);
+				double alpha = static_cast<double>(strand.repair_alpha);
+				double offset = static_cast<double>(strand.repair_offset);
+
+				bool submitted = g_repair_worker.submit(
+				    mesh_in, alpha, offset);
+				if (submitted) {
+					// 当前无任务运行，已提交到 worker。
+					// 等待最多 1 秒取回结果。
+					auto wrapped =
+					    g_repair_worker.wait_result(1000);
+					if (!wrapped.empty()) {
+						strand.repair_failed = false;
+						plain.clear();
+						plain.reserve(wrapped.size());
+						for (const auto& [tri, n] : wrapped) {
+							(void)n;
+							plain.push_back(tri);
+						}
+					} else {
+						// wait_result 返回空 = 超时或失败。
+						// 超时时 worker 已在内部被 kill + 重启。
+						strand.repair_failed = true;
+						std::cerr
+						    << "[addon_mesh] alpha_wrap failed"
+						    << " or timed out for strand \""
+						    << strand.name
+						    << "\", rendering original mesh.\n";
 					}
 				} else {
-					strand.repair_failed = true;
-					std::cerr
-					    << "[addon_mesh] alpha_wrap failed for strand \""
-					    << strand.name
-					    << "\", rendering original mesh.\n";
+					// Worker 正忙（上一任务尚未完成）。
+					// 当前发束参数已覆盖存入 pending slot，
+					// wait_result 完成后会自动提交。
+					// 本帧先用原始网格渲染。
 				}
 			} else {
 				strand.repair_failed = false;

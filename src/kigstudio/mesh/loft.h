@@ -48,9 +48,6 @@ using Triangle = sinriv::kigstudio::voxel::triangle_bvh<float>::triangle;
 * 不经体素/SDF重采样）或“SDF 平滑”（用毛发SDF生成平滑网格）
 * 宽度编辑器每一个向量增加独立的截面编辑器，只能拖动顶点，不能新增和删除，不允许自相交，编辑全局的截面后失效
 *
-* TODO:
-* 添加参考几何体功能，不属于任何节点，在文件tab中可以选择显示哪个，可以设置当前节点是否允许被鼠标捕获
-* 刷选参考几何体，自动计算guide_curve和宽度
 * 
 */
 struct LoftSection {

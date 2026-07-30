@@ -1,4 +1,5 @@
 #include "kigstudio/cgal/mesh_repair.h"
+#include "kigstudio/cgal/repair_ipc.h"
 
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
@@ -957,5 +958,107 @@ MeshData orient_volume_async::get_result() const {
     result_ready_ = true;
     return result_;
 }
+
+// ===========================================================================
+// repair_worker_main  —  persistent alpha_wrap worker loop
+// ===========================================================================
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#undef near
+#undef far
+
+int repair_worker_main(const std::string& shmem_name,
+                       const std::string& task_event_name,
+                       const std::string& result_event_name) {
+    // Open shared memory (created by the main process)
+    HANDLE shmem = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE,
+                                     shmem_name.c_str());
+    if (!shmem) {
+        std::cerr << "[repairWorker] OpenFileMapping failed: "
+                  << GetLastError() << "\n";
+        return 1;
+    }
+
+    void* view = MapViewOfFile(shmem, FILE_MAP_ALL_ACCESS, 0, 0,
+                               sinriv::kigstudio::cgal::kShmemSize);
+    if (!view) {
+        std::cerr << "[repairWorker] MapViewOfFile failed: "
+                  << GetLastError() << "\n";
+        CloseHandle(shmem);
+        return 1;
+    }
+
+    auto* hdr = reinterpret_cast<
+        sinriv::kigstudio::cgal::RepairIPCHeader*>(view);
+    auto* base = reinterpret_cast<std::uint8_t*>(view);
+
+    HANDLE task_evt = OpenEventA(EVENT_ALL_ACCESS, FALSE,
+                                  task_event_name.c_str());
+    HANDLE result_evt = OpenEventA(EVENT_ALL_ACCESS, FALSE,
+                                    result_event_name.c_str());
+
+    if (!task_evt || !result_evt) {
+        std::cerr << "[repairWorker] OpenEvent failed: "
+                  << GetLastError() << "\n";
+        if (task_evt)  CloseHandle(task_evt);
+        if (result_evt) CloseHandle(result_evt);
+        UnmapViewOfFile(view);
+        CloseHandle(shmem);
+        return 1;
+    }
+
+    std::cout << "[repairWorker] started, waiting for tasks\n";
+
+    while (true) {
+        WaitForSingleObject(task_evt, INFINITE);
+
+        if (hdr->shutdown.load(std::memory_order_acquire)) {
+            std::cout << "[repairWorker] shutting down\n";
+            break;
+        }
+
+        if (hdr->state.load(std::memory_order_acquire) != 1)
+            continue;  // spurious wakeup or shutdown signal
+
+        // Read input mesh from shared memory
+        auto input = sinriv::kigstudio::cgal::repair_stl::read(
+            base + sinriv::kigstudio::cgal::kDataOffset,
+            hdr->input_size);
+
+        if (input.empty()) {
+            hdr->result_error = 1;
+            hdr->output_size  = 0;
+            hdr->state.store(2, std::memory_order_release);
+            SetEvent(result_evt);
+            continue;
+        }
+
+        // Run alpha_wrap
+        MeshData output = alpha_wrap(input, hdr->alpha, hdr->offset);
+
+        if (output.empty()) {
+            hdr->result_error = 1;
+            hdr->output_size  = 0;
+        } else {
+            hdr->result_error = 0;
+            hdr->output_size = sinriv::kigstudio::cgal::repair_stl::write(
+                output, base + sinriv::kigstudio::cgal::kOutputOffset);
+        }
+
+        hdr->state.store(2, std::memory_order_release);  // result_ready
+        SetEvent(result_evt);
+    }
+
+    CloseHandle(result_evt);
+    CloseHandle(task_evt);
+    UnmapViewOfFile(view);
+    CloseHandle(shmem);
+    return 0;
+}
+#endif  // _WIN32
 
 } // namespace sinriv::kigstudio::cgal

@@ -7,6 +7,7 @@
 #include <iostream>
 
 #include "kigstudio/cgal/mesh_repair.h"
+#include "kigstudio/cgal/repair_ipc.h"
 #include "kigstudio/voxel/voxel2mesh.h"
 
 using Triangle = sinriv::kigstudio::voxel::Triangle;
@@ -191,4 +192,21 @@ inline int orientVolume_main(const std::string& prog,
     write_stl(result, out_it->second);
     std::cout << "Done.\n";
     return 0;
+}
+
+// ---- repairWorker (persistent IPC worker) ----
+
+inline int repairWorker_main(
+    const std::string& /*prog*/,
+    const std::map<std::string, std::string>& args) {
+    auto shmem_it   = args.find("shmem");
+    auto task_it    = args.find("taskEvent");
+    auto result_it  = args.find("resultEvent");
+    if (shmem_it == args.end() || task_it == args.end() ||
+        result_it == args.end()) {
+        std::cerr << "[repairWorker] internal error: missing IPC names\n";
+        return 1;
+    }
+    return sinriv::kigstudio::cgal::repair_worker_main(
+        shmem_it->second, task_it->second, result_it->second);
 }
