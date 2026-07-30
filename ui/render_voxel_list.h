@@ -2,6 +2,7 @@
 #include <cJSON.h>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdarg>
 #include <deque>
 #include <filesystem>
@@ -831,6 +832,24 @@ class RenderVoxelList {
     std::string last_save_error;
     std::string last_load_error;
 
+    // ---- 最近打开的文件/工程 ----
+    struct RecentEntry {
+        std::string path;
+        int64_t timestamp = 0;  // unix 时间戳
+    };
+    std::vector<RecentEntry> recent_files;
+    std::vector<RecentEntry> recent_projects;
+    bool recent_state_loaded = false;
+    static constexpr size_t kMaxRecentEntries = 10;
+
+    std::filesystem::path get_state_dir() const;
+    std::filesystem::path get_state_file_path() const;
+    void load_recent_state();
+    void save_recent_state() const;
+    void add_recent_file(const std::string& path);
+    void add_recent_project(const std::string& path);
+    void render_recent_files_menu();
+
     size_t memory_current = 0;
     size_t memory_peak = 0;
     float fps = 0;
@@ -966,6 +985,35 @@ class RenderVoxelList {
         va_end(args);
         append_queue_log(buf);
     }
+
+    // ---- Toast / 屏幕底部消息框 ----
+    struct ToastMessage {
+        std::string text;
+        std::chrono::steady_clock::time_point start_time;
+        float duration_ms = 1000.0f;
+    };
+    std::deque<ToastMessage> toast_queue;
+    std::mutex toast_mutex;
+    static constexpr size_t kMaxToastQueue = 10;
+    static constexpr float kToastFadeInRatio = 0.1f;       // 前 10% 时间淡入
+    static constexpr float kToastFadeOutStartRatio = 0.7f; // 后 30% 时间淡出
+
+    // 显示一条 toast 消息（线程安全，可从后台线程调用）
+    void show_toast(const std::string& msg, float duration_ms = 1000.0f);
+
+    // 格式化并显示 toast（locale key + 可变参数）
+    inline void show_toastf(float duration_ms, const char* key, ...) {
+        std::string fmt = get_locale_string(key);
+        char buf[1024];
+        va_list args;
+        va_start(args, key);
+        vsnprintf(buf, sizeof(buf), fmt.c_str(), args);
+        va_end(args);
+        show_toast(buf, duration_ms);
+    }
+
+    // 渲染 toast（在 UI 线程中调用）
+    void render_toast();
 
     std::vector<std::tuple<sinriv::kigstudio::voxel::collision::vec3f,
                            sinriv::kigstudio::voxel::collision::vec3f,

@@ -127,6 +127,12 @@ void init_locale_strings() {
         {{"en", "Save As (Ctrl+Shift+S)"}, {"zh", "另存为 (Ctrl+Shift+S)"}});
     add_locale_string("menu.load_project",
                       {{"en", "Load (Ctrl+O)"}, {"zh", "加载 (Ctrl+O)"}});
+    add_locale_string("menu.recent_files",
+                      {{"en", "Recent Files"}, {"zh", "最近打开的文件"}});
+    add_locale_string("menu.recent_projects",
+                      {{"en", "Recent Projects"}, {"zh", "最近打开的工程"}});
+    add_locale_string("menu.clear_recent",
+                      {{"en", "Clear Recent"}, {"zh", "清除记录"}});
     add_locale_string("menu.log", {{"en", "Log"}, {"zh", "项目处理日志"}});
 
     // Queue log messages
@@ -266,6 +272,15 @@ void init_locale_strings() {
     add_locale_string("log.queue.done_export_stl_all",
                       {{"en", "[Queue] Done:  Exported %d/%d STL files"},
                        {"zh", "[队列] 完成: 已导出 %d/%d 个 STL 文件"}});
+    add_locale_string("toast.repair_timeout",
+                      {{"en", "Mesh repair timed out for strand"},
+                       {"zh", "网格修复超时，发束"}});
+    add_locale_string("toast.file_not_found",
+                      {{"en", "File not found:"},
+                       {"zh", "文件不存在:"}});
+    add_locale_string("toast.project_not_found",
+                      {{"en", "Project not found:"},
+                       {"zh", "工程不存在:"}});
     add_locale_string("log.extract_skeleton.result",
                       {{"en", "[Extract Skeleton] Result: %d vertices"},
                        {"zh", "[骨架提取]处理成功，共%d个顶点"}});

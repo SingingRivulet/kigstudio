@@ -188,7 +188,9 @@ int ui_main(int argc, const char* const* argv) {
         if (std::filesystem::is_directory(input_path, ec)) {
             const std::string path =
                 sinriv::ui::render::path_to_utf8(input_path);
-            if (!render_items.load_project(path)) {
+            if (render_items.load_project(path)) {
+                render_items.add_recent_project(path);
+            } else {
                 std::cerr << "Failed to load project directory: " << path
                           << "\n" << render_items.last_load_error
                           << std::endl;
@@ -204,8 +206,10 @@ int ui_main(int argc, const char* const* argv) {
                                return static_cast<char>(std::tolower(c));
                            });
             if (ext == ".stl") {
-                render_items.queue_load_stl(
-                    sinriv::ui::render::path_to_utf8(input_path), 0.5f);
+                std::string stl_path =
+                    sinriv::ui::render::path_to_utf8(input_path);
+                render_items.queue_load_stl(stl_path, 0.5f);
+                render_items.add_recent_file(stl_path);
             } else {
                 std::cerr << "Unsupported input file, expected .stl: "
                           << sinriv::ui::render::path_to_utf8(input_path)

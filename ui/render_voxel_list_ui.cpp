@@ -5,6 +5,7 @@
 #include <imnodes.h>
 #include <stb/stb_truetype.h>
 #include <type_traits>
+#include <cstdlib>
 #include <unordered_set>
 #include <variant>
 #ifdef _WIN32
@@ -46,6 +47,7 @@ void RenderVoxelList::render_ui() {
                     }
                     ImGui::EndMenu();
                 }
+                render_recent_files_menu();
                 if (ImGui::MenuItem(get_locale_cstr("menu.save_project"))) {
                     if (!project_path.empty()) {
                         if (!save_current_project()) {
@@ -611,6 +613,9 @@ void RenderVoxelList::render_ui() {
     this->setCollisionBoundsVisible(showCollisionBounds);
     this->setVoxelChunkBoundsVisible(showVoxelChunkBounds);
     this->update_nav_node_position();
+
+    // 渲染屏幕底部 toast 消息框
+    render_toast();
 }
 
 void RenderVoxelList::render_file_loader() {
@@ -755,6 +760,7 @@ void RenderVoxelList::render_file_loader() {
                     file_loader_load_as_sdf,
                     static_cast<sinriv::kigstudio::sdf::SDFPrecision>(
                         file_loader_voxel_precision));
+                add_recent_file(stl_file_path);
                 show_file_loader = false;
             }
             ImGui::EndDisabled();
@@ -1075,6 +1081,7 @@ void RenderVoxelList::render_save_dialog() {
             std::string path = tinyfd_path_to_utf8(folder);
             if (save_project(path)) {
                 project_path = path;
+                add_recent_project(path);
             } else {
                 std::string msg = get_locale_string("error.save_failed") +
                                   "\n" + last_save_error;
@@ -1100,7 +1107,9 @@ void RenderVoxelList::render_load_dialog() {
             "");
         if (folder) {
             std::string path = tinyfd_path_to_utf8(folder);
-            if (!load_project(path)) {
+            if (load_project(path)) {
+                add_recent_project(path);
+            } else {
                 std::string msg = get_locale_string("error.load_failed") +
                                   "\n" + last_load_error;
                 tinyfd_messageBox("Error", utf8_to_ansi(msg.c_str()).c_str(),
@@ -1177,6 +1186,7 @@ void RenderVoxelList::render_import_vxgrid_dialog() {
                 item->thumbnail_dirty = true;
                 item->dirty = true;
                 setRenderId(item->id);
+                add_recent_file(vxgrid_file_path);
                 show_import_vxgrid_dialog = false;
             } else {
                 {
@@ -1256,6 +1266,379 @@ void RenderVoxelList::render_debug_voxel_pick_window() {
         }
     }
     ImGui::End();
+}
+
+void RenderVoxelList::show_toast(const std::string& msg, float duration_ms) {
+    std::lock_guard<std::mutex> lock(toast_mutex);
+    ToastMessage toast;
+    toast.text = msg;
+    toast.start_time = std::chrono::steady_clock::now();
+    toast.duration_ms = duration_ms;
+    toast_queue.push_back(std::move(toast));
+    while (toast_queue.size() > kMaxToastQueue) {
+        toast_queue.pop_front();
+    }
+}
+
+void RenderVoxelList::render_toast() {
+    std::lock_guard<std::mutex> lock(toast_mutex);
+
+    // 移除已过期的 toast
+    auto now = std::chrono::steady_clock::now();
+    while (!toast_queue.empty()) {
+        auto& t = toast_queue.front();
+        float elapsed_ms =
+            std::chrono::duration<float, std::milli>(now - t.start_time)
+                .count();
+        if (elapsed_ms >= t.duration_ms) {
+            toast_queue.pop_front();
+        } else {
+            break;
+        }
+    }
+
+    if (toast_queue.empty())
+        return;
+
+    // 只渲染最早（最旧）的一条活动 toast
+    auto& toast = toast_queue.front();
+    float elapsed_ms =
+        std::chrono::duration<float, std::milli>(now - toast.start_time)
+            .count();
+    float progress = elapsed_ms / toast.duration_ms;
+
+    // 计算透明度：淡入 → 保持不透明 → 淡出
+    float alpha;
+    if (progress < kToastFadeInRatio) {
+        alpha = progress / kToastFadeInRatio;
+    } else if (progress < kToastFadeOutStartRatio) {
+        alpha = 1.0f;
+    } else {
+        alpha = 1.0f - (progress - kToastFadeOutStartRatio) /
+                           (1.0f - kToastFadeOutStartRatio);
+    }
+
+    // 位置：水平居中，垂直在靠下 1/4 处
+    float cx = static_cast<float>(window_width) * 0.5f;
+    float cy = static_cast<float>(window_height) * (3.0f / 4.0f);
+
+    // 计算文字大小
+    ImVec2 text_size = ImGui::CalcTextSize(toast.text.c_str());
+    float padding_x = 24.0f;
+    float padding_y = 10.0f;
+    ImVec2 bg_size(text_size.x + padding_x * 2.0f,
+                   text_size.y + padding_y * 2.0f);
+    float rounding = bg_size.y * 0.5f;  // 胶囊形
+
+    ImVec2 bg_min(cx - bg_size.x * 0.5f, cy - bg_size.y * 0.5f);
+    ImVec2 bg_max(cx + bg_size.x * 0.5f, cy + bg_size.y * 0.5f);
+    ImVec2 text_pos(cx - text_size.x * 0.5f, cy - text_size.y * 0.5f);
+
+    // 半透明深色背景 + 白色文字
+    ImU32 bg_color = IM_COL32(40, 40, 40, static_cast<int>(200.0f * alpha));
+    ImU32 text_color =
+        IM_COL32(255, 255, 255, static_cast<int>(255.0f * alpha));
+
+    ImDrawList* draw_list = ImGui::GetForegroundDrawList();
+    draw_list->AddRectFilled(bg_min, bg_max, bg_color, rounding);
+    draw_list->AddText(nullptr, 0.0f, text_pos, text_color,
+                       toast.text.c_str());
+}
+
+// ============================================================
+// 最近打开的文件/工程状态管理
+// ============================================================
+
+std::filesystem::path RenderVoxelList::get_state_dir() const {
+#ifdef _WIN32
+    const char* appdata = std::getenv("APPDATA");
+    if (appdata && appdata[0] != '\0') {
+        return std::filesystem::path(utf8_to_wstring(appdata)) / L"kigstudio";
+    }
+    // 回退到 USERPROFILE
+    const char* userprofile = std::getenv("USERPROFILE");
+    if (userprofile && userprofile[0] != '\0') {
+        return std::filesystem::path(utf8_to_wstring(userprofile)) /
+               L".kigstudio";
+    }
+    return std::filesystem::temp_directory_path() / "kigstudio_state";
+#else
+    const char* xdg = std::getenv("XDG_CONFIG_HOME");
+    if (xdg && xdg[0] != '\0') {
+        return std::filesystem::path(xdg) / "kigstudio";
+    }
+    const char* home = std::getenv("HOME");
+    if (home && home[0] != '\0') {
+        return std::filesystem::path(home) / ".config" / "kigstudio";
+    }
+    return std::filesystem::temp_directory_path() / "kigstudio_state";
+#endif
+}
+
+std::filesystem::path RenderVoxelList::get_state_file_path() const {
+    return get_state_dir() / "recent.json";
+}
+
+void RenderVoxelList::load_recent_state() {
+    recent_state_loaded = true;
+    recent_files.clear();
+    recent_projects.clear();
+
+    auto path = get_state_file_path();
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(path, ec))
+        return;
+
+#ifdef _WIN32
+    std::ifstream ifs(path.wstring());
+#else
+    std::ifstream ifs(path.c_str());
+#endif
+    if (!ifs.is_open())
+        return;
+
+    std::string json_str((std::istreambuf_iterator<char>(ifs)),
+                         std::istreambuf_iterator<char>());
+    ifs.close();
+
+    // 去除 BOM
+    if (json_str.size() >= 3 && json_str[0] == '\xEF' &&
+        json_str[1] == '\xBB' && json_str[2] == '\xBF') {
+        json_str.erase(0, 3);
+    }
+
+    cJSON* root = cJSON_Parse(json_str.c_str());
+    if (!root)
+        return;
+
+    auto load_entries = [](cJSON* parent, const char* key,
+                           std::vector<RecentEntry>& out) {
+        cJSON* arr = cJSON_GetObjectItem(parent, key);
+        if (!arr || !cJSON_IsArray(arr))
+            return;
+        cJSON* entry = nullptr;
+        cJSON_ArrayForEach(entry, arr) {
+            cJSON* path_item = cJSON_GetObjectItem(entry, "path");
+            cJSON* time_item = cJSON_GetObjectItem(entry, "time");
+            if (path_item && cJSON_IsString(path_item) && time_item &&
+                cJSON_IsNumber(time_item)) {
+                RecentEntry e;
+                e.path = path_item->valuestring;
+                e.timestamp = static_cast<int64_t>(time_item->valuedouble);
+                out.push_back(std::move(e));
+            }
+        }
+    };
+
+    load_entries(root, "recent_files", recent_files);
+    load_entries(root, "recent_projects", recent_projects);
+    cJSON_Delete(root);
+}
+
+void RenderVoxelList::save_recent_state() const {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "version", 1);
+
+    auto save_entries = [](cJSON* parent, const char* key,
+                           const std::vector<RecentEntry>& entries) {
+        cJSON* arr = cJSON_CreateArray();
+        for (const auto& e : entries) {
+            cJSON* obj = cJSON_CreateObject();
+            cJSON_AddStringToObject(obj, "path", e.path.c_str());
+            cJSON_AddNumberToObject(obj, "time",
+                                    static_cast<double>(e.timestamp));
+            cJSON_AddItemToArray(arr, obj);
+        }
+        cJSON_AddItemToObject(parent, key, arr);
+    };
+
+    save_entries(root, "recent_files", recent_files);
+    save_entries(root, "recent_projects", recent_projects);
+
+    auto dir = get_state_dir();
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+
+    auto path = get_state_file_path();
+    char* json_str = cJSON_Print(root);
+    if (json_str) {
+        const char utf8_bom[] = "\xEF\xBB\xBF";
+#ifdef _WIN32
+        std::ofstream ofs(path.wstring());
+#else
+        std::ofstream ofs(path.c_str());
+#endif
+        if (ofs.is_open()) {
+            ofs.write(utf8_bom, 3);
+            ofs << json_str;
+        }
+        cJSON_free(json_str);
+    }
+    cJSON_Delete(root);
+}
+
+static void add_recent_entry(std::vector<RenderVoxelList::RecentEntry>& entries,
+                             const std::string& path,
+                             size_t max_entries) {
+    // 计算时间戳
+    auto now = std::chrono::system_clock::now();
+    int64_t timestamp =
+        std::chrono::duration_cast<std::chrono::seconds>(
+            now.time_since_epoch())
+            .count();
+
+    // 移除已有的同路径条目
+    entries.erase(
+        std::remove_if(entries.begin(), entries.end(),
+                       [&path](const RenderVoxelList::RecentEntry& e) {
+                           return e.path == path;
+                       }),
+        entries.end());
+
+    // 插入到最前面
+    RenderVoxelList::RecentEntry entry;
+    entry.path = path;
+    entry.timestamp = timestamp;
+    entries.insert(entries.begin(), std::move(entry));
+
+    // 限制最大条目数
+    while (entries.size() > max_entries) {
+        entries.pop_back();
+    }
+}
+
+void RenderVoxelList::add_recent_file(const std::string& path) {
+    if (!recent_state_loaded)
+        load_recent_state();
+    add_recent_entry(recent_files, path, kMaxRecentEntries);
+    save_recent_state();
+}
+
+void RenderVoxelList::add_recent_project(const std::string& path) {
+    if (!recent_state_loaded)
+        load_recent_state();
+    add_recent_entry(recent_projects, path, kMaxRecentEntries);
+    save_recent_state();
+}
+
+// ============================================================
+// 最近打开的文件/工程子菜单
+// ============================================================
+
+void RenderVoxelList::render_recent_files_menu() {
+    if (!recent_state_loaded)
+        load_recent_state();
+
+    // ---- 最近打开的文件 ----
+    if (!recent_files.empty()) {
+        if (ImGui::BeginMenu(get_locale_cstr("menu.recent_files"))) {
+            for (size_t i = 0; i < recent_files.size(); ++i) {
+                const auto& entry = recent_files[i];
+                // 显示简短的文件名，完整路径作为 tooltip
+                std::filesystem::path p = utf8_path(entry.path);
+                std::string label = path_to_utf8(p.filename());
+                if (label.empty())
+                    label = entry.path;
+
+                // 为每个条目添加序号以区分
+                char menu_id[1024];
+                snprintf(menu_id, sizeof(menu_id), "%s##rf%zu",
+                         label.c_str(), i);
+
+                if (ImGui::MenuItem(menu_id)) {
+                    // 检查文件是否仍然存在
+                    std::error_code ec;
+                    if (std::filesystem::is_regular_file(p, ec)) {
+                        show_file_loader = false;
+                        queue_load_stl(entry.path, 1.0f);
+                        // 刷新到最前面
+                        add_recent_file(entry.path);
+                    } else {
+                        show_toast(
+                            get_locale_string("toast.file_not_found") +
+                                " " + entry.path,
+                            3000.0f);
+                        // 移除不存在的条目
+                        std::vector<RecentEntry> filtered;
+                        for (const auto& e : recent_files) {
+                            if (e.path != entry.path)
+                                filtered.push_back(e);
+                        }
+                        recent_files = std::move(filtered);
+                        save_recent_state();
+                    }
+                    ImGui::EndMenu();
+                    return;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", entry.path.c_str());
+                }
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem(get_locale_cstr("menu.clear_recent"))) {
+                recent_files.clear();
+                save_recent_state();
+            }
+            ImGui::EndMenu();
+        }
+    }
+
+    // ---- 最近打开的工程 ----
+    if (!recent_projects.empty()) {
+        if (ImGui::BeginMenu(get_locale_cstr("menu.recent_projects"))) {
+            for (size_t i = 0; i < recent_projects.size(); ++i) {
+                const auto& entry = recent_projects[i];
+                std::filesystem::path p = utf8_path(entry.path);
+                std::string label = path_to_utf8(p.filename());
+                if (label.empty())
+                    label = entry.path;
+
+                char menu_id[1024];
+                snprintf(menu_id, sizeof(menu_id), "%s##rp%zu",
+                         label.c_str(), i);
+
+                if (ImGui::MenuItem(menu_id)) {
+                    std::error_code ec;
+                    if (std::filesystem::is_directory(p, ec)) {
+                        if (load_project(entry.path)) {
+                            add_recent_project(entry.path);
+                        } else {
+                            std::string msg =
+                                get_locale_string("error.load_failed") +
+                                "\n" + last_load_error;
+                            tinyfd_messageBox(
+                                "Error",
+                                utf8_to_ansi(msg.c_str()).c_str(), "ok",
+                                "error", 1);
+                        }
+                    } else {
+                        show_toast(
+                            get_locale_string("toast.project_not_found") +
+                                " " + entry.path,
+                            3000.0f);
+                        std::vector<RecentEntry> filtered;
+                        for (const auto& e : recent_projects) {
+                            if (e.path != entry.path)
+                                filtered.push_back(e);
+                        }
+                        recent_projects = std::move(filtered);
+                        save_recent_state();
+                    }
+                    ImGui::EndMenu();
+                    return;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", entry.path.c_str());
+                }
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem(get_locale_cstr("menu.clear_recent"))) {
+                recent_projects.clear();
+                save_recent_state();
+            }
+            ImGui::EndMenu();
+        }
+    }
 }
 
 }  // namespace sinriv::ui::render

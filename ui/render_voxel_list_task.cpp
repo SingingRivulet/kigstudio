@@ -105,6 +105,8 @@ void RenderVoxelList::queue_thread() {
                              task.voxel_precision);
                     append_queue_logf("log.queue.done_load_stl",
                                       task.file_path.c_str());
+                    show_toastf(2000.0f, "log.queue.done_load_stl",
+                                task.file_path.c_str());
                 } catch (std::runtime_error& e) {
                     append_queue_logf("log.queue.error_load_stl",
                                       task.file_path.c_str(), e.what());
@@ -167,6 +169,8 @@ void RenderVoxelList::queue_thread() {
                                  task.voxel_precision);
                     }
                     append_queue_logf("log.queue.done_reload_stl", task.index);
+                    show_toastf(1500.0f, "log.queue.done_reload_stl",
+                                task.index);
                 } catch (std::runtime_error& e) {
                     append_queue_logf("log.queue.error_reload_stl", task.index,
                                       e.what());
@@ -203,6 +207,7 @@ void RenderVoxelList::queue_thread() {
                 try {
                     do_segment(task.index);
                     append_queue_logf("log.queue.done_segment", task.index);
+                    show_toastf(1500.0f, "log.queue.done_segment", task.index);
                 } catch (std::runtime_error& e) {
                     append_queue_logf("log.queue.error_segment", task.index,
                                       e.what());
@@ -273,10 +278,15 @@ void RenderVoxelList::queue_thread() {
                     if (edges.empty()) {
                         append_queue_logf("log.queue.done_no_manifold",
                                           task.index);
+                        show_toastf(2000.0f, "log.queue.done_no_manifold",
+                                    task.index);
                     } else {
                         append_queue_logf("log.queue.found_manifold",
                                           task.index,
                                           static_cast<int>(edges.size()));
+                        show_toastf(3000.0f, "log.queue.found_manifold",
+                                    task.index,
+                                    static_cast<int>(edges.size()));
                         for (const auto& edge : edges) {
                             append_queue_logf("log.queue.manifold_edge",
                                               edge.v0.x, edge.v0.y, edge.v0.z,
@@ -317,6 +327,8 @@ void RenderVoxelList::queue_thread() {
                     extract_skeleton(task.index);
                     append_queue_logf("log.queue.done_extract_skeleton",
                                       task.index);
+                    show_toastf(1500.0f, "log.queue.done_extract_skeleton",
+                                task.index);
                 } catch (std::runtime_error& e) {
                     append_queue_logf("log.queue.error_extract_skeleton",
                                       task.index, e.what());
@@ -412,6 +424,8 @@ void RenderVoxelList::queue_thread() {
                         thumbnail_mesh_pending.erase(task.index);
                     }
                     append_queue_logf("log.queue.done_thumbnail", task.index);
+                    show_toastf(1500.0f, "log.queue.done_thumbnail",
+                                task.index);
 
                 } catch (std::runtime_error& e) {
                     append_queue_logf("log.queue.error_thumbnail", task.index,
@@ -582,10 +596,16 @@ void RenderVoxelList::queue_thread() {
                             append_queue_logf("log.queue.done_export_stl",
                                               task.index,
                                               task.file_path.c_str());
+                            show_toastf(2000.0f, "log.queue.done_export_stl",
+                                        task.index,
+                                        task.file_path.c_str());
                         } else {
                             append_queue_logf(
                                 "log.queue.done_export_stl_cached",
                                 task.index);
+                            show_toastf(1500.0f,
+                                        "log.queue.done_export_stl_cached",
+                                        task.index);
                         }
                     } else {
                         append_queue_logf("log.queue.error_export_stl_empty",
@@ -795,6 +815,8 @@ void RenderVoxelList::queue_thread() {
 
                     append_queue_logf("log.queue.done_export_stl_all", success,
                                       total);
+                    show_toastf(3000.0f, "log.queue.done_export_stl_all",
+                                success, total);
                     queue_progress = 1.0f;
                 } catch (std::exception& e) {
                     append_queue_logf("log.queue.error_export_stl_all",
@@ -943,6 +965,8 @@ void RenderVoxelList::queue_thread() {
                 queue_progress = 1.0f;
                 queue_running = false;
                 append_queue_log("log.queue.done_execute_flow");
+                show_toast(get_locale_string("log.queue.done_execute_flow"),
+                           2000.0f);
                 break;
             }
         }

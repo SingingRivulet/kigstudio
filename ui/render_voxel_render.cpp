@@ -840,6 +840,7 @@ void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
 				if (submitted) {
 					// 当前无任务运行，已提交到 worker。
 					// 等待最多 1 秒取回结果。
+					bool was_failed = strand.repair_failed;
 					auto wrapped =
 					    g_repair_worker.wait_result(1000);
 					if (!wrapped.empty()) {
@@ -854,6 +855,13 @@ void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
 						// wait_result 返回空 = 超时或失败。
 						// 超时时 worker 已在内部被 kill + 重启。
 						strand.repair_failed = true;
+						if (!was_failed && manager) {
+							manager->show_toast(
+							    get_locale_string(
+							        "toast.repair_timeout") +
+							        " \"" + strand.name + "\"",
+							    3000.0f);
+						}
 						std::cerr
 						    << "[addon_mesh] alpha_wrap failed"
 						    << " or timed out for strand \""
