@@ -306,7 +306,6 @@ class RenderVoxelList {
      */
 
     std::atomic<int> current_id = 0;
-    std::mutex locker;
 
     std::atomic<float> queue_progress = 0;
     std::atomic<bool> queue_running = false;
@@ -336,6 +335,7 @@ class RenderVoxelList {
     int nav_layout_velocity_threshold_frame = 0;
 
    public:
+    std::mutex locker;
     class RenderVoxelItem {
         /*
          * TODO:

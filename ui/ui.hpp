@@ -25,6 +25,8 @@
 #include <stb/stb_truetype.h>
 
 #include "kigstudio/ui/logger.h"
+#include "kigstudio/agent/agent_handlers.h"
+#include "kigstudio/agent/agent_server.h"
 #include "kigstudio/ui/render_collision.h"
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/ui/render_voxel.h"
@@ -178,6 +180,29 @@ int ui_main(int argc, const char* const* argv) {
 
     render_items.start_thread();
     render_items.initIcons();
+
+    // ---- AI Agent HTTP Server ----
+    sinriv::kigstudio::agent::AgentServer agent_server;
+    agent_server.set_handler(sinriv::kigstudio::agent::agent_dispatch);
+
+    int agent_port = 18920;
+    bool enable_agent = true;
+    for (int ai = 1; ai < argc; ++ai) {
+        if (std::strcmp(argv[ai], "--no-agent") == 0) {
+            enable_agent = false;
+        } else if (std::strcmp(argv[ai], "--agent-port") == 0 && ai + 1 < argc) {
+            agent_port = std::atoi(argv[++ai]);
+        }
+    }
+    if (enable_agent && agent_port > 0) {
+        if (agent_server.start(static_cast<std::uint16_t>(agent_port))) {
+            std::cout << "Agent API: http://127.0.0.1:" << agent_port
+                      << "/api/v1" << std::endl;
+        } else {
+            std::cerr << "Agent API: failed to start on port " << agent_port
+                      << std::endl;
+        }
+    }
 
     auto try_load_startup_path = [&]() {
         if (argc <= 1)
@@ -651,6 +676,7 @@ int ui_main(int argc, const char* const* argv) {
                                     &cpu_model_matrix);
 
         render_items.process_queue_result();
+        agent_server.process_commands(render_items);
         io.DisplaySize = ImVec2((float)width, (float)height);
         render_items.update_mouse();
         ImGui::NewFrame();
@@ -685,6 +711,7 @@ int ui_main(int argc, const char* const* argv) {
         bgfx::frame();
     }
 
+    agent_server.stop();
     render_items.release();
 
     deferred_renderer.release();
