@@ -132,6 +132,8 @@ curl -X POST http://127.0.0.1:18920/api/v1/nodes/1/hair/angle-config \
   -H "Content-Type: application/json" \
   -d '{
     "base_node_id": 0,
+    "north_pole": [0.0, 1.0, 0.0],
+    "front_reference": [0.0, 0.0, 1.0],
     "angles": [
       {"x": 0.0, "y": 1.0, "theta": 0, "phi": 60},
       {"x": 0.0, "y": 2.0, "theta": 0, "phi": 45},
@@ -156,6 +158,10 @@ curl -X POST http://127.0.0.1:18920/api/v1/nodes/1/hair/angle-config \
   }'
 # → {"ok": true, "angle_count": 15, "bvh_triangle_count": 15680}
 ```
+
+`north_pole` 定义了球面坐标系的北极方向（`[x, y, z]` 向量），即 `phi=+90°` 对应的 3D 方向。默认值 `[0, 1, 0]` 表示世界坐标 +Y 轴为正上方。
+
+`front_reference` 定义正前方参考方向。它与 `north_pole` 共同确定鼻尖所在的矢状面（sagittal plane）：`front_reference` 投影到与 `north_pole` 垂直的赤道面后，即为 `theta=0°`（正前方）方向。默认值 `[0, 0, 1]` 表示世界 +Z 轴为正前方。调整这两个向量可旋转/倾斜整个语义坐标系。
 
 **角度配置原则：**
 - `phi` 越大，射线越从上方射来 → 适合头顶和刘海

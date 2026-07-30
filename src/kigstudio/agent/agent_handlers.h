@@ -1417,6 +1417,27 @@ inline cJSON* h_strand_set_angle_config(cJSON* params, List& list) {
 
 	// Clear old config and build new
 	item->hair_angle_config.clear();
+
+	// Parse optional north_pole vector (default: world +Y)
+	cJSON* np_arr = cJSON_GetObjectItem(params, "north_pole");
+	if (np_arr && cJSON_IsArray(np_arr)) {
+		sinriv::kigstudio::voxel::vec3f np;
+		if (json_to_vec3(np_arr, np)) {
+			np.normalize();
+			item->hair_north_pole = np;
+		}
+	}
+
+	// Parse optional front_reference vector (default: world +Z)
+	cJSON* fr_arr = cJSON_GetObjectItem(params, "front_reference");
+	if (fr_arr && cJSON_IsArray(fr_arr)) {
+		sinriv::kigstudio::voxel::vec3f fr;
+		if (json_to_vec3(fr_arr, fr)) {
+			fr.normalize();
+			item->hair_front_reference = fr;
+		}
+	}
+
 	int n = cJSON_GetArraySize(angles_arr);
 	for (int i = 0; i < n; ++i) {
 		cJSON* entry = cJSON_GetArrayItem(angles_arr, i);
@@ -1450,18 +1471,50 @@ inline cJSON* h_strand_set_angle_config(cJSON* params, List& list) {
 }
 
 /// Spherical (theta, phi) in degrees → unit direction vector.
-/// theta=0° → +Z (front), +90° → +X (right)
-/// phi=0° → horizontal, +90° → +Y (up)
-inline sinriv::kigstudio::voxel::vec3f spherical_to_dir(float theta_deg,
-                                                        float phi_deg) {
+/// Uses configurable north pole and front reference to build the local frame.
+/// theta=0° → "front" (V axis), +90° → "right" (U axis)
+/// phi=0° → horizontal (equatorial plane), +90° → north pole
+/// Default north_pole {0,1,0}, front_reference {0,0,1} produces:
+///   theta=0→+Z, theta=+90→+X, phi=+90→+Y
+inline sinriv::kigstudio::voxel::vec3f spherical_to_dir(
+    float theta_deg,
+    float phi_deg,
+    const sinriv::kigstudio::voxel::vec3f& north_pole = {0.0f, 1.0f, 0.0f},
+    const sinriv::kigstudio::voxel::vec3f& front_reference = {0.0f, 0.0f, 1.0f}) {
 	constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
 	float t = theta_deg * kDegToRad;
 	float p = phi_deg * kDegToRad;
 	float cos_p = std::cos(p);
-	return sinriv::kigstudio::voxel::vec3f(
-	    std::sin(t) * cos_p,
-	    std::sin(p),
-	    std::cos(t) * cos_p);
+	float sin_p = std::sin(p);
+	float sin_t = std::sin(t);
+	float cos_t = std::cos(t);
+
+	// Build local orthonormal frame
+	// N = north pole (phi=+90° direction), normalized
+	sinriv::kigstudio::voxel::vec3f N = north_pole;
+	N.normalize();
+
+	// Project front_reference onto the equatorial plane → V (theta=0°)
+	sinriv::kigstudio::voxel::vec3f F = front_reference;
+	F.normalize();
+	float f_dot_n = F.dot(N);
+	sinriv::kigstudio::voxel::vec3f V = F - N * f_dot_n;
+	float v_len2 = V.length2();
+
+	// If front_reference is nearly parallel to north_pole, fall back to heuristic
+	if (v_len2 < 1e-10f) {
+		sinriv::kigstudio::voxel::vec3f A =
+		    (std::abs(N.z) < 0.99f)
+		        ? sinriv::kigstudio::voxel::vec3f(0.0f, 0.0f, 1.0f)
+		        : sinriv::kigstudio::voxel::vec3f(1.0f, 0.0f, 0.0f);
+		V = A - N * A.dot(N);
+		v_len2 = V.length2();
+	}
+
+	V = V / std::sqrt(v_len2);  // normalize
+	sinriv::kigstudio::voxel::vec3f U = cross(N, V);  // theta=+90° (right)
+
+	return U * (sin_t * cos_p) + N * sin_p + V * (cos_t * cos_p);
 }
 
 /// Cast a ray from outside toward the center point, find closest hit on BVH.
@@ -1545,7 +1598,7 @@ inline cJSON* h_strand_add_semantic_guide_point(cJSON* params, List& list) {
 	// Ray cast
 	float theta = it->second.theta;
 	float phi = it->second.phi;
-	auto dir = spherical_to_dir(theta, phi);
+	auto dir = spherical_to_dir(theta, phi, item->hair_north_pole, item->hair_front_reference);
 	auto center = item->addon_center_point;
 
 	sinriv::kigstudio::voxel::vec3f hit_point;
@@ -1630,7 +1683,7 @@ inline cJSON* h_strand_add_semantic_width_point(cJSON* params, List& list) {
 	// Ray cast
 	float theta = it->second.theta;
 	float phi = it->second.phi;
-	auto dir = spherical_to_dir(theta, phi);
+	auto dir = spherical_to_dir(theta, phi, item->hair_north_pole, item->hair_front_reference);
 	auto center = item->addon_center_point;
 
 	sinriv::kigstudio::voxel::vec3f hit_point;

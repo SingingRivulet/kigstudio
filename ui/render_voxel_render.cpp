@@ -764,6 +764,192 @@ void RenderVoxelList::RenderVoxelItem::add_width_point_at(
     }
 }
 
+void RenderVoxelList::RenderVoxelItem::apply_hairline_spindle() {
+    if (hair_strands.empty()) return;
+
+    // ---- Step 1: Compute hairline plane equation ----
+    // Plane: normal · point = d
+    vec3f plane_normal;
+    float plane_d;
+
+    if (hairline_plane_use_y) {
+        // Horizontal plane: Y = hairline_plane_y
+        plane_normal = {0.0f, 1.0f, 0.0f};
+        plane_d = hairline_plane_y;
+    } else {
+        // Three-point plane
+        const vec3f& p0 = hairline_plane_points[0];
+        const vec3f& p1 = hairline_plane_points[1];
+        const vec3f& p2 = hairline_plane_points[2];
+        vec3f edge1 = {p1.x - p0.x, p1.y - p0.y, p1.z - p0.z};
+        vec3f edge2 = {p2.x - p0.x, p2.y - p0.y, p2.z - p0.z};
+        plane_normal = {
+            edge1.y * edge2.z - edge1.z * edge2.y,
+            edge1.z * edge2.x - edge1.x * edge2.z,
+            edge1.x * edge2.y - edge1.y * edge2.x,
+        };
+        float len = std::sqrt(plane_normal.x * plane_normal.x +
+                              plane_normal.y * plane_normal.y +
+                              plane_normal.z * plane_normal.z);
+        if (len < 1e-8f) return;  // degenerate
+        plane_normal = {plane_normal.x / len, plane_normal.y / len,
+                        plane_normal.z / len};
+        plane_d = plane_normal.x * p0.x + plane_normal.y * p0.y +
+                  plane_normal.z * p0.z;
+    }
+
+    // Helper: signed distance from point to plane
+    auto signed_dist = [&](const vec3f& p) -> float {
+        return p.x * plane_normal.x + p.y * plane_normal.y +
+               p.z * plane_normal.z - plane_d;
+    };
+
+    // ---- Step 2: Find hairline-plane intersection for each strand ----
+    struct StrandIntersection {
+        int strand_idx;
+        float curve_id;  // position on guide curve
+        vec3f world_pos; // intersection point in world space
+    };
+    std::vector<StrandIntersection> intersections;
+
+    for (int si = 0; si < static_cast<int>(hair_strands.size()); ++si) {
+        const auto& strand = hair_strands[si];
+        if (strand.guide_points.size() < 2) continue;
+
+        const int subdiv = std::max(strand.guide_samples_per_segment, 1);
+        auto sampled = sample_bezier_guide_curve(strand.guide_points, subdiv);
+        if (sampled.size() < 2) continue;
+
+        const int N = static_cast<int>(strand.guide_points.size());
+        const int M = static_cast<int>(sampled.size());
+
+        // Count crossings of the guide curve sample polyline with the plane
+        struct Crossing {
+            float curve_id;
+            vec3f world_pos;
+        };
+        std::vector<Crossing> crossings;
+
+        for (int i = 0; i < M - 1; ++i) {
+            float d1 = signed_dist(sampled[i]);
+            float d2 = signed_dist(sampled[i + 1]);
+
+            // Sign change (or exact hit at d1==0)
+            if (d1 * d2 > 0.0f) continue;  // same side, no crossing
+            if (std::abs(d1) < 1e-7f && std::abs(d2) < 1e-7f) continue;  // grazing
+
+            // Exact hit at sample i
+            if (std::abs(d1) < 1e-7f) {
+                float curve_id = static_cast<float>(i) /
+                                 static_cast<float>(M - 1) *
+                                 static_cast<float>(N - 1);
+                crossings.push_back({curve_id, sampled[i]});
+                continue;
+            }
+
+            // Interpolate crossing between sample i and i+1
+            float t = -d1 / (d2 - d1);
+            t = std::clamp(t, 0.0f, 1.0f);
+
+            vec3f pos = {
+                sampled[i].x + t * (sampled[i + 1].x - sampled[i].x),
+                sampled[i].y + t * (sampled[i + 1].y - sampled[i].y),
+                sampled[i].z + t * (sampled[i + 1].z - sampled[i].z),
+            };
+
+            float cid_i = static_cast<float>(i) /
+                          static_cast<float>(M - 1) *
+                          static_cast<float>(N - 1);
+            float cid_i1 = static_cast<float>(i + 1) /
+                           static_cast<float>(M - 1) *
+                           static_cast<float>(N - 1);
+            float curve_id = cid_i + t * (cid_i1 - cid_i);
+
+            crossings.push_back({curve_id, pos});
+        }
+
+        // Only process strands with exactly one intersection
+        if (crossings.size() != 1) continue;
+
+        intersections.push_back(
+            {si, crossings[0].curve_id, crossings[0].world_pos});
+    }
+
+    if (intersections.empty()) return;
+
+    // ---- Step 3: Generate spindle width points for each valid strand ----
+    for (size_t ii = 0; ii < intersections.size(); ++ii) {
+        const auto& inter = intersections[ii];
+        auto& strand = hair_strands[inter.strand_idx];
+
+        // Compute nearest-neighbor distance (width at hairline)
+        float nearest = std::numeric_limits<float>::max();
+        for (size_t jj = 0; jj < intersections.size(); ++jj) {
+            if (jj == ii) continue;
+            const auto& other = intersections[jj];
+            float dx = inter.world_pos.x - other.world_pos.x;
+            float dy = inter.world_pos.y - other.world_pos.y;
+            float dz = inter.world_pos.z - other.world_pos.z;
+            float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist < nearest) nearest = dist;
+        }
+        if (nearest >= std::numeric_limits<float>::max()) nearest = 0.5f;
+
+        const int N = static_cast<int>(strand.guide_points.size());
+        if (N < 2) continue;
+
+        // Determine width direction:
+        // - If center point is enabled: direction from curve toward center
+        // - Otherwise: world-down (0, -1, 0)
+        auto sample = sample_guide_curve_at(inter.strand_idx, inter.curve_id);
+        vec3f dir;
+        if (show_addon_center) {
+            dir = {
+                addon_center_point.x - sample.position.x,
+                addon_center_point.y - sample.position.y,
+                addon_center_point.z - sample.position.z,
+            };
+            float dlen = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+            if (dlen < 1e-6f) {
+                dir = {0.0f, -1.0f, 0.0f};
+            } else {
+                dir = {dir.x / dlen, dir.y / dlen, dir.z / dlen};
+            }
+        } else {
+            dir = {0.0f, -1.0f, 0.0f};
+        }
+
+        // Clear existing width points and replace with spindle
+        strand.width_points.clear();
+
+        // Spindle: three width points creating a taper from start to hairline
+        // to end
+        //   - Start (curve_id=0): tiny scale
+        //   - Hairline (inter.curve_id): full neighbor-distance scale
+        //   - End (curve_id=N-1): tiny scale
+        HairStrand::WidthPoint wp_start;
+        wp_start.curve_id = 0.0f;
+        wp_start.scale = kMinTipWidth;
+        wp_start.direction = dir;
+
+        HairStrand::WidthPoint wp_hairline;
+        wp_hairline.curve_id = inter.curve_id;
+        wp_hairline.scale = nearest;
+        wp_hairline.direction = dir;
+
+        HairStrand::WidthPoint wp_end;
+        wp_end.curve_id = static_cast<float>(N - 1);
+        wp_end.scale = kMinTipWidth;
+        wp_end.direction = dir;
+
+        strand.width_points.push_back(wp_start);
+        strand.width_points.push_back(wp_hairline);
+        strand.width_points.push_back(wp_end);
+
+        strand.mesh_dirty = true;
+    }
+}
+
 GuideCurveSample
 RenderVoxelList::RenderVoxelItem::sample_guide_curve_at(
     int strand_idx, float curve_id) const {
@@ -1612,6 +1798,68 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 bgfx::submit(mesh_shader.overlay_view_id_,
                              mesh_shader.line_program_);
             }
+        }
+    }
+
+    // 发际线平面蓝色线框三角形预览
+    if (manager && manager->show_hairline_plane_window &&
+        hairline_plane_enabled && mesh_shader.ensureLineProgram()) {
+        bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+        const uint32_t blue_color = pack_abgr(0.0f, 0.5f, 1.0f, 1.0f);
+        std::vector<mesh_detail::ColorLineVertex> vertices;
+
+        vec3f tri[3];
+        if (hairline_plane_use_y) {
+            // Y 水平面模式：边长 1 的正三角形，位于 XZ 平面 Y=hairline_plane_y，
+            // 中心在原点。
+            float s = 0.5f;            // 半边长
+            float h = 0.86602540378f;  // sqrt(3)/2
+            tri[0] = {-s, hairline_plane_y, -h / 3.0f};
+            tri[1] = { s, hairline_plane_y, -h / 3.0f};
+            tri[2] = {0.0f, hairline_plane_y, h * 2.0f / 3.0f};
+        } else {
+            // 三点平面模式：使用实际三点
+            tri[0] = hairline_plane_points[0];
+            tri[1] = hairline_plane_points[1];
+            tri[2] = hairline_plane_points[2];
+        }
+
+        // 三条边（注意 Y 轴翻转）
+        for (int e = 0; e < 3; ++e) {
+            int n = (e + 1) % 3;
+            vertices.push_back({tri[e].x, -tri[e].y, tri[e].z, blue_color});
+            vertices.push_back({tri[n].x, -tri[n].y, tri[n].z, blue_color});
+        }
+
+        // 顶点标记（小十字）
+        const float m = 0.15f;
+        const uint32_t vert_color = pack_abgr(0.0f, 0.75f, 1.0f, 1.0f);
+        for (int v = 0; v < 3; ++v) {
+            vertices.push_back({tri[v].x - m, -tri[v].y, tri[v].z, vert_color});
+            vertices.push_back({tri[v].x + m, -tri[v].y, tri[v].z, vert_color});
+            vertices.push_back({tri[v].x, -(tri[v].y - m), tri[v].z, vert_color});
+            vertices.push_back({tri[v].x, -(tri[v].y + m), tri[v].z, vert_color});
+            vertices.push_back({tri[v].x, -tri[v].y, tri[v].z - m, vert_color});
+            vertices.push_back({tri[v].x, -tri[v].y, tri[v].z + m, vert_color});
+        }
+
+        if (!vertices.empty() &&
+            bgfx::getAvailTransientVertexBuffer(
+                static_cast<uint32_t>(vertices.size()),
+                layout) >= vertices.size()) {
+            bgfx::TransientVertexBuffer tvb;
+            bgfx::allocTransientVertexBuffer(
+                &tvb, static_cast<uint32_t>(vertices.size()), layout);
+            std::memcpy(tvb.data, vertices.data(),
+                        vertices.size() * sizeof(mesh_detail::ColorLineVertex));
+            bgfx::setTransform(model_transform);
+            bgfx::setVertexBuffer(0, &tvb);
+            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                           BGFX_STATE_WRITE_Z |
+                           BGFX_STATE_DEPTH_TEST_LESS |
+                           BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+            bgfx::submit(mesh_shader.overlay_view_id_,
+                         mesh_shader.line_program_);
         }
     }
 }

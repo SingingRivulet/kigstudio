@@ -279,6 +279,11 @@ struct CollisionEditorSnapshot {
     // 附加件中心点（所有发束共享）
     vec3f addon_center_point = {0.0f, 0.0f, 0.0f};
     bool show_addon_center = false;
+    // 发际线平面（用于纺锤宽度生成）
+    bool hairline_plane_enabled = false;
+    bool hairline_plane_use_y = true;
+    float hairline_plane_y = 0.0f;
+    vec3f hairline_plane_points[3] = {};
     SilhouetteShapeMode silhouette_shape_mode = SilhouetteShapeMode::DELAUNAY_SPHERE;
     int silhouette_subdivision = 4;
     int silhouette_edge_subdiv = 0;
@@ -424,6 +429,14 @@ class RenderVoxelList {
         // 附加件中心点（所有发束共享），用于发根汇聚与反翘控制
         vec3f addon_center_point = {0.0f, 0.0f, 0.0f};
         bool show_addon_center = false;  // 是否显示/启用中心点
+        // 发际线平面（用于纺锤宽度生成）
+        bool hairline_plane_enabled = false;
+        bool hairline_plane_use_y = true;  // true=Y水平面, false=三点平面
+        float hairline_plane_y = 0.0f;
+        vec3f hairline_plane_points[3] = {};
+        // 应用发际线纺锤宽度：根据引导线与发际线的交点
+        // 自动生成宽度向量，在两段收束形成纺锤形
+        void apply_hairline_spindle();
         // 毛发数据
         std::vector<HairStrand> hair_strands;
         // 当前正在绘制引导曲线的发束索引（-1表示无）
@@ -440,6 +453,9 @@ class RenderVoxelList {
         int active_perpoint_section_edit_strand = -1;
         int active_perpoint_section_edit_width_idx = -1;
         bool perpoint_section_editing_active = false;
+        // 发际线三点拾取状态
+        bool hairline_point_picking_active = false;
+        int hairline_picking_point_index = 0;  // 0, 1, or 2
         sinriv::ui::render::RenderVoxel voxel_renderer;
         sinriv::kigstudio::voxel::VoxelGrid voxel_grid_data;
         kdtree::KDTree mesh_kd_tree;  // 三角形顶点的kd树，用于实现自动吸附
@@ -659,6 +675,13 @@ class RenderVoxelList {
         /// Semantic angle config: maps (X,Y) → (theta, phi) for ray casting.
         /// Must be set via setAngleConfig before semantic point addition.
         std::map<std::pair<float, float>, HairAngleEntry> hair_angle_config;
+        /// North pole direction for the spherical coordinate frame.
+        /// Default is world +Y. Defines the phi=+90° direction in spherical_to_dir().
+        sinriv::kigstudio::voxel::vec3f hair_north_pole = {0.0f, 1.0f, 0.0f};
+        /// Front reference direction. Together with north_pole, defines the
+        /// sagittal (nose) plane. Projected onto the equatorial plane to derive
+        /// the theta=0° (front) direction. Default is world +Z.
+        sinriv::kigstudio::voxel::vec3f hair_front_reference = {0.0f, 0.0f, 1.0f};
         /// Node id whose mesh was used to build hair_bvh (-1 if none).
         int hair_bvh_base_node_id = -1;
         /// BVH tree for ray-casting against the base model.
@@ -805,12 +828,14 @@ class RenderVoxelList {
     bool show_width_editor_window = false;
     bool show_cross_section_editor_window = false;
     bool show_perpoint_section_editor_window = false;
+    bool show_hairline_plane_window = false;
     // Per-point section conflict confirmation dialogs
     bool show_perpoint_confirm_global_open = false;
     bool show_perpoint_confirm_global_apply = false;
     int pending_global_section_strand = -1;
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
+    void render_hairline_plane_window();
     void render_concave_cone_editor(RenderVoxelItem& item);
     void render_nav_map();
     void render_file_loader();

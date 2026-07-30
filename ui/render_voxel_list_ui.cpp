@@ -419,6 +419,7 @@ void RenderVoxelList::render_ui() {
     render_width_editor_window();
     render_cross_section_editor();
     render_perpoint_section_editor();
+    render_hairline_plane_window();
     render_file_loader();
     render_save_dialog();
     render_load_dialog();

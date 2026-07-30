@@ -1366,6 +1366,53 @@ void init_locale_strings() {
                       {{"en", "Y"}, {"zh", "Y"}});
     add_locale_string("label.normalize_xy",
                       {{"en", "XY"}, {"zh", "XY"}});
+    add_locale_string("window.auto_width",
+                      {{"en", "Auto Width"}, {"zh", "自动宽度"}});
+    add_locale_string("action.auto_width",
+                      {{"en", "Auto Width"}, {"zh", "自动宽度"}});
+    add_locale_string("tooltip.auto_width",
+                      {{"en",
+                        "Open hairline-plane window for spindle width generation"},
+                       {"zh", "打开发际线平面窗口进行纺锤宽度生成"}});
+    add_locale_string("label.hairline_plane",
+                      {{"en", "Hairline Plane"}, {"zh", "发际线平面"}});
+    add_locale_string("label.hairline_plane_enable",
+                      {{"en", "Enable"}, {"zh", "启用"}});
+    add_locale_string("label.hairline_plane_disabled_hint",
+                      {{"en", "Hairline plane is disabled"},
+                       {"zh", "发际线平面已禁用"}});
+    add_locale_string("label.hairline_plane_mode",
+                      {{"en", "Mode"}, {"zh", "模式"}});
+    add_locale_string("label.hairline_y_plane",
+                      {{"en", "Y Plane"}, {"zh", "Y 水平面"}});
+    add_locale_string("label.hairline_3point_plane",
+                      {{"en", "3 Points"}, {"zh", "三点平面"}});
+    add_locale_string("label.hairline_y",
+                      {{"en", "Y"}, {"zh", "Y"}});
+    add_locale_string("label.hairline_preview_triangle",
+                      {{"en", "Preview: equilateral triangle (side=1) in XZ "
+                              "plane at Y height"},
+                       {"zh", "预览：Y高度处XZ平面上边长1的正三角形"}});
+    add_locale_string("label.hairline_point",
+                      {{"en", "Pt %d"}, {"zh", "点%d"}});
+    add_locale_string("label.hairline_degenerate",
+                      {{"en", "Points are collinear — plane undefined"},
+                       {"zh", "三点共线 — 平面未定义"}});
+    add_locale_string("action.pick_point",
+                      {{"en", "Pick"}, {"zh", "拾取"}});
+    add_locale_string("action.picking",
+                      {{"en", "Picking..."}, {"zh", "拾取中..."}});
+    add_locale_string("tooltip.pick_point",
+                      {{"en", "Click in 3D viewport to pick this point"},
+                       {"zh", "在3D视口中点击以拾取此点"}});
+    add_locale_string("action.apply_hairline_spindle",
+                      {{"en", "Apply Spindle"}, {"zh", "应用纺锤"}});
+    add_locale_string("tooltip.apply_hairline_spindle",
+                      {{"en",
+                        "Calculate strand-plane intersections, set width by "
+                        "nearest-neighbor distance, taper to tips"},
+                       {"zh",
+                        "计算发束与平面交点，按最近邻距离设置宽度，两端收束"}});
     add_locale_string("label.section_rotation",
                       {{"en", "Rotation"}, {"zh", "旋转"}});
     add_locale_string("label.guide_subdiv",

@@ -59,6 +59,14 @@ void RenderVoxelList::render_guide_curve_window() {
         }
         show_perpoint_section_editor_window = false;
     }
+    // 互斥：打开引导曲线窗口时关闭自动宽度窗口
+    if (show_hairline_plane_window) {
+        auto hit = items.find(render_id);
+        if (hit != items.end()) {
+            hit->second->hairline_point_picking_active = false;
+        }
+        show_hairline_plane_window = false;
+    }
 
     ImGui::SetNextWindowSize(ImVec2(520, 400), ImGuiCond_Once);
     bool window_open = true;
@@ -333,6 +341,14 @@ void RenderVoxelList::render_width_editor_window() {
             sit->second->active_section_edit_strand = -1;
         }
         show_cross_section_editor_window = false;
+    }
+    // 互斥：打开宽度编辑器时关闭自动宽度窗口
+    if (show_hairline_plane_window) {
+        auto hit = items.find(render_id);
+        if (hit != items.end()) {
+            hit->second->hairline_point_picking_active = false;
+        }
+        show_hairline_plane_window = false;
     }
 
     ImGui::SetNextWindowSize(ImVec2(380, 400), ImGuiCond_Once);
@@ -768,6 +784,22 @@ void RenderVoxelList::render_object_editor_addons() {
 
     ImGui::Separator();
 
+    // 自动宽度按钮（打开发际线平面窗口）
+    if (ImGui::Button(get_locale_cstr("action.auto_width"))) {
+        show_hairline_plane_window = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s",
+            get_locale_cstr("tooltip.auto_width"));
+    }
+
+    // 发际线平面窗口存在时，自动启用发际线平面
+    if (show_hairline_plane_window) {
+        item.hairline_plane_enabled = true;
+    }
+
+    ImGui::Separator();
+
     // 附加件类型下拉框
     const char* addon_type_names[] = {
         get_locale_cstr("label.addon_type_hair"),
@@ -1065,6 +1097,204 @@ void RenderVoxelList::render_object_editor_addons() {
             for (auto& s : item.hair_strands) s.mesh_dirty = true;
         }
 
+    }
+
+    ImGui::End();
+}
+
+void RenderVoxelList::render_hairline_plane_window() {
+    if (!show_addon_window)
+        return;
+    if (!show_hairline_plane_window)
+        return;
+
+    // 互斥：打开发际线窗口时关闭其他编辑窗口
+    if (show_guide_curve_window) {
+        auto git = items.find(render_id);
+        if (git != items.end()) {
+            git->second->guide_curve_drawing_active = false;
+            git->second->active_guide_draw_strand = -1;
+        }
+        show_guide_curve_window = false;
+    }
+    if (show_width_editor_window) {
+        auto wit = items.find(render_id);
+        if (wit != items.end()) {
+            wit->second->width_editing_active = false;
+            wit->second->active_width_edit_strand = -1;
+        }
+        show_width_editor_window = false;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(420, 320), ImGuiCond_Once);
+    bool window_open = true;
+    if (!ImGui::Begin(get_locale_cstr("window.auto_width"), &window_open)) {
+        ImGui::End();
+        return;
+    }
+
+    if (!window_open) {
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->hairline_point_picking_active = false;
+        }
+        show_hairline_plane_window = false;
+        ImGui::End();
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(locker);
+    auto item_it = items.find(render_id);
+    if (item_it == items.end() || item_it->second->source_type != 2) {
+        ImGui::End();
+        return;
+    }
+
+    RenderVoxelItem& item = *item_it->second;
+
+    // 发际线平面启用开关
+    bool old_enabled = item.hairline_plane_enabled;
+    ImGui::Checkbox(get_locale_cstr("label.hairline_plane_enable"),
+                    &item.hairline_plane_enabled);
+    if (old_enabled != item.hairline_plane_enabled) {
+        push_undo_now(item.id, std::nullopt, "Toggle Hairline Plane");
+    }
+
+    if (!item.hairline_plane_enabled) {
+        ImGui::TextDisabled("%s",
+            get_locale_cstr("label.hairline_plane_disabled_hint"));
+        ImGui::End();
+        return;
+    }
+
+    ImGui::Separator();
+
+    // 平面模式
+    const char* plane_mode_items[] = {
+        get_locale_cstr("label.hairline_y_plane"),
+        get_locale_cstr("label.hairline_3point_plane"),
+    };
+    int plane_mode = item.hairline_plane_use_y ? 0 : 1;
+    ImGui::SetNextItemWidth(160);
+    if (ImGui::Combo(get_locale_cstr("label.hairline_plane_mode"),
+                    &plane_mode, plane_mode_items,
+                    IM_ARRAYSIZE(plane_mode_items))) {
+        push_undo_now(item.id, std::nullopt, "Hairline Plane Mode");
+        item.hairline_plane_use_y = (plane_mode == 0);
+    }
+
+    ImGui::Separator();
+
+    if (item.hairline_plane_use_y) {
+        // Y 水平面模式
+        float old_y = item.hairline_plane_y;
+        ImGui::SetNextItemWidth(200);
+        ImGui::DragFloat(get_locale_cstr("label.hairline_y"),
+                         &item.hairline_plane_y, 0.1f);
+        if (ImGui::IsItemActivated()) begin_edit(item.id);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            end_edit(item.id, "Hairline Y Edit");
+            for (auto& s : item.hair_strands) s.mesh_dirty = true;
+        } else if (old_y != item.hairline_plane_y) {
+            push_undo_now(item.id, std::nullopt, "Hairline Y Edit");
+        }
+
+        ImGui::TextDisabled("%s",
+            get_locale_cstr("label.hairline_preview_triangle"));
+    } else {
+        // 三点平面模式：每行一个点 + [拾取] 按钮
+        bool pt_activated = false;
+        bool pt_deactivated = false;
+        bool pt_changed = false;
+
+        for (int pi = 0; pi < 3; ++pi) {
+            ImGui::PushID(pi);
+
+            char label_buf[64];
+            snprintf(label_buf, sizeof(label_buf),
+                     get_locale_cstr("label.hairline_point"),
+                     pi + 1);
+
+            auto r = edit_vec3_stepper(label_buf,
+                                       item.hairline_plane_points[pi], 0.1f);
+            pt_activated |= r.activated;
+            pt_deactivated |= r.deactivated_after_edit;
+            pt_changed |= r.value_changed;
+
+            // 拾取按钮
+            ImGui::SameLine();
+            bool is_picking =
+                item.hairline_point_picking_active &&
+                item.hairline_picking_point_index == pi;
+            if (is_picking) {
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImVec4(0.2f, 0.5f, 1.0f, 1.0f));
+            }
+            char pick_label[64];
+            snprintf(pick_label, sizeof(pick_label),
+                     is_picking
+                         ? get_locale_cstr("action.picking")
+                         : get_locale_cstr("action.pick_point"),
+                     pi + 1);
+            if (ImGui::SmallButton(pick_label)) {
+                if (is_picking) {
+                    // Cancel picking
+                    item.hairline_point_picking_active = false;
+                } else {
+                    // Start picking this point
+                    item.hairline_point_picking_active = true;
+                    item.hairline_picking_point_index = pi;
+                }
+            }
+            if (is_picking) {
+                ImGui::PopStyleColor();
+            }
+            if (ImGui::IsItemHovered() && !is_picking) {
+                ImGui::SetTooltip("%s",
+                    get_locale_cstr("tooltip.pick_point"));
+            }
+
+            ImGui::PopID();
+        }
+
+        if (pt_activated) begin_edit(item.id);
+        if (pt_deactivated) {
+            end_edit(item.id, "Hairline Points Edit");
+            for (auto& s : item.hair_strands) s.mesh_dirty = true;
+        } else if (pt_changed) {
+            push_undo_now(item.id, std::nullopt, "Hairline Points Edit");
+        }
+
+        // 三点平面退化提示
+        {
+            const auto& p0 = item.hairline_plane_points[0];
+            const auto& p1 = item.hairline_plane_points[1];
+            const auto& p2 = item.hairline_plane_points[2];
+            vec3f e1 = {p1.x - p0.x, p1.y - p0.y, p1.z - p0.z};
+            vec3f e2 = {p2.x - p0.x, p2.y - p0.y, p2.z - p0.z};
+            float area = std::sqrt(
+                (e1.y * e2.z - e1.z * e2.y) * (e1.y * e2.z - e1.z * e2.y) +
+                (e1.z * e2.x - e1.x * e2.z) * (e1.z * e2.x - e1.x * e2.z) +
+                (e1.x * e2.y - e1.y * e2.x) * (e1.x * e2.y - e1.y * e2.x));
+            if (area < 1e-6f) {
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s",
+                    get_locale_cstr("label.hairline_degenerate"));
+            }
+        }
+    }
+
+    ImGui::Separator();
+
+    // 应用按钮
+    if (ImGui::Button(get_locale_cstr("action.apply_hairline_spindle"),
+                      ImVec2(-1, 0))) {
+        push_undo_now(item.id, std::nullopt, "Apply Hairline Spindle");
+        item.apply_hairline_spindle();
+        for (auto& s : item.hair_strands) s.mesh_dirty = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s",
+            get_locale_cstr("tooltip.apply_hairline_spindle"));
     }
 
     ImGui::End();

@@ -269,6 +269,13 @@ void RenderVoxelList::render_cross_section_editor() {
         }
         show_perpoint_section_editor_window = false;
     }
+    if (show_hairline_plane_window) {
+        auto hit = items.find(render_id);
+        if (hit != items.end()) {
+            hit->second->hairline_point_picking_active = false;
+        }
+        show_hairline_plane_window = false;
+    }
 
     // Window setup
     ImGui::SetNextWindowSize(ImVec2(480, 520), ImGuiCond_Once);
@@ -812,6 +819,13 @@ void RenderVoxelList::render_perpoint_section_editor() {
             sit->second->active_section_edit_strand = -1;
         }
         show_cross_section_editor_window = false;
+    }
+    if (show_hairline_plane_window) {
+        auto hit = items.find(render_id);
+        if (hit != items.end()) {
+            hit->second->hairline_point_picking_active = false;
+        }
+        show_hairline_plane_window = false;
     }
 
     ImGui::SetNextWindowSize(ImVec2(480, 520), ImGuiCond_Once);

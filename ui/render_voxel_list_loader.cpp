@@ -332,6 +332,21 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
         sinriv::kigstudio::to_json(item.addon_center_point));
     cJSON_AddBoolToObject(obj, "show_addon_center",
                           item.show_addon_center);
+    cJSON_AddBoolToObject(obj, "hairline_plane_enabled",
+                          item.hairline_plane_enabled);
+    cJSON_AddBoolToObject(obj, "hairline_plane_use_y",
+                          item.hairline_plane_use_y);
+    cJSON_AddNumberToObject(obj, "hairline_plane_y",
+                            item.hairline_plane_y);
+    cJSON_AddItemToObject(
+        obj, "hairline_plane_p0",
+        sinriv::kigstudio::to_json(item.hairline_plane_points[0]));
+    cJSON_AddItemToObject(
+        obj, "hairline_plane_p1",
+        sinriv::kigstudio::to_json(item.hairline_plane_points[1]));
+    cJSON_AddItemToObject(
+        obj, "hairline_plane_p2",
+        sinriv::kigstudio::to_json(item.hairline_plane_points[2]));
     cJSON_AddNumberToObject(obj, "silhouette_shape_mode",
                             static_cast<int>(item.silhouette_shape_mode));
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
@@ -650,6 +665,25 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->showSilhouetteCenter = cJSON_IsTrue(child);
             } else if (strcmp(key, "show_addon_center") == 0) {
                 item->show_addon_center = cJSON_IsTrue(child);
+            } else if (strcmp(key, "hairline_plane_enabled") == 0) {
+                item->hairline_plane_enabled = cJSON_IsTrue(child);
+            } else if (strcmp(key, "hairline_plane_use_y") == 0) {
+                item->hairline_plane_use_y = cJSON_IsTrue(child);
+            } else if (strcmp(key, "hairline_plane_y") == 0) {
+                item->hairline_plane_y =
+                    static_cast<float>(child->valuedouble);
+            } else if (strcmp(key, "hairline_plane_p0") == 0) {
+                item->hairline_plane_points[0] =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "hairline_plane_p1") == 0) {
+                item->hairline_plane_points[1] =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "hairline_plane_p2") == 0) {
+                item->hairline_plane_points[2] =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
             } else if (strcmp(key, "voxel_picking_enabled") == 0) {
                 item->voxel_picking_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "use_cgal_skeleton") == 0) {
@@ -827,6 +861,21 @@ cJSON* RenderVoxelList::snapshot_to_json(
         sinriv::kigstudio::to_json(snapshot.addon_center_point));
     cJSON_AddBoolToObject(obj, "show_addon_center",
                           snapshot.show_addon_center);
+    cJSON_AddBoolToObject(obj, "hairline_plane_enabled",
+                          snapshot.hairline_plane_enabled);
+    cJSON_AddBoolToObject(obj, "hairline_plane_use_y",
+                          snapshot.hairline_plane_use_y);
+    cJSON_AddNumberToObject(obj, "hairline_plane_y",
+                            snapshot.hairline_plane_y);
+    cJSON_AddItemToObject(
+        obj, "hairline_plane_p0",
+        sinriv::kigstudio::to_json(snapshot.hairline_plane_points[0]));
+    cJSON_AddItemToObject(
+        obj, "hairline_plane_p1",
+        sinriv::kigstudio::to_json(snapshot.hairline_plane_points[1]));
+    cJSON_AddItemToObject(
+        obj, "hairline_plane_p2",
+        sinriv::kigstudio::to_json(snapshot.hairline_plane_points[2]));
     cJSON_AddNumberToObject(obj, "silhouette_shape_mode",
                             static_cast<int>(snapshot.silhouette_shape_mode));
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
@@ -1115,6 +1164,25 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.show_silhouette_center = cJSON_IsTrue(child);
             } else if (strcmp(key, "show_addon_center") == 0) {
                 snapshot.show_addon_center = cJSON_IsTrue(child);
+            } else if (strcmp(key, "hairline_plane_enabled") == 0) {
+                snapshot.hairline_plane_enabled = cJSON_IsTrue(child);
+            } else if (strcmp(key, "hairline_plane_use_y") == 0) {
+                snapshot.hairline_plane_use_y = cJSON_IsTrue(child);
+            } else if (strcmp(key, "hairline_plane_y") == 0) {
+                snapshot.hairline_plane_y =
+                    static_cast<float>(child->valuedouble);
+            } else if (strcmp(key, "hairline_plane_p0") == 0) {
+                snapshot.hairline_plane_points[0] =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "hairline_plane_p1") == 0) {
+                snapshot.hairline_plane_points[1] =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "hairline_plane_p2") == 0) {
+                snapshot.hairline_plane_points[2] =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
             } else if (strcmp(key, "addon_reveal") == 0) {
                 snapshot.addon_reveal = cJSON_IsTrue(child);
             } else if (strcmp(key, "addon_split") == 0) {

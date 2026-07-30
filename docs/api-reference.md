@@ -773,6 +773,8 @@ curl -X POST http://127.0.0.1:18920/api/v1/nodes/1/hair/angle-config \
   -H "Content-Type: application/json" \
   -d '{
     "base_node_id": 0,
+    "north_pole": [0.0, 1.0, 0.0],
+    "front_reference": [0.0, 0.0, 1.0],
     "angles": [
       {"x": 0.0, "y": 1.0, "theta": 0.0, "phi": 60.0},
       {"x": 1.0, "y": 1.0, "theta": 15.0, "phi": 55.0},
@@ -785,7 +787,7 @@ curl -X POST http://127.0.0.1:18920/api/v1/nodes/1/hair/angle-config \
   }'
 ```
 
-`theta` / `phi` 定义了射线方向。射线从该方向（头外部远处）射向中心点，与底模的交点即为表面坐标。
+`theta` / `phi` 定义了射线方向。`north_pole`（可选，默认 `[0, 1, 0]`）定义球面坐标系的北极方向（`phi=+90°`），即世界坐标 +Y 轴。`front_reference`（可选，默认 `[0, 0, 1]`）与 `north_pole` 共同确定鼻尖所在的矢状面，投影后为 `theta=0°`（正前方）方向。射线从该方向（头外部远处）射向中心点，与底模的交点即为表面坐标。
 
 响应：
 ```json
@@ -919,6 +921,8 @@ curl -X POST http://127.0.0.1:18920/api/v1/nodes/1/hair/angle-config \
   -H "Content-Type: application/json" \
   -d '{
     "base_node_id": 0,
+    "north_pole": [0.0, 1.0, 0.0],
+    "front_reference": [0.0, 0.0, 1.0],
     "angles": [
       {"x": 0.0, "y": 1.0, "theta": 0, "phi": 60},
       {"x": 0.0, "y": 2.0, "theta": 0, "phi": 50}

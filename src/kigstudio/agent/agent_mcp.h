@@ -1064,6 +1064,18 @@ private:
 			    prop_arr("angles",
 			             "Array of angle entries: [{x,y,theta,phi},...]",
 			             "object"));
+			cJSON_AddItemToObject(
+			    p, "north_pole",
+			    prop_arr("north_pole",
+			             "North pole direction [x,y,z] for spherical frame. "
+			             "Default [0,1,0] (world up).",
+			             "number"));
+			cJSON_AddItemToObject(
+			    p, "front_reference",
+			    prop_arr("front_reference",
+			             "Front reference direction [x,y,z]. Together with north_pole "
+			             "defines the sagittal (nose) plane. Default [0,0,1] (world +Z).",
+			             "number"));
 			add_tool("strand_set_angle_config",
 			         "Configure per-position ray angles for semantic coordinate system. "
 			         "Builds BVH tree from base model. MUST be called before "

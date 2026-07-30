@@ -55,6 +55,7 @@ int ui_main(int argc, const char* const* argv) {
     bool middleMouseDownOnPick = false;
     bool guide_curve_click_valid = false;
     bool width_edit_click_valid = false;
+    bool hairline_point_pick_valid = false;
     SDL_SetMainReady();
     // 显示系统 IME 候选窗口（中文/日文输入法需要）
     SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
@@ -380,6 +381,9 @@ int ui_main(int argc, const char* const* argv) {
                             if (it->second->width_editing_active) {
                                 width_edit_click_valid = true;
                             }
+                            if (it->second->hairline_point_picking_active) {
+                                hairline_point_pick_valid = true;
+                            }
                         }
                     }
                     io.MouseDown[0] = true;
@@ -448,6 +452,21 @@ int ui_main(int argc, const char* const* argv) {
                                     .mesh_dirty = true;
                             }
                         }
+                    } else if (hairline_point_pick_valid &&
+                               render_items.mouse_world_pos_valid) {
+                        // 发际线三点拾取
+                        auto it = render_items.items.find(render_items.render_id);
+                        if (it != render_items.items.end()) {
+                            auto& item = *it->second;
+                            if (item.hairline_point_picking_active &&
+                                item.hairline_picking_point_index >= 0 &&
+                                item.hairline_picking_point_index < 3) {
+                                item.hairline_plane_points
+                                    [item.hairline_picking_point_index] =
+                                    render_items.mouse_world_pos;
+                                item.hairline_point_picking_active = false;
+                            }
+                        }
                     } else if (leftMouseDown &&
                                (std::abs(pitch) > 1e-6f ||
                                 std::abs(yaw) > 1e-6f)) {
@@ -472,6 +491,7 @@ int ui_main(int argc, const char* const* argv) {
                     leftMouseDownOnPick = false;
                     guide_curve_click_valid = false;
                     width_edit_click_valid = false;
+                    hairline_point_pick_valid = false;
                     io.MouseDown[0] = false;
                 } else if (e.button.button == SDL_BUTTON_MIDDLE) {
                     middleMouseDown = false;
