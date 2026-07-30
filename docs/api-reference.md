@@ -966,3 +966,103 @@ kigstudio.exe [--agent-port PORT] [--no-agent]
 |------|------|
 | `--agent-port 18920` | 指定 HTTP 服务端口（默认 18920） |
 | `--no-agent` | 禁用 HTTP 服务 |
+
+---
+
+## 8. MCP (Model Context Protocol)
+
+KigStudio 内建 MCP 支持（SSE 传输），兼容 Claude Desktop、Claude Code 等 MCP 客户端。
+
+### 协议
+
+| 项目 | 说明 |
+|------|------|
+| 协议版本 | MCP 2024-11-05 |
+| 传输 | SSE (Server-Sent Events) over HTTP |
+| 端点 | `GET /mcp/sse` + `POST /mcp/messages` |
+| JSON-RPC | 2.0 |
+
+### 工作流程
+
+```
+Client                          KigStudio
+  |                                 |
+  |── GET /mcp/sse ───────────────>|  打开 SSE 连接
+  |<── event: endpoint              |
+  |    data: /mcp/messages?         |
+  |    sessionId=abc123... ────────|  返回 session 端点
+  |                                 |
+  |── POST /mcp/messages ────────>|  发送 JSON-RPC 请求
+  |   ?sessionId=abc123            |
+  |   {"method":"tools/list",...}   |
+  |   (HTTP 202 Accepted) ────────|  
+  |<── event: message              |  结果通过 SSE 返回
+  |    data: {"result":{...}} ────|
+  |                                 |
+  |── POST /mcp/messages ────────>|  调用工具
+  |   {"method":"tools/call",...}   |
+  |<── event: message              |  结果通过 SSE 返回
+  |    data: {"result":{...}} ────|
+```
+
+### Claude Desktop 配置
+
+在 `claude_desktop_config.json` 或项目的 `.claude/mcp.json` 中添加：
+
+```json
+{
+  "mcpServers": {
+    "kigstudio": {
+      "url": "http://127.0.0.1:18920/mcp/sse"
+    }
+  }
+}
+```
+
+> **前提**：KigStudio 必须先启动（`kigstudio.exe`），HTTP server 默认监听 18920 端口。
+
+### 可用工具
+
+MCP 的 `tools/list` 返回所有已注册的工具，共 30+ 个，涵盖：
+
+| 分类 | 工具数 | 示例 |
+|------|--------|------|
+| system | 5 | `system_status`, `system_wait_idle`, `system_toast` |
+| project | 5 | `project_open`, `project_save_as`, `project_create` |
+| node | 7 | `node_list`, `node_get`, `node_create`, `node_update` |
+| mesh | 8 | `mesh_import`, `mesh_export`, `mesh_repair`, `mesh_subdivide`, `mesh_boolean_union` |
+| strand | 8 | `strand_list`, `strand_create`, `strand_update`, `strand_move` |
+| semantic | 3 | `strand_set_angle_config`, `strand_add_semantic_guide_point`, `strand_add_semantic_width_point` |
+
+每个工具都带有完整的 JSON Schema（inputSchema），AI 模型可以自动理解参数格式并生成正确的调用。
+
+### 调试：用 curl 测试 MCP
+
+```bash
+# 1. 打开 SSE 连接（终端1，持续运行）
+curl -N http://127.0.0.1:18920/mcp/sse
+# 输出:
+# event: endpoint
+# data: /mcp/messages?sessionId=a1b2c3d4e5f67890
+# (此后阻塞等待消息)
+
+# 2. 发送 JSON-RPC 请求（终端2，使用上面返回的 sessionId）
+SESSION="a1b2c3d4e5f67890"
+
+# Initialize 握手
+curl -X POST "http://127.0.0.1:18920/mcp/messages?sessionId=$SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
+
+# 获取工具列表
+curl -X POST "http://127.0.0.1:18920/mcp/messages?sessionId=$SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"2","method":"tools/list","params":{}}'
+
+# 调用工具
+curl -X POST "http://127.0.0.1:18920/mcp/messages?sessionId=$SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"3","method":"tools/call","params":{"name":"system_status","arguments":{}}}'
+
+# 终端1 的 SSE 流会逐条返回 JSON-RPC 响应
+```

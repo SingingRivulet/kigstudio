@@ -32,6 +32,7 @@
 #pragma warning(pop)
 #endif
 
+#include "kigstudio/agent/agent_mcp.h"
 #include "ui/render_voxel_list.h"
 
 namespace sinriv::kigstudio::agent {
@@ -45,6 +46,9 @@ struct AgentServer::Impl {
 	std::thread listen_thread;
 	std::mutex ws_mutex;
 	std::vector<httplib::ws::WebSocket*> ws_clients;
+
+	// MCP SSE handler (initialised in start() with queue reference)
+	std::unique_ptr<McpHandler> mcp_handler;
 };
 
 // ==========================================================================
@@ -87,6 +91,9 @@ bool AgentServer::start(std::uint16_t port) {
 	if (running_.load(std::memory_order_acquire)) return true;
 
 	impl_->svr = std::make_unique<httplib::Server>();
+
+	// Initialise MCP handler (SSE transport on same HTTP server)
+	impl_->mcp_handler = std::make_unique<McpHandler>(queue_);
 
 	register_routes();
 
@@ -776,6 +783,34 @@ void AgentServer::register_routes() {
 			return;
 		}
 		run_command(req, res, "system.toast", params);
+	});
+
+	// ================================================================
+	// MCP (Model Context Protocol) SSE transport
+	// ================================================================
+
+	// GET /mcp/sse — Open Server-Sent Events stream.
+	// The first event carries the endpoint URL for POSTing messages.
+	svr.Get("/mcp/sse", [this](const httplib::Request& req,
+	                           httplib::Response& res) {
+		if (!impl_->mcp_handler) {
+			res.status = 503;
+			res.set_content("MCP not available", "text/plain");
+			return;
+		}
+		impl_->mcp_handler->handle_sse_connect(req, res);
+	});
+
+	// POST /mcp/messages — Client sends JSON-RPC 2.0 requests here.
+	// Session is identified by ?sessionId=xxx query parameter.
+	svr.Post("/mcp/messages", [this](const httplib::Request& req,
+	                                 httplib::Response& res) {
+		if (!impl_->mcp_handler) {
+			res.status = 503;
+			res.set_content("MCP not available", "text/plain");
+			return;
+		}
+		impl_->mcp_handler->handle_message(req, res);
 	});
 }
 
