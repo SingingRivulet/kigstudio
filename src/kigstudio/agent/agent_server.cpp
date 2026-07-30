@@ -286,17 +286,17 @@ void AgentServer::register_routes() {
 	// System endpoints
 	// ================================================================
 
-	svr.Get("/api/v1/system/status", [&](const httplib::Request& req,
+	svr.Get("/api/v1/system/status", [=](const httplib::Request& req,
 	                                     httplib::Response& res) {
 		run_command(req, res, "system.status", nullptr);
 	});
 
-	svr.Get("/api/v1/system/queue", [&](const httplib::Request& req,
+	svr.Get("/api/v1/system/queue", [=](const httplib::Request& req,
 	                                    httplib::Response& res) {
 		run_command(req, res, "system.queue", nullptr);
 	});
 
-	svr.Get("/api/v1/system/log", [&](const httplib::Request& req,
+	svr.Get("/api/v1/system/log", [=](const httplib::Request& req,
 	                                  httplib::Response& res) {
 		cJSON* params = parse_query(req);
 		run_command(req, res, "system.log", params);
@@ -306,12 +306,12 @@ void AgentServer::register_routes() {
 	// Project endpoints
 	// ================================================================
 
-	svr.Get("/api/v1/project", [&](const httplib::Request& req,
+	svr.Get("/api/v1/project", [=](const httplib::Request& req,
 	                               httplib::Response& res) {
 		run_command(req, res, "project.info", nullptr);
 	});
 
-	svr.Post("/api/v1/project/open", [&](const httplib::Request& req,
+	svr.Post("/api/v1/project/open", [=](const httplib::Request& req,
 	                                     httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -325,7 +325,7 @@ void AgentServer::register_routes() {
 		run_command(req, res, "project.open", params);
 	});
 
-	svr.Post("/api/v1/project/save", [&](const httplib::Request& req,
+	svr.Post("/api/v1/project/save", [=](const httplib::Request& req,
 	                                     httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -333,7 +333,7 @@ void AgentServer::register_routes() {
 		run_command(req, res, "project.save", params);
 	});
 
-	svr.Post("/api/v1/project/save-as", [&](const httplib::Request& req,
+	svr.Post("/api/v1/project/save-as", [=](const httplib::Request& req,
 	                                        httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -347,7 +347,7 @@ void AgentServer::register_routes() {
 		run_command(req, res, "project.saveAs", params);
 	});
 
-	svr.Post("/api/v1/project/create", [&](const httplib::Request& req,
+	svr.Post("/api/v1/project/create", [=](const httplib::Request& req,
 	                                       httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -365,13 +365,13 @@ void AgentServer::register_routes() {
 	// Node endpoints
 	// ================================================================
 
-	svr.Get("/api/v1/nodes", [&](const httplib::Request& req,
+	svr.Get("/api/v1/nodes", [=](const httplib::Request& req,
 	                             httplib::Response& res) {
 		run_command(req, res, "node.list", nullptr);
 	});
 
 	// GET /api/v1/nodes/:id
-	svr.Get(R"(/api/v1/nodes/(\d+))", [&](const httplib::Request& req,
+	svr.Get(R"(/api/v1/nodes/(\d+))", [=](const httplib::Request& req,
 	                                      httplib::Response& res) {
 		int id = path_int_param(req, 3);
 		cJSON* params = cJSON_CreateObject();
@@ -380,7 +380,7 @@ void AgentServer::register_routes() {
 	});
 
 	// POST /api/v1/nodes
-	svr.Post("/api/v1/nodes", [&](const httplib::Request& req,
+	svr.Post("/api/v1/nodes", [=](const httplib::Request& req,
 	                              httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -389,7 +389,7 @@ void AgentServer::register_routes() {
 	});
 
 	// DELETE /api/v1/nodes/:id
-	svr.Delete(R"(/api/v1/nodes/(\d+))", [&](const httplib::Request& req,
+	svr.Delete(R"(/api/v1/nodes/(\d+))", [=](const httplib::Request& req,
 	                                         httplib::Response& res) {
 		int id = path_int_param(req, 3);
 		cJSON* params = cJSON_CreateObject();
@@ -398,7 +398,7 @@ void AgentServer::register_routes() {
 	});
 
 	// PATCH /api/v1/nodes/:id
-	svr.Patch(R"(/api/v1/nodes/(\d+))", [&](const httplib::Request& req,
+	svr.Patch(R"(/api/v1/nodes/(\d+))", [=](const httplib::Request& req,
 	                                        httplib::Response& res) {
 		int id = path_int_param(req, 3);
 		std::string err;
@@ -415,7 +415,7 @@ void AgentServer::register_routes() {
 	});
 
 	// GET /api/v1/nodes/:id/children
-	svr.Get(R"(/api/v1/nodes/(\d+)/children)", [&](const httplib::Request& req,
+	svr.Get(R"(/api/v1/nodes/(\d+)/children)", [=](const httplib::Request& req,
 	                                               httplib::Response& res) {
 		int id = path_int_param(req, 3);
 		cJSON* params = cJSON_CreateObject();
@@ -424,7 +424,7 @@ void AgentServer::register_routes() {
 	});
 
 	// GET /api/v1/nodes/:id/bounds
-	svr.Get(R"(/api/v1/nodes/(\d+)/bounds)", [&](const httplib::Request& req,
+	svr.Get(R"(/api/v1/nodes/(\d+)/bounds)", [=](const httplib::Request& req,
 	                                             httplib::Response& res) {
 		int id = path_int_param(req, 3);
 		cJSON* params = cJSON_CreateObject();
@@ -436,7 +436,7 @@ void AgentServer::register_routes() {
 	// Mesh endpoints
 	// ================================================================
 
-	svr.Post("/api/v1/mesh/import", [&](const httplib::Request& req,
+	svr.Post("/api/v1/mesh/import", [=](const httplib::Request& req,
 	                                    httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -450,7 +450,7 @@ void AgentServer::register_routes() {
 		run_command(req, res, "mesh.import", params);
 	});
 
-	svr.Post("/api/v1/mesh/export", [&](const httplib::Request& req,
+	svr.Post("/api/v1/mesh/export", [=](const httplib::Request& req,
 	                                    httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -464,7 +464,7 @@ void AgentServer::register_routes() {
 		run_command(req, res, "mesh.export", params);
 	});
 
-	svr.Post("/api/v1/mesh/export-all", [&](const httplib::Request& req,
+	svr.Post("/api/v1/mesh/export-all", [=](const httplib::Request& req,
 	                                        httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -478,7 +478,7 @@ void AgentServer::register_routes() {
 		run_command(req, res, "mesh.exportAll", params);
 	});
 
-	svr.Post("/api/v1/mesh/repair", [&](const httplib::Request& req,
+	svr.Post("/api/v1/mesh/repair", [=](const httplib::Request& req,
 	                                    httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -492,7 +492,7 @@ void AgentServer::register_routes() {
 		run_command(req, res, "mesh.repair", params);
 	});
 
-	svr.Post("/api/v1/mesh/subdivide", [&](const httplib::Request& req,
+	svr.Post("/api/v1/mesh/subdivide", [=](const httplib::Request& req,
 	                                       httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -506,7 +506,7 @@ void AgentServer::register_routes() {
 		run_command(req, res, "mesh.subdivide", params);
 	});
 
-	svr.Post("/api/v1/mesh/simplify", [&](const httplib::Request& req,
+	svr.Post("/api/v1/mesh/simplify", [=](const httplib::Request& req,
 	                                      httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -520,7 +520,7 @@ void AgentServer::register_routes() {
 		run_command(req, res, "mesh.simplify", params);
 	});
 
-	svr.Post("/api/v1/mesh/boolean-union", [&](const httplib::Request& req,
+	svr.Post("/api/v1/mesh/boolean-union", [=](const httplib::Request& req,
 	                                           httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -534,13 +534,201 @@ void AgentServer::register_routes() {
 		run_command(req, res, "mesh.booleanUnion", params);
 	});
 
-	svr.Get(R"(/api/v1/mesh/(\d+)/is-manifold)", [&](const httplib::Request& req,
+	svr.Get(R"(/api/v1/mesh/(\d+)/is-manifold)", [=](const httplib::Request& req,
 	                                                  httplib::Response& res) {
 		int id = path_int_param(req, 3);
 		cJSON* params = cJSON_CreateObject();
 		cJSON_AddNumberToObject(params, "node_id", id);
 		run_command(req, res, "mesh.isManifold", params);
 	});
+
+	// ================================================================
+	// Strand (hair) endpoints
+	// ================================================================
+
+	// GET /api/v1/nodes/:id/strands
+	svr.Get(R"(/api/v1/nodes/(\d+)/strands)",
+	        [=](const httplib::Request& req, httplib::Response& res) {
+		        int node_id = path_int_param(req, 3);
+		        cJSON* params = cJSON_CreateObject();
+		        cJSON_AddNumberToObject(params, "node_id", node_id);
+		        run_command(req, res, "strand.list", params);
+	        });
+
+	// GET /api/v1/nodes/:id/strands/:index
+	svr.Get(R"(/api/v1/nodes/(\d+)/strands/(\d+))",
+	        [=](const httplib::Request& req, httplib::Response& res) {
+		        int node_id = path_int_param(req, 3);
+		        int strand_index = path_int_param(req, 5);
+		        cJSON* params = cJSON_CreateObject();
+		        cJSON_AddNumberToObject(params, "node_id", node_id);
+		        cJSON_AddNumberToObject(params, "strand_index",
+		                                strand_index);
+		        run_command(req, res, "strand.get", params);
+	        });
+
+	// POST /api/v1/nodes/:id/strands
+	svr.Post(R"(/api/v1/nodes/(\d+)/strands)",
+	         [=](const httplib::Request& req, httplib::Response& res) {
+		         int node_id = path_int_param(req, 3);
+		         std::string err;
+		         cJSON* params = json_parse_body(req.body, err);
+		         if (!params) params = cJSON_CreateObject();
+		         cJSON_AddNumberToObject(params, "node_id", node_id);
+		         run_command(req, res, "strand.create", params);
+	         });
+
+	// DELETE /api/v1/nodes/:id/strands/:index
+	svr.Delete(R"(/api/v1/nodes/(\d+)/strands/(\d+))",
+	           [=](const httplib::Request& req, httplib::Response& res) {
+		           int node_id = path_int_param(req, 3);
+		           int strand_index = path_int_param(req, 5);
+		           cJSON* params = cJSON_CreateObject();
+		           cJSON_AddNumberToObject(params, "node_id", node_id);
+		           cJSON_AddNumberToObject(params, "strand_index",
+		                                  strand_index);
+		           run_command(req, res, "strand.delete", params);
+	           });
+
+	// PATCH /api/v1/nodes/:id/strands/:index
+	svr.Patch(R"(/api/v1/nodes/(\d+)/strands/(\d+))",
+	          [=](const httplib::Request& req, httplib::Response& res) {
+		          int node_id = path_int_param(req, 3);
+		          int strand_index = path_int_param(req, 5);
+		          std::string err;
+		          cJSON* params = json_parse_body(req.body, err);
+		          if (!params) {
+			          res.status = 400;
+			          res.set_content(
+			              "{\"ok\":false,\"error\":\"" + err + "\"}",
+			              "application/json");
+			          return;
+		          }
+		          cJSON_AddNumberToObject(params, "node_id", node_id);
+		          cJSON_AddNumberToObject(params, "strand_index",
+		                                 strand_index);
+		          run_command(req, res, "strand.update", params);
+	          });
+
+	// POST /api/v1/nodes/:id/strands/:index/move
+	svr.Post(R"(/api/v1/nodes/(\d+)/strands/(\d+)/move)",
+	         [=](const httplib::Request& req, httplib::Response& res) {
+		         int node_id = path_int_param(req, 3);
+		         int strand_index = path_int_param(req, 5);
+		         std::string err;
+		         cJSON* params = json_parse_body(req.body, err);
+		         if (!params) {
+			         res.status = 400;
+			         res.set_content(
+			             "{\"ok\":false,\"error\":\"" + err + "\"}",
+			             "application/json");
+			         return;
+		         }
+		         cJSON_AddNumberToObject(params, "node_id", node_id);
+		         cJSON_AddNumberToObject(params, "strand_index",
+		                                strand_index);
+		         run_command(req, res, "strand.move", params);
+	         });
+
+	// PUT /api/v1/nodes/:id/strands/center-point
+	svr.Put(R"(/api/v1/nodes/(\d+)/strands/center-point)",
+	        [=](const httplib::Request& req, httplib::Response& res) {
+		        int node_id = path_int_param(req, 3);
+		        std::string err;
+		        cJSON* params = json_parse_body(req.body, err);
+		        if (!params) {
+			        res.status = 400;
+			        res.set_content(
+			            "{\"ok\":false,\"error\":\"" + err + "\"}",
+			            "application/json");
+			        return;
+		        }
+		        cJSON_AddNumberToObject(params, "node_id", node_id);
+		        run_command(req, res, "strand.setCenterPoint", params);
+	        });
+
+	// PUT /api/v1/nodes/:id/addon-options
+	svr.Put(R"(/api/v1/nodes/(\d+)/addon-options)",
+	        [=](const httplib::Request& req, httplib::Response& res) {
+		        int node_id = path_int_param(req, 3);
+		        std::string err;
+		        cJSON* params = json_parse_body(req.body, err);
+		        if (!params) {
+			        res.status = 400;
+			        res.set_content(
+			            "{\"ok\":false,\"error\":\"" + err + "\"}",
+			            "application/json");
+			        return;
+		        }
+		        cJSON_AddNumberToObject(params, "node_id", node_id);
+		        run_command(req, res, "strand.setAddonOptions", params);
+	        });
+
+	// ================================================================
+	// Semantic-coordinate endpoints (head coordinate system)
+	// ================================================================
+
+	// POST /api/v1/nodes/:id/hair/angle-config
+	// Sets per-(x,y) ray angles and builds BVH tree from base model.
+	svr.Post(R"(/api/v1/nodes/(\d+)/hair/angle-config)",
+	         [=](const httplib::Request& req, httplib::Response& res) {
+		         int node_id = path_int_param(req, 3);
+		         std::string err;
+		         cJSON* params = json_parse_body(req.body, err);
+		         if (!params) {
+			         res.status = 400;
+			         res.set_content(
+			             "{\"ok\":false,\"error\":\"" + err + "\"}",
+			             "application/json");
+			         return;
+		         }
+		         cJSON_AddNumberToObject(params, "node_id", node_id);
+		         run_command(req, res, "strand.setAngleConfig", params);
+	         });
+
+	// POST /api/v1/nodes/:id/strands/:index/guide-points/semantic
+	// Adds a guide point by casting a ray from the configured angle.
+	svr.Post(R"(/api/v1/nodes/(\d+)/strands/(\d+)/guide-points/semantic)",
+	         [=](const httplib::Request& req, httplib::Response& res) {
+		         int node_id = path_int_param(req, 3);
+		         int strand_index = path_int_param(req, 5);
+		         std::string err;
+		         cJSON* params = json_parse_body(req.body, err);
+		         if (!params) {
+			         res.status = 400;
+			         res.set_content(
+			             "{\"ok\":false,\"error\":\"" + err + "\"}",
+			             "application/json");
+			         return;
+		         }
+		         cJSON_AddNumberToObject(params, "node_id", node_id);
+		         cJSON_AddNumberToObject(params, "strand_index",
+		                                strand_index);
+		         run_command(req, res, "strand.addSemanticGuidePoint",
+		                     params);
+	         });
+
+	// POST /api/v1/nodes/:id/strands/:index/width-points/semantic
+	// Adds a width vector by casting a ray and computing curve projection.
+	svr.Post(R"(/api/v1/nodes/(\d+)/strands/(\d+)/width-points/semantic)",
+	         [=](const httplib::Request& req, httplib::Response& res) {
+		         int node_id = path_int_param(req, 3);
+		         int strand_index = path_int_param(req, 5);
+		         std::string err;
+		         cJSON* params = json_parse_body(req.body, err);
+		         if (!params) {
+			         res.status = 400;
+			         res.set_content(
+			             "{\"ok\":false,\"error\":\"" + err + "\"}",
+			             "application/json");
+			         return;
+		         }
+		         cJSON_AddNumberToObject(params, "node_id", node_id);
+		         cJSON_AddNumberToObject(params, "strand_index",
+		                                strand_index);
+		         run_command(req, res, "strand.addSemanticWidthPoint",
+		                     params);
+	         });
 
 	// ================================================================
 	// WebSocket endpoint for progress events
@@ -564,7 +752,7 @@ void AgentServer::register_routes() {
 	// POST /api/v1/system/wait-idle
 	// ================================================================
 
-	svr.Post("/api/v1/system/wait-idle", [&](const httplib::Request& req,
+	svr.Post("/api/v1/system/wait-idle", [=](const httplib::Request& req,
 	                                         httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);
@@ -576,7 +764,7 @@ void AgentServer::register_routes() {
 	// POST /api/v1/system/toast
 	// ================================================================
 
-	svr.Post("/api/v1/system/toast", [&](const httplib::Request& req,
+	svr.Post("/api/v1/system/toast", [=](const httplib::Request& req,
 	                                     httplib::Response& res) {
 		std::string err;
 		cJSON* params = json_parse_body(req.body, err);

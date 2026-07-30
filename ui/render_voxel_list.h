@@ -36,6 +36,7 @@
 #include "kigstudio/voxel/voxel.h"
 #include "kigstudio/voxel/voxel_EDT.h"
 #include "kigstudio/voxel/voxelizer_svo.h"
+#include "kigstudio/voxel/triangle_bvh.h"
 #include "ui/cross_section_editor.h"
 #include "ui/render_deferred.h"
 
@@ -176,6 +177,14 @@ struct HairStrand {
 
     // Dirty flag: set to true when any data affecting the loft mesh changes
     bool mesh_dirty = true;
+};
+
+/// Per-position angle configuration for semantic-coordinate ray casting.
+/// Maps a semantic (X, Y) position to spherical angles that define the
+/// direction from which a ray is cast toward the center point.
+struct HairAngleEntry {
+    float theta = 0.0f;  // azimuth (deg): 0=front, +90=right
+    float phi = 45.0f;   // polar from horizontal (deg): 0=level, +90=up
 };
 
 // Result of sampling the guide curve at a given curve_id
@@ -646,6 +655,15 @@ class RenderVoxelList {
         std::vector<MarkedVoxelsSnapshot> marked_redo_stack;
 
         bool dirty = false;
+
+        /// Semantic angle config: maps (X,Y) → (theta, phi) for ray casting.
+        /// Must be set via setAngleConfig before semantic point addition.
+        std::map<std::pair<float, float>, HairAngleEntry> hair_angle_config;
+        /// Node id whose mesh was used to build hair_bvh (-1 if none).
+        int hair_bvh_base_node_id = -1;
+        /// BVH tree for ray-casting against the base model.
+        /// Built when angle config is set and rebuilt when the base model changes.
+        std::unique_ptr<sinriv::kigstudio::voxel::triangle_bvh<float>> hair_bvh;
 
         inline void markVoxelChunkDirty(int wx,
                                         int wy,

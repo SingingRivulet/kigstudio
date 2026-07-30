@@ -27,6 +27,8 @@ namespace sinriv::kigstudio::agent {
 
 using List = sinriv::ui::render::RenderVoxelList;
 using Item = sinriv::ui::render::RenderVoxelList::RenderVoxelItem;
+using HairStrand = sinriv::ui::render::HairStrand;
+using HairAngleEntry = sinriv::ui::render::HairAngleEntry;
 using MeshData = std::vector<std::tuple<
     sinriv::kigstudio::voxel::triangle_bvh<float>::triangle,
     sinriv::kigstudio::vec3<float>>>;
@@ -132,6 +134,19 @@ cJSON* h_mesh_simplify(cJSON* params, List& list);
 cJSON* h_mesh_boolean_union(cJSON* params, List& list);
 cJSON* h_mesh_is_manifold(cJSON* params, List& list);
 
+// strand
+cJSON* h_strand_list(cJSON* params, List& list);
+cJSON* h_strand_get(cJSON* params, List& list);
+cJSON* h_strand_create(cJSON* params, List& list);
+cJSON* h_strand_delete(cJSON* params, List& list);
+cJSON* h_strand_update(cJSON* params, List& list);
+cJSON* h_strand_move(cJSON* params, List& list);
+cJSON* h_strand_set_center_point(cJSON* params, List& list);
+cJSON* h_strand_set_addon_options(cJSON* params, List& list);
+cJSON* h_strand_set_angle_config(cJSON* params, List& list);
+cJSON* h_strand_add_semantic_guide_point(cJSON* params, List& list);
+cJSON* h_strand_add_semantic_width_point(cJSON* params, List& list);
+
 // ---- dispatch ----
 
 /// Main dispatch: route a method string to the appropriate handler.
@@ -172,6 +187,20 @@ inline cJSON* agent_dispatch(const std::string& method, cJSON* params,
 	        {"mesh.simplify", h_mesh_simplify},
 	        {"mesh.booleanUnion", h_mesh_boolean_union},
 	        {"mesh.isManifold", h_mesh_is_manifold},
+	        // strand
+	        {"strand.list", h_strand_list},
+	        {"strand.get", h_strand_get},
+	        {"strand.create", h_strand_create},
+	        {"strand.delete", h_strand_delete},
+	        {"strand.update", h_strand_update},
+	        {"strand.move", h_strand_move},
+	        {"strand.setCenterPoint", h_strand_set_center_point},
+	        {"strand.setAddonOptions", h_strand_set_addon_options},
+	        {"strand.setAngleConfig", h_strand_set_angle_config},
+	        {"strand.addSemanticGuidePoint",
+	         h_strand_add_semantic_guide_point},
+	        {"strand.addSemanticWidthPoint",
+	         h_strand_add_semantic_width_point},
 	    };
 
 	auto it = table.find(method);
@@ -840,6 +869,824 @@ inline cJSON* h_mesh_is_manifold(cJSON* params, List& list) {
 	cJSON* r = cJSON_CreateObject();
 	cJSON_AddTrueToObject(r, "ok");
 	cJSON_AddBoolToObject(r, "is_manifold", ready);
+	return r;
+}
+
+// ===================================================================
+// strand.* handlers
+// ===================================================================
+
+/// Serialise a vec2f to cJSON object {x, y}
+inline cJSON* vec2_to_json(const sinriv::kigstudio::vec2<float>& v) {
+	cJSON* obj = cJSON_CreateObject();
+	cJSON_AddNumberToObject(obj, "x", static_cast<double>(v.x));
+	cJSON_AddNumberToObject(obj, "y", static_cast<double>(v.y));
+	return obj;
+}
+
+/// Deserialise a cJSON array [x, y, z] to vec3f
+inline bool json_to_vec3(cJSON* arr,
+                         sinriv::kigstudio::voxel::vec3f& out) {
+	if (!arr || !cJSON_IsArray(arr)) return false;
+	cJSON* x = cJSON_GetArrayItem(arr, 0);
+	cJSON* y = cJSON_GetArrayItem(arr, 1);
+	cJSON* z = cJSON_GetArrayItem(arr, 2);
+	if (!cJSON_IsNumber(x) || !cJSON_IsNumber(y) || !cJSON_IsNumber(z))
+		return false;
+	out.x = static_cast<float>(x->valuedouble);
+	out.y = static_cast<float>(y->valuedouble);
+	out.z = static_cast<float>(z->valuedouble);
+	return true;
+}
+
+/// Deserialise a cJSON object {x, y} to vec2f
+inline bool json_to_vec2(cJSON* obj,
+                         sinriv::kigstudio::vec2<float>& out) {
+	if (!obj) return false;
+	cJSON* x = cJSON_GetObjectItem(obj, "x");
+	cJSON* y = cJSON_GetObjectItem(obj, "y");
+	if (!cJSON_IsNumber(x) || !cJSON_IsNumber(y)) return false;
+	out.x = static_cast<float>(x->valuedouble);
+	out.y = static_cast<float>(y->valuedouble);
+	return true;
+}
+
+/// Helper: get strand by index, returns nullptr and sets err on failure
+inline HairStrand* find_strand(Item* item, int strand_index, cJSON*& err) {
+	if (strand_index < 0 ||
+	    static_cast<size_t>(strand_index) >= item->hair_strands.size()) {
+		err = error_response("STRAND_NOT_FOUND", "strand index out of range");
+		return nullptr;
+	}
+	return &item->hair_strands[strand_index];
+}
+
+inline cJSON* h_strand_list(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	cJSON_Delete(params);
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) return err;
+
+	cJSON* r = cJSON_CreateObject();
+	cJSON_AddTrueToObject(r, "ok");
+	cJSON_AddNumberToObject(r, "strand_count",
+	                        static_cast<int>(item->hair_strands.size()));
+
+	cJSON* strands = cJSON_CreateArray();
+	for (size_t i = 0; i < item->hair_strands.size(); ++i) {
+		const auto& s = item->hair_strands[i];
+		cJSON* so = cJSON_CreateObject();
+		cJSON_AddNumberToObject(so, "index", static_cast<int>(i));
+		cJSON_AddStringToObject(so, "name", s.name.c_str());
+		cJSON_AddNumberToObject(so, "guide_point_count",
+		                        static_cast<int>(s.guide_points.size()));
+		cJSON_AddNumberToObject(so, "width_point_count",
+		                        static_cast<int>(s.width_points.size()));
+		cJSON_AddBoolToObject(so, "mesh_dirty", s.mesh_dirty);
+		cJSON_AddBoolToObject(so, "repair_failed", s.repair_failed);
+		cJSON_AddItemToArray(strands, so);
+	}
+	cJSON_AddItemToObject(r, "strands", strands);
+
+	// Also include shared center point
+	cJSON* cp = cJSON_CreateObject();
+	cJSON_AddNumberToObject(cp, "x",
+	                        static_cast<double>(item->addon_center_point.x));
+	cJSON_AddNumberToObject(cp, "y",
+	                        static_cast<double>(item->addon_center_point.y));
+	cJSON_AddNumberToObject(cp, "z",
+	                        static_cast<double>(item->addon_center_point.z));
+	cJSON_AddBoolToObject(cp, "show", item->show_addon_center);
+	cJSON_AddItemToObject(r, "center_point", cp);
+
+	// Addon options
+	cJSON* opts = cJSON_CreateObject();
+	cJSON_AddNumberToObject(opts, "addon_type", item->addon_type);
+	cJSON_AddNumberToObject(opts, "base_node_id", item->addon_base_node_id);
+	cJSON_AddBoolToObject(opts, "reveal", item->addon_reveal);
+	cJSON_AddBoolToObject(opts, "split", item->addon_split);
+	cJSON_AddBoolToObject(opts, "sdf_boolean", item->addon_sdf_boolean);
+	cJSON_AddBoolToObject(opts, "sdf_split", item->addon_sdf_split);
+	cJSON_AddItemToObject(r, "addon_options", opts);
+
+	return r;
+}
+
+inline cJSON* h_strand_get(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	int strand_index = json_int(params, "strand_index", -1);
+	cJSON_Delete(params);
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) return err;
+	HairStrand* strand = find_strand(item, strand_index, err);
+	if (!strand) return err;
+
+	cJSON* r = cJSON_CreateObject();
+	cJSON_AddTrueToObject(r, "ok");
+
+	cJSON* sd = cJSON_CreateObject();
+	cJSON_AddNumberToObject(sd, "index", strand_index);
+	cJSON_AddStringToObject(sd, "name", strand->name.c_str());
+	cJSON_AddNumberToObject(sd, "section_rotation",
+	                        static_cast<double>(strand->section_rotation));
+	cJSON_AddNumberToObject(sd, "guide_samples_per_segment",
+	                        strand->guide_samples_per_segment);
+	cJSON_AddNumberToObject(sd, "section_subdiv", strand->section_subdiv);
+	cJSON_AddNumberToObject(sd, "repair_alpha",
+	                        static_cast<double>(strand->repair_alpha));
+	cJSON_AddNumberToObject(sd, "repair_offset",
+	                        static_cast<double>(strand->repair_offset));
+	cJSON_AddBoolToObject(sd, "mesh_dirty", strand->mesh_dirty);
+	cJSON_AddBoolToObject(sd, "repair_failed", strand->repair_failed);
+	cJSON_AddBoolToObject(sd, "expanded", strand->expanded);
+
+	// Guide points
+	cJSON* gps = cJSON_CreateArray();
+	for (const auto& gp : strand->guide_points) {
+		cJSON_AddItemToArray(gps, vec3_to_json(gp));
+	}
+	cJSON_AddItemToObject(sd, "guide_points", gps);
+
+	// Width points
+	cJSON* wps = cJSON_CreateArray();
+	for (const auto& wp : strand->width_points) {
+		cJSON* wo = cJSON_CreateObject();
+		cJSON_AddNumberToObject(wo, "curve_id",
+		                        static_cast<double>(wp.curve_id));
+		cJSON_AddNumberToObject(wo, "scale",
+		                        static_cast<double>(wp.scale));
+		cJSON_AddItemToObject(wo, "direction", vec3_to_json(wp.direction));
+
+		// Per-point section override
+		if (wp.section_state.committed.size() >= 3) {
+			cJSON* sec = cJSON_CreateObject();
+			cJSON* verts = cJSON_CreateArray();
+			for (const auto& v : wp.section_state.committed)
+				cJSON_AddItemToArray(verts, vec2_to_json(v));
+			cJSON_AddItemToObject(sec, "vertices", verts);
+			cJSON_AddBoolToObject(sec, "use_bezier",
+			                      wp.section_state.use_bezier_section);
+			cJSON_AddItemToObject(wo, "section_override", sec);
+		}
+		cJSON_AddItemToArray(wps, wo);
+	}
+	cJSON_AddItemToObject(sd, "width_points", wps);
+
+	// Section state (global)
+	cJSON* sec = cJSON_CreateObject();
+	cJSON* verts = cJSON_CreateArray();
+	for (const auto& v : strand->section_state.committed)
+		cJSON_AddItemToArray(verts, vec2_to_json(v));
+	cJSON_AddItemToObject(sec, "vertices", verts);
+	cJSON_AddBoolToObject(sec, "use_bezier",
+	                      strand->section_state.use_bezier_section);
+	cJSON_AddItemToObject(sd, "section_state", sec);
+
+	cJSON_AddItemToObject(r, "strand", sd);
+	return r;
+}
+
+inline cJSON* h_strand_create(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	const char* name = json_str(params, "name", "");
+	cJSON_Delete(params);
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) return err;
+
+	HairStrand strand;
+	if (name && name[0]) {
+		strand.name = name;
+	} else {
+		strand.name =
+		    "Strand " + std::to_string(item->hair_strands.size() + 1);
+	}
+	strand.expanded = true;
+	item->hair_strands.push_back(std::move(strand));
+
+	cJSON* r = cJSON_CreateObject();
+	cJSON_AddTrueToObject(r, "ok");
+	cJSON_AddNumberToObject(r, "strand_index",
+	                        static_cast<int>(item->hair_strands.size() - 1));
+	return r;
+}
+
+inline cJSON* h_strand_delete(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	int strand_index = json_int(params, "strand_index", -1);
+	cJSON_Delete(params);
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) return err;
+	HairStrand* strand = find_strand(item, strand_index, err);
+	if (!strand) return err;
+
+	// Deactivate any active editing on this strand
+	if (item->active_guide_draw_strand == strand_index) {
+		item->guide_curve_drawing_active = false;
+		item->active_guide_draw_strand = -1;
+	} else if (item->active_guide_draw_strand > strand_index) {
+		item->active_guide_draw_strand--;
+	}
+	if (item->active_width_edit_strand == strand_index) {
+		item->width_editing_active = false;
+		item->active_width_edit_strand = -1;
+	} else if (item->active_width_edit_strand > strand_index) {
+		item->active_width_edit_strand--;
+	}
+	if (item->active_section_edit_strand == strand_index) {
+		item->active_section_edit_strand = -1;
+	} else if (item->active_section_edit_strand > strand_index) {
+		item->active_section_edit_strand--;
+	}
+
+	item->hair_strands.erase(item->hair_strands.begin() + strand_index);
+	return ok_response();
+}
+
+inline cJSON* h_strand_update(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	int strand_index = json_int(params, "strand_index", -1);
+	if (node_id < 0 || strand_index < 0) {
+		cJSON_Delete(params);
+		return error_response("INVALID_PARAMS",
+		                      "node_id and strand_index are required");
+	}
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) { cJSON_Delete(params); return err; }
+	HairStrand* strand = find_strand(item, strand_index, err);
+	if (!strand) { cJSON_Delete(params); return err; }
+
+	// Apply updatable fields
+	if (cJSON_HasObjectItem(params, "name")) {
+		strand->name = json_str(params, "name", "");
+	}
+	if (cJSON_HasObjectItem(params, "section_rotation")) {
+		strand->section_rotation =
+		    json_float(params, "section_rotation", 0.0f);
+		strand->mesh_dirty = true;
+	}
+	if (cJSON_HasObjectItem(params, "guide_samples_per_segment")) {
+		strand->guide_samples_per_segment =
+		    json_int(params, "guide_samples_per_segment", 32);
+		strand->mesh_dirty = true;
+	}
+	if (cJSON_HasObjectItem(params, "section_subdiv")) {
+		strand->section_subdiv = json_int(params, "section_subdiv", 8);
+		strand->mesh_dirty = true;
+	}
+	if (cJSON_HasObjectItem(params, "repair_alpha")) {
+		strand->repair_alpha =
+		    json_float(params, "repair_alpha", 1.0f);
+		strand->mesh_dirty = true;
+	}
+	if (cJSON_HasObjectItem(params, "repair_offset")) {
+		strand->repair_offset =
+		    json_float(params, "repair_offset", 0.01f);
+		strand->mesh_dirty = true;
+	}
+
+	// Replace guide_points entirely if provided
+	if (cJSON_HasObjectItem(params, "guide_points")) {
+		cJSON* gps = cJSON_GetObjectItem(params, "guide_points");
+		if (cJSON_IsArray(gps)) {
+			strand->guide_points.clear();
+			int n = cJSON_GetArraySize(gps);
+			for (int i = 0; i < n; ++i) {
+				cJSON* pt = cJSON_GetArrayItem(gps, i);
+				sinriv::kigstudio::voxel::vec3f v;
+				if (json_to_vec3(pt, v))
+					strand->guide_points.push_back(v);
+			}
+			strand->mesh_dirty = true;
+		}
+	}
+
+	// Replace width_points entirely if provided
+	if (cJSON_HasObjectItem(params, "width_points")) {
+		cJSON* wps = cJSON_GetObjectItem(params, "width_points");
+		if (cJSON_IsArray(wps)) {
+			strand->width_points.clear();
+			int n = cJSON_GetArraySize(wps);
+			for (int i = 0; i < n; ++i) {
+				cJSON* wo = cJSON_GetArrayItem(wps, i);
+				if (!cJSON_IsObject(wo)) continue;
+				HairStrand::WidthPoint wp;
+				wp.curve_id = json_float(wo, "curve_id", 0.0f);
+				wp.scale = json_float(wo, "scale", 1.0f);
+				cJSON* dir = cJSON_GetObjectItem(wo, "direction");
+				if (!json_to_vec3(dir, wp.direction))
+					wp.direction = {0.0f, 0.0f, 1.0f};
+
+				// Optional per-point section override
+				cJSON* sec = cJSON_GetObjectItem(wo, "section_override");
+				if (cJSON_IsObject(sec)) {
+					cJSON* verts = cJSON_GetObjectItem(sec, "vertices");
+					if (cJSON_IsArray(verts)) {
+						int vn = cJSON_GetArraySize(verts);
+						for (int vi = 0; vi < vn; ++vi) {
+							sinriv::kigstudio::vec2<float> v2;
+							if (json_to_vec2(
+							        cJSON_GetArrayItem(verts, vi), v2))
+								wp.section_state.committed.push_back(v2);
+						}
+						wp.section_state.vertices =
+						    wp.section_state.committed;
+					}
+					wp.section_state.use_bezier_section =
+					    json_bool(sec, "use_bezier", false);
+				}
+				strand->width_points.push_back(std::move(wp));
+			}
+			strand->mesh_dirty = true;
+		}
+	}
+
+	// Replace section state if provided
+	if (cJSON_HasObjectItem(params, "section_vertices")) {
+		cJSON* verts = cJSON_GetObjectItem(params, "section_vertices");
+		if (cJSON_IsArray(verts)) {
+			strand->section_state.committed.clear();
+			int n = cJSON_GetArraySize(verts);
+			for (int i = 0; i < n; ++i) {
+				sinriv::kigstudio::vec2<float> v;
+				if (json_to_vec2(cJSON_GetArrayItem(verts, i), v))
+					strand->section_state.committed.push_back(v);
+			}
+			strand->section_state.vertices =
+			    strand->section_state.committed;
+			strand->mesh_dirty = true;
+		}
+	}
+	if (cJSON_HasObjectItem(params, "section_use_bezier")) {
+		strand->section_state.use_bezier_section =
+		    json_bool(params, "section_use_bezier", false);
+		strand->mesh_dirty = true;
+	}
+
+	cJSON_Delete(params);
+	return ok_response();
+}
+
+inline cJSON* h_strand_move(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	int strand_index = json_int(params, "strand_index", -1);
+	const char* direction = json_str(params, "direction", "up");
+	cJSON_Delete(params);
+
+	if (node_id < 0 || strand_index < 0) {
+		return error_response("INVALID_PARAMS",
+		                      "node_id and strand_index are required");
+	}
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) return err;
+	HairStrand* strand = find_strand(item, strand_index, err);
+	if (!strand) return err;
+
+	size_t si = static_cast<size_t>(strand_index);
+	if (std::strcmp(direction, "up") == 0) {
+		if (si == 0) {
+			return error_response("INVALID_PARAMS",
+			                      "strand is already at the top");
+		}
+		std::swap(item->hair_strands[si], item->hair_strands[si - 1]);
+		item->hair_strands[si].mesh_dirty = true;
+		item->hair_strands[si - 1].mesh_dirty = true;
+
+		// Adjust active indices
+		if (item->active_guide_draw_strand == strand_index)
+			item->active_guide_draw_strand--;
+		else if (item->active_guide_draw_strand == strand_index - 1)
+			item->active_guide_draw_strand++;
+		if (item->active_width_edit_strand == strand_index)
+			item->active_width_edit_strand--;
+		else if (item->active_width_edit_strand == strand_index - 1)
+			item->active_width_edit_strand++;
+		if (item->active_section_edit_strand == strand_index)
+			item->active_section_edit_strand--;
+		else if (item->active_section_edit_strand == strand_index - 1)
+			item->active_section_edit_strand++;
+	} else if (std::strcmp(direction, "down") == 0) {
+		if (si >= item->hair_strands.size() - 1) {
+			return error_response("INVALID_PARAMS",
+			                      "strand is already at the bottom");
+		}
+		std::swap(item->hair_strands[si], item->hair_strands[si + 1]);
+		item->hair_strands[si].mesh_dirty = true;
+		item->hair_strands[si + 1].mesh_dirty = true;
+
+		if (item->active_guide_draw_strand == strand_index)
+			item->active_guide_draw_strand++;
+		else if (item->active_guide_draw_strand == strand_index + 1)
+			item->active_guide_draw_strand--;
+		if (item->active_width_edit_strand == strand_index)
+			item->active_width_edit_strand++;
+		else if (item->active_width_edit_strand == strand_index + 1)
+			item->active_width_edit_strand--;
+		if (item->active_section_edit_strand == strand_index)
+			item->active_section_edit_strand++;
+		else if (item->active_section_edit_strand == strand_index + 1)
+			item->active_section_edit_strand--;
+	} else {
+		return error_response("INVALID_PARAMS",
+		                      "direction must be 'up' or 'down'");
+	}
+
+	return ok_response();
+}
+
+inline cJSON* h_strand_set_center_point(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	if (node_id < 0) {
+		cJSON_Delete(params);
+		return error_response("INVALID_PARAMS", "node_id is required");
+	}
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) { cJSON_Delete(params); return err; }
+
+	if (cJSON_HasObjectItem(params, "show")) {
+		item->show_addon_center = json_bool(params, "show", false);
+	}
+	if (cJSON_HasObjectItem(params, "x")) {
+		item->addon_center_point.x = json_float(params, "x", 0.0f);
+	}
+	if (cJSON_HasObjectItem(params, "y")) {
+		item->addon_center_point.y = json_float(params, "y", 0.0f);
+	}
+	if (cJSON_HasObjectItem(params, "z")) {
+		item->addon_center_point.z = json_float(params, "z", 0.0f);
+	}
+
+	// Mark all strands dirty when center point changes
+	for (auto& s : item->hair_strands) s.mesh_dirty = true;
+
+	cJSON_Delete(params);
+	return ok_response();
+}
+
+inline cJSON* h_strand_set_addon_options(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	if (node_id < 0) {
+		cJSON_Delete(params);
+		return error_response("INVALID_PARAMS", "node_id is required");
+	}
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) { cJSON_Delete(params); return err; }
+
+	if (cJSON_HasObjectItem(params, "addon_type")) {
+		item->addon_type = json_int(params, "addon_type", 0);
+	}
+	if (cJSON_HasObjectItem(params, "base_node_id")) {
+		item->addon_base_node_id =
+		    json_int(params, "base_node_id", -1);
+	}
+	if (cJSON_HasObjectItem(params, "reveal")) {
+		item->addon_reveal = json_bool(params, "reveal", false);
+	}
+	if (cJSON_HasObjectItem(params, "split")) {
+		item->addon_split = json_bool(params, "split", false);
+	}
+	if (cJSON_HasObjectItem(params, "sdf_boolean")) {
+		item->addon_sdf_boolean =
+		    json_bool(params, "sdf_boolean", true);
+	}
+	if (cJSON_HasObjectItem(params, "sdf_split")) {
+		item->addon_sdf_split =
+		    json_bool(params, "sdf_split", true);
+	}
+
+	cJSON_Delete(params);
+	return ok_response();
+}
+
+// ===================================================================
+// strand semantic-coordinate handlers
+// ===================================================================
+
+inline cJSON* h_strand_set_angle_config(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	int base_node_id = json_int(params, "base_node_id", -1);
+	cJSON* angles_arr = cJSON_GetObjectItem(params, "angles");
+
+	if (node_id < 0 || base_node_id < 0 || !cJSON_IsArray(angles_arr)) {
+		cJSON_Delete(params);
+		return error_response("INVALID_PARAMS",
+		                      "node_id, base_node_id, and angles[] are required");
+	}
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) { cJSON_Delete(params); return err; }
+	Item* base_item = find_item(list, base_node_id, err);
+	if (!base_item) { cJSON_Delete(params); return err; }
+
+	if (base_item->cached_mesh.empty()) {
+		cJSON_Delete(params);
+		return error_response("NO_MESH", "base node has no cached mesh");
+	}
+
+	// Clear old config and build new
+	item->hair_angle_config.clear();
+	int n = cJSON_GetArraySize(angles_arr);
+	for (int i = 0; i < n; ++i) {
+		cJSON* entry = cJSON_GetArrayItem(angles_arr, i);
+		if (!cJSON_IsObject(entry)) continue;
+		float x = json_float(entry, "x", 0.0f);
+		float y = json_float(entry, "y", 0.0f);
+		HairAngleEntry ae;
+		ae.theta = json_float(entry, "theta", 0.0f);
+		ae.phi = json_float(entry, "phi", 45.0f);
+		item->hair_angle_config[{x, y}] = ae;
+	}
+
+	// Build BVH tree from base node's cached mesh
+	auto bvh = std::make_unique<
+	    sinriv::kigstudio::voxel::triangle_bvh<float>>();
+	for (const auto& [tri, _] : base_item->cached_mesh) {
+		bvh->insert(tri);
+	}
+	item->hair_bvh = std::move(bvh);
+	item->hair_bvh_base_node_id = base_node_id;
+
+	cJSON_Delete(params);
+
+	cJSON* r = cJSON_CreateObject();
+	cJSON_AddTrueToObject(r, "ok");
+	cJSON_AddNumberToObject(r, "angle_count",
+	                        static_cast<int>(item->hair_angle_config.size()));
+	cJSON_AddNumberToObject(r, "bvh_triangle_count",
+	                        static_cast<int>(base_item->cached_mesh.size()));
+	return r;
+}
+
+/// Spherical (theta, phi) in degrees → unit direction vector.
+/// theta=0° → +Z (front), +90° → +X (right)
+/// phi=0° → horizontal, +90° → +Y (up)
+inline sinriv::kigstudio::voxel::vec3f spherical_to_dir(float theta_deg,
+                                                        float phi_deg) {
+	constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
+	float t = theta_deg * kDegToRad;
+	float p = phi_deg * kDegToRad;
+	float cos_p = std::cos(p);
+	return sinriv::kigstudio::voxel::vec3f(
+	    std::sin(t) * cos_p,
+	    std::sin(p),
+	    std::cos(t) * cos_p);
+}
+
+/// Cast a ray from outside toward the center point, find closest hit on BVH.
+/// Returns true and sets `out_hit` on success.
+inline bool raycast_to_bvh(
+    sinriv::kigstudio::voxel::triangle_bvh<float>& bvh,
+    const sinriv::kigstudio::voxel::vec3f& center,
+    const sinriv::kigstudio::voxel::vec3f& dir,
+    sinriv::kigstudio::voxel::vec3f& out_hit) {
+	constexpr float kMaxDist = 10000.0f;
+	sinriv::kigstudio::ray<float> r;
+	r.begin = center + dir * kMaxDist;  // far outside
+	r.end = center - dir * kMaxDist;    // past center on other side
+
+	float closest_dist = std::numeric_limits<float>::max();
+	bool hit = false;
+
+	bvh.rayTest(r, [&](auto /*node_data*/,
+	                   const sinriv::kigstudio::voxel::vec3f& coll_pos) {
+		float dist = (coll_pos - r.begin).length();
+		if (dist < closest_dist) {
+			closest_dist = dist;
+			out_hit = coll_pos;
+			hit = true;
+		}
+	});
+	return hit;
+}
+
+inline cJSON* h_strand_add_semantic_guide_point(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	int strand_index = json_int(params, "strand_index", -1);
+	float x = json_float(params, "x",
+	                     std::numeric_limits<float>::quiet_NaN());
+	float y = json_float(params, "y",
+	                     std::numeric_limits<float>::quiet_NaN());
+
+	if (node_id < 0 || strand_index < 0 || std::isnan(x) || std::isnan(y)) {
+		cJSON_Delete(params);
+		return error_response("INVALID_PARAMS",
+		                      "node_id, strand_index, x, y are required");
+	}
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) { cJSON_Delete(params); return err; }
+	HairStrand* strand = find_strand(item, strand_index, err);
+	if (!strand) { cJSON_Delete(params); return err; }
+
+	// Must have BVH built (via setAngleConfig)
+	if (!item->hair_bvh) {
+		cJSON_Delete(params);
+		return error_response("NO_BVH",
+		                      "BVH not built; call setAngleConfig first");
+	}
+
+	// Look up angle config
+	auto it = item->hair_angle_config.find({x, y});
+	if (it == item->hair_angle_config.end()) {
+		cJSON_Delete(params);
+		return error_response("NO_ANGLE_CONFIG",
+		                      "no angle configured for (x,y); "
+		                      "call setAngleConfig first");
+	}
+
+	// Verify base model still valid
+	if (item->hair_bvh_base_node_id >= 0) {
+		auto base_it = list.items.find(item->hair_bvh_base_node_id);
+		if (base_it == list.items.end() ||
+		    base_it->second->cached_mesh_dirty) {
+			item->hair_bvh.reset();
+			item->hair_bvh_base_node_id = -1;
+			cJSON_Delete(params);
+			return error_response(
+			    "BVH_STALE",
+			    "base model changed; call setAngleConfig again");
+		}
+	}
+
+	// Ray cast
+	float theta = it->second.theta;
+	float phi = it->second.phi;
+	auto dir = spherical_to_dir(theta, phi);
+	auto center = item->addon_center_point;
+
+	sinriv::kigstudio::voxel::vec3f hit_point;
+	if (!raycast_to_bvh(*item->hair_bvh, center, dir, hit_point)) {
+		cJSON_Delete(params);
+		return error_response("RAY_MISS",
+		                      "ray did not hit the base model");
+	}
+
+	strand->guide_points.push_back(hit_point);
+	strand->mesh_dirty = true;
+
+	cJSON_Delete(params);
+
+	cJSON* r = cJSON_CreateObject();
+	cJSON_AddTrueToObject(r, "ok");
+	cJSON_AddItemToObject(r, "point", vec3_to_json(hit_point));
+	cJSON_AddNumberToObject(r, "guide_point_index",
+	                        static_cast<int>(strand->guide_points.size() - 1));
+	return r;
+}
+
+inline cJSON* h_strand_add_semantic_width_point(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	int strand_index = json_int(params, "strand_index", -1);
+	float x = json_float(params, "x",
+	                     std::numeric_limits<float>::quiet_NaN());
+	float y = json_float(params, "y",
+	                     std::numeric_limits<float>::quiet_NaN());
+	float scale = json_float(params, "scale", 1.0f);
+
+	if (node_id < 0 || strand_index < 0 || std::isnan(x) || std::isnan(y)) {
+		cJSON_Delete(params);
+		return error_response("INVALID_PARAMS",
+		                      "node_id, strand_index, x, y are required");
+	}
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) { cJSON_Delete(params); return err; }
+	HairStrand* strand = find_strand(item, strand_index, err);
+	if (!strand) { cJSON_Delete(params); return err; }
+
+	// Must have guide points to compute curve_id
+	if (strand->guide_points.size() < 2) {
+		cJSON_Delete(params);
+		return error_response("NO_GUIDE_POINTS",
+		                      "strand needs at least 2 guide points");
+	}
+
+	// Must have BVH built
+	if (!item->hair_bvh) {
+		cJSON_Delete(params);
+		return error_response("NO_BVH",
+		                      "BVH not built; call setAngleConfig first");
+	}
+
+	// Look up angle config
+	auto it = item->hair_angle_config.find({x, y});
+	if (it == item->hair_angle_config.end()) {
+		cJSON_Delete(params);
+		return error_response("NO_ANGLE_CONFIG",
+		                      "no angle configured for (x,y); "
+		                      "call setAngleConfig first");
+	}
+
+	// Verify base model still valid
+	if (item->hair_bvh_base_node_id >= 0) {
+		auto base_it = list.items.find(item->hair_bvh_base_node_id);
+		if (base_it == list.items.end() ||
+		    base_it->second->cached_mesh_dirty) {
+			item->hair_bvh.reset();
+			item->hair_bvh_base_node_id = -1;
+			cJSON_Delete(params);
+			return error_response(
+			    "BVH_STALE",
+			    "base model changed; call setAngleConfig again");
+		}
+	}
+
+	// Ray cast
+	float theta = it->second.theta;
+	float phi = it->second.phi;
+	auto dir = spherical_to_dir(theta, phi);
+	auto center = item->addon_center_point;
+
+	sinriv::kigstudio::voxel::vec3f hit_point;
+	if (!raycast_to_bvh(*item->hair_bvh, center, dir, hit_point)) {
+		cJSON_Delete(params);
+		return error_response("RAY_MISS",
+		                      "ray did not hit the base model");
+	}
+
+	// Compute curve_id: find the closest point on the guide curve segments
+	const auto& gpts = strand->guide_points;
+	float best_curve_id = 0.0f;
+	float best_dist_sq = std::numeric_limits<float>::max();
+	sinriv::kigstudio::voxel::vec3f best_curve_point = gpts[0];
+
+	for (size_t seg = 0; seg + 1 < gpts.size(); ++seg) {
+		const auto& a = gpts[seg];
+		const auto& b = gpts[seg + 1];
+		auto ab = b - a;
+		float ab_len_sq = ab.dot(ab);
+		float t = 0.0f;
+		if (ab_len_sq > 1e-12f) {
+			t = std::max(0.0f, std::min(1.0f,
+			                            (hit_point - a).dot(ab) / ab_len_sq));
+		}
+		auto proj = a + ab * t;
+		float d2 = (proj - hit_point).length2();
+		if (d2 < best_dist_sq) {
+			best_dist_sq = d2;
+			best_curve_id = static_cast<float>(seg) + t;
+			best_curve_point = proj;
+		}
+	}
+
+	// Direction from curve toward surface
+	auto width_dir = (hit_point - best_curve_point);
+	float wlen = width_dir.length();
+	if (wlen > 1e-8f) {
+		width_dir = width_dir * (1.0f / wlen);
+	} else {
+		width_dir = {0.0f, 0.0f, 1.0f};
+	}
+
+	HairStrand::WidthPoint wp;
+	wp.curve_id = best_curve_id;
+	wp.scale = scale;
+	wp.direction = width_dir;
+	strand->width_points.push_back(std::move(wp));
+	strand->mesh_dirty = true;
+
+	cJSON_Delete(params);
+
+	cJSON* r = cJSON_CreateObject();
+	cJSON_AddTrueToObject(r, "ok");
+	cJSON_AddNumberToObject(r, "width_point_index",
+	                        static_cast<int>(strand->width_points.size() - 1));
+	cJSON* wp_json = cJSON_CreateObject();
+	cJSON_AddNumberToObject(wp_json, "curve_id",
+	                        static_cast<double>(best_curve_id));
+	cJSON_AddNumberToObject(wp_json, "scale", static_cast<double>(scale));
+	cJSON_AddItemToObject(wp_json, "direction", vec3_to_json(width_dir));
+	cJSON_AddItemToObject(wp_json, "surface_point", vec3_to_json(hit_point));
+	cJSON_AddItemToObject(r, "width_point", wp_json);
 	return r;
 }
 
