@@ -1194,14 +1194,16 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
         origin_mesh_renderer.renderGBuffer(transform, mesh_shader);
     }
     if (showExportedMesh && !cached_mesh.empty()) {
-        if (!cached_mesh_dirty) {
+        if (!exported_mesh_synced) {
             exported_mesh_renderer.loadGeometry(cached_mesh);
-            cached_mesh_dirty = true;
+            exported_mesh_synced = true;
         }
         exported_mesh_renderer.renderGBuffer(transform, mesh_shader);
     }
 
-    // Rebuild addon meshes if any strand is dirty
+    // Rebuild addon meshes if any strand is dirty, or clear when
+    // all strands have been deleted (hair_strands empty but
+    // addon_renderers still holds stale GPU handles).
     {
         bool any_dirty = false;
         for (const auto& strand : hair_strands) {
@@ -1210,7 +1212,7 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
                 break;
             }
         }
-        if (any_dirty) {
+        if (any_dirty || (hair_strands.empty() && !addon_renderers.empty())) {
             update_addon_meshes();
             for (auto& strand : hair_strands)
                 strand.mesh_dirty = false;
@@ -1798,6 +1800,111 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 bgfx::submit(mesh_shader.overlay_view_id_,
                              mesh_shader.line_program_);
             }
+        }
+    }
+
+    // 语义坐标框架调试可视化：棕色北极箭头 + 矢状面三角
+    // 当配置了角度映射时，从中心点绘制球形坐标系参考框架
+    if (show_addon_center && !hair_angle_config.empty() &&
+        mesh_shader.ensureLineProgram()) {
+        bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+
+        // 构建局部球形坐标系（与 agent_handlers.h 中 spherical_to_dir 相同的数学）
+        vec3f N = hair_north_pole.normalize();  // 北极方向 (phi=+90°)
+        vec3f F = hair_front_reference.normalize();  // 前参考方向
+        float f_dot_n = F.dot(N);
+        vec3f V = F - N * f_dot_n;  // 投影到赤道面 → theta=0° 方向
+        float v_len2 = V.length2();
+
+        // 退化情况：front_reference 与 north_pole 几乎平行 → 回退试探
+        if (v_len2 < 1e-10f) {
+            vec3f A = (std::abs(N.z) < 0.99f)
+                          ? vec3f(0.0f, 0.0f, 1.0f)
+                          : vec3f(1.0f, 0.0f, 0.0f);
+            V = A - N * A.dot(N);
+            v_len2 = V.length2();
+        }
+        V = V / std::sqrt(v_len2);  // theta=0° 前方向（鼻尖侧）
+        // U = cross(N, V) → theta=+90° 右方向
+        vec3f U{N.y * V.z - N.z * V.y, N.z * V.x - N.x * V.z,
+                N.x * V.y - N.y * V.x};
+
+        const vec3f& center = addon_center_point;
+        const float arrow_len = 8.0f;
+        const float head_size = 1.5f;
+        const float tri_leg = 2.5f;
+
+        const uint32_t arrow_color =
+            pack_abgr(0.55f, 0.27f, 0.07f, 1.0f);  // 棕色
+        const uint32_t tri_color =
+            pack_abgr(0.7f, 0.45f, 0.15f, 1.0f);  // 浅棕色
+
+        std::vector<mesh_detail::ColorLineVertex> vertices;
+        vertices.reserve(20);
+
+        // --- 北极箭头 ---
+        vec3f arrow_tip{center.x + N.x * arrow_len,
+                        center.y + N.y * arrow_len,
+                        center.z + N.z * arrow_len};
+        // 箭杆
+        vertices.push_back({center.x, -center.y, center.z, arrow_color});
+        vertices.push_back(
+            {arrow_tip.x, -arrow_tip.y, arrow_tip.z, arrow_color});
+
+        // 箭头（使用 V 方向作为箭头宽度的参考）
+        vec3f head_base{arrow_tip.x - N.x * head_size,
+                        arrow_tip.y - N.y * head_size,
+                        arrow_tip.z - N.z * head_size};
+        float hw = head_size * 0.5f;
+        vec3f head_l{head_base.x + V.x * hw, head_base.y + V.y * hw,
+                     head_base.z + V.z * hw};
+        vec3f head_r{head_base.x - V.x * hw, head_base.y - V.y * hw,
+                     head_base.z - V.z * hw};
+
+        vertices.push_back(
+            {arrow_tip.x, -arrow_tip.y, arrow_tip.z, arrow_color});
+        vertices.push_back({head_l.x, -head_l.y, head_l.z, arrow_color});
+        vertices.push_back(
+            {arrow_tip.x, -arrow_tip.y, arrow_tip.z, arrow_color});
+        vertices.push_back({head_r.x, -head_r.y, head_r.z, arrow_color});
+
+        // --- 矢状面等腰直角三角形（直角在中心点）---
+        // 直角边1：沿 N（北极）
+        vec3f tri_up{center.x + N.x * tri_leg, center.y + N.y * tri_leg,
+                     center.z + N.z * tri_leg};
+        // 直角边2：沿 V（前/鼻尖方向）
+        vec3f tri_front{center.x + V.x * tri_leg,
+                        center.y + V.y * tri_leg,
+                        center.z + V.z * tri_leg};
+
+        vertices.push_back({center.x, -center.y, center.z, tri_color});
+        vertices.push_back({tri_up.x, -tri_up.y, tri_up.z, tri_color});
+        vertices.push_back({center.x, -center.y, center.z, tri_color});
+        vertices.push_back(
+            {tri_front.x, -tri_front.y, tri_front.z, tri_color});
+        // 斜边
+        vertices.push_back({tri_up.x, -tri_up.y, tri_up.z, tri_color});
+        vertices.push_back(
+            {tri_front.x, -tri_front.y, tri_front.z, tri_color});
+
+        if (!vertices.empty() &&
+            bgfx::getAvailTransientVertexBuffer(
+                static_cast<uint32_t>(vertices.size()), layout) >=
+                vertices.size()) {
+            bgfx::TransientVertexBuffer tvb;
+            bgfx::allocTransientVertexBuffer(
+                &tvb, static_cast<uint32_t>(vertices.size()), layout);
+            std::memcpy(tvb.data, vertices.data(),
+                        vertices.size() *
+                            sizeof(mesh_detail::ColorLineVertex));
+            bgfx::setTransform(model_transform);
+            bgfx::setVertexBuffer(0, &tvb);
+            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                           BGFX_STATE_WRITE_Z |
+                           BGFX_STATE_DEPTH_TEST_LESS |
+                           BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+            bgfx::submit(mesh_shader.overlay_view_id_,
+                         mesh_shader.line_program_);
         }
     }
 

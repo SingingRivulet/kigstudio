@@ -747,6 +747,20 @@ void AgentServer::register_routes() {
 		                     params);
 	         });
 
+	// POST /api/v1/nodes/:id/hair/spindle
+	// Applies hairline spindle: computes hairline-plane intersection
+	// for each strand and generates tapered width points.
+	svr.Post(R"(/api/v1/nodes/(\d+)/hair/spindle)",
+	         [=](const httplib::Request& req, httplib::Response& res) {
+		         int node_id = path_int_param(req, 3);
+		         std::string err;
+		         cJSON* params = json_parse_body(req.body, err);
+		         if (!params) params = cJSON_CreateObject();
+		         cJSON_AddNumberToObject(params, "node_id", node_id);
+		         run_command(req, res, "strand.applyHairlineSpindle",
+		                     params);
+	         });
+
 	// ================================================================
 	// WebSocket endpoint for progress events
 	// ================================================================

@@ -466,6 +466,7 @@ class RenderVoxelList {
                                sinriv::kigstudio::voxel::vec3f>>
             cached_mesh;
         bool cached_mesh_dirty = true;
+        bool exported_mesh_synced = false;  // renderer sync flag (separate from cached_mesh_dirty)
 
         sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
         kigstudio::Plane<float> plane;

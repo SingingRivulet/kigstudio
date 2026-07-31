@@ -1397,14 +1397,39 @@ bool RenderVoxelList::save_project(const std::string& folder) {
 
 bool RenderVoxelList::load_project(const std::string& folder) {
     last_load_error.clear();
+
+    // Validate that the project folder and project.json exist BEFORE
+    // calling release(), which destroys all current items.  This
+    // prevents a catastrophic state where items are gone but the new
+    // project fails to load, leaving an empty project with a stale
+    // project_path.
+    std::filesystem::path dir = utf8_path(folder);
+    std::filesystem::path json_path = dir / "project.json";
+    {
+#ifdef _WIN32
+        std::ifstream test_ifs(json_path.wstring().c_str());
+#else
+        std::ifstream test_ifs(json_path.c_str());
+#endif
+        if (!test_ifs) {
+            last_load_error =
+                "failed to open project.json: " + path_to_utf8(json_path);
+            return false;
+        }
+    }
+
+    // Save current project path so we can restore it on failure.
+    // release() destroys all items; if loading subsequently fails we
+    // want to keep the old project_path visible in the title bar so
+    // the user knows what was open before the error.
+    std::string previous_project_path = project_path;
+
     release();
     update_nav_node_status = true;
     start_thread();
     initIcons();
     current_id = 0;
 
-    std::filesystem::path dir = utf8_path(folder);
-    std::filesystem::path json_path = dir / "project.json";
 #ifdef _WIN32
     std::ifstream ifs(json_path.wstring().c_str());
 #else
@@ -1413,6 +1438,8 @@ bool RenderVoxelList::load_project(const std::string& folder) {
     if (!ifs) {
         last_load_error =
             "failed to open project.json: " + path_to_utf8(json_path);
+        // Restore previous project path so the title doesn't go blank.
+        project_path = previous_project_path;
         return false;
     }
     std::string json_str((std::istreambuf_iterator<char>(ifs)),
@@ -1426,6 +1453,7 @@ bool RenderVoxelList::load_project(const std::string& folder) {
     cJSON* root = cJSON_Parse(json_str.c_str());
     if (!root) {
         last_load_error = "cJSON_Parse failed";
+        project_path = previous_project_path;
         return false;
     }
 
@@ -1464,24 +1492,28 @@ bool RenderVoxelList::load_project(const std::string& folder) {
     if (!has_version) {
         last_load_error = "missing 'version' field";
         cJSON_Delete(root);
-        return false;
+        project_path = previous_project_path;
+	        return false;
     }
     if (version != 1) {
         last_load_error = "unsupported version: " + std::to_string(version);
         cJSON_Delete(root);
-        return false;
+        project_path = previous_project_path;
+	        return false;
     }
 
     if (!has_current_id) {
         last_load_error = "missing 'current_id' field";
         cJSON_Delete(root);
-        return false;
+        project_path = previous_project_path;
+	        return false;
     }
 
     if (!items_arr) {
         last_load_error = "missing 'items' field";
         cJSON_Delete(root);
-        return false;
+        project_path = previous_project_path;
+	        return false;
     }
     int count = cJSON_GetArraySize(items_arr);
     {
@@ -1493,7 +1525,8 @@ bool RenderVoxelList::load_project(const std::string& folder) {
                 last_load_error =
                     "item_from_json failed at index " + std::to_string(i);
                 cJSON_Delete(root);
-                return false;
+                project_path = previous_project_path;
+	                return false;
             }
             int id = item->id;
             std::filesystem::path voxel_path =
@@ -1501,7 +1534,8 @@ bool RenderVoxelList::load_project(const std::string& folder) {
             if (!sinriv::kigstudio::load(voxel_path, item->voxel_grid_data)) {
                 last_load_error = "load voxel failed: " + voxel_path.string();
                 cJSON_Delete(root);
-                return false;
+                project_path = previous_project_path;
+	                return false;
             }
             if (item->voxel_grid_data.num_chunk() > 0) {
                 item->voxel_renderer.loadVoxelGridChunked(item->voxel_grid_data,

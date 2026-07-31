@@ -1154,6 +1154,19 @@ private:
 			        req_list(
 			            {"node_id", "strand_index", "x", "y"}),
 			        "Add Semantic Width Point"));
+
+			add_tool(
+			    "strand_apply_hairline_spindle",
+			    "Apply hairline spindle to all strands on a node. "
+			    "Computes the intersection of each strand's guide curve with "
+			    "the hairline plane, calculates nearest-neighbor width at the "
+			    "hairline, and generates tapered width points (spindle shape) "
+			    "for each strand.",
+			    "strand.applyHairlineSpindle",
+			    schema_obj(
+			        cJSON_CreateObject(),
+			        req_list({"node_id"}),
+			        "Apply Hairline Spindle"));
 		}
 
 		return arr;

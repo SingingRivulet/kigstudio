@@ -816,11 +816,11 @@ void RenderVoxelList::render_object_editor_addons() {
     if (item.addon_type == static_cast<int>(AddonType::HAIR)) {
         // 添加发束按钮
         if (ImGui::Button(get_locale_cstr("action.add_hair_strand"))) {
+            push_undo_now(item.id, std::nullopt, "Add Hair Strand");
             HairStrand strand;
             strand.name = "Strand " + std::to_string(item.hair_strands.size() + 1);
             strand.expanded = true;
             item.hair_strands.push_back(strand);
-            push_undo_now(item.id, std::nullopt, "Add Hair Strand");
         }
 
         ImGui::Separator();
@@ -853,10 +853,10 @@ void RenderVoxelList::render_object_editor_addons() {
                 // 上移
                 if (i > 0) {
                     if (ImGui::Button(get_locale_cstr("action.move_up"))) {
-                        std::swap(item.hair_strands[i],
-                                  item.hair_strands[i - 1]);
                         push_undo_now(item.id, std::nullopt,
                                       "Move Strand Up");
+                        std::swap(item.hair_strands[i],
+                                  item.hair_strands[i - 1]);
                         item.hair_strands[i].mesh_dirty = true;
                         item.hair_strands[i - 1].mesh_dirty = true;
                     }
@@ -865,10 +865,10 @@ void RenderVoxelList::render_object_editor_addons() {
                 // 下移
                 if (i < item.hair_strands.size() - 1) {
                     if (ImGui::Button(get_locale_cstr("action.move_down"))) {
-                        std::swap(item.hair_strands[i],
-                                  item.hair_strands[i + 1]);
                         push_undo_now(item.id, std::nullopt,
                                       "Move Strand Down");
+                        std::swap(item.hair_strands[i],
+                                  item.hair_strands[i + 1]);
                         item.hair_strands[i].mesh_dirty = true;
                         item.hair_strands[i + 1].mesh_dirty = true;
                     }
@@ -1001,7 +1001,9 @@ void RenderVoxelList::render_object_editor_addons() {
                 // 清空引导点
                 ImGui::SameLine();
                 if (ImGui::Button(get_locale_cstr("action.clear_guide_points"))) {
+                    push_undo_now(item.id, std::nullopt, "Clear Guide Points");
                     strand.guide_points.clear();
+                    strand.mesh_dirty = true;
                 }
 
                 // 显示点数信息
@@ -1092,8 +1094,8 @@ void RenderVoxelList::render_object_editor_addons() {
                        delete_idx) {
                 item.active_perpoint_section_edit_strand--;
             }
-            item.hair_strands.erase(item.hair_strands.begin() + delete_idx);
             push_undo_now(item.id, std::nullopt, "Delete Hair Strand");
+            item.hair_strands.erase(item.hair_strands.begin() + delete_idx);
             for (auto& s : item.hair_strands) s.mesh_dirty = true;
         }
 

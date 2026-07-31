@@ -1382,6 +1382,7 @@ void RenderVoxelList::load_stl(std::string filename,
                 item.exported_mesh_renderer.clear();
                 item.cached_mesh.clear();
                 item.cached_mesh_dirty = true;
+                item.exported_mesh_synced = false;
                 if (load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
                     item.voxel_renderer.clear();
                     item.voxel_grid_data.chunks.clear();
@@ -1450,6 +1451,7 @@ void RenderVoxelList::load_stl(std::string filename,
         item->exported_mesh_renderer.clear();
         item->cached_mesh.clear();
         item->cached_mesh_dirty = true;
+        item->exported_mesh_synced = false;
         if (load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
             item->mesh_only = true;
             item->voxel_grid_data.chunks.clear();
@@ -1929,6 +1931,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
             target.exported_mesh_renderer.clear();
             target.cached_mesh.clear();
             target.cached_mesh_dirty = true;
+            target.exported_mesh_synced = false;
             target.voxel_renderer.clear();
             target.sdf_data = nullptr;
             target.source_triangles.clear();

@@ -146,6 +146,7 @@ cJSON* h_strand_set_addon_options(cJSON* params, List& list);
 cJSON* h_strand_set_angle_config(cJSON* params, List& list);
 cJSON* h_strand_add_semantic_guide_point(cJSON* params, List& list);
 cJSON* h_strand_add_semantic_width_point(cJSON* params, List& list);
+cJSON* h_strand_apply_hairline_spindle(cJSON* params, List& list);
 
 // ---- dispatch ----
 
@@ -201,6 +202,8 @@ inline cJSON* agent_dispatch(const std::string& method, cJSON* params,
 	         h_strand_add_semantic_guide_point},
 	        {"strand.addSemanticWidthPoint",
 	         h_strand_add_semantic_width_point},
+	        {"strand.applyHairlineSpindle",
+	         h_strand_apply_hairline_spindle},
 	    };
 
 	auto it = table.find(method);
@@ -1410,9 +1413,29 @@ inline cJSON* h_strand_set_angle_config(cJSON* params, List& list) {
 	Item* base_item = find_item(list, base_node_id, err);
 	if (!base_item) { cJSON_Delete(params); return err; }
 
-	if (base_item->cached_mesh.empty()) {
+	// Determine triangle source: prefer cached_mesh, then source_triangles,
+	// then try to reload from the STL file.
+	std::vector<sinriv::kigstudio::voxel::Triangle> bvh_triangles;
+
+	if (!base_item->cached_mesh.empty()) {
+		bvh_triangles.reserve(base_item->cached_mesh.size());
+		for (const auto& [tri, _] : base_item->cached_mesh) {
+			bvh_triangles.push_back(tri);
+		}
+	} else if (!base_item->source_triangles.empty()) {
+		bvh_triangles = base_item->source_triangles;
+	} else if (!base_item->stl_path.empty()) {
+		// Reload from the original STL file
+		for (auto [tri, n] :
+		     sinriv::kigstudio::voxel::readSTL(base_item->stl_path)) {
+			(void)n;
+			bvh_triangles.push_back(tri);
+		}
+	}
+
+	if (bvh_triangles.empty()) {
 		cJSON_Delete(params);
-		return error_response("NO_MESH", "base node has no cached mesh");
+		return error_response("NO_MESH", "base node has no mesh data");
 	}
 
 	// Clear old config and build new
@@ -1423,8 +1446,7 @@ inline cJSON* h_strand_set_angle_config(cJSON* params, List& list) {
 	if (np_arr && cJSON_IsArray(np_arr)) {
 		sinriv::kigstudio::voxel::vec3f np;
 		if (json_to_vec3(np_arr, np)) {
-			np.normalize();
-			item->hair_north_pole = np;
+			item->hair_north_pole = np.normalize();
 		}
 	}
 
@@ -1433,8 +1455,7 @@ inline cJSON* h_strand_set_angle_config(cJSON* params, List& list) {
 	if (fr_arr && cJSON_IsArray(fr_arr)) {
 		sinriv::kigstudio::voxel::vec3f fr;
 		if (json_to_vec3(fr_arr, fr)) {
-			fr.normalize();
-			item->hair_front_reference = fr;
+			item->hair_front_reference = fr.normalize();
 		}
 	}
 
@@ -1450,14 +1471,20 @@ inline cJSON* h_strand_set_angle_config(cJSON* params, List& list) {
 		item->hair_angle_config[{x, y}] = ae;
 	}
 
-	// Build BVH tree from base node's cached mesh
+	// Build BVH tree from the resolved triangle source
 	auto bvh = std::make_unique<
 	    sinriv::kigstudio::voxel::triangle_bvh<float>>();
-	for (const auto& [tri, _] : base_item->cached_mesh) {
+	for (const auto& tri : bvh_triangles) {
 		bvh->insert(tri);
 	}
 	item->hair_bvh = std::move(bvh);
 	item->hair_bvh_base_node_id = base_node_id;
+		// Mark BVH as current with respect to the base mesh state.
+		// cached_mesh_dirty defaults to true and is only flipped to
+		// false by the export task queue; setAngleConfig may build the
+		// BVH from source_triangles (before any export), so we must
+		// clear the dirty flag to prevent spurious BVH_STALE errors.
+		base_item->cached_mesh_dirty = false;
 
 	cJSON_Delete(params);
 
@@ -1466,7 +1493,7 @@ inline cJSON* h_strand_set_angle_config(cJSON* params, List& list) {
 	cJSON_AddNumberToObject(r, "angle_count",
 	                        static_cast<int>(item->hair_angle_config.size()));
 	cJSON_AddNumberToObject(r, "bvh_triangle_count",
-	                        static_cast<int>(base_item->cached_mesh.size()));
+	                        static_cast<int>(bvh_triangles.size()));
 	return r;
 }
 
@@ -1491,12 +1518,10 @@ inline sinriv::kigstudio::voxel::vec3f spherical_to_dir(
 
 	// Build local orthonormal frame
 	// N = north pole (phi=+90° direction), normalized
-	sinriv::kigstudio::voxel::vec3f N = north_pole;
-	N.normalize();
+	sinriv::kigstudio::voxel::vec3f N = north_pole.normalize();
 
 	// Project front_reference onto the equatorial plane → V (theta=0°)
-	sinriv::kigstudio::voxel::vec3f F = front_reference;
-	F.normalize();
+	sinriv::kigstudio::voxel::vec3f F = front_reference.normalize();
 	float f_dot_n = F.dot(N);
 	sinriv::kigstudio::voxel::vec3f V = F - N * f_dot_n;
 	float v_len2 = V.length2();
@@ -1544,6 +1569,61 @@ inline bool raycast_to_bvh(
 	return hit;
 }
 
+/// Interpolate (theta, phi) for a semantic (x, y) coordinate using
+/// inverse distance weighting (IDW) over all configured sample points.
+/// Exact match is returned directly; for non-exact queries the weighted
+/// average of all sample points is used so that the angle varies smoothly
+/// across the semantic domain.
+inline bool interpolate_angle_config(
+    const std::map<std::pair<float, float>, HairAngleEntry>& config,
+    float x, float y,
+    float& out_theta, float& out_phi)
+{
+    if (config.empty()) return false;
+
+    // Exact match
+    auto it = config.find({x, y});
+    if (it != config.end()) {
+        out_theta = it->second.theta;
+        out_phi   = it->second.phi;
+        return true;
+    }
+
+    // Single entry → return directly (avoids division by zero)
+    if (config.size() == 1) {
+        auto& e = config.begin()->second;
+        out_theta = e.theta;
+        out_phi   = e.phi;
+        return true;
+    }
+
+    // IDW with power 2: weight = 1 / distance²
+    float wsum = 0.0f, tsum = 0.0f, psum = 0.0f;
+    constexpr float kEps = 1e-12f;
+
+    for (const auto& [key, entry] : config) {
+        float dx = x - key.first;
+        float dy = y - key.second;
+        float d2 = dx * dx + dy * dy;
+
+        if (d2 < kEps) {  // nearly on top of a sample
+            out_theta = entry.theta;
+            out_phi   = entry.phi;
+            return true;
+        }
+
+        float w = 1.0f / d2;
+        wsum += w;
+        tsum += w * entry.theta;
+        psum += w * entry.phi;
+    }
+
+    if (wsum < kEps) return false;
+    out_theta = tsum / wsum;
+    out_phi   = psum / wsum;
+    return true;
+}
+
 inline cJSON* h_strand_add_semantic_guide_point(cJSON* params, List& list) {
 	int node_id = json_int(params, "node_id", -1);
 	int strand_index = json_int(params, "strand_index", -1);
@@ -1572,9 +1652,9 @@ inline cJSON* h_strand_add_semantic_guide_point(cJSON* params, List& list) {
 		                      "BVH not built; call setAngleConfig first");
 	}
 
-	// Look up angle config
-	auto it = item->hair_angle_config.find({x, y});
-	if (it == item->hair_angle_config.end()) {
+	// Look up (or interpolate) angle config
+	float theta, phi;
+	if (!interpolate_angle_config(item->hair_angle_config, x, y, theta, phi)) {
 		cJSON_Delete(params);
 		return error_response("NO_ANGLE_CONFIG",
 		                      "no angle configured for (x,y); "
@@ -1596,8 +1676,6 @@ inline cJSON* h_strand_add_semantic_guide_point(cJSON* params, List& list) {
 	}
 
 	// Ray cast
-	float theta = it->second.theta;
-	float phi = it->second.phi;
 	auto dir = spherical_to_dir(theta, phi, item->hair_north_pole, item->hair_front_reference);
 	auto center = item->addon_center_point;
 
@@ -1657,9 +1735,9 @@ inline cJSON* h_strand_add_semantic_width_point(cJSON* params, List& list) {
 		                      "BVH not built; call setAngleConfig first");
 	}
 
-	// Look up angle config
-	auto it = item->hair_angle_config.find({x, y});
-	if (it == item->hair_angle_config.end()) {
+	// Look up (or interpolate) angle config
+	float theta, phi;
+	if (!interpolate_angle_config(item->hair_angle_config, x, y, theta, phi)) {
 		cJSON_Delete(params);
 		return error_response("NO_ANGLE_CONFIG",
 		                      "no angle configured for (x,y); "
@@ -1681,8 +1759,6 @@ inline cJSON* h_strand_add_semantic_width_point(cJSON* params, List& list) {
 	}
 
 	// Ray cast
-	float theta = it->second.theta;
-	float phi = it->second.phi;
 	auto dir = spherical_to_dir(theta, phi, item->hair_north_pole, item->hair_front_reference);
 	auto center = item->addon_center_point;
 
@@ -1747,6 +1823,32 @@ inline cJSON* h_strand_add_semantic_width_point(cJSON* params, List& list) {
 	cJSON_AddItemToObject(wp_json, "direction", vec3_to_json(width_dir));
 	cJSON_AddItemToObject(wp_json, "surface_point", vec3_to_json(hit_point));
 	cJSON_AddItemToObject(r, "width_point", wp_json);
+	return r;
+}
+
+// ===================================================================
+// strand.applyHairlineSpindle
+// ===================================================================
+
+inline cJSON* h_strand_apply_hairline_spindle(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	if (node_id < 0) {
+		cJSON_Delete(params);
+		return error_response("INVALID_PARAMS", "node_id is required");
+	}
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) { cJSON_Delete(params); return err; }
+
+	item->apply_hairline_spindle();
+
+	cJSON_Delete(params);
+
+	cJSON* r = cJSON_CreateObject();
+	cJSON_AddTrueToObject(r, "ok");
+	cJSON_AddStringToObject(r, "message", "hairline spindle applied");
 	return r;
 }
 

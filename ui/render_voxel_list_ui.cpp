@@ -1402,9 +1402,11 @@ void RenderVoxelList::load_recent_state() {
                          std::istreambuf_iterator<char>());
     ifs.close();
 
-    // 去除 BOM
-    if (json_str.size() >= 3 && json_str[0] == '\xEF' &&
-        json_str[1] == '\xBB' && json_str[2] == '\xBF') {
+    // 去除 BOM (use unsigned char to avoid signed-char overflow UB)
+    if (json_str.size() >= 3 &&
+        static_cast<unsigned char>(json_str[0]) == 0xEF &&
+        static_cast<unsigned char>(json_str[1]) == 0xBB &&
+        static_cast<unsigned char>(json_str[2]) == 0xBF) {
         json_str.erase(0, 3);
     }
 
@@ -1444,6 +1446,7 @@ void RenderVoxelList::save_recent_state() const {
                            const std::vector<RecentEntry>& entries) {
         cJSON* arr = cJSON_CreateArray();
         for (const auto& e : entries) {
+            std::cerr << "[recent] save_entries key=" << key << " path='" << e.path << "' size=" << e.path.size() << std::endl;
             cJSON* obj = cJSON_CreateObject();
             cJSON_AddStringToObject(obj, "path", e.path.c_str());
             cJSON_AddNumberToObject(obj, "time",
@@ -1453,6 +1456,7 @@ void RenderVoxelList::save_recent_state() const {
         cJSON_AddItemToObject(parent, key, arr);
     };
 
+    std::cerr << "[recent] save_recent_state: recent_files=" << recent_files.size() << " recent_projects=" << recent_projects.size() << std::endl;
     save_entries(root, "recent_files", recent_files);
     save_entries(root, "recent_projects", recent_projects);
 
@@ -1479,8 +1483,14 @@ void RenderVoxelList::save_recent_state() const {
 }
 
 static void add_recent_entry(std::vector<RenderVoxelList::RecentEntry>& entries,
-                             const std::string& path,
+                             const std::string& path_ref,
                              size_t max_entries) {
+    // CRITICAL: copy path BEFORE erasing entries. The caller may pass
+    // entries[i].path as the path argument, and erase would destroy
+    // the referenced string (use-after-free).
+    std::string path = path_ref;
+    std::cerr << "[recent] add_recent_entry path='" << path << "' size=" << path.size() << std::endl;
+    if (path.empty()) return;
     // 计算时间戳
     auto now = std::chrono::system_clock::now();
     int64_t timestamp =
@@ -1489,18 +1499,29 @@ static void add_recent_entry(std::vector<RenderVoxelList::RecentEntry>& entries,
             .count();
 
     // 移除已有的同路径条目
+    std::cerr << "[recent] before remove_if, entries.size()=" << entries.size() << std::endl;
+    for (size_t di = 0; di < entries.size(); ++di) {
+        std::cerr << "[recent]   entries[" << di << "].path='" << entries[di].path << "' size=" << entries[di].path.size() << std::endl;
+    }
     entries.erase(
         std::remove_if(entries.begin(), entries.end(),
                        [&path](const RenderVoxelList::RecentEntry& e) {
-                           return e.path == path;
+                           bool match = (e.path == path);
+                           std::cerr << "[recent] remove_if comparing e.path='" << e.path << "' with path='" << path << "' match=" << match << std::endl;
+                           return match;
                        }),
         entries.end());
+    std::cerr << "[recent] after remove_if+erase, entries.size()=" << entries.size() << std::endl;
 
     // 插入到最前面
     RenderVoxelList::RecentEntry entry;
     entry.path = path;
-    entry.timestamp = timestamp;
+    std::cerr << "[recent] before insert, local entry.path='" << entry.path << "' size=" << entry.path.size() << " entries.size()=" << entries.size() << std::endl;
     entries.insert(entries.begin(), std::move(entry));
+    std::cerr << "[recent] after insert, local entry.path='" << entry.path << "' size=" << entry.path.size() << std::endl;
+    std::cerr << "[recent] after insert, entries[0].path='" << entries[0].path << "' size=" << entries[0].path.size() << std::endl;
+
+    std::cerr << "[recent] after add, recent_projects has " << entries.size() << " entries" << std::endl;
 
     // 限制最大条目数
     while (entries.size() > max_entries) {
@@ -1599,9 +1620,12 @@ void RenderVoxelList::render_recent_files_menu() {
                          label.c_str(), i);
 
                 if (ImGui::MenuItem(menu_id)) {
+                    std::cerr << "[recent] clicked entry i=" << i << " path='" << entry.path << "' size=" << entry.path.size() << std::endl;
                     std::error_code ec;
                     if (std::filesystem::is_directory(p, ec)) {
+                        std::cerr << "[recent] is_directory=true, calling load_project" << std::endl;
                         if (load_project(entry.path)) {
+                            std::cerr << "[recent] load_project succeeded, calling add_recent_project('" << entry.path << "')" <<  std::endl;
                             add_recent_project(entry.path);
                         } else {
                             std::string msg =
