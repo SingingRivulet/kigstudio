@@ -1479,6 +1479,7 @@ inline cJSON* h_strand_set_angle_config(cJSON* params, List& list) {
 	}
 	item->hair_bvh = std::move(bvh);
 	item->hair_bvh_base_node_id = base_node_id;
+	item->dirty = true;  // persist angle config changes
 		// Mark BVH as current with respect to the base mesh state.
 		// cached_mesh_dirty defaults to true and is only flipped to
 		// false by the export task queue; setAngleConfig may build the
@@ -1837,11 +1838,14 @@ inline cJSON* h_strand_apply_hairline_spindle(cJSON* params, List& list) {
 		return error_response("INVALID_PARAMS", "node_id is required");
 	}
 
+	float scale = json_float(params, "scale", 0.8f);
+
 	std::lock_guard<std::mutex> lock(list.locker);
 	cJSON* err = nullptr;
 	Item* item = find_item(list, node_id, err);
 	if (!item) { cJSON_Delete(params); return err; }
 
+	item->hairline_spindle_scale = scale;
 	item->apply_hairline_spindle();
 
 	cJSON_Delete(params);

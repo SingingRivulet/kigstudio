@@ -338,6 +338,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
                           item.hairline_plane_use_y);
     cJSON_AddNumberToObject(obj, "hairline_plane_y",
                             item.hairline_plane_y);
+    cJSON_AddNumberToObject(obj, "hairline_spindle_scale",
+                            item.hairline_spindle_scale);
     cJSON_AddItemToObject(
         obj, "hairline_plane_p0",
         sinriv::kigstudio::to_json(item.hairline_plane_points[0]));
@@ -347,6 +349,25 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
     cJSON_AddItemToObject(
         obj, "hairline_plane_p2",
         sinriv::kigstudio::to_json(item.hairline_plane_points[2]));
+    // Semantic coordinate angle config
+    cJSON_AddItemToObject(
+        obj, "hair_north_pole",
+        sinriv::kigstudio::to_json(item.hair_north_pole));
+    cJSON_AddItemToObject(
+        obj, "hair_front_reference",
+        sinriv::kigstudio::to_json(item.hair_front_reference));
+    if (!item.hair_angle_config.empty()) {
+        cJSON* ac_arr = cJSON_CreateArray();
+        for (const auto& [key, entry] : item.hair_angle_config) {
+            cJSON* ac_obj = cJSON_CreateObject();
+            cJSON_AddNumberToObject(ac_obj, "x", key.first);
+            cJSON_AddNumberToObject(ac_obj, "y", key.second);
+            cJSON_AddNumberToObject(ac_obj, "theta", entry.theta);
+            cJSON_AddNumberToObject(ac_obj, "phi", entry.phi);
+            cJSON_AddItemToArray(ac_arr, ac_obj);
+        }
+        cJSON_AddItemToObject(obj, "hair_angle_config", ac_arr);
+    }
     cJSON_AddNumberToObject(obj, "silhouette_shape_mode",
                             static_cast<int>(item.silhouette_shape_mode));
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
@@ -672,18 +693,9 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
             } else if (strcmp(key, "hairline_plane_y") == 0) {
                 item->hairline_plane_y =
                     static_cast<float>(child->valuedouble);
-            } else if (strcmp(key, "hairline_plane_p0") == 0) {
-                item->hairline_plane_points[0] =
-                    sinriv::kigstudio::vec3_from_json<
-                        sinriv::kigstudio::vec3<float>>(child);
-            } else if (strcmp(key, "hairline_plane_p1") == 0) {
-                item->hairline_plane_points[1] =
-                    sinriv::kigstudio::vec3_from_json<
-                        sinriv::kigstudio::vec3<float>>(child);
-            } else if (strcmp(key, "hairline_plane_p2") == 0) {
-                item->hairline_plane_points[2] =
-                    sinriv::kigstudio::vec3_from_json<
-                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "hairline_spindle_scale") == 0) {
+                item->hairline_spindle_scale =
+                    static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "voxel_picking_enabled") == 0) {
                 item->voxel_picking_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "use_cgal_skeleton") == 0) {
@@ -727,6 +739,26 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->addon_center_point =
                     sinriv::kigstudio::vec3_from_json<
                         sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "hairline_plane_p0") == 0) {
+                item->hairline_plane_points[0] =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "hairline_plane_p1") == 0) {
+                item->hairline_plane_points[1] =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "hairline_plane_p2") == 0) {
+                item->hairline_plane_points[2] =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "hair_north_pole") == 0) {
+                item->hair_north_pole =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "hair_front_reference") == 0) {
+                item->hair_front_reference =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
             } else if (strcmp(key, "voxel_global_position") == 0) {
                 item->voxel_grid_data.global_position =
                     sinriv::kigstudio::vec3_from_json<
@@ -768,6 +800,23 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 for (int si = 0; si < strand_count; ++si) {
                     item->hair_strands.push_back(hair_strand_from_json(
                         cJSON_GetArrayItem(child, si)));
+                }
+            } else if (strcmp(key, "hair_angle_config") == 0) {
+                item->hair_angle_config.clear();
+                int ac_n = cJSON_GetArraySize(child);
+                for (int ai = 0; ai < ac_n; ++ai) {
+                    cJSON* ac_obj = cJSON_GetArrayItem(child, ai);
+                    if (!cJSON_IsObject(ac_obj)) continue;
+                    float ax = static_cast<float>(
+                        cJSON_GetObjectItem(ac_obj, "x")->valuedouble);
+                    float ay = static_cast<float>(
+                        cJSON_GetObjectItem(ac_obj, "y")->valuedouble);
+                    HairAngleEntry ae;
+                    ae.theta = static_cast<float>(
+                        cJSON_GetObjectItem(ac_obj, "theta")->valuedouble);
+                    ae.phi = static_cast<float>(
+                        cJSON_GetObjectItem(ac_obj, "phi")->valuedouble);
+                    item->hair_angle_config[{ax, ay}] = ae;
                 }
             }
         }
@@ -843,6 +892,26 @@ cJSON* RenderVoxelList::snapshot_to_json(
     cJSON_AddBoolToObject(obj, "addon_sdf_boolean",
                           snapshot.addon_sdf_boolean);
     cJSON_AddBoolToObject(obj, "addon_sdf_split", snapshot.addon_sdf_split);
+    // Semantic coordinate angle config
+    cJSON_AddItemToObject(obj, "hair_north_pole",
+                          sinriv::kigstudio::to_json(snapshot.hair_north_pole));
+    cJSON_AddItemToObject(
+        obj, "hair_front_reference",
+        sinriv::kigstudio::to_json(snapshot.hair_front_reference));
+    cJSON_AddNumberToObject(obj, "addon_base_node_id",
+                            snapshot.addon_base_node_id);
+    if (!snapshot.hair_angle_config.empty()) {
+        cJSON* ac_arr = cJSON_CreateArray();
+        for (const auto& [key, entry] : snapshot.hair_angle_config) {
+            cJSON* ac_obj = cJSON_CreateObject();
+            cJSON_AddNumberToObject(ac_obj, "x", key.first);
+            cJSON_AddNumberToObject(ac_obj, "y", key.second);
+            cJSON_AddNumberToObject(ac_obj, "theta", entry.theta);
+            cJSON_AddNumberToObject(ac_obj, "phi", entry.phi);
+            cJSON_AddItemToArray(ac_arr, ac_obj);
+        }
+        cJSON_AddItemToObject(obj, "hair_angle_config", ac_arr);
+    }
     cJSON_AddNumberToObject(obj, "node_source_data_type",
                             snapshot.node_source_data_type);
     cJSON_AddNumberToObject(obj, "node_source_sdf_subdivisions",
@@ -867,6 +936,8 @@ cJSON* RenderVoxelList::snapshot_to_json(
                           snapshot.hairline_plane_use_y);
     cJSON_AddNumberToObject(obj, "hairline_plane_y",
                             snapshot.hairline_plane_y);
+    cJSON_AddNumberToObject(obj, "hairline_spindle_scale",
+                            snapshot.hairline_spindle_scale);
     cJSON_AddItemToObject(
         obj, "hairline_plane_p0",
         sinriv::kigstudio::to_json(snapshot.hairline_plane_points[0]));
@@ -1171,6 +1242,9 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
             } else if (strcmp(key, "hairline_plane_y") == 0) {
                 snapshot.hairline_plane_y =
                     static_cast<float>(child->valuedouble);
+            } else if (strcmp(key, "hairline_spindle_scale") == 0) {
+                snapshot.hairline_spindle_scale =
+                    static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "hairline_plane_p0") == 0) {
                 snapshot.hairline_plane_points[0] =
                     sinriv::kigstudio::vec3_from_json<
@@ -1191,6 +1265,35 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.addon_sdf_boolean = cJSON_IsTrue(child);
             } else if (strcmp(key, "addon_sdf_split") == 0) {
                 snapshot.addon_sdf_split = cJSON_IsTrue(child);
+            } else if (strcmp(key, "hair_north_pole") == 0) {
+                snapshot.hair_north_pole =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "hair_front_reference") == 0) {
+                snapshot.hair_front_reference =
+                    sinriv::kigstudio::vec3_from_json<
+                        sinriv::kigstudio::vec3<float>>(child);
+            } else if (strcmp(key, "addon_base_node_id") == 0) {
+                snapshot.addon_base_node_id = child->valueint;
+            } else if (strcmp(key, "hair_angle_config") == 0) {
+                snapshot.hair_angle_config.clear();
+                if (cJSON_IsArray(child)) {
+                    int ac_n = cJSON_GetArraySize(child);
+                    for (int ai = 0; ai < ac_n; ++ai) {
+                        cJSON* ac_obj = cJSON_GetArrayItem(child, ai);
+                        if (!cJSON_IsObject(ac_obj)) continue;
+                        float ax = static_cast<float>(
+                            cJSON_GetObjectItem(ac_obj, "x")->valuedouble);
+                        float ay = static_cast<float>(
+                            cJSON_GetObjectItem(ac_obj, "y")->valuedouble);
+                        HairAngleEntry ae;
+                        ae.theta = static_cast<float>(
+                            cJSON_GetObjectItem(ac_obj, "theta")->valuedouble);
+                        ae.phi = static_cast<float>(
+                            cJSON_GetObjectItem(ac_obj, "phi")->valuedouble);
+                        snapshot.hair_angle_config[{ax, ay}] = ae;
+                    }
+                }
             }
         } else if (cJSON_IsString(child)) {
             if (strcmp(key, "stl_path") == 0) {

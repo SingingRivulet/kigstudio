@@ -390,8 +390,8 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
 
     ImGui::Checkbox(get_locale_cstr("label.auto_segment_update"),
                     &item.auto_segment_update);
-    ImGui::Checkbox(get_locale_cstr("label.show_origin_mesh"),
-                    &item.showOriginMesh);
+    // ImGui::Checkbox(get_locale_cstr("label.show_origin_mesh"),
+    //                 &item.showOriginMesh);
 
     // 附加件模式：用显露/拆分勾选框替代下拉模式选择
     if (item.source_type == 2) {

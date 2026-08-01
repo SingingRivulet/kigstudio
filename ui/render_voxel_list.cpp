@@ -82,6 +82,13 @@ void RenderVoxelList::setVoxelsVisible(bool visible) {
         it->second->showVoxel = visible;
     }
 }
+void RenderVoxelList::setAddonMeshVisible(bool visible) {
+    std::lock_guard<std::mutex> lock(locker);
+    auto it = items.find(render_id);
+    if (it != items.end()) {
+        it->second->showAddonMesh = visible;
+    }
+}
 void RenderVoxelList::setCollisionVisible(bool visible) {
     std::lock_guard<std::mutex> lock(locker);
     auto it = items.find(render_id);

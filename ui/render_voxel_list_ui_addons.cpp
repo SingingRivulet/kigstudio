@@ -12,6 +12,7 @@
 #include <cmath>
 #include <limits>
 #include <type_traits>
+#include <set>
 #include <unordered_set>
 #include <variant>
 #ifdef _WIN32
@@ -22,6 +23,7 @@
 #include "kigstudio/utils/locale.h"
 #include "kigstudio/utils/vec3.h"
 #include "kigstudio/voxel/voxel2mesh.h"
+#include "kigstudio/agent/agent_handlers.h"
 #include "render_voxel_list.h"
 #include "tinyfiledialogs.h"
 namespace sinriv::ui::render {
@@ -741,10 +743,10 @@ void RenderVoxelList::render_object_editor_addons() {
         return;
     }
 
-    // 底模可见性
+    // 底模可见性（独立变量，与右下角按钮OR逻辑）
     if (ImGui::Checkbox(get_locale_cstr("label.show_origin_mesh"),
-                        &item.showOriginMesh)) {
-        showOriginMesh = item.showOriginMesh;
+                        &item.showOriginMeshAddon)) {
+        // 仅影响附加件自身的显示状态，不联动按钮
     }
     ImGui::SameLine();
     if (item.addon_base_node_id >= 0 && !item.origin_mesh_renderer.empty()) {
@@ -757,34 +759,7 @@ void RenderVoxelList::render_object_editor_addons() {
 
     ImGui::Separator();
 
-    // 中心点（发根汇聚点，所有发束共享）
-    {
-        bool old_show = item.show_addon_center;
-        ImGui::Checkbox(get_locale_cstr("label.addon_center_point"),
-                        &item.show_addon_center);
-        if (old_show != item.show_addon_center) {
-            push_undo_now(item.id, std::nullopt, "Toggle Center Point");
-        }
-        if (item.show_addon_center) {
-            auto cp_edit = edit_vec3_stepper(
-                get_locale_cstr("label.addon_center_point"),
-                item.addon_center_point, 0.1f);
-            if (cp_edit.activated) {
-                begin_edit(item.id);
-            }
-            if (cp_edit.deactivated_after_edit) {
-                end_edit(item.id, "Center Point Edit");
-                for (auto& s : item.hair_strands) s.mesh_dirty = true;
-            } else if (cp_edit.value_changed) {
-                push_undo_now(item.id, std::nullopt, "Center Point Edit");
-                for (auto& s : item.hair_strands) s.mesh_dirty = true;
-            }
-        }
-    }
-
-    ImGui::Separator();
-
-    // 自动宽度按钮（打开发际线平面窗口）
+    // 自动宽度按钮（打开自动宽度窗口）
     if (ImGui::Button(get_locale_cstr("action.auto_width"))) {
         show_hairline_plane_window = true;
     }
@@ -796,6 +771,17 @@ void RenderVoxelList::render_object_editor_addons() {
     // 发际线平面窗口存在时，自动启用发际线平面
     if (show_hairline_plane_window) {
         item.hairline_plane_enabled = true;
+    }
+
+    ImGui::SameLine();
+
+    // 坐标系配置编辑器按钮
+    if (ImGui::Button(get_locale_cstr("action.angle_config"))) {
+        show_angle_config_window = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s",
+            get_locale_cstr("tooltip.angle_config"));
     }
 
     ImGui::Separator();
@@ -1110,7 +1096,7 @@ void RenderVoxelList::render_hairline_plane_window() {
     if (!show_hairline_plane_window)
         return;
 
-    // 互斥：打开发际线窗口时关闭其他编辑窗口
+    // Mutual exclusion with other editor windows (but NOT angle config)
     if (show_guide_curve_window) {
         auto git = items.find(render_id);
         if (git != items.end()) {
@@ -1127,8 +1113,9 @@ void RenderVoxelList::render_hairline_plane_window() {
         }
         show_width_editor_window = false;
     }
+    // NOTE: no longer close show_angle_config_window
 
-    ImGui::SetNextWindowSize(ImVec2(420, 320), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(320, 180), ImGuiCond_Once);
     bool window_open = true;
     if (!ImGui::Begin(get_locale_cstr("window.auto_width"), &window_open)) {
         ImGui::End();
@@ -1154,14 +1141,6 @@ void RenderVoxelList::render_hairline_plane_window() {
 
     RenderVoxelItem& item = *item_it->second;
 
-    // 发际线平面启用开关
-    bool old_enabled = item.hairline_plane_enabled;
-    ImGui::Checkbox(get_locale_cstr("label.hairline_plane_enable"),
-                    &item.hairline_plane_enabled);
-    if (old_enabled != item.hairline_plane_enabled) {
-        push_undo_now(item.id, std::nullopt, "Toggle Hairline Plane");
-    }
-
     if (!item.hairline_plane_enabled) {
         ImGui::TextDisabled("%s",
             get_locale_cstr("label.hairline_plane_disabled_hint"));
@@ -1171,123 +1150,17 @@ void RenderVoxelList::render_hairline_plane_window() {
 
     ImGui::Separator();
 
-    // 平面模式
-    const char* plane_mode_items[] = {
-        get_locale_cstr("label.hairline_y_plane"),
-        get_locale_cstr("label.hairline_3point_plane"),
-    };
-    int plane_mode = item.hairline_plane_use_y ? 0 : 1;
-    ImGui::SetNextItemWidth(160);
-    if (ImGui::Combo(get_locale_cstr("label.hairline_plane_mode"),
-                    &plane_mode, plane_mode_items,
-                    IM_ARRAYSIZE(plane_mode_items))) {
-        push_undo_now(item.id, std::nullopt, "Hairline Plane Mode");
-        item.hairline_plane_use_y = (plane_mode == 0);
-    }
+    // ---- Scale factor ----
+    ImGui::SetNextItemWidth(200);
+    ImGui::DragFloat(get_locale_cstr("label.hairline_spindle_scale"),
+                     &item.hairline_spindle_scale,
+                     0.01f, 0.0f, 1.0f, "%.2f");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.hairline_spindle_scale"));
 
     ImGui::Separator();
 
-    if (item.hairline_plane_use_y) {
-        // Y 水平面模式
-        float old_y = item.hairline_plane_y;
-        ImGui::SetNextItemWidth(200);
-        ImGui::DragFloat(get_locale_cstr("label.hairline_y"),
-                         &item.hairline_plane_y, 0.1f);
-        if (ImGui::IsItemActivated()) begin_edit(item.id);
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            end_edit(item.id, "Hairline Y Edit");
-            for (auto& s : item.hair_strands) s.mesh_dirty = true;
-        } else if (old_y != item.hairline_plane_y) {
-            push_undo_now(item.id, std::nullopt, "Hairline Y Edit");
-        }
-
-        ImGui::TextDisabled("%s",
-            get_locale_cstr("label.hairline_preview_triangle"));
-    } else {
-        // 三点平面模式：每行一个点 + [拾取] 按钮
-        bool pt_activated = false;
-        bool pt_deactivated = false;
-        bool pt_changed = false;
-
-        for (int pi = 0; pi < 3; ++pi) {
-            ImGui::PushID(pi);
-
-            char label_buf[64];
-            snprintf(label_buf, sizeof(label_buf),
-                     get_locale_cstr("label.hairline_point"),
-                     pi + 1);
-
-            auto r = edit_vec3_stepper(label_buf,
-                                       item.hairline_plane_points[pi], 0.1f);
-            pt_activated |= r.activated;
-            pt_deactivated |= r.deactivated_after_edit;
-            pt_changed |= r.value_changed;
-
-            // 拾取按钮
-            ImGui::SameLine();
-            bool is_picking =
-                item.hairline_point_picking_active &&
-                item.hairline_picking_point_index == pi;
-            if (is_picking) {
-                ImGui::PushStyleColor(ImGuiCol_Button,
-                                      ImVec4(0.2f, 0.5f, 1.0f, 1.0f));
-            }
-            char pick_label[64];
-            snprintf(pick_label, sizeof(pick_label),
-                     is_picking
-                         ? get_locale_cstr("action.picking")
-                         : get_locale_cstr("action.pick_point"),
-                     pi + 1);
-            if (ImGui::SmallButton(pick_label)) {
-                if (is_picking) {
-                    // Cancel picking
-                    item.hairline_point_picking_active = false;
-                } else {
-                    // Start picking this point
-                    item.hairline_point_picking_active = true;
-                    item.hairline_picking_point_index = pi;
-                }
-            }
-            if (is_picking) {
-                ImGui::PopStyleColor();
-            }
-            if (ImGui::IsItemHovered() && !is_picking) {
-                ImGui::SetTooltip("%s",
-                    get_locale_cstr("tooltip.pick_point"));
-            }
-
-            ImGui::PopID();
-        }
-
-        if (pt_activated) begin_edit(item.id);
-        if (pt_deactivated) {
-            end_edit(item.id, "Hairline Points Edit");
-            for (auto& s : item.hair_strands) s.mesh_dirty = true;
-        } else if (pt_changed) {
-            push_undo_now(item.id, std::nullopt, "Hairline Points Edit");
-        }
-
-        // 三点平面退化提示
-        {
-            const auto& p0 = item.hairline_plane_points[0];
-            const auto& p1 = item.hairline_plane_points[1];
-            const auto& p2 = item.hairline_plane_points[2];
-            vec3f e1 = {p1.x - p0.x, p1.y - p0.y, p1.z - p0.z};
-            vec3f e2 = {p2.x - p0.x, p2.y - p0.y, p2.z - p0.z};
-            float area = std::sqrt(
-                (e1.y * e2.z - e1.z * e2.y) * (e1.y * e2.z - e1.z * e2.y) +
-                (e1.z * e2.x - e1.x * e2.z) * (e1.z * e2.x - e1.x * e2.z) +
-                (e1.x * e2.y - e1.y * e2.x) * (e1.x * e2.y - e1.y * e2.x));
-            if (area < 1e-6f) {
-                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s",
-                    get_locale_cstr("label.hairline_degenerate"));
-            }
-        }
-    }
-
-    ImGui::Separator();
-
-    // 应用按钮
+    // ---- Apply button ----
     if (ImGui::Button(get_locale_cstr("action.apply_hairline_spindle"),
                       ImVec2(-1, 0))) {
         push_undo_now(item.id, std::nullopt, "Apply Hairline Spindle");
@@ -1302,4 +1175,721 @@ void RenderVoxelList::render_hairline_plane_window() {
     ImGui::End();
 }
 
+// ============================================================
+// Semantic coordinate anchor point definitions (from api-reference.md)
+// X-axis (Y=0): left-to-right lateral anchors
+// Y-axis (X=0): front-to-back midline anchors
+// ============================================================
+struct AnchorPoint { int x; int y; const char* name_en; const char* name_zh; };
+static const AnchorPoint kAnchorPoints[] = {
+    // X axis (Y=0) — lateral cross-section
+    {-10,0,"Posterior midline (L)","后正中线（左）"},
+    {-9,0,"Lateral occipital (L)","枕骨外侧（左）"},
+    {-8,0,"Mastoid process (L)","乳突（左）"},
+    {-7,0,"Helix outer edge (L)","耳轮外缘（左）"},
+    {-6,0,"Tragus (L)","耳屏（左）"},
+    {-5,0,"Zygomatic arch (L)","颧弓最外侧（左）"},
+    {-4,0,"Outer canthus (L)","外眼角（左）"},
+    {-3,0,"Pupil center (L)","瞳孔中心（左）"},
+    {-2,0,"Inner canthus (L)","内眼角（左）"},
+    {-1,0,"Ala of nose (L)","鼻翼外缘（左）"},
+    {0,0,"Midline / Midsagittal","鼻中线 / 前正中线"},
+    {1,0,"Ala of nose (R)","鼻翼外缘（右）"},
+    {2,0,"Inner canthus (R)","内眼角（右）"},
+    {3,0,"Pupil center (R)","瞳孔中心（右）"},
+    {4,0,"Outer canthus (R)","外眼角（右）"},
+    {5,0,"Zygomatic arch (R)","颧弓最外侧（右）"},
+    {6,0,"Tragus (R)","耳屏（右）"},
+    {7,0,"Helix outer edge (R)","耳轮外缘（右）"},
+    {8,0,"Mastoid process (R)","乳突（右）"},
+    {9,0,"Lateral occipital (R)","枕骨外侧（右）"},
+    {10,0,"Posterior midline (R)","后正中线（右）"},
+    // Y axis front (X=0) — frontal midline
+    {0,1,"Forehead hairline","额头发际线"},
+    {0,2,"Upper brow","眉毛上缘"},
+    {0,3,"Lower brow","眉毛下缘"},
+    {0,4,"Nasion","鼻根"},
+    {0,5,"Upper eye","眼上缘"},
+    {0,6,"Lower eye","眼下缘"},
+    {0,7,"Nose tip","鼻尖"},
+    {0,8,"Nasal base","鼻底"},
+    {0,9,"Upper lip","嘴唇上缘"},
+    {0,10,"Oral fissure","口裂"},
+    {0,11,"Lower lip","嘴唇下缘"},
+    {0,12,"Chin (Menton)","颏部"},
+    {0,13,"Mandible border","下颌下缘"},
+    {0,14,"Anterior neck","颈前部"},
+    // Y axis back (X=0) — posterior midline
+    {0,-1,"Coronal suture","冠状缝附近"},
+    {0,-2,"Parietal center","顶骨中央"},
+    {0,-3,"Lambda","顶枕点"},
+    {0,-4,"Upper occipital","枕骨上部"},
+    {0,-5,"External Occipital Protuberance","枕外隆凸"},
+    {0,-6,"Superior nuchal line","上项线"},
+    {0,-7,"Lower occipital","枕骨下部"},
+    {0,-8,"Posterior hairline","后发际线"},
+    {0,-9,"Posterior neck junction","颈后连接处"},
+    {0,-10,"Lower posterior neck","颈后下部"},
+};
+
+static const AnchorPoint* find_anchor(int x, int y) {
+    for (const auto& a : kAnchorPoints)
+        if (a.x == x && a.y == y) return &a;
+    return nullptr;
+}
+
+static const char* get_anchor_name(int x, int y) {
+    auto* a = find_anchor(x, y);
+    return a ? (get_system_language() == "zh" ? a->name_zh : a->name_en) : nullptr;
+}
+
+// Always returns Chinese name (used in table display)
+static const char* get_anchor_name_cn(int x, int y) {
+    auto* a = find_anchor(x, y);
+    return a ? a->name_zh : nullptr;
+}
+
+// ============================================================
+// Cross-validation: ensure no grid lines cross
+// ============================================================
+static bool validate_angle_grid(
+    const std::map<std::pair<float, float>, HairAngleEntry>& config,
+    int proposed_x, int proposed_y,
+    float new_theta, float new_phi)
+{
+    // Build temporary config with the proposed value
+    auto tmp = config;
+    tmp[{static_cast<float>(proposed_x), static_cast<float>(proposed_y)}] =
+        HairAngleEntry{new_theta, new_phi};
+
+    // 1. Theta monotonicity per row (fixed Y)
+    for (int y = -10; y <= 14; ++y) {
+        std::vector<std::pair<int, float>> row;  // (X, theta)
+        for (int x = -10; x <= 10; ++x) {
+            auto it = tmp.find({static_cast<float>(x), static_cast<float>(y)});
+            if (it != tmp.end()) {
+                row.push_back({x, it->second.theta});
+            }
+        }
+        if (row.size() < 2) continue;
+        bool increasing = true, decreasing = true;
+        for (size_t i = 1; i < row.size(); ++i) {
+            if (row[i].second <= row[i-1].second) increasing = false;
+            if (row[i].second >= row[i-1].second) decreasing = false;
+        }
+        if (!increasing && !decreasing) return false;
+    }
+
+    // 2. Phi monotonicity per column (fixed X)
+    for (int x = -10; x <= 10; ++x) {
+        std::vector<std::pair<int, float>> col;  // (Y, phi)
+        for (int y = -10; y <= 14; ++y) {
+            auto it = tmp.find({static_cast<float>(x), static_cast<float>(y)});
+            if (it != tmp.end()) {
+                col.push_back({y, it->second.phi});
+            }
+        }
+        if (col.size() < 2) continue;
+        bool increasing = true, decreasing = true;
+        for (size_t i = 1; i < col.size(); ++i) {
+            if (col[i].second <= col[i-1].second) increasing = false;
+            if (col[i].second >= col[i-1].second) decreasing = false;
+        }
+        if (!increasing && !decreasing) return false;
+    }
+
+    // 3. Midline separation: X=0 and X=±10 must not have overlapping theta
+    for (int y = -10; y <= 14; ++y) {
+        auto it0  = tmp.find({0.0f, static_cast<float>(y)});
+        auto it10 = tmp.find({10.0f, static_cast<float>(y)});
+        auto itm10 = tmp.find({-10.0f, static_cast<float>(y)});
+        float t0   = (it0 != tmp.end()) ? it0->second.theta : std::numeric_limits<float>::quiet_NaN();
+        float t10  = (it10 != tmp.end()) ? it10->second.theta : std::numeric_limits<float>::quiet_NaN();
+        float tm10 = (itm10 != tmp.end()) ? itm10->second.theta : std::numeric_limits<float>::quiet_NaN();
+        if (!std::isnan(t0) && !std::isnan(t10)) {
+            if (std::abs(t0 - t10) < 10.0f) return false;
+        }
+        if (!std::isnan(t0) && !std::isnan(tm10)) {
+            if (std::abs(t0 - tm10) < 10.0f) return false;
+        }
+    }
+
+    return true;
+}
+
+// ============================================================
+// Inverse of spherical_to_dir: convert world-space direction →
+// (theta, phi) using the same N/U/V frame.
+// Returns false when direction is parallel to north pole (theta undefined).
+// ============================================================
+static bool dir_to_spherical(
+    const vec3f& world_dir,
+    const vec3f& north_pole,
+    const vec3f& front_reference,
+    float& out_theta_deg,
+    float& out_phi_deg)
+{
+    vec3f d = world_dir.normalize();
+    vec3f N = north_pole.normalize();
+
+    // phi = asin(dot(d, N))
+    float dot_d_n = d.dot(N);
+    dot_d_n = std::max(-1.0f, std::min(1.0f, dot_d_n));
+    float phi_rad = std::asin(dot_d_n);
+    constexpr float kRadToDeg = 180.0f / 3.14159265358979323846f;
+    out_phi_deg = phi_rad * kRadToDeg;
+
+    // Project direction onto equatorial plane
+    vec3f d_uv = d - N * dot_d_n;
+    float uv_len2 = d_uv.length2();
+    constexpr float kEps = 1e-10f;
+
+    if (uv_len2 < kEps) {
+        // Direction is parallel to north pole → theta is undefined
+        out_theta_deg = 0.0f;
+        return false;
+    }
+
+    // Build U, V frame (same as spherical_to_dir)
+    vec3f F = front_reference.normalize();
+    float f_dot_n = F.dot(N);
+    vec3f V = F - N * f_dot_n;
+    float v_len2 = V.length2();
+
+    if (v_len2 < 1e-10f) {
+        vec3f A = (std::abs(N.z) < 0.99f)
+            ? vec3f(0.0f, 0.0f, 1.0f)
+            : vec3f(1.0f, 0.0f, 0.0f);
+        V = A - N * A.dot(N);
+        v_len2 = V.length2();
+    }
+    V = V / std::sqrt(v_len2);
+    vec3f U = cross(N, V);
+
+    // sin(theta) = dot(d_uv_norm, U), cos(theta) = dot(d_uv_norm, V)
+    float inv_len = 1.0f / std::sqrt(uv_len2);
+    float sin_t = d_uv.dot(U) * inv_len;
+    float cos_t = d_uv.dot(V) * inv_len;
+    float theta_rad = std::atan2(sin_t, cos_t);
+    out_theta_deg = theta_rad * kRadToDeg;
+
+    return true;
+}
+
+// ============================================================
+// Semantic coordinate angle config editor window
+// ============================================================
+void RenderVoxelList::render_angle_config_window() {
+    if (!show_addon_window) return;
+    if (!show_angle_config_window) return;
+
+    // Mutual exclusion: close sibling windows (but NOT auto-width/hairline plane)
+    if (show_guide_curve_window) {
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->guide_curve_drawing_active = false;
+            it->second->active_guide_draw_strand = -1;
+        }
+        show_guide_curve_window = false;
+    }
+    if (show_width_editor_window) {
+        auto wit = items.find(render_id);
+        if (wit != items.end()) {
+            wit->second->width_editing_active = false;
+            wit->second->active_width_edit_strand = -1;
+        }
+        show_width_editor_window = false;
+    }
+    if (show_cross_section_editor_window) {
+        auto sit = items.find(render_id);
+        if (sit != items.end()) sit->second->active_section_edit_strand = -1;
+        show_cross_section_editor_window = false;
+    }
+    if (show_perpoint_section_editor_window) {
+        auto pit = items.find(render_id);
+        if (pit != items.end()) {
+            pit->second->perpoint_section_editing_active = false;
+            pit->second->active_perpoint_section_edit_strand = -1;
+            pit->second->active_perpoint_section_edit_width_idx = -1;
+        }
+        show_perpoint_section_editor_window = false;
+    }
+    // NOTE: no longer close show_hairline_plane_window — they can coexist
+
+    ImGui::SetNextWindowSize(ImVec2(900, 680), ImGuiCond_Once);
+    bool window_open = true;
+    if (!ImGui::Begin(get_locale_cstr("window.angle_config"), &window_open)) {
+        ImGui::End();
+        return;
+    }
+
+    if (!window_open) {
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->angle_config_editing_x =
+                RenderVoxelItem::kAngleConfigSentinel;
+            it->second->angle_config_editing_y =
+                RenderVoxelItem::kAngleConfigSentinel;
+        }
+        show_angle_config_window = false;
+        ImGui::End();
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(locker);
+    auto item_it = items.find(render_id);
+    if (item_it == items.end() || item_it->second->source_type != 2) {
+        ImGui::TextUnformatted(get_locale_cstr("label.no_active_item"));
+        ImGui::End();
+        return;
+    }
+    auto& item = *item_it->second;
+
+    // Auto-enable center point and hairline plane when this window is open
+    item.show_addon_center = true;
+    item.hairline_plane_enabled = true;
+
+    constexpr int kXMin = -10, kXMax = 10;
+    constexpr int kYMin = -10, kYMax = 14;
+    constexpr int kSentinel = RenderVoxelItem::kAngleConfigSentinel;
+
+    // ================================================================
+    // Axis table rendering lambda (used in right panel below)
+    // ================================================================
+    auto render_axis_table = [&](const char* title, bool is_x_axis) {
+        ImGui::TextUnformatted(title);
+
+        ImGuiTableFlags tbl_flags = ImGuiTableFlags_Borders |
+            ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
+            ImGuiTableFlags_SizingFixedFit;
+
+        if (!ImGui::BeginTable(is_x_axis ? "##AxisTableX" : "##AxisTableY",
+                5, tbl_flags, ImVec2(0, 0))) {
+            return;
+        }
+        ImGui::TableSetupColumn(get_locale_cstr("label.angle_id"),
+            ImGuiTableColumnFlags_WidthFixed, 30.0f);
+        ImGui::TableSetupColumn(get_locale_cstr("label.angle_organ"),
+            ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn(get_locale_cstr("label.angle_theta"),
+            ImGuiTableColumnFlags_WidthFixed, 70.0f);
+        ImGui::TableSetupColumn(get_locale_cstr("label.angle_phi"),
+            ImGuiTableColumnFlags_WidthFixed, 70.0f);
+        ImGui::TableSetupColumn("",
+            ImGuiTableColumnFlags_WidthFixed, 100.0f);
+        ImGui::TableHeadersRow();
+
+        int row_id = 0;
+        int del_x = kSentinel, del_y = kSentinel;
+
+        int lo = is_x_axis ? kXMin : kYMax;
+        int hi = is_x_axis ? kXMax : kYMin;
+        int step = is_x_axis ? 1 : -1;  // Y goes top-down
+
+        for (int v = lo; (is_x_axis ? v <= hi : v >= hi); v += step) {
+            int x = is_x_axis ? v : 0;
+            int y = is_x_axis ? 0 : v;
+
+            auto it = item.hair_angle_config.find(
+                {static_cast<float>(x), static_cast<float>(y)});
+            bool configured = (it != item.hair_angle_config.end());
+            ++row_id;
+
+            auto open_edit = [&](float def_theta, float def_phi) {
+                item.angle_config_editing_x = x;
+                item.angle_config_editing_y = y;
+                item.angle_config_preview_theta = def_theta;
+                item.angle_config_preview_phi = def_phi;
+            };
+
+            ImGui::TableNextRow();
+
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Text("%d", row_id);
+
+            // Organ name
+            ImGui::TableSetColumnIndex(1);
+            const char* name_cn = get_anchor_name_cn(x, y);
+            if (name_cn)
+                ImGui::Text("%s  (%+d)", name_cn, v);
+            else
+                ImGui::Text("(%+d)", v);
+
+            // Theta
+            ImGui::TableSetColumnIndex(2);
+            if (configured)
+                ImGui::Text("%.0f°", it->second.theta);
+            else {
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                    ImVec4(0.45f, 0.45f, 0.45f, 1.0f));
+                ImGui::TextUnformatted("-");
+                ImGui::PopStyleColor();
+            }
+
+            // Phi
+            ImGui::TableSetColumnIndex(3);
+            if (configured)
+                ImGui::Text("%.0f°", it->second.phi);
+            else {
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                    ImVec4(0.45f, 0.45f, 0.45f, 1.0f));
+                ImGui::TextUnformatted("-");
+                ImGui::PopStyleColor();
+            }
+
+            // Action buttons
+            ImGui::TableSetColumnIndex(4);
+            char btn_id[48];
+            if (configured) {
+                snprintf(btn_id, sizeof(btn_id), "%s##e%d_%d",
+                    get_locale_cstr("action.angle_edit"), x, y);
+                if (ImGui::SmallButton(btn_id))
+                    open_edit(it->second.theta, it->second.phi);
+                ImGui::SameLine();
+                snprintf(btn_id, sizeof(btn_id), "%s##d%d_%d",
+                    get_locale_cstr("action.angle_delete"), x, y);
+                if (ImGui::SmallButton(btn_id)) {
+                    del_x = x;
+                    del_y = y;
+                }
+            } else {
+                snprintf(btn_id, sizeof(btn_id), "%s##a%d_%d",
+                    get_locale_cstr("action.angle_add_entry"), x, y);
+                if (ImGui::SmallButton(btn_id))
+                    open_edit((x == 0) ? 0.0f : x * 9.0f, y * 6.0f);
+            }
+        }
+
+        ImGui::EndTable();
+
+        // Handle delete outside table
+        if (del_x != kSentinel) {
+            push_undo_now(item.id, std::nullopt, "Angle Config Delete");
+            item.hair_angle_config.erase(
+                {static_cast<float>(del_x), static_cast<float>(del_y)});
+            for (auto& s : item.hair_strands) s.mesh_dirty = true;
+            if (item.angle_config_editing_x == del_x &&
+                item.angle_config_editing_y == del_y) {
+                item.angle_config_editing_x = kSentinel;
+                item.angle_config_editing_y = kSentinel;
+            }
+        }
+    };
+
+    // ================================================================
+    // Two-column layout: left = controls (fixed width),
+    //                     right = axis tables (fill remaining)
+    // ================================================================
+    const float kLeftPanelWidth = 300.0f;
+    if (ImGui::BeginTable("##AngleConfigLayout", 2,
+            ImGuiTableFlags_Resizable)) {
+        ImGui::TableSetupColumn("##LeftCol",
+            ImGuiTableColumnFlags_WidthFixed, kLeftPanelWidth);
+        ImGui::TableSetupColumn("##RightCol",
+            ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableNextRow();
+
+        // ---- Left panel: controls ----
+        ImGui::TableSetColumnIndex(0);
+        if (ImGui::BeginChild("##AngleConfigLeft", ImVec2(0, 0), false)) {
+
+            // ---- Center Point ----
+            if (ImGui::CollapsingHeader(
+                    get_locale_cstr("label.addon_center_point"),
+                    ImGuiTreeNodeFlags_DefaultOpen)) {
+                auto cp_edit = edit_vec3_stepper(
+                    get_locale_cstr("label.addon_center_point"),
+                    item.addon_center_point, 0.1f);
+                if (cp_edit.activated) begin_edit(item.id);
+                if (cp_edit.deactivated_after_edit) {
+                    end_edit(item.id, "Center Point Edit");
+                    for (auto& s : item.hair_strands) s.mesh_dirty = true;
+                } else if (cp_edit.value_changed) {
+                    push_undo_now(item.id, std::nullopt, "Center Point Edit");
+                    for (auto& s : item.hair_strands) s.mesh_dirty = true;
+                }
+            }
+
+            // ---- Hairline Plane ----
+            if (ImGui::CollapsingHeader(
+                    get_locale_cstr("label.hairline_plane"),
+                    ImGuiTreeNodeFlags_DefaultOpen)) {
+                const char* plane_mode_items[] = {
+                    get_locale_cstr("label.hairline_y_plane"),
+                    get_locale_cstr("label.hairline_3point_plane"),
+                };
+                int plane_mode = item.hairline_plane_use_y ? 0 : 1;
+                ImGui::SetNextItemWidth(120);
+                if (ImGui::Combo(get_locale_cstr("label.hairline_plane_mode"),
+                                &plane_mode, plane_mode_items, 2)) {
+                    push_undo_now(item.id, std::nullopt,
+                                  "Hairline Plane Mode");
+                    item.hairline_plane_use_y = (plane_mode == 0);
+                }
+
+                if (item.hairline_plane_use_y) {
+                    float old_y = item.hairline_plane_y;
+                    ImGui::SetNextItemWidth(160);
+                    ImGui::DragFloat(get_locale_cstr("label.hairline_y"),
+                                     &item.hairline_plane_y, 0.1f);
+                    if (ImGui::IsItemActivated()) begin_edit(item.id);
+                    if (ImGui::IsItemDeactivatedAfterEdit()) {
+                        end_edit(item.id, "Hairline Y Edit");
+                        for (auto& s : item.hair_strands) s.mesh_dirty = true;
+                    } else if (old_y != item.hairline_plane_y) {
+                        push_undo_now(item.id, std::nullopt,
+                                      "Hairline Y Edit");
+                    }
+                    ImGui::TextDisabled("%s",
+                        get_locale_cstr("label.hairline_preview_triangle"));
+                } else {
+                    bool pt_activated = false;
+                    bool pt_deactivated = false;
+                    bool pt_changed = false;
+
+                    for (int pi = 0; pi < 3; ++pi) {
+                        ImGui::PushID(pi);
+                        char label_buf[64];
+                        snprintf(label_buf, sizeof(label_buf),
+                                 get_locale_cstr("label.hairline_point"),
+                                 pi + 1);
+                        auto r = edit_vec3_stepper(label_buf,
+                            item.hairline_plane_points[pi], 0.1f);
+                        pt_activated |= r.activated;
+                        pt_deactivated |= r.deactivated_after_edit;
+                        pt_changed |= r.value_changed;
+
+                        ImGui::SameLine();
+                        bool is_picking =
+                            item.hairline_point_picking_active &&
+                            item.hairline_picking_point_index == pi;
+                        if (is_picking) {
+                            ImGui::PushStyleColor(ImGuiCol_Button,
+                                ImVec4(0.2f, 0.5f, 1.0f, 1.0f));
+                        }
+                        char pick_label[64];
+                        snprintf(pick_label, sizeof(pick_label),
+                                 is_picking
+                                     ? get_locale_cstr("action.picking")
+                                     : get_locale_cstr("action.pick_point"),
+                                 pi + 1);
+                        if (ImGui::SmallButton(pick_label)) {
+                            if (is_picking) {
+                                item.hairline_point_picking_active = false;
+                            } else {
+                                item.hairline_point_picking_active = true;
+                                item.hairline_picking_point_index = pi;
+                            }
+                        }
+                        if (is_picking) ImGui::PopStyleColor();
+                        if (ImGui::IsItemHovered() && !is_picking)
+                            ImGui::SetTooltip("%s",
+                                get_locale_cstr("tooltip.pick_point"));
+                        ImGui::PopID();
+                    }
+
+                    if (pt_activated) begin_edit(item.id);
+                    if (pt_deactivated) {
+                        end_edit(item.id, "Hairline Points Edit");
+                        for (auto& s : item.hair_strands) s.mesh_dirty = true;
+                    } else if (pt_changed) {
+                        push_undo_now(item.id, std::nullopt,
+                                      "Hairline Points Edit");
+                    }
+
+                    // Degeneracy warning
+                    {
+                        const auto& p0 = item.hairline_plane_points[0];
+                        const auto& p1 = item.hairline_plane_points[1];
+                        const auto& p2 = item.hairline_plane_points[2];
+                        vec3f e1{p1.x - p0.x, p1.y - p0.y, p1.z - p0.z};
+                        vec3f e2{p2.x - p0.x, p2.y - p0.y, p2.z - p0.z};
+                        float area = std::sqrt(
+                            (e1.y*e2.z - e1.z*e2.y)*(e1.y*e2.z - e1.z*e2.y) +
+                            (e1.z*e2.x - e1.x*e2.z)*(e1.z*e2.x - e1.x*e2.z) +
+                            (e1.x*e2.y - e1.y*e2.x)*(e1.x*e2.y - e1.y*e2.x));
+                        if (area < 1e-6f) {
+                            ImGui::TextColored(
+                                ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s",
+                                get_locale_cstr("label.hairline_degenerate"));
+                        }
+                    }
+                }
+            }
+
+            // ---- North Pole & Front Reference ----
+            if (ImGui::CollapsingHeader(
+                    get_locale_cstr("label.spherical_frame"),
+                    ImGuiTreeNodeFlags_DefaultOpen)) {
+                auto np_edit = edit_vec3_stepper(
+                    get_locale_cstr("label.north_pole"),
+                    item.hair_north_pole, 0.1f);
+                if (np_edit.activated) begin_edit(item.id);
+                if (np_edit.deactivated_after_edit) {
+                    end_edit(item.id, "North Pole Edit");
+                    for (auto& s : item.hair_strands) s.mesh_dirty = true;
+                } else if (np_edit.value_changed) {
+                    push_undo_now(item.id, std::nullopt, "North Pole Edit");
+                    for (auto& s : item.hair_strands) s.mesh_dirty = true;
+                }
+
+                auto fr_edit = edit_vec3_stepper(
+                    get_locale_cstr("label.front_reference"),
+                    item.hair_front_reference, 0.1f);
+                if (fr_edit.activated) begin_edit(item.id);
+                if (fr_edit.deactivated_after_edit) {
+                    end_edit(item.id, "Front Reference Edit");
+                    for (auto& s : item.hair_strands) s.mesh_dirty = true;
+                } else if (fr_edit.value_changed) {
+                    push_undo_now(item.id, std::nullopt,
+                                  "Front Reference Edit");
+                    for (auto& s : item.hair_strands) s.mesh_dirty = true;
+                }
+            }
+
+        }
+        ImGui::EndChild(); // AngleConfigLeft
+
+        // ---- Right panel: axis tables (tabbed) ----
+        ImGui::TableSetColumnIndex(1);
+        if (ImGui::BeginChild("##AngleConfigRight", ImVec2(0, 0), false)) {
+            if (ImGui::BeginTabBar("##AxisTabs")) {
+                if (ImGui::BeginTabItem(
+                        get_locale_cstr("label.angle_x_axis"))) {
+                    render_axis_table(
+                        get_locale_cstr("label.angle_x_axis"), true);
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem(
+                        get_locale_cstr("label.angle_y_axis"))) {
+                    render_axis_table(
+                        get_locale_cstr("label.angle_y_axis"), false);
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
+            }
+        }
+        ImGui::EndChild(); // AngleConfigRight
+
+        ImGui::EndTable(); // AngleConfigLayout
+    }
+
+    // ================================================================
+    // Direct model-click pick: when editor popup is active and user
+    // clicked the 3D model, compute (theta, phi) from the picked point.
+    // The popup may be auto-closed by the click (ImGui popup behavior),
+    // so we process the pick BEFORE calling OpenPopup to reopen it.
+    // ================================================================
+    if (item.angle_config_editing_x != kSentinel && mouse_world_pos_picked) {
+        vec3f pick_dir = mouse_world_pos - item.addon_center_point;
+        float dir_len2 = pick_dir.length2();
+        if (dir_len2 > 0.0001f) {
+            pick_dir = pick_dir / std::sqrt(dir_len2);
+            float pick_theta, pick_phi;
+            dir_to_spherical(pick_dir, item.hair_north_pole,
+                             item.hair_front_reference,
+                             pick_theta, pick_phi);
+            item.angle_config_preview_theta = pick_theta;
+            item.angle_config_preview_phi = pick_phi;
+        }
+        mouse_world_pos_picked = false; // consume the event
+    }
+
+    // ================================================================
+    // Editor window — uses a regular ImGui window (not a popup) so
+    // 3D model clicks pass through for direction picking.
+    // ================================================================
+    if (item.angle_config_editing_x != kSentinel) {
+        ImVec2 win_pos = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(win_pos, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(400, 240), ImGuiCond_Appearing);
+
+        char win_title[128];
+        snprintf(win_title, sizeof(win_title), "%s##AngleConfigEdit",
+                 get_locale_cstr("label.angle_edit_title"));
+        bool edit_open = true;
+        if (ImGui::Begin(win_title, &edit_open)) {
+            int ex = item.angle_config_editing_x;
+            int ey = item.angle_config_editing_y;
+            if (!edit_open || ex == kSentinel) {
+                item.angle_config_editing_x = kSentinel;
+                item.angle_config_editing_y = kSentinel;
+                ImGui::End();
+                ImGui::End();  // outer window
+                return;
+            }
+
+            auto cfg_it = item.hair_angle_config.find(
+                {static_cast<float>(ex), static_cast<float>(ey)});
+            bool is_new = (cfg_it == item.hair_angle_config.end());
+
+            const char* anchor = get_anchor_name_cn(ex, ey);
+            if (anchor)
+                ImGui::Text("%s (%+d, %+d)  %s",
+                    anchor, ex, ey, is_new ? "(new)" : "");
+            else
+                ImGui::Text("%s: (%+d, %+d)  %s",
+                    get_locale_cstr("label.angle_edit_title"), ex, ey,
+                    is_new ? "(new)" : "");
+            ImGui::Separator();
+
+            float& theta = item.angle_config_preview_theta;
+            float& phi    = item.angle_config_preview_phi;
+            ImGui::DragFloat(get_locale_cstr("label.angle_theta"), &theta,
+                1.0f, -180.0f, 180.0f, "%.1f deg");
+            ImGui::DragFloat(get_locale_cstr("label.angle_phi"), &phi,
+                1.0f, -90.0f, 90.0f, "%.1f deg");
+
+            // Show direction preview
+            auto dir = sinriv::kigstudio::agent::spherical_to_dir(theta, phi,
+                item.hair_north_pole, item.hair_front_reference);
+            ImGui::Text("%s: [%.2f, %.2f, %.2f]",
+                get_locale_cstr("label.angle_direction"),
+                dir.x, dir.y, dir.z);
+
+            // Hint: click on model to pick
+            ImGui::TextDisabled("%s",
+                get_locale_cstr("label.angle_picking"));
+
+            ImGui::Separator();
+
+            bool validation_failed = false;
+            auto& config = item.hair_angle_config;
+
+            if (ImGui::Button(get_locale_cstr("action.angle_apply"))) {
+                if (validate_angle_grid(config, ex, ey, theta, phi)) {
+                    push_undo_now(item.id, std::nullopt,
+                                  "Angle Config Edit");
+                    config[{static_cast<float>(ex), static_cast<float>(ey)}] =
+                        HairAngleEntry{theta, phi};
+                    for (auto& s : item.hair_strands) s.mesh_dirty = true;
+                    item.angle_config_editing_x = kSentinel;
+                    item.angle_config_editing_y = kSentinel;
+                } else {
+                    validation_failed = true;
+                }
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button(get_locale_cstr("action.angle_cancel"))) {
+                item.angle_config_editing_x = kSentinel;
+                item.angle_config_editing_y = kSentinel;
+            }
+
+            // Handle window close via the X button
+            if (!edit_open) {
+                item.angle_config_editing_x = kSentinel;
+                item.angle_config_editing_y = kSentinel;
+            }
+
+            if (validation_failed) {
+                show_toast(get_locale_cstr("error.angle_grid_cross"), 2500.0f);
+            }
+
+            ImGui::End();
+        }
+    }
+
+    ImGui::End();
+}
 }  // namespace sinriv::ui::render

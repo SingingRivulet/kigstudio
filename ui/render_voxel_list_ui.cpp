@@ -420,6 +420,7 @@ void RenderVoxelList::render_ui() {
     render_cross_section_editor();
     render_perpoint_section_editor();
     render_hairline_plane_window();
+    render_angle_config_window();
     render_file_loader();
     render_save_dialog();
     render_load_dialog();
@@ -610,6 +611,7 @@ void RenderVoxelList::render_ui() {
     this->setMeshVisible(showMesh);
     this->setExportedMeshVisible(showExportedMesh);
     this->setVoxelsVisible(showVoxels);
+    this->setAddonMeshVisible(showAddonMesh);
     this->setCollisionVisible(showCollision);
     this->setCollisionBoundsVisible(showCollisionBounds);
     this->setVoxelChunkBoundsVisible(showVoxelChunkBounds);

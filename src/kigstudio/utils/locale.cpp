@@ -1374,6 +1374,80 @@ void init_locale_strings() {
                       {{"en",
                         "Open hairline-plane window for spindle width generation"},
                        {"zh", "打开发际线平面窗口进行纺锤宽度生成"}});
+    // Coordinate system config editor
+    add_locale_string("action.angle_config",
+                      {{"en", "Coordinate System"}, {"zh", "坐标系配置"}});
+    add_locale_string("tooltip.angle_config",
+                      {{"en",
+                        "Open coordinate system config editor with 3D "
+                        "lat/long sphere overlay"},
+                       {"zh",
+                        "打开坐标系配置编辑器及三维经纬球可视化"}});
+    add_locale_string("window.angle_config",
+                      {{"en", "Coordinate System Config"},
+                       {"zh", "坐标系配置"}});
+    add_locale_string("label.angle_unset",
+                      {{"en", "?"}, {"zh", "?"}});
+    add_locale_string("label.angle_fixed_tooltip",
+                      {{"en", "Fixed (reference line)"},
+                       {"zh", "固定值（参考线）"}});
+    add_locale_string("error.angle_grid_cross",
+                      {{"en", "Grid lines would cross — failed to update"},
+                       {"zh", "网格线将交叉 — 更新失败"}});
+    add_locale_string("label.angle_edit_title",
+                      {{"en", "Edit Angle"}, {"zh", "编辑角度"}});
+    add_locale_string("label.angle_theta",
+                      {{"en", "Theta (azimuth)"},
+                       {"zh", "Theta（方位角）"}});
+    add_locale_string("label.angle_phi",
+                      {{"en", "Phi (polar)"}, {"zh", "Phi（极角）"}});
+    add_locale_string("label.angle_direction",
+                      {{"en", "Direction"}, {"zh", "方向"}});
+    add_locale_string("action.angle_apply",
+                      {{"en", "Apply"}, {"zh", "应用"}});
+    add_locale_string("action.angle_cancel",
+                      {{"en", "Cancel"}, {"zh", "取消"}});
+    add_locale_string("label.angle_rebuild_bvh",
+                      {{"en", "Rebuild BVH from Config"},
+                       {"zh", "从配置重建 BVH"}});
+    add_locale_string("label.angle_id",
+                      {{"en", "ID"}, {"zh", "序号"}});
+    add_locale_string("label.angle_organ",
+                      {{"en", "Organ"}, {"zh", "器官"}});
+    add_locale_string("label.angle_value",
+                      {{"en", "Angle (θ, φ)"}, {"zh", "角度 (θ, φ)"}});
+    add_locale_string("action.angle_edit",
+                      {{"en", "Edit"}, {"zh", "编辑"}});
+    add_locale_string("action.angle_delete",
+                      {{"en", "Del"}, {"zh", "删除"}});
+    add_locale_string("action.angle_add_entry",
+                      {{"en", "Add Entry"}, {"zh", "添加条目"}});
+    add_locale_string("label.angle_no_entries",
+                      {{"en", "No angle entries configured. Click 'Add Entry' to get started."},
+                       {"zh", "尚未配置角度条目。点击 [添加条目] 开始。"}});
+    add_locale_string("label.angle_select_anchor",
+                      {{"en", "Select anchor point..."}, {"zh", "选择锚点..."}});
+    add_locale_string("label.angle_x_axis",
+                      {{"en", "X-Axis (Lateral, Y=0)"}, {"zh", "X轴（横向，Y=0）"}});
+    add_locale_string("label.angle_y_axis",
+                      {{"en", "Y-Axis (Midline, X=0)"}, {"zh", "Y轴（中线，X=0）"}});
+    add_locale_string("action.angle_pick",
+                      {{"en", "Pick"}, {"zh", "拾取"}});
+    add_locale_string("label.angle_picking",
+                      {{"en", "Click on the 3D model to pick angle direction"},
+                       {"zh", "点击3D模型拾取角度方向"}});
+    add_locale_string("label.spherical_frame",
+                      {{"en", "Spherical Frame"}, {"zh", "球坐标框架"}});
+    add_locale_string("label.north_pole",
+                      {{"en", "North Pole"}, {"zh", "头顶方向"}});
+    add_locale_string("label.front_reference",
+                      {{"en", "Front Reference"}, {"zh", "矢状面参考"}});
+    add_locale_string("label.hairline_spindle_scale",
+                      {{"en", "Width Scale"}, {"zh", "宽度缩放"}});
+    add_locale_string("tooltip.hairline_spindle_scale",
+                      {{"en", "Multiplier for nearest-neighbor distance at "
+                              "hairline intersection (0.0-1.0). Lower = thinner."},
+                       {"zh", "发际线交点处最近邻距离的缩放系数（0.0-1.0）。越小越细。"}});
     add_locale_string("label.hairline_plane",
                       {{"en", "Hairline Plane"}, {"zh", "发际线平面"}});
     add_locale_string("label.hairline_plane_enable",

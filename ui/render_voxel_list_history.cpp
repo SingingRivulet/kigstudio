@@ -38,6 +38,7 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.hairline_plane_y,
             {item.hairline_plane_points[0], item.hairline_plane_points[1],
              item.hairline_plane_points[2]},
+            item.hairline_spindle_scale,
             item.silhouette_shape_mode,
             item.silhouette_subdivision,
             item.silhouette_edge_subdiv,
@@ -51,7 +52,11 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.addon_reveal,
             item.addon_split,
             item.addon_sdf_boolean,
-            item.addon_sdf_split};
+            item.addon_sdf_split,
+            item.hair_angle_config,
+            item.hair_north_pole,
+            item.hair_front_reference,
+            item.addon_base_node_id};
 }
 
 void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
@@ -92,6 +97,7 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.hairline_plane_points[0] = snapshot.hairline_plane_points[0];
     item.hairline_plane_points[1] = snapshot.hairline_plane_points[1];
     item.hairline_plane_points[2] = snapshot.hairline_plane_points[2];
+    item.hairline_spindle_scale = snapshot.hairline_spindle_scale;
     item.silhouette_shape_mode = snapshot.silhouette_shape_mode;
     item.silhouette_subdivision = snapshot.silhouette_subdivision;
     item.silhouette_edge_subdiv = snapshot.silhouette_edge_subdiv;
@@ -107,6 +113,10 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.addon_split = snapshot.addon_split;
     item.addon_sdf_boolean = snapshot.addon_sdf_boolean;
     item.addon_sdf_split = snapshot.addon_sdf_split;
+    item.hair_angle_config = snapshot.hair_angle_config;
+    item.hair_north_pole = snapshot.hair_north_pole;
+    item.hair_front_reference = snapshot.hair_front_reference;
+    item.addon_base_node_id = snapshot.addon_base_node_id;
     item.sdf_precision_cache = snapshot.sdf_precision_cache;
     item.joint_wireframe_dirty = true;
 }

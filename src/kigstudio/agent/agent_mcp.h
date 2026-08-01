@@ -1161,12 +1161,30 @@ private:
 			    "Computes the intersection of each strand's guide curve with "
 			    "the hairline plane, calculates nearest-neighbor width at the "
 			    "hairline, and generates tapered width points (spindle shape) "
-			    "for each strand.",
+			    "for each strand. "
+			    "The 'scale' parameter (0.0-1.0, default 0.8) multiplies the "
+			    "nearest-neighbor distance before applying it as width.",
 			    "strand.applyHairlineSpindle",
-			    schema_obj(
-			        cJSON_CreateObject(),
-			        req_list({"node_id"}),
-			        "Apply Hairline Spindle"));
+			    []() -> cJSON* {
+			        cJSON* p = cJSON_CreateObject();
+			        cJSON_AddItemToObject(p, "node_id",
+			            cJSON_Parse("{\"type\":\"integer\","
+			                "\"description\":\"Node ID\"}"));
+			        cJSON_AddItemToObject(p, "scale",
+			            cJSON_Parse("{\"type\":\"number\","
+			                "\"description\":"
+			                "\"Scale factor for nearest-neighbor width "
+			                "(0.0-1.0, default 0.8)\","
+			                "\"default\":0.8}"));
+			        cJSON* r = cJSON_CreateArray();
+			        cJSON_AddItemToArray(r, cJSON_CreateString("node_id"));
+			        cJSON* s = cJSON_CreateObject();
+			        cJSON_AddStringToObject(s, "type", "object");
+			        cJSON_AddItemToObject(s, "properties", p);
+			        cJSON_AddItemToObject(s, "required", r);
+			        cJSON_AddStringToObject(s, "title", "Apply Hairline Spindle");
+			        return s;
+			    }());
 		}
 
 		return arr;

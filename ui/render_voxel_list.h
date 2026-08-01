@@ -284,6 +284,7 @@ struct CollisionEditorSnapshot {
     bool hairline_plane_use_y = true;
     float hairline_plane_y = 0.0f;
     vec3f hairline_plane_points[3] = {};
+    float hairline_spindle_scale = 0.8f;
     SilhouetteShapeMode silhouette_shape_mode = SilhouetteShapeMode::DELAUNAY_SPHERE;
     int silhouette_subdivision = 4;
     int silhouette_edge_subdiv = 0;
@@ -302,6 +303,12 @@ struct CollisionEditorSnapshot {
     bool addon_split = false;
     bool addon_sdf_boolean = true;
     bool addon_sdf_split = true;
+
+    // Semantic coordinate angle config
+    std::map<std::pair<float, float>, HairAngleEntry> hair_angle_config;
+    sinriv::kigstudio::voxel::vec3f hair_north_pole = {0.0f, 1.0f, 0.0f};
+    sinriv::kigstudio::voxel::vec3f hair_front_reference = {0.0f, 0.0f, 1.0f};
+    int addon_base_node_id = -1;
 };
 
 struct MarkedVoxelsSnapshot {
@@ -434,6 +441,9 @@ class RenderVoxelList {
         bool hairline_plane_use_y = true;  // true=Y水平面, false=三点平面
         float hairline_plane_y = 0.0f;
         vec3f hairline_plane_points[3] = {};
+        // Hairline spindle scale factor: nearest-neighbor distance at hairline
+        // intersection is multiplied by this before applying as width.
+        float hairline_spindle_scale = 0.8f;
         // 应用发际线纺锤宽度：根据引导线与发际线的交点
         // 自动生成宽度向量，在两段收束形成纺锤形
         void apply_hairline_spindle();
@@ -619,6 +629,8 @@ class RenderVoxelList {
         bool showCollision = true;
         bool showCollisionBounds = false;
         bool showVoxelChunkBounds = false;
+        bool showAddonMesh = true;
+        bool showOriginMeshAddon = true;  // 附加件编辑器独立勾选框
 
         bool auto_segment_update = true;
         bool collision_edit_active = false;  // guard for begin_edit/end_edit
@@ -688,6 +700,12 @@ class RenderVoxelList {
         /// BVH tree for ray-casting against the base model.
         /// Built when angle config is set and rebuilt when the base model changes.
         std::unique_ptr<sinriv::kigstudio::voxel::triangle_bvh<float>> hair_bvh;
+        // Angle config editor state (ephemeral, not serialized)
+        static constexpr int kAngleConfigSentinel = -999;
+        int angle_config_editing_x = kAngleConfigSentinel;
+        int angle_config_editing_y = kAngleConfigSentinel;
+        float angle_config_preview_theta = 0;  // live theta for cyan highlight
+        float angle_config_preview_phi = 0;    // live phi for cyan highlight
 
         inline void markVoxelChunkDirty(int wx,
                                         int wy,
@@ -830,6 +848,7 @@ class RenderVoxelList {
     bool show_cross_section_editor_window = false;
     bool show_perpoint_section_editor_window = false;
     bool show_hairline_plane_window = false;
+    bool show_angle_config_window = false;
     // Per-point section conflict confirmation dialogs
     bool show_perpoint_confirm_global_open = false;
     bool show_perpoint_confirm_global_apply = false;
@@ -837,6 +856,7 @@ class RenderVoxelList {
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_hairline_plane_window();
+    void render_angle_config_window();
     void render_concave_cone_editor(RenderVoxelItem& item);
     void render_nav_map();
     void render_file_loader();
@@ -1080,6 +1100,7 @@ class RenderVoxelList {
     void setMeshVisible(bool visible);
     void setExportedMeshVisible(bool visible);
     void setVoxelsVisible(bool visible);
+    void setAddonMeshVisible(bool visible);
     void setCollisionVisible(bool visible);
     void setCollisionBoundsVisible(bool visible);
     void setVoxelChunkBoundsVisible(bool visible);

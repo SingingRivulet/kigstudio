@@ -934,7 +934,7 @@ void RenderVoxelList::RenderVoxelItem::apply_hairline_spindle() {
 
         HairStrand::WidthPoint wp_hairline;
         wp_hairline.curve_id = inter.curve_id;
-        wp_hairline.scale = nearest;
+        wp_hairline.scale = nearest * hairline_spindle_scale;
         wp_hairline.direction = dir;
 
         HairStrand::WidthPoint wp_end;
@@ -1189,7 +1189,11 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     if (showMesh) {
         mesh_renderer.renderGBuffer(transform, mesh_shader);
     }
-    if (showOriginMesh && !origin_mesh_renderer.empty()) {
+    bool show_origin = showOriginMesh;
+    if (source_type == 2) {
+        show_origin = showOriginMesh || showOriginMeshAddon;
+    }
+    if (show_origin && !origin_mesh_renderer.empty()) {
         origin_mesh_renderer.cull_backface = false;
         origin_mesh_renderer.renderGBuffer(transform, mesh_shader);
     }
@@ -1221,7 +1225,7 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
 
     // 附加件渲染器（如毛发预览）：写入 albedo/normal/depth，与主模型正确
     // 互相遮挡，但不写 world_pos 通道，鼠标拾取可穿透它拾取下层模型
-    if (!manager || manager->showAddonMesh) {
+    if (!manager || showAddonMesh) {
         for (auto& addon : addon_renderers) {
             addon.cull_backface = false;
             addon.renderGBufferAddon(transform, mesh_shader);
@@ -1535,6 +1539,39 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
             }
         }
     }
+    // Compute bounding sphere radius from base mesh (used by guide point
+    // crosshair markers, center circles, arrow, triangle, sphere wireframe).
+    // For addon nodes (source_type==2), look up the base node's mesh via
+    // addon_base_node_id since the addon itself doesn't own the mesh triangles.
+    float sphere_r = 1.0f;
+    if (source_type == 2 && manager) {
+        float max_dist2 = 0.0f;
+        auto check_vertex = [&](const sinriv::kigstudio::voxel::vec3f& v) {
+            float d2 = (v - addon_center_point).length2();
+            if (d2 > max_dist2) max_dist2 = d2;
+        };
+        auto base_it = manager->items.find(addon_base_node_id);
+        if (base_it != manager->items.end()) {
+            const auto& base = *base_it->second;
+            if (!base.source_triangles.empty()) {
+                for (const auto& tri : base.source_triangles) {
+                    check_vertex(std::get<0>(tri));
+                    check_vertex(std::get<1>(tri));
+                    check_vertex(std::get<2>(tri));
+                }
+            } else if (!base.cached_mesh.empty()) {
+                for (const auto& tri_n : base.cached_mesh) {
+                    const auto& tri = std::get<0>(tri_n);
+                    check_vertex(std::get<0>(tri));
+                    check_vertex(std::get<1>(tri));
+                    check_vertex(std::get<2>(tri));
+                }
+            }
+        }
+        if (max_dist2 > 0.0f)
+            sphere_r = std::sqrt(max_dist2) * 1.05f;  // 5% margin
+    }
+
     // 毛发引导曲线渲染
     if (!hair_strands.empty()) {
         bool has_any_guide_points = false;
@@ -1580,7 +1617,7 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                     vertices.push_back({a.x, -a.y, a.z, line_color});
                     vertices.push_back({b.x, -b.y, b.z, line_color});
                 }
-                const float marker_size = 1.5f;
+                const float marker_size = sphere_r * 0.03f;
                 for (const auto& p : strand.guide_points) {
                     vertices.push_back({p.x - marker_size, -p.y, p.z, marker_color});
                     vertices.push_back({p.x + marker_size, -p.y, p.z, marker_color});
@@ -1768,7 +1805,7 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
         if (mesh_shader.ensureLineProgram()) {
             bgfx::VertexLayout& layout = concave_cone_overlay_layout();
             const uint32_t center_color = pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);
-            const float radius = 2.0f;
+            const float radius = sphere_r * 0.05f;
             std::vector<mesh_detail::ColorLineVertex> vertices;
             vertices.reserve(48 * 3);
             append_marker_circle(vertices, addon_center_point,
@@ -1804,9 +1841,8 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
     }
 
     // 语义坐标框架调试可视化：棕色北极箭头 + 矢状面三角
-    // 当配置了角度映射时，从中心点绘制球形坐标系参考框架
-    if (show_addon_center && !hair_angle_config.empty() &&
-        mesh_shader.ensureLineProgram()) {
+    // 只要显示了中心点就渲染坐标系参考框架
+    if (show_addon_center && mesh_shader.ensureLineProgram()) {
         bgfx::VertexLayout& layout = concave_cone_overlay_layout();
 
         // 构建局部球形坐标系（与 agent_handlers.h 中 spherical_to_dir 相同的数学）
@@ -1830,9 +1866,9 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 N.x * V.y - N.y * V.x};
 
         const vec3f& center = addon_center_point;
-        const float arrow_len = 8.0f;
-        const float head_size = 1.5f;
-        const float tri_leg = 2.5f;
+        const float arrow_len = sphere_r * 1.2f;
+        const float head_size = sphere_r * 0.15f;
+        const float tri_leg = sphere_r;
 
         const uint32_t arrow_color =
             pack_abgr(0.55f, 0.27f, 0.07f, 1.0f);  // 棕色
@@ -1905,6 +1941,176 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                            BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
             bgfx::submit(mesh_shader.overlay_view_id_,
                          mesh_shader.line_program_);
+        }
+    }
+    // --- Coordinate system sphere for angle config editor ---
+    // Renders only the defined meridians/parallels from hair_angle_config,
+    // with three-line cross markers at each configured key point.
+    if (manager && manager->show_angle_config_window && show_addon_center &&
+        mesh_shader.ensureLineProgram()) {
+
+        // Build local spherical frame (same math as agent_handlers.h spherical_to_dir)
+        vec3f N = hair_north_pole.normalize();
+        vec3f F = hair_front_reference.normalize();
+        float f_dot_n = F.dot(N);
+        vec3f V = F - N * f_dot_n;
+        float v_len2 = V.length2();
+        if (v_len2 < 1e-10f) {
+            vec3f A = (std::abs(N.z) < 0.99f)
+                          ? vec3f(0.0f, 0.0f, 1.0f)
+                          : vec3f(1.0f, 0.0f, 0.0f);
+            V = A - N * A.dot(N);
+            v_len2 = V.length2();
+        }
+        V = V / std::sqrt(v_len2);
+        vec3f U = cross(N, V);
+
+        // Convert spherical (theta_deg, phi_deg) -> world-space point on sphere
+        auto sphere_point = [&](float theta_deg, float phi_deg, float radius) {
+            constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
+            float t = theta_deg * kDegToRad;
+            float p = phi_deg * kDegToRad;
+            float cos_p = std::cos(p), sin_p = std::sin(p);
+            float sin_t = std::sin(t), cos_t = std::cos(t);
+            vec3f dir = U * (sin_t * cos_p) + N * sin_p + V * (cos_t * cos_p);
+            return addon_center_point + dir * radius;
+        };
+
+        bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+        const uint32_t blue_color = pack_abgr(0.15f, 0.35f, 0.85f, 0.45f);
+        const uint32_t cyan_color = pack_abgr(0.0f, 0.85f, 0.85f, 0.9f);
+        const uint32_t key_color = pack_abgr(0.0f, 1.0f, 0.6f, 0.85f);
+        std::vector<mesh_detail::ColorLineVertex> vertices;
+
+        constexpr int kCircleSegs = 48;
+        constexpr int kMeridianSegs = 24;
+
+        // Collect unique theta from X-axis entries (Y=0, control azimuth)
+        // and unique phi from Y-axis entries (X=0, control elevation).
+        // Diagonal entries are blends and don't produce independent grid lines.
+        std::set<float> used_thetas;  // from Y=0 entries (X-axis)
+        std::set<float> used_phis;    // from X=0 entries (Y-axis)
+        for (const auto& [xy, entry] : hair_angle_config) {
+            if (xy.second == 0.0f)   // Y=0 → X-axis → controls theta
+                used_thetas.insert(entry.theta);
+            if (xy.first == 0.0f)    // X=0 → Y-axis → controls phi
+                used_phis.insert(entry.phi);
+        }
+
+        // ---- Meridians: only from X-axis (Y=0) entries (effective thetas) ----
+        for (float theta : used_thetas) {
+            for (int i = 0; i < kMeridianSegs; ++i) {
+                float p0 = -90.0f + 180.0f * i / kMeridianSegs;
+                float p1 = -90.0f + 180.0f * (i + 1) / kMeridianSegs;
+                vec3f q0 = sphere_point(theta, p0, sphere_r);
+                vec3f q1 = sphere_point(theta, p1, sphere_r);
+                vertices.push_back({q0.x, -q0.y, q0.z, blue_color});
+                vertices.push_back({q1.x, -q1.y, q1.z, blue_color});
+            }
+        }
+
+        // ---- Parallels: only from Y-axis (X=0) entries (effective phis) ----
+        for (float phi : used_phis) {
+            for (int i = 0; i < kCircleSegs; ++i) {
+                float t0 = 360.0f * i / kCircleSegs;
+                float t1 = 360.0f * (i + 1) / kCircleSegs;
+                vec3f p0 = sphere_point(t0, phi, sphere_r);
+                vec3f p1 = sphere_point(t1, phi, sphere_r);
+                vertices.push_back({p0.x, -p0.y, p0.z, blue_color});
+                vertices.push_back({p1.x, -p1.y, p1.z, blue_color});
+            }
+        }
+
+        // ---- Key point markers: only at axis entries (Y=0 or X=0) ----
+        const float marker_size = sphere_r * 0.03f;
+        for (const auto& [xy, entry] : hair_angle_config) {
+            if (xy.second != 0.0f && xy.first != 0.0f) continue;  // skip diagonals
+            vec3f p = sphere_point(entry.theta, entry.phi, sphere_r);
+            // X-axis line
+            vertices.push_back({p.x - marker_size, -p.y, p.z, key_color});
+            vertices.push_back({p.x + marker_size, -p.y, p.z, key_color});
+            // Y-axis line (note: Y is flipped in rendering)
+            vertices.push_back({p.x, -(p.y - marker_size), p.z, key_color});
+            vertices.push_back({p.x, -(p.y + marker_size), p.z, key_color});
+            // Z-axis line
+            vertices.push_back({p.x, -p.y, p.z - marker_size, key_color});
+            vertices.push_back({p.x, -p.y, p.z + marker_size, key_color});
+        }
+
+        // Submit sphere lines
+        if (!vertices.empty()) {
+            uint32_t count = static_cast<uint32_t>(vertices.size());
+            if (bgfx::getAvailTransientVertexBuffer(count, layout) >= count) {
+                bgfx::TransientVertexBuffer tvb;
+                bgfx::allocTransientVertexBuffer(&tvb, count, layout);
+                std::memcpy(tvb.data, vertices.data(),
+                            count * sizeof(mesh_detail::ColorLineVertex));
+                bgfx::setTransform(model_transform);
+                bgfx::setVertexBuffer(0, &tvb);
+                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                               BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                               BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+                bgfx::submit(mesh_shader.overlay_view_id_,
+                             mesh_shader.line_program_);
+            }
+        }
+
+        // ---- Highlight: ray line + meridian + parallel for edited point ----
+        int edit_x = angle_config_editing_x;
+        if (edit_x != RenderVoxelItem::kAngleConfigSentinel) {
+            float hl_theta = angle_config_preview_theta;
+            float hl_phi   = angle_config_preview_phi;
+            std::vector<mesh_detail::ColorLineVertex> hl;
+
+            // Ray line from center through direction to sphere surface
+            {
+                // Direction from center to sphere surface point
+                vec3f sphere_surf = sphere_point(hl_theta, hl_phi, sphere_r);
+                vec3f dir = (sphere_surf - addon_center_point).normalize();
+                // Extend slightly beyond the sphere for visibility
+                vec3f ray_end = addon_center_point + dir * sphere_r * 1.02f;
+                const uint32_t ray_color = pack_abgr(1.0f, 0.9f, 0.2f, 0.9f);
+                hl.push_back({addon_center_point.x, -addon_center_point.y,
+                              addon_center_point.z, ray_color});
+                hl.push_back({ray_end.x, -ray_end.y, ray_end.z, ray_color});
+            }
+
+            // Meridian at hl_theta (from phi=-90 to phi=+90)
+            for (int i = 0; i < kMeridianSegs; ++i) {
+                float p0 = -90.0f + 180.0f * i / kMeridianSegs;
+                float p1 = -90.0f + 180.0f * (i + 1) / kMeridianSegs;
+                vec3f q0 = sphere_point(hl_theta, p0, sphere_r);
+                vec3f q1 = sphere_point(hl_theta, p1, sphere_r);
+                hl.push_back({q0.x, -q0.y, q0.z, cyan_color});
+                hl.push_back({q1.x, -q1.y, q1.z, cyan_color});
+            }
+
+            // Parallel at hl_phi (full circle)
+            for (int i = 0; i < kCircleSegs; ++i) {
+                float t0 = 360.0f * i / kCircleSegs;
+                float t1 = 360.0f * (i + 1) / kCircleSegs;
+                vec3f r0 = sphere_point(t0, hl_phi, sphere_r);
+                vec3f r1 = sphere_point(t1, hl_phi, sphere_r);
+                hl.push_back({r0.x, -r0.y, r0.z, cyan_color});
+                hl.push_back({r1.x, -r1.y, r1.z, cyan_color});
+            }
+
+            if (!hl.empty()) {
+                uint32_t hl_count = static_cast<uint32_t>(hl.size());
+                if (bgfx::getAvailTransientVertexBuffer(hl_count, layout) >= hl_count) {
+                    bgfx::TransientVertexBuffer tvb;
+                    bgfx::allocTransientVertexBuffer(&tvb, hl_count, layout);
+                    std::memcpy(tvb.data, hl.data(),
+                                hl_count * sizeof(mesh_detail::ColorLineVertex));
+                    bgfx::setTransform(model_transform);
+                    bgfx::setVertexBuffer(0, &tvb);
+                    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                                   BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                                   BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+                    bgfx::submit(mesh_shader.overlay_view_id_,
+                                 mesh_shader.line_program_);
+                }
+            }
         }
     }
 
