@@ -132,6 +132,13 @@ enum class AddonType : int {
     COUNT
 };
 
+// 发束生成类型
+enum class HairStrandGenType : int {
+    NORMAL = 0,           // 截面放样（现有行为）
+    CANDIED_HAWTHORN = 1, // 糖葫芦：圆柱 + 椭球 + 关节 + 桃形尖端
+    BRAID = 2,            // 麻花辫：核心 + 编织股 + 关节 + 桃形尖端
+};
+
 // 一根发束
 struct HairStrand {
     std::string name;
@@ -139,6 +146,8 @@ struct HairStrand {
     std::vector<sinriv::kigstudio::voxel::vec3f> guide_points;
     // UI 折叠状态
     bool expanded = true;
+    // 显示/隐藏此发束（仅影响显示，不影响碰撞生成）
+    bool visible = true;
 
     // 宽度编辑：每个宽度点对应引导曲线上的一个位置
     // 只保存相对于引导曲线的数据（曲线id + 方向向量），不保存绝对坐标，
@@ -177,6 +186,28 @@ struct HairStrand {
 
     // Dirty flag: set to true when any data affecting the loft mesh changes
     bool mesh_dirty = true;
+
+    // Strand generation type (default NORMAL for backward compatibility)
+    HairStrandGenType gen_type = HairStrandGenType::NORMAL;
+
+    // ---- 糖葫芦 parameters ----
+    float candy_cylinder_radius = 1.5f;       // Core cylinder radius
+    float candy_ellipsoid_spacing = 8.0f;     // Distance between ellipsoids
+    float candy_ellipsoid_radius_a = 3.0f;    // Short axis radius (perpendicular to curve)
+    float candy_ellipsoid_radius_b = 5.0f;    // Long axis radius (along curve tangent)
+    bool  candy_use_joints = false;           // Simplified joint rings
+
+    // ---- 麻花辫 parameters ----
+    float braid_core_radius = 1.0f;           // Center core cylinder radius
+    float braid_strand_radius = 0.7f;         // Each outer strand radius
+    float braid_braid_radius = 2.5f;          // Distance of outer strands from center
+    float braid_twist_pitch = 30.0f;          // Length for one full 360° twist
+    int   braid_strand_count = 3;             // Number of outer strands (2-6)
+    bool  braid_use_joints = false;           // Simplified joint rings
+
+    // ---- Tip (shared by both special types) ----
+    float special_tip_length = 4.0f;          // Teardrop cone length beyond sphere
+    float special_tip_radius = 2.0f;          // Teardrop sphere radius
 };
 
 /// Per-position angle configuration for semantic-coordinate ray casting.

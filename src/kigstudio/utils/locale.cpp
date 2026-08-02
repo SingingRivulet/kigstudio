@@ -1305,6 +1305,50 @@ void init_locale_strings() {
     add_locale_string("tooltip.clear_guide_points",
                       {{"en", "Clear all guide curve points for this strand"},
                        {"zh", "清空此发束的所有引导曲线点"}});
+    // Special strand type labels
+    add_locale_string("label.strand_type_normal",
+                      {{"en", "Normal"}, {"zh", "普通"}});
+    add_locale_string("label.strand_type_candy",
+                      {{"en", "Candied Hawthorn"}, {"zh", "糖葫芦"}});
+    add_locale_string("label.strand_type_braid",
+                      {{"en", "Braid"}, {"zh", "麻花辫"}});
+    add_locale_string("tooltip.strand_type",
+                      {{"en", "Strand generation: Normal (section loft), Candied Hawthorn (cylinder+ellipsoids), Braid (braided)"},
+                       {"zh", "发束类型：普通（截面放样）、糖葫芦（圆柱+椭球）、麻花辫（编织）"}});
+    // 糖葫芦 params
+    add_locale_string("label.candy_cylinder_radius",
+                      {{"en", "Core Radius"}, {"zh", "核心半径"}});
+    add_locale_string("label.candy_ellipsoid_spacing",
+                      {{"en", "Spacing"}, {"zh", "椭球间距"}});
+    add_locale_string("label.candy_ellipsoid_radius_a",
+                      {{"en", "Short Radius"}, {"zh", "短轴半径"}});
+    add_locale_string("label.candy_ellipsoid_radius_b",
+                      {{"en", "Long Radius"}, {"zh", "长轴半径"}});
+    add_locale_string("label.candy_use_joints",
+                      {{"en", "Joints"}, {"zh", "关节"}});
+    // 麻花辫 params
+    add_locale_string("label.braid_core_radius",
+                      {{"en", "Core Radius"}, {"zh", "核心半径"}});
+    add_locale_string("label.braid_strand_radius",
+                      {{"en", "Strand Radius"}, {"zh", "股半径"}});
+    add_locale_string("label.braid_braid_radius",
+                      {{"en", "Braid Radius"}, {"zh", "编织半径"}});
+    add_locale_string("label.braid_twist_pitch",
+                      {{"en", "Twist Pitch"}, {"zh", "扭转间距"}});
+    add_locale_string("label.braid_strand_count",
+                      {{"en", "Strand Count"}, {"zh", "股数"}});
+    add_locale_string("label.braid_use_joints",
+                      {{"en", "Joints"}, {"zh", "关节"}});
+    // Tip params (shared)
+    add_locale_string("tooltip.strand_visible",
+                      {{"en", "Toggle strand visibility (display only, collision unaffected)"},
+                       {"zh", "切换发束可见性（仅影响显示，不影响碰撞）"}});
+    add_locale_string("label.tip_params",
+                      {{"en", "Tip"}, {"zh", "尖端"}});
+    add_locale_string("label.special_tip_length",
+                      {{"en", "Tip Length"}, {"zh", "尖端长度"}});
+    add_locale_string("label.special_tip_radius",
+                      {{"en", "Tip Radius"}, {"zh", "尖端半径"}});
     add_locale_string("label.dist_to_center",
                       {{"en", "Distance to center"}, {"zh", "离中心距离"}});
     add_locale_string("label.move_step",

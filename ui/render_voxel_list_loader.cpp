@@ -80,6 +80,7 @@ cJSON* hair_strand_to_json(const HairStrand& strand) {
     cJSON* s_obj = cJSON_CreateObject();
     cJSON_AddStringToObject(s_obj, "name", strand.name.c_str());
     cJSON_AddBoolToObject(s_obj, "expanded", strand.expanded);
+    cJSON_AddBoolToObject(s_obj, "visible", strand.visible);
     cJSON_AddNumberToObject(s_obj, "section_rotation",
                             static_cast<double>(strand.section_rotation));
     cJSON_AddNumberToObject(s_obj, "guide_samples_per_segment",
@@ -113,6 +114,24 @@ cJSON* hair_strand_to_json(const HairStrand& strand) {
         }
         cJSON_AddItemToObject(s_obj, "width_points", wp_arr);
     }
+    // Strand generation type and special type parameters
+    cJSON_AddNumberToObject(s_obj, "gen_type", static_cast<int>(strand.gen_type));
+    // 糖葫芦
+    cJSON_AddNumberToObject(s_obj, "candy_cylinder_radius", static_cast<double>(strand.candy_cylinder_radius));
+    cJSON_AddNumberToObject(s_obj, "candy_ellipsoid_spacing", static_cast<double>(strand.candy_ellipsoid_spacing));
+    cJSON_AddNumberToObject(s_obj, "candy_ellipsoid_radius_a", static_cast<double>(strand.candy_ellipsoid_radius_a));
+    cJSON_AddNumberToObject(s_obj, "candy_ellipsoid_radius_b", static_cast<double>(strand.candy_ellipsoid_radius_b));
+    cJSON_AddBoolToObject(s_obj, "candy_use_joints", strand.candy_use_joints);
+    // 麻花辫
+    cJSON_AddNumberToObject(s_obj, "braid_core_radius", static_cast<double>(strand.braid_core_radius));
+    cJSON_AddNumberToObject(s_obj, "braid_strand_radius", static_cast<double>(strand.braid_strand_radius));
+    cJSON_AddNumberToObject(s_obj, "braid_braid_radius", static_cast<double>(strand.braid_braid_radius));
+    cJSON_AddNumberToObject(s_obj, "braid_twist_pitch", static_cast<double>(strand.braid_twist_pitch));
+    cJSON_AddNumberToObject(s_obj, "braid_strand_count", strand.braid_strand_count);
+    cJSON_AddBoolToObject(s_obj, "braid_use_joints", strand.braid_use_joints);
+    // Tip (shared)
+    cJSON_AddNumberToObject(s_obj, "special_tip_length", static_cast<double>(strand.special_tip_length));
+    cJSON_AddNumberToObject(s_obj, "special_tip_radius", static_cast<double>(strand.special_tip_radius));
     return s_obj;
 }
 
@@ -125,6 +144,9 @@ HairStrand hair_strand_from_json(const cJSON* s_obj) {
     cJSON* exp_obj = cJSON_GetObjectItem(s_obj, "expanded");
     if (exp_obj)
         strand.expanded = exp_obj->valueint != 0;
+    cJSON* vis_obj = cJSON_GetObjectItem(s_obj, "visible");
+    if (vis_obj)
+        strand.visible = vis_obj->valueint != 0;
     cJSON* rot_obj = cJSON_GetObjectItem(s_obj, "section_rotation");
     if (rot_obj && cJSON_IsNumber(rot_obj))
         strand.section_rotation = static_cast<float>(rot_obj->valuedouble);
@@ -196,6 +218,50 @@ HairStrand hair_strand_from_json(const cJSON* s_obj) {
             strand.width_points.push_back(wp);
         }
     }
+    // Strand generation type
+    cJSON* gt = cJSON_GetObjectItem(s_obj, "gen_type");
+    if (gt && cJSON_IsNumber(gt))
+        strand.gen_type = static_cast<HairStrandGenType>(gt->valueint);
+    // 糖葫芦
+    cJSON* ccr = cJSON_GetObjectItem(s_obj, "candy_cylinder_radius");
+    if (ccr && cJSON_IsNumber(ccr))
+        strand.candy_cylinder_radius = static_cast<float>(ccr->valuedouble);
+    cJSON* ces = cJSON_GetObjectItem(s_obj, "candy_ellipsoid_spacing");
+    if (ces && cJSON_IsNumber(ces))
+        strand.candy_ellipsoid_spacing = static_cast<float>(ces->valuedouble);
+    cJSON* era = cJSON_GetObjectItem(s_obj, "candy_ellipsoid_radius_a");
+    if (era && cJSON_IsNumber(era))
+        strand.candy_ellipsoid_radius_a = static_cast<float>(era->valuedouble);
+    cJSON* erb = cJSON_GetObjectItem(s_obj, "candy_ellipsoid_radius_b");
+    if (erb && cJSON_IsNumber(erb))
+        strand.candy_ellipsoid_radius_b = static_cast<float>(erb->valuedouble);
+    cJSON* cuj = cJSON_GetObjectItem(s_obj, "candy_use_joints");
+    if (cuj) strand.candy_use_joints = cuj->valueint != 0;
+    // 麻花辫
+    cJSON* bcr = cJSON_GetObjectItem(s_obj, "braid_core_radius");
+    if (bcr && cJSON_IsNumber(bcr))
+        strand.braid_core_radius = static_cast<float>(bcr->valuedouble);
+    cJSON* bsr = cJSON_GetObjectItem(s_obj, "braid_strand_radius");
+    if (bsr && cJSON_IsNumber(bsr))
+        strand.braid_strand_radius = static_cast<float>(bsr->valuedouble);
+    cJSON* bbr = cJSON_GetObjectItem(s_obj, "braid_braid_radius");
+    if (bbr && cJSON_IsNumber(bbr))
+        strand.braid_braid_radius = static_cast<float>(bbr->valuedouble);
+    cJSON* btp = cJSON_GetObjectItem(s_obj, "braid_twist_pitch");
+    if (btp && cJSON_IsNumber(btp))
+        strand.braid_twist_pitch = static_cast<float>(btp->valuedouble);
+    cJSON* bsc = cJSON_GetObjectItem(s_obj, "braid_strand_count");
+    if (bsc && cJSON_IsNumber(bsc))
+        strand.braid_strand_count = bsc->valueint;
+    cJSON* buj = cJSON_GetObjectItem(s_obj, "braid_use_joints");
+    if (buj) strand.braid_use_joints = buj->valueint != 0;
+    // Tip (shared)
+    cJSON* stl = cJSON_GetObjectItem(s_obj, "special_tip_length");
+    if (stl && cJSON_IsNumber(stl))
+        strand.special_tip_length = static_cast<float>(stl->valuedouble);
+    cJSON* str_ = cJSON_GetObjectItem(s_obj, "special_tip_radius");
+    if (str_ && cJSON_IsNumber(str_))
+        strand.special_tip_radius = static_cast<float>(str_->valuedouble);
     return strand;
 }
 

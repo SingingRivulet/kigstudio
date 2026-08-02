@@ -17,7 +17,3 @@
 
 这两种特殊发型结束点都会带一个桃形几何体
 
-# 修复bug：
-
-宽度编辑器中修改截面后，mesh会直接消失，同时输出异常
-[addon_mesh] build failed for strand: Loft sections must have matching path sizes

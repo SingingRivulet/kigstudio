@@ -101,7 +101,7 @@ struct vec3 {
     }
     inline vec3<T> operator+(const vec3<T>& p) const {
         vec3<T> b;
-        b = this;
+        b = *this;
         b.x += p.x;
         b.y += p.y;
         b.z += p.z;
@@ -121,7 +121,7 @@ struct vec3 {
     }
     inline vec3<T> operator-(const vec3<T>& p) const {
         vec3<T> b;
-        b = this;
+        b = *this;
         b.x -= p.x;
         b.y -= p.y;
         b.z -= p.z;
@@ -167,7 +167,7 @@ struct vec3 {
         auto t = p - (*this);
         return ((t.x * t.x) + (t.y * t.y) + (t.z * t.z));
     }
-    inline T dist(const vec3<T>& p) const { return sqrt(dist(p)); }
+    inline T dist(const vec3<T>& p) const { return sqrt(dist2(p)); }
     inline T dot(const vec3<T>* p) const {
         return ((x * p->x) + (y * p->y) + (z * p->z));
     }

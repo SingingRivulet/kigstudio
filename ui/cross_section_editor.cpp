@@ -252,14 +252,6 @@ void RenderVoxelList::render_cross_section_editor() {
         }
         show_guide_curve_window = false;
     }
-    if (show_width_editor_window) {
-        auto wit = items.find(render_id);
-        if (wit != items.end()) {
-            wit->second->width_editing_active = false;
-            wit->second->active_width_edit_strand = -1;
-        }
-        show_width_editor_window = false;
-    }
     if (show_perpoint_section_editor_window) {
         auto pit = items.find(render_id);
         if (pit != items.end()) {
@@ -804,14 +796,6 @@ void RenderVoxelList::render_perpoint_section_editor() {
             git->second->active_guide_draw_strand = -1;
         }
         show_guide_curve_window = false;
-    }
-    if (show_width_editor_window) {
-        auto wit = items.find(render_id);
-        if (wit != items.end()) {
-            wit->second->width_editing_active = false;
-            wit->second->active_width_edit_strand = -1;
-        }
-        show_width_editor_window = false;
     }
     if (show_cross_section_editor_window) {
         auto sit = items.find(render_id);

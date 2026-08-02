@@ -270,6 +270,52 @@ inline void catmull_rom_smooth_closed(
     }
 }
 
+// Resample a closed 2D polygon to a fixed number of evenly-spaced vertices
+// along the perimeter. Used to ensure all loft sections have matching
+// path sizes when per-point section overrides differ from the global section.
+inline void resample_closed_polygon(
+    const std::vector<sinriv::kigstudio::vec2<float>>& input,
+    std::vector<sinriv::kigstudio::vec2<float>>& output,
+    int target_count) {
+    const int n = static_cast<int>(input.size());
+    if (n < 2 || target_count < 3) { output = input; return; }
+
+    // Compute cumulative arc lengths along the perimeter
+    std::vector<float> arc_len(n + 1);
+    arc_len[0] = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        int j = (i + 1) % n;
+        float dx = input[j].x - input[i].x;
+        float dy = input[j].y - input[i].y;
+        arc_len[i + 1] = arc_len[i] + std::sqrt(dx * dx + dy * dy);
+    }
+    float total_len = arc_len[n];
+    if (total_len < 1e-10f) { output = input; return; }
+
+    output.clear();
+    output.reserve(target_count);
+    for (int k = 0; k < target_count; ++k) {
+        float t = static_cast<float>(k) / static_cast<float>(target_count);
+        float target_dist = t * total_len;
+
+        // Find which segment contains this distance
+        int seg = 0;
+        while (seg < n && arc_len[seg + 1] < target_dist) ++seg;
+        if (seg >= n) seg = n - 1;
+
+        float seg_start = arc_len[seg];
+        float seg_len = arc_len[seg + 1] - seg_start;
+        float local_t = (seg_len > 1e-10f) ?
+            (target_dist - seg_start) / seg_len : 0.0f;
+        local_t = std::clamp(local_t, 0.0f, 1.0f);
+
+        int next = (seg + 1) % n;
+        float x = input[seg].x + local_t * (input[next].x - input[seg].x);
+        float y = input[seg].y + local_t * (input[next].y - input[seg].y);
+        output.push_back({x, y});
+    }
+}
+
 // 封闭性（watertight）检测：量化顶点后统计每条无向边的引用次数，
 // 封闭网格中每条边应恰好被两个三角形共享。
 bool is_mesh_watertight(const std::vector<loft_Triangle>& tris) {
@@ -317,6 +363,632 @@ sinriv::kigstudio::cgal::MeshData addon_triangles_to_mesh_data(
 	return mesh;
 }
 
+// ---- Special strand primitive builders (CGAL union approach) ----
+
+// Generate 2D circular path with `segments` vertices on a circle of given radius
+inline std::vector<sinriv::kigstudio::vec2<float>> build_circular_path(
+    float radius, int segments) {
+    std::vector<sinriv::kigstudio::vec2<float>> path;
+    path.reserve(segments);
+    for (int i = 0; i < segments; ++i) {
+        float angle = 2.0f * 3.14159265358979f * static_cast<float>(i) /
+                      static_cast<float>(segments);
+        path.push_back({radius * std::cos(angle), radius * std::sin(angle)});
+    }
+    return path;
+}
+
+// Compute local frame (tangent, axis_u, axis_v) at sample index `i`
+// along a sampled guide curve. axis_v is initially the world Y axis projected
+// perpendicular to tangent; axis_u = cross(tangent, axis_v).
+inline void local_frame_at_sample(
+    const std::vector<loft_vec3f>& guide_curve, int i,
+    loft_vec3f& out_tangent, loft_vec3f& out_axis_u, loft_vec3f& out_axis_v) {
+    out_tangent = tangent_at_sample(guide_curve, i);
+    // project world Y onto tangent plane
+    float dot_yt = out_tangent.y;  // world Y = (0,1,0)
+    loft_vec3f v_raw{ -out_tangent.x * dot_yt, 1.0f - out_tangent.y * dot_yt,
+                      -out_tangent.z * dot_yt };
+    out_axis_v = safe_normalize(v_raw, loft_vec3f{0, 1, 0});
+    // axis_u = cross(tangent, axis_v)
+    out_axis_u = loft_vec3f{
+        out_tangent.y * out_axis_v.z - out_tangent.z * out_axis_v.y,
+        out_tangent.z * out_axis_v.x - out_tangent.x * out_axis_v.z,
+        out_tangent.x * out_axis_v.y - out_tangent.y * out_axis_v.x,
+    };
+    out_axis_u = safe_normalize(out_axis_u, loft_vec3f{1, 0, 0});
+    // re-orthogonalize axis_v
+    out_axis_v = loft_vec3f{
+        out_axis_u.y * out_tangent.z - out_axis_u.z * out_tangent.y,
+        out_axis_u.z * out_tangent.x - out_axis_u.x * out_tangent.z,
+        out_axis_u.x * out_tangent.y - out_axis_u.y * out_tangent.x,
+    };
+    out_axis_v = safe_normalize(out_axis_v, loft_vec3f{0, 1, 0});
+}
+
+// Map 2D point to 3D using local frame: origin + u*axis_u + v*axis_v
+inline loft_vec3f map_to_3d(const sinriv::kigstudio::vec2<float>& p,
+                            const loft_vec3f& origin,
+                            const loft_vec3f& axis_u,
+                            const loft_vec3f& axis_v) {
+    return loft_vec3f{
+        origin.x + p.x * axis_u.x + p.y * axis_v.x,
+        origin.y + p.x * axis_u.y + p.y * axis_v.y,
+        origin.z + p.x * axis_u.z + p.y * axis_v.z,
+    };
+}
+
+// Build a watertight cylinder along a sampled curve with circular cross-section
+using MeshData = sinriv::kigstudio::cgal::MeshData;
+using cgal_Triangle = sinriv::kigstudio::cgal::Triangle;
+using cgal_vec3f = sinriv::kigstudio::cgal::vec3f;
+
+MeshData build_cylinder_mesh(
+    const std::vector<loft_vec3f>& sampled_curve,
+    float radius, int circle_segments = 16) {
+    MeshData result;
+    if (sampled_curve.size() < 2 || radius < 1e-6f) return result;
+
+    const int M = static_cast<int>(sampled_curve.size());
+    const int C = circle_segments;
+
+    // Pre-compute 3D ring vertices for each sample point
+    auto circle_2d = build_circular_path(radius, C);
+    std::vector<std::vector<loft_vec3f>> rings(M);
+    for (int i = 0; i < M; ++i) {
+        loft_vec3f tangent, axis_u, axis_v;
+        local_frame_at_sample(sampled_curve, i, tangent, axis_u, axis_v);
+        rings[i].reserve(C);
+        for (const auto& p : circle_2d) {
+            rings[i].push_back(map_to_3d(p, sampled_curve[i], axis_u, axis_v));
+        }
+    }
+
+    // Tube surface: connect adjacent rings with quads (2 triangles each)
+    for (int i = 0; i < M - 1; ++i) {
+        for (int j = 0; j < C; ++j) {
+            int j2 = (j + 1) % C;
+            const auto& a = rings[i][j];
+            const auto& b = rings[i][j2];
+            const auto& c = rings[i + 1][j];
+            const auto& d = rings[i + 1][j2];
+            cgal_Triangle t1{a, b, c};
+            cgal_Triangle t2{c, b, d};
+            loft_vec3f n1 = (b - a).cross(c - a); n1 = n1 * (1.0f / (n1.length() + 1e-12f));
+            loft_vec3f n2 = (b - d).cross(c - d); n2 = n2 * (1.0f / (n2.length() + 1e-12f));
+            result.emplace_back(t1, cgal_vec3f{n1.x, n1.y, n1.z});
+            result.emplace_back(t2, cgal_vec3f{n2.x, n2.y, n2.z});
+        }
+    }
+
+    // Cap first end (triangle fan)
+    {
+        const auto& center = sampled_curve.front();
+        loft_vec3f tangent, axis_u, axis_v;
+        local_frame_at_sample(sampled_curve, 0, tangent, axis_u, axis_v);
+        loft_vec3f normal = tangent * -1.0f;  // outward normal points backward
+        for (int j = 0; j < C; ++j) {
+            int j2 = (j + 1) % C;
+            cgal_Triangle tri{center, rings[0][j2], rings[0][j]};
+            result.emplace_back(tri, cgal_vec3f{normal.x, normal.y, normal.z});
+        }
+    }
+    // Cap last end
+    {
+        const auto& center = sampled_curve.back();
+        loft_vec3f tangent, axis_u, axis_v;
+        local_frame_at_sample(sampled_curve, M - 1, tangent, axis_u, axis_v);
+        for (int j = 0; j < C; ++j) {
+            int j2 = (j + 1) % C;
+            cgal_Triangle tri{center, rings[M - 1][j], rings[M - 1][j2]};
+            result.emplace_back(tri, cgal_vec3f{tangent.x, tangent.y, tangent.z});
+        }
+    }
+
+    return result;
+}
+
+// Build a watertight ellipsoid mesh at `center`, with long axis `radius_b`
+// aligned to `tangent` and short axes `radius_a` perpendicular to it.
+MeshData build_ellipsoid_mesh(
+    const loft_vec3f& center,
+    const loft_vec3f& tangent,
+    const loft_vec3f& axis_u,
+    const loft_vec3f& axis_v,
+    float radius_a, float radius_b,
+    int lat_segments = 8, int long_segments = 16) {
+    MeshData result;
+    const int L = std::max(lat_segments, 3);
+    const int S = std::max(long_segments, 4);
+
+    // Generate unit sphere vertices via lat/long, scaled by (ra, ra, rb)
+    // Latitude: 0=bottom pole (-Y in local), L=top pole (+Y in local)
+    // Longitude: around the Y axis
+    std::vector<std::vector<loft_vec3f>> rings(L + 1);
+    for (int i = 0; i <= L; ++i) {
+        float phi = -3.14159265358979f / 2.0f +
+                    static_cast<float>(i) * 3.14159265358979f /
+                        static_cast<float>(L);
+        float cos_phi = std::cos(phi);
+        float sin_phi = std::sin(phi);
+        // In local space: Y corresponds to tangent direction
+        // X -> axis_u, Z -> axis_v, Y -> tangent
+        float local_y = sin_phi * radius_b;  // scaled by long radius
+        float r = cos_phi * radius_a;         // scaled by short radius
+        rings[i].reserve(S);
+        for (int j = 0; j < S; ++j) {
+            float theta = static_cast<float>(j) * 2.0f * 3.14159265358979f /
+                          static_cast<float>(S);
+            float local_x = r * std::cos(theta);
+            float local_z = r * std::sin(theta);
+            // Map to world: center + local_x*axis_u + local_y*tangent + local_z*axis_v
+            rings[i].push_back(loft_vec3f{
+                center.x + local_x * axis_u.x + local_y * tangent.x +
+                    local_z * axis_v.x,
+                center.y + local_x * axis_u.y + local_y * tangent.y +
+                    local_z * axis_v.y,
+                center.z + local_x * axis_u.z + local_y * tangent.z +
+                    local_z * axis_v.z,
+            });
+        }
+    }
+
+    // Tube surface between latitude rings
+    for (int i = 0; i < L; ++i) {
+        for (int j = 0; j < S; ++j) {
+            int j2 = (j + 1) % S;
+            const auto& a = rings[i][j];
+            const auto& b = rings[i][j2];
+            const auto& c = rings[i + 1][j];
+            const auto& d = rings[i + 1][j2];
+            cgal_Triangle t1{a, b, c};
+            cgal_Triangle t2{c, b, d};
+            loft_vec3f n1 = (b - a).cross(c - a); n1 = n1 * (1.0f / (n1.length() + 1e-12f));
+            loft_vec3f n2 = (b - d).cross(c - d); n2 = n2 * (1.0f / (n2.length() + 1e-12f));
+            result.emplace_back(t1, cgal_vec3f{n1.x, n1.y, n1.z});
+            result.emplace_back(t2, cgal_vec3f{n2.x, n2.y, n2.z});
+        }
+    }
+
+    // Cap bottom pole (i=0)
+    {
+        loft_vec3f bottom = loft_vec3f{
+            center.x - radius_b * tangent.x,
+            center.y - radius_b * tangent.y,
+            center.z - radius_b * tangent.z};
+        loft_vec3f n_bot = tangent * -1.0f;
+        for (int j = 0; j < S; ++j) {
+            int j2 = (j + 1) % S;
+            cgal_Triangle tri{bottom, rings[0][j2], rings[0][j]};
+            result.emplace_back(tri, cgal_vec3f{n_bot.x, n_bot.y, n_bot.z});
+        }
+    }
+    // Cap top pole (i=L)
+    {
+        loft_vec3f top = loft_vec3f{
+            center.x + radius_b * tangent.x,
+            center.y + radius_b * tangent.y,
+            center.z + radius_b * tangent.z};
+        for (int j = 0; j < S; ++j) {
+            int j2 = (j + 1) % S;
+            cgal_Triangle tri{top, rings[L][j], rings[L][j2]};
+            result.emplace_back(tri, cgal_vec3f{tangent.x, tangent.y, tangent.z});
+        }
+    }
+
+    return result;
+}
+
+// Build a closed cone mesh: base circle at `base_center` with `base_radius`,
+// apex at `apex`, in the plane perpendicular to the cone axis.
+MeshData build_cone_mesh(const loft_vec3f& apex,
+                         const loft_vec3f& base_center,
+                         float base_radius,
+                         const loft_vec3f& axis_u,
+                         const loft_vec3f& axis_v,
+                         int circle_segments = 16) {
+    MeshData result;
+    const int C = circle_segments;
+    auto circle_2d = build_circular_path(base_radius, C);
+    std::vector<loft_vec3f> base_ring(C);
+    for (int j = 0; j < C; ++j) {
+        base_ring[j] = map_to_3d(circle_2d[j], base_center, axis_u, axis_v);
+    }
+
+    // Side surface: triangles from apex to base ring
+    loft_vec3f axis = safe_normalize(apex - base_center, loft_vec3f{0, 1, 0});
+    for (int j = 0; j < C; ++j) {
+        int j2 = (j + 1) % C;
+        cgal_Triangle tri{apex, base_ring[j], base_ring[j2]};
+        loft_vec3f e1 = base_ring[j] - apex;
+        loft_vec3f e2 = base_ring[j2] - apex;
+        loft_vec3f n = e1.cross(e2); n = n * (1.0f / (n.length() + 1e-12f));
+        // Ensure outward: normal should point away from the axis
+        if (n.x * axis.x + n.y * axis.y + n.z * axis.z > 0) {
+            n = n * -1.0f;
+        }
+        result.emplace_back(tri, cgal_vec3f{n.x, n.y, n.z});
+    }
+
+    // Base cap (triangle fan)
+    for (int j = 0; j < C; ++j) {
+        int j2 = (j + 1) % C;
+        cgal_Triangle tri{base_center, base_ring[j2], base_ring[j]};
+        loft_vec3f n = axis * -1.0f;
+        result.emplace_back(tri, cgal_vec3f{n.x, n.y, n.z});
+    }
+
+    return result;
+}
+
+// Build a closed sphere mesh
+MeshData build_sphere_mesh(const loft_vec3f& center, float radius,
+                           int lat_segments = 8, int long_segments = 16) {
+    // Use arbitrary frame for the sphere
+    loft_vec3f tangent{0, 1, 0}, axis_u{1, 0, 0}, axis_v{0, 0, 1};
+    return build_ellipsoid_mesh(center, tangent, axis_u, axis_v,
+                                radius, radius, lat_segments, long_segments);
+}
+
+// Build teardrop tip: sphere at last guide point, cone extending forward
+std::vector<MeshData> build_teardrop_primitives(
+    const loft_vec3f& tip_center,
+    const loft_vec3f& tangent,
+    float sphere_radius, float cone_length,
+    int circle_segments = 16) {
+    std::vector<MeshData> out;
+    loft_vec3f axis_u, axis_v;
+
+    // Build local frame at tip
+    float dot_yt = tangent.y;
+    loft_vec3f v_raw{-tangent.x * dot_yt, 1.0f - tangent.y * dot_yt,
+                     -tangent.z * dot_yt};
+    axis_v = safe_normalize(v_raw, loft_vec3f{0, 1, 0});
+    axis_u = loft_vec3f{
+        tangent.y * axis_v.z - tangent.z * axis_v.y,
+        tangent.z * axis_v.x - tangent.x * axis_v.z,
+        tangent.x * axis_v.y - tangent.y * axis_v.x,
+    };
+    axis_u = safe_normalize(axis_u, loft_vec3f{1, 0, 0});
+
+    // Sphere: centered at tip_center + tangent * sphere_radius (so back end
+    // sits at tip_center)
+    loft_vec3f sphere_center{
+        tip_center.x + tangent.x * sphere_radius,
+        tip_center.y + tangent.y * sphere_radius,
+        tip_center.z + tangent.z * sphere_radius,
+    };
+    out.push_back(build_ellipsoid_mesh(sphere_center, tangent, axis_u, axis_v,
+                                       sphere_radius, sphere_radius, 8, 16));
+
+    // Cone: from sphere equator to tip
+    loft_vec3f cone_apex{
+        sphere_center.x + tangent.x * cone_length,
+        sphere_center.y + tangent.y * cone_length,
+        sphere_center.z + tangent.z * cone_length,
+    };
+    out.push_back(build_cone_mesh(cone_apex, sphere_center, sphere_radius,
+                                  axis_u, axis_v, circle_segments));
+
+    return out;
+}
+
+// Build joint ring: a thickened annulus ring (simplified socket joint)
+MeshData build_joint_ring_mesh(
+    const loft_vec3f& center,
+    const loft_vec3f& tangent,
+    const loft_vec3f& axis_u,
+    const loft_vec3f& axis_v,
+    float inner_radius, float outer_radius, float thickness,
+    int circle_segments = 16) {
+    MeshData result;
+    const int C = circle_segments;
+
+    auto inner_2d = build_circular_path(inner_radius, C);
+    auto outer_2d = build_circular_path(outer_radius, C);
+
+    // Front and back face centers
+    loft_vec3f half_t{ tangent.x * thickness * 0.5f, tangent.y * thickness * 0.5f,
+                       tangent.z * thickness * 0.5f };
+    loft_vec3f front_center{ center.x + half_t.x, center.y + half_t.y,
+                             center.z + half_t.z };
+    loft_vec3f back_center{ center.x - half_t.x, center.y - half_t.y,
+                            center.z - half_t.z };
+
+    // Generate rings
+    std::vector<loft_vec3f> inner_front(C), outer_front(C);
+    std::vector<loft_vec3f> inner_back(C), outer_back(C);
+    for (int j = 0; j < C; ++j) {
+        inner_front[j] = map_to_3d(inner_2d[j], front_center, axis_u, axis_v);
+        outer_front[j] = map_to_3d(outer_2d[j], front_center, axis_u, axis_v);
+        inner_back[j] = map_to_3d(inner_2d[j], back_center, axis_u, axis_v);
+        outer_back[j] = map_to_3d(outer_2d[j], back_center, axis_u, axis_v);
+    }
+
+    // Outer tube surface
+    for (int j = 0; j < C; ++j) {
+        int j2 = (j + 1) % C;
+        const auto& a = outer_front[j];  const auto& b = outer_front[j2];
+        const auto& c = outer_back[j];   const auto& d = outer_back[j2];
+        cgal_Triangle t1{a, b, c}, t2{c, b, d};
+        loft_vec3f n1 = (b - a).cross(c - a); n1 = n1 * (1.0f / (n1.length() + 1e-12f));
+        loft_vec3f n2 = (b - d).cross(c - d); n2 = n2 * (1.0f / (n2.length() + 1e-12f));
+        result.emplace_back(t1, cgal_vec3f{n1.x, n1.y, n1.z});
+        result.emplace_back(t2, cgal_vec3f{n2.x, n2.y, n2.z});
+    }
+
+    // Inner tube surface (normals point inward)
+    for (int j = 0; j < C; ++j) {
+        int j2 = (j + 1) % C;
+        const auto& a = inner_front[j];  const auto& b = inner_back[j];
+        const auto& c = inner_front[j2]; const auto& d = inner_back[j2];
+        cgal_Triangle t1{a, b, c}, t2{c, b, d};
+        loft_vec3f n1 = (b - a).cross(c - a); n1 = n1 * (1.0f / (n1.length() + 1e-12f));
+        loft_vec3f n2 = (b - d).cross(c - d); n2 = n2 * (1.0f / (n2.length() + 1e-12f));
+        result.emplace_back(t1, cgal_vec3f{n1.x, n1.y, n1.z});
+        result.emplace_back(t2, cgal_vec3f{n2.x, n2.y, n2.z});
+    }
+
+    // Front annulus cap (outer to inner)
+    for (int j = 0; j < C; ++j) {
+        int j2 = (j + 1) % C;
+        cgal_Triangle t1{outer_front[j], outer_front[j2], inner_front[j]};
+        cgal_Triangle t2{inner_front[j], outer_front[j2], inner_front[j2]};
+        result.emplace_back(t1, cgal_vec3f{tangent.x, tangent.y, tangent.z});
+        result.emplace_back(t2, cgal_vec3f{tangent.x, tangent.y, tangent.z});
+    }
+    // Back annulus cap
+    {
+        loft_vec3f n_back{ -tangent.x, -tangent.y, -tangent.z };
+        for (int j = 0; j < C; ++j) {
+            int j2 = (j + 1) % C;
+            cgal_Triangle t1{outer_back[j], inner_back[j], outer_back[j2]};
+            cgal_Triangle t2{inner_back[j], inner_back[j2], outer_back[j2]};
+            result.emplace_back(t1, cgal_vec3f{n_back.x, n_back.y, n_back.z});
+            result.emplace_back(t2, cgal_vec3f{n_back.x, n_back.y, n_back.z});
+        }
+    }
+
+    return result;
+}
+
+// Incrementally union all primitives via CGAL, with fallback to concatenation
+MeshData union_all_primitives(std::vector<MeshData>& primitives) {
+    // Remove empties
+    primitives.erase(
+        std::remove_if(primitives.begin(), primitives.end(),
+                       [](const MeshData& m) { return m.empty(); }),
+        primitives.end());
+    if (primitives.empty()) return {};
+
+    MeshData result = std::move(primitives[0]);
+    for (size_t i = 1; i < primitives.size(); ++i) {
+        MeshData merged =
+            sinriv::kigstudio::cgal::mesh_union(result, primitives[i]);
+        if (!merged.empty()) {
+            result = std::move(merged);
+        } else {
+            // Fallback: just concatenate
+            result.insert(result.end(), primitives[i].begin(),
+                          primitives[i].end());
+        }
+    }
+    return result;
+}
+
+// ---- Special strand type builders ----
+
+std::vector<std::tuple<loft_Triangle, loft_vec3f>>
+build_candied_hawthorn_mesh(const HairStrand& strand) {
+    using namespace sinriv::kigstudio::mesh::loft;
+    std::vector<std::tuple<loft_Triangle, loft_vec3f>> empty_result;
+
+    if (strand.guide_points.size() < 2) return empty_result;
+
+    auto sampled = sample_bezier_guide_curve(
+        strand.guide_points, std::max(strand.guide_samples_per_segment, 1));
+    if (sampled.size() < 2) return empty_result;
+
+    // Convert sampled to loft_vec3f
+    std::vector<loft_vec3f> guide_curve;
+    guide_curve.reserve(sampled.size());
+    for (const auto& p : sampled)
+        guide_curve.push_back(loft_vec3f{p.x, p.y, p.z});
+
+    std::vector<MeshData> primitives;
+
+    // 1. Core cylinder along the full guide curve
+    primitives.push_back(
+        build_cylinder_mesh(guide_curve, strand.candy_cylinder_radius));
+
+    // 2. Ellipsoids at regular intervals
+    // Compute total arc length
+    float total_arc = 0.0f;
+    for (size_t i = 1; i < guide_curve.size(); ++i) {
+        total_arc +=
+            (guide_curve[i] - guide_curve[i - 1]).length();
+    }
+    if (strand.candy_ellipsoid_spacing > 0.01f && total_arc > 0.01f) {
+        float dist = strand.candy_ellipsoid_spacing;
+        while (dist < total_arc - 0.01f) {
+            // Find the sample point closest to `dist` along the curve
+            float accum = 0.0f;
+            int best_i = 0;
+            for (size_t i = 1; i < guide_curve.size(); ++i) {
+                float seg =
+                    (guide_curve[i] - guide_curve[i - 1]).length();
+                if (accum + seg >= dist) {
+                    float local_t =
+                        (dist - accum) / (seg + 1e-10f);
+                    best_i = (local_t < 0.5f) ? static_cast<int>(i - 1)
+                                              : static_cast<int>(i);
+                    break;
+                }
+                accum += seg;
+            }
+            if (best_i >= static_cast<int>(guide_curve.size()))
+                best_i = static_cast<int>(guide_curve.size()) - 1;
+
+            loft_vec3f tangent, axis_u, axis_v;
+            local_frame_at_sample(guide_curve, best_i, tangent, axis_u, axis_v);
+
+            primitives.push_back(build_ellipsoid_mesh(
+                guide_curve[best_i], tangent, axis_u, axis_v,
+                strand.candy_ellipsoid_radius_a,
+                strand.candy_ellipsoid_radius_b));
+
+            // Optional joint ring at far side of ellipsoid
+            if (strand.candy_use_joints) {
+                loft_vec3f joint_center{
+                    guide_curve[best_i].x +
+                        tangent.x * strand.candy_ellipsoid_radius_b,
+                    guide_curve[best_i].y +
+                        tangent.y * strand.candy_ellipsoid_radius_b,
+                    guide_curve[best_i].z +
+                        tangent.z * strand.candy_ellipsoid_radius_b,
+                };
+                float jr = strand.candy_ellipsoid_radius_a;
+                primitives.push_back(build_joint_ring_mesh(
+                    joint_center, tangent, axis_u, axis_v,
+                    jr * 0.85f, jr * 1.15f, jr * 0.3f));
+            }
+
+            dist += strand.candy_ellipsoid_spacing;
+        }
+    }
+
+    // 3. Teardrop tip at the last sample point
+    {
+        loft_vec3f tangent, axis_u, axis_v;
+        local_frame_at_sample(guide_curve, static_cast<int>(guide_curve.size()) - 1,
+                              tangent, axis_u, axis_v);
+        auto tip_parts = build_teardrop_primitives(
+            guide_curve.back(), tangent, strand.special_tip_radius,
+            strand.special_tip_length);
+        for (auto& p : tip_parts)
+            primitives.push_back(std::move(p));
+    }
+
+    // Union all primitives
+    MeshData merged = union_all_primitives(primitives);
+    if (merged.empty()) return empty_result;
+
+    // Convert MeshData to return type (they are the same underlying types)
+    std::vector<std::tuple<loft_Triangle, loft_vec3f>> result;
+    result.reserve(merged.size());
+    for (auto& [tri, n] : merged)
+        result.emplace_back(std::move(tri), std::move(n));
+    return result;
+}
+
+std::vector<std::tuple<loft_Triangle, loft_vec3f>>
+build_braid_mesh(const HairStrand& strand) {
+    using namespace sinriv::kigstudio::mesh::loft;
+    std::vector<std::tuple<loft_Triangle, loft_vec3f>> empty_result;
+
+    if (strand.guide_points.size() < 2) return empty_result;
+
+    auto sampled = sample_bezier_guide_curve(
+        strand.guide_points, std::max(strand.guide_samples_per_segment, 1));
+    if (sampled.size() < 2) return empty_result;
+
+    std::vector<loft_vec3f> guide_curve;
+    guide_curve.reserve(sampled.size());
+    for (const auto& p : sampled)
+        guide_curve.push_back(loft_vec3f{p.x, p.y, p.z});
+
+    const int M = static_cast<int>(guide_curve.size());
+
+    // Pre-compute arc length and local frames
+    std::vector<float> accum_arc(M);
+    accum_arc[0] = 0.0f;
+    for (int i = 1; i < M; ++i) {
+        accum_arc[i] = accum_arc[i - 1] +
+                       (guide_curve[i] - guide_curve[i - 1]).length();
+    }
+    float total_arc = accum_arc.back();
+
+    std::vector<loft_vec3f> tangents(M), axis_us(M), axis_vs(M);
+    for (int i = 0; i < M; ++i) {
+        local_frame_at_sample(guide_curve, i, tangents[i], axis_us[i],
+                              axis_vs[i]);
+    }
+
+    std::vector<MeshData> primitives;
+
+    // 1. Core cylinder
+    primitives.push_back(
+        build_cylinder_mesh(guide_curve, strand.braid_core_radius));
+
+    // 2. Braid strands: for each outer strand, generate a spiral curve
+    int count = std::clamp(strand.braid_strand_count, 2, 6);
+    for (int s = 0; s < count; ++s) {
+        float phase = static_cast<float>(s) * 2.0f * 3.14159265358979f /
+                      static_cast<float>(count);
+        std::vector<loft_vec3f> spiral(M);
+        for (int i = 0; i < M; ++i) {
+            float arc = accum_arc[i];
+            float angle = arc * 2.0f * 3.14159265358979f /
+                              std::max(strand.braid_twist_pitch, 0.01f) +
+                          phase;
+            float cos_a = std::cos(angle);
+            float sin_a = std::sin(angle);
+            spiral[i] = loft_vec3f{
+                guide_curve[i].x +
+                    strand.braid_braid_radius *
+                        (cos_a * axis_us[i].x + sin_a * axis_vs[i].x),
+                guide_curve[i].y +
+                    strand.braid_braid_radius *
+                        (cos_a * axis_us[i].y + sin_a * axis_vs[i].y),
+                guide_curve[i].z +
+                    strand.braid_braid_radius *
+                        (cos_a * axis_us[i].z + sin_a * axis_vs[i].z),
+            };
+        }
+        primitives.push_back(
+            build_cylinder_mesh(spiral, strand.braid_strand_radius));
+    }
+
+    // 3. Joints at uniform intervals along the core
+    if (strand.braid_use_joints && total_arc > 0.01f) {
+        float joint_spacing = strand.braid_twist_pitch / 4.0f;
+        if (joint_spacing < 0.1f) joint_spacing = strand.braid_twist_pitch;
+        float dist = joint_spacing;
+        while (dist < total_arc - 0.01f) {
+            // Find nearest sample index
+            int best_i = 0;
+            float best_diff = 1e10f;
+            for (int i = 0; i < M; ++i) {
+                float diff = std::abs(accum_arc[i] - dist);
+                if (diff < best_diff) { best_diff = diff; best_i = i; }
+            }
+            float jr = strand.braid_braid_radius + strand.braid_strand_radius;
+            primitives.push_back(build_joint_ring_mesh(
+                guide_curve[best_i], tangents[best_i], axis_us[best_i],
+                axis_vs[best_i], jr * 0.85f, jr * 1.15f, jr * 0.3f));
+            dist += joint_spacing;
+        }
+    }
+
+    // 4. Teardrop tip
+    {
+        auto tip_parts = build_teardrop_primitives(
+            guide_curve.back(), tangents.back(),
+            strand.special_tip_radius, strand.special_tip_length);
+        for (auto& p : tip_parts)
+            primitives.push_back(std::move(p));
+    }
+
+    MeshData merged = union_all_primitives(primitives);
+    if (merged.empty()) return empty_result;
+
+    std::vector<std::tuple<loft_Triangle, loft_vec3f>> result;
+    result.reserve(merged.size());
+    for (auto& [tri, n] : merged)
+        result.emplace_back(std::move(tri), std::move(n));
+    return result;
+}
+
 // Build loft mesh triangles from a single hair strand.
 // Returns (Triangle, normal) pairs suitable for RenderMesh::loadGeometry().
 std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
@@ -325,6 +997,14 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 	std::vector<std::tuple<loft_Triangle, loft_vec3f>> result;
 
 	if (strand.guide_points.size() < 2) return result;
+
+	// Dispatch to special strand type builders (parameter-driven, no width_points needed)
+	if (strand.gen_type == HairStrandGenType::CANDIED_HAWTHORN)
+		return build_candied_hawthorn_mesh(strand);
+	if (strand.gen_type == HairStrandGenType::BRAID)
+		return build_braid_mesh(strand);
+
+	// --- NORMAL path below ---
 	if (strand.width_points.empty()) return result;
 	// Use committed section if applied; otherwise fall back to vertices;
 	// if neither is set, use a default unit square.
@@ -636,6 +1316,17 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 				per_sample_path =
 				    &nearest_wp->section_state.vertices;
 			}
+		}
+
+		// Resample per-point override to match global section vertex
+		// count, preventing "Loft sections must have matching path
+		// sizes" errors when per-point sections differ from the global.
+		std::vector<sinriv::kigstudio::vec2<float>> temp_resampled;
+		if (per_sample_path != &global_section_path &&
+		    per_sample_path->size() != global_section_path.size()) {
+			resample_closed_polygon(*per_sample_path, temp_resampled,
+				static_cast<int>(global_section_path.size()));
+			per_sample_path = &temp_resampled;
 		}
 
 		// Build rotated + scaled path
@@ -997,6 +1688,8 @@ RenderVoxelList::RenderVoxelItem::sample_guide_curve_at(
 void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
 	addon_renderers.clear();
 	for (auto& strand : hair_strands) {
+		// Skip invisible strands for display only (collision still processes them)
+		if (!strand.visible) continue;
 		try {
 			auto tris = build_hair_strand_mesh(strand);
 			if (tris.empty()) continue;
