@@ -498,7 +498,6 @@ void RenderVoxelList::render_width_editor_window() {
 
             // --- 自动旋转按钮（仅当中心点启用时显示）---
             if (item.show_addon_center) {
-                ImGui::SameLine();
                 if (ImGui::SmallButton(
                         get_locale_cstr("action.auto_rotate_section"))) {
                     auto sample = item.sample_guide_curve_at(idx, wp.curve_id);
@@ -536,6 +535,7 @@ void RenderVoxelList::render_width_editor_window() {
                     wp.direction = v / len;
                     all_edits.value_changed = true;
                 };
+                ImGui::TextUnformatted(get_locale_cstr("label.radial_move"));
                 ImGui::SameLine();
                 if (ImGui::SmallButton("+")) {
                     move_along_center(1.0f);
@@ -596,7 +596,6 @@ void RenderVoxelList::render_width_editor_window() {
             }
 
             // --- Per-point section editor button ---
-            ImGui::SameLine();
             bool is_perpoint_editing =
                 (item.active_perpoint_section_edit_strand == idx &&
                  item.active_perpoint_section_edit_width_idx ==
@@ -625,6 +624,16 @@ void RenderVoxelList::render_width_editor_window() {
                     item.active_perpoint_section_edit_width_idx =
                         static_cast<int>(wi);
                     show_perpoint_section_editor_window = true;
+                }
+            }
+            
+            if (ImGui::IsItemHovered()) {
+                if (is_perpoint_editing){
+                    ImGui::SetTooltip("%s",
+                        get_locale_cstr("tooltip.stop_edit_perpoint_section"));
+                } else {
+                    ImGui::SetTooltip("%s",
+                        get_locale_cstr("tooltip.edit_perpoint_section"));
                 }
             }
             if (is_perpoint_editing) {
@@ -720,6 +729,11 @@ void RenderVoxelList::render_object_editor_addons() {
     show_addon_window = true;
 
     // 无关闭按钮，窗口随附加件模式自动显示/隐藏
+    // 初始位置：右上角顶点与物体编辑器左上角顶点重合
+    ImGui::SetNextWindowPos(
+        ImVec2(static_cast<float>(window_width) - 360.0f,
+               static_cast<float>(menu_height)),
+        ImGuiCond_Once, ImVec2(1.0f, 0.0f));
     ImGui::SetNextWindowSize(ImVec2(360, 400), ImGuiCond_Once);
     if (!ImGui::Begin(get_locale_cstr("window.addon_editor"), nullptr,
                       ImGuiWindowFlags_NoCollapse)) {
@@ -860,8 +874,9 @@ void RenderVoxelList::render_object_editor_addons() {
                     }
                     ImGui::SameLine();
                 }
-
+                
                 // 绘制引导曲线（自锁按钮）
+                ImGui::SameLine();
                 bool is_drawing =
                     (item.active_guide_draw_strand == static_cast<int>(i) &&
                      item.guide_curve_drawing_active);
@@ -894,24 +909,19 @@ void RenderVoxelList::render_object_editor_addons() {
                 }
 
                 ImGui::SameLine();
-                // 编辑宽度（自锁按钮）
-                bool is_width_editing =
+                // --- 编辑宽度向量 ---
+                bool is_width_editing_popup =
                     (item.active_width_edit_strand == static_cast<int>(i) &&
-                     item.width_editing_active);
-                if (is_width_editing) {
-                    ImGui::PushStyleColor(ImGuiCol_Button,
-                                          ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
-                }
+                        item.width_editing_active);
                 if (ImGui::Button(
-                        is_width_editing
+                        is_width_editing_popup
                             ? get_locale_cstr("action.stop_width_edit")
                             : get_locale_cstr("action.edit_width"))) {
-                    if (is_width_editing) {
+                    if (is_width_editing_popup) {
                         item.width_editing_active = false;
                         item.active_width_edit_strand = -1;
                         show_width_editor_window = false;
                     } else {
-                        // 互斥：打开宽度编辑器时关闭引导曲线
                         if (item.guide_curve_drawing_active) {
                             item.guide_curve_drawing_active = false;
                             item.active_guide_draw_strand = -1;
@@ -922,74 +932,82 @@ void RenderVoxelList::render_object_editor_addons() {
                         show_width_editor_window = true;
                     }
                 }
-                if (is_width_editing) {
-                    ImGui::PopStyleColor();
-                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", get_locale_cstr("tooltip.edit_width"));
 
+                // 省略号菜单按钮（始终显示，弹出菜单包含编辑宽度/截面/删除/清空）
                 ImGui::SameLine();
-                // 编辑截面（自锁按钮）
-                bool is_section_editing =
-                    (item.active_section_edit_strand == static_cast<int>(i));
-                if (is_section_editing) {
-                    ImGui::PushStyleColor(ImGuiCol_Button,
-                                          ImVec4(0.5f, 0.5f, 0.9f, 1.0f));
+                char more_menu_id[64];
+                snprintf(more_menu_id, sizeof(more_menu_id), "...##strand_more_%zu", i);
+                if (ImGui::Button(more_menu_id)) {
+                    ImGui::OpenPopup(more_menu_id);
                 }
-                if (ImGui::Button(
-                        is_section_editing
-                            ? get_locale_cstr("action.stop_edit_section")
-                            : get_locale_cstr("action.edit_section"))) {
-                    if (is_section_editing) {
-                        item.active_section_edit_strand = -1;
-                        show_cross_section_editor_window = false;
-                    } else {
-                        // Check for per-point section overrides before
-                        // opening global section editor
-                        bool has_overrides = false;
-                        for (const auto& wp :
-                             item.hair_strands[i].width_points) {
-                            if (wp.section_state.vertices.size() >= 3) {
-                                has_overrides = true;
-                                break;
-                            }
-                        }
-                        if (has_overrides) {
-                            show_perpoint_confirm_global_open = true;
-                            pending_global_section_strand =
-                                static_cast<int>(i);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", get_locale_cstr("tooltip.strand_more"));
+                if (ImGui::BeginPopup(more_menu_id)) {
+
+                    // --- 编辑截面 ---
+                    bool is_section_editing_popup =
+                        (item.active_section_edit_strand == static_cast<int>(i));
+                    if (ImGui::MenuItem(
+                            is_section_editing_popup
+                                ? get_locale_cstr("action.stop_edit_section")
+                                : get_locale_cstr("action.edit_section"))) {
+                        if (is_section_editing_popup) {
+                            item.active_section_edit_strand = -1;
+                            show_cross_section_editor_window = false;
                         } else {
-                            // 互斥：打开截面编辑器时关闭引导曲线和宽度编辑器
-                            if (item.guide_curve_drawing_active) {
-                                item.guide_curve_drawing_active = false;
-                                item.active_guide_draw_strand = -1;
-                                show_guide_curve_window = false;
+                            bool has_overrides = false;
+                            for (const auto& wp :
+                                 item.hair_strands[i].width_points) {
+                                if (wp.section_state.vertices.size() >= 3) {
+                                    has_overrides = true;
+                                    break;
+                                }
                             }
-                            if (item.width_editing_active) {
-                                item.width_editing_active = false;
-                                item.active_width_edit_strand = -1;
-                                show_width_editor_window = false;
+                            if (has_overrides) {
+                                show_perpoint_confirm_global_open = true;
+                                pending_global_section_strand =
+                                    static_cast<int>(i);
+                            } else {
+                                if (item.guide_curve_drawing_active) {
+                                    item.guide_curve_drawing_active = false;
+                                    item.active_guide_draw_strand = -1;
+                                    show_guide_curve_window = false;
+                                }
+                                if (item.width_editing_active) {
+                                    item.width_editing_active = false;
+                                    item.active_width_edit_strand = -1;
+                                    show_width_editor_window = false;
+                                }
+                                item.active_section_edit_strand =
+                                    static_cast<int>(i);
+                                show_cross_section_editor_window = true;
                             }
-                            item.active_section_edit_strand =
-                                static_cast<int>(i);
-                            show_cross_section_editor_window = true;
                         }
                     }
-                }
-                if (is_section_editing) {
-                    ImGui::PopStyleColor();
-                }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.edit_section"));
 
-                ImGui::SameLine();
-                // 删除发束
-                if (ImGui::Button(get_locale_cstr("action.delete_strand"))) {
-                    delete_idx = static_cast<int>(i);
-                }
+                    ImGui::Separator();
 
-                // 清空引导点
-                ImGui::SameLine();
-                if (ImGui::Button(get_locale_cstr("action.clear_guide_points"))) {
-                    push_undo_now(item.id, std::nullopt, "Clear Guide Points");
-                    strand.guide_points.clear();
-                    strand.mesh_dirty = true;
+                    // --- 删除发束 ---
+                    if (ImGui::MenuItem(get_locale_cstr("action.delete_strand"))) {
+                        delete_idx = static_cast<int>(i);
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.delete_strand"));
+
+                    // --- 清空引导点 ---
+                    if (ImGui::MenuItem(get_locale_cstr("action.clear_guide_points"))) {
+                        push_undo_now(item.id, std::nullopt, "Clear Guide Points");
+                        strand.guide_points.clear();
+                        strand.mesh_dirty = true;
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.clear_guide_points"));
+
+                    ImGui::EndPopup();
                 }
 
                 // 显示点数信息
@@ -1115,6 +1133,9 @@ void RenderVoxelList::render_hairline_plane_window() {
     }
     // NOTE: no longer close show_angle_config_window
 
+    // 初始位置：中心点位于屏幕中心
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Once, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(320, 180), ImGuiCond_Once);
     bool window_open = true;
     if (!ImGui::Begin(get_locale_cstr("window.auto_width"), &window_open)) {
@@ -1416,6 +1437,9 @@ void RenderVoxelList::render_angle_config_window() {
     }
     // NOTE: no longer close show_hairline_plane_window — they can coexist
 
+    // 初始位置：中心点位于屏幕中心
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Once, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(900, 680), ImGuiCond_Once);
     bool window_open = true;
     if (!ImGui::Begin(get_locale_cstr("window.angle_config"), &window_open)) {

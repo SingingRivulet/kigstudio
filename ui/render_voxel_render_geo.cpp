@@ -1353,7 +1353,7 @@ void RenderVoxelList::load_stl(std::string filename,
     // heavy CGAL work (polygon_soup_to_polygon_mesh) that can block
     // the UI for seconds on large models if done under the locker.
     std::shared_ptr<sinriv::kigstudio::sdf::SDF_Mesh> mesh_sdf;
-    if (load_as_sdf && load_mode != static_cast<int>(StlLoadMode::MESH_ONLY)) {
+    if (load_as_sdf) {
         mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
         if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
             load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {
@@ -1386,7 +1386,15 @@ void RenderVoxelList::load_stl(std::string filename,
                 if (load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
                     item.voxel_renderer.clear();
                     item.voxel_grid_data.chunks.clear();
-                    item.sdf_data = nullptr;
+                    item.sdf_data = std::move(mesh_sdf);
+                    if (item.sdf_data) {
+                        auto* sm = dynamic_cast<
+                            sinriv::kigstudio::sdf::SDF_Mesh*>(
+                            item.sdf_data.get());
+                        if (sm)
+                            sm->precision_mode =
+                                item.sdf_precision_cache;
+                    }
                     item.mesh_only = true;
                 } else {
                     item.voxel_renderer.clear();
@@ -1455,7 +1463,7 @@ void RenderVoxelList::load_stl(std::string filename,
         if (load_mode == static_cast<int>(StlLoadMode::MESH_ONLY)) {
             item->mesh_only = true;
             item->voxel_grid_data.chunks.clear();
-            item->sdf_data = nullptr;
+            item->sdf_data = std::move(mesh_sdf);
         } else {
             // DEFAULT / SILHOUETTE / SURFACE_ONLY / CONVEX_HULL
             item->voxel_renderer.loadChunkMeshes(chunk_meshes);
@@ -1895,8 +1903,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
     // For Silhouette / Convex Hull the processed mesh is used;
     // for Default the raw loaded mesh (or SDF-reconstructed mesh) is used.
     if (load_as_sdf && (data_type == 0 || data_type == 1) &&
-        load_mode != static_cast<int>(StlLoadMode::SURFACE_ONLY) &&
-        load_mode != static_cast<int>(StlLoadMode::MESH_ONLY)) {
+        load_mode != static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
         auto mesh_sdf = std::make_shared<sinriv::kigstudio::sdf::SDF_Mesh>();
         if (load_mode == static_cast<int>(StlLoadMode::SILHOUETTE) ||
             load_mode == static_cast<int>(StlLoadMode::CONVEX_HULL)) {

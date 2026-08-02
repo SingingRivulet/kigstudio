@@ -399,9 +399,28 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
         ImGui::TextColored(ImVec4(0.3f, 0.8f, 0.9f, 1.0f), "%s",
                            get_locale_cstr("label.source_addon"));
 
+        // 检查底模是否有 SDF 数据
+        bool base_has_sdf = false;
+        if (item.addon_base_node_id >= 0 && item.manager) {
+            auto base_it = item.manager->items.find(item.addon_base_node_id);
+            if (base_it != item.manager->items.end()) {
+                base_has_sdf = base_it->second->sdf_data != nullptr;
+            }
+        }
+
+        // addon_reveal 需要底模有 SDF
+        if (!base_has_sdf && item.addon_reveal) {
+            item.addon_reveal = false;
+        }
+        if (!base_has_sdf) ImGui::BeginDisabled();
         ImGui::Checkbox(get_locale_cstr("label.addon_reveal"),
                         &item.addon_reveal);
-        if (ImGui::IsItemHovered()) {
+        if (!base_has_sdf) {
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.addon_no_sdf_base"));
+            }
+        } else if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip(get_locale_cstr("tooltip.addon_reveal"));
         }
         if (item.addon_reveal) {
@@ -415,6 +434,10 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
             ImGui::Unindent();
         }
 
+        // addon_split 的 SDF 模式需要底模有 SDF
+        if (!base_has_sdf && item.addon_sdf_split) {
+            item.addon_sdf_split = false;
+        }
         ImGui::Checkbox(get_locale_cstr("label.addon_split"),
                         &item.addon_split);
         if (ImGui::IsItemHovered()) {
@@ -422,9 +445,15 @@ void RenderVoxelList::render_object_editor_collision_tab_content(
         }
         if (item.addon_split) {
             ImGui::Indent();
+            if (!base_has_sdf) ImGui::BeginDisabled();
             ImGui::Checkbox(get_locale_cstr("label.addon_sdf_split"),
                             &item.addon_sdf_split);
-            if (ImGui::IsItemHovered()) {
+            if (!base_has_sdf) {
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::SetTooltip("%s", get_locale_cstr("tooltip.addon_no_sdf_base"));
+                }
+            } else if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip(
                     get_locale_cstr("tooltip.addon_sdf_split"));
             }

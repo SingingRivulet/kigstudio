@@ -707,15 +707,11 @@ void RenderVoxelList::render_file_loader() {
                 }
             }
             if (file_loader_load_mode ==
-                    static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
-                file_loader_load_mode ==
-                    static_cast<int>(StlLoadMode::MESH_ONLY)) {
+                    static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
                 file_loader_load_as_sdf = false;
             }
             if (file_loader_load_mode !=
-                    static_cast<int>(StlLoadMode::SURFACE_ONLY) &&
-                file_loader_load_mode !=
-                    static_cast<int>(StlLoadMode::MESH_ONLY)) {
+                    static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
                 ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"),
                                 &file_loader_load_as_sdf);
                 if (ImGui::IsItemHovered()) {

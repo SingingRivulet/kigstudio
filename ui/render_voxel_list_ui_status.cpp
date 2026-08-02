@@ -53,44 +53,64 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
     // 附加件模式：显示专用UI
     if (item.source_type == 2) {
         ImGui::Separator();
-        // 底模节点选择器
-        std::vector<std::pair<int, std::string>> sdf_candidates;
+        // 底模节点选择器（允许一切拥有mesh的模型）
+        std::vector<std::pair<int, std::string>> base_candidates;
+        bool base_has_sdf = false;
         if (item.manager) {
             for (auto& [other_id, other] : item.manager->items) {
                 if (other_id == item.id)
                     continue;
-                // 只列出有SDF数据的节点
-                if (!other->sdf_data)
+                // 只列出有mesh数据的节点
+                if (other->cached_mesh.empty() &&
+                    other->source_triangles.empty() &&
+                    other->mesh_renderer.empty())
                     continue;
-                sdf_candidates.push_back(
-                    {other_id, "Node " + std::to_string(other_id)});
+                std::string label = "Node " + std::to_string(other_id);
+                if (other->sdf_data)
+                    label += " [SDF]";
+                else
+                    label += " [Mesh]";
+                base_candidates.push_back({other_id, label});
             }
         }
-        if (sdf_candidates.empty()) {
+        if (base_candidates.empty()) {
             ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "%s",
                                get_locale_cstr("label.addon_no_sdf_nodes"));
         } else {
+            // 检测当前选中的底模是否有 SDF
+            if (item.addon_base_node_id >= 0 && item.manager) {
+                auto base_it = item.manager->items.find(item.addon_base_node_id);
+                if (base_it != item.manager->items.end()) {
+                    base_has_sdf = base_it->second->sdf_data != nullptr;
+                }
+            }
+
             int current_base = -1;
-            std::vector<const char*> sdf_names;
-            for (size_t i = 0; i < sdf_candidates.size(); ++i) {
-                sdf_names.push_back(sdf_candidates[i].second.c_str());
-                if (sdf_candidates[i].first == item.addon_base_node_id) {
+            std::vector<const char*> base_names;
+            for (size_t i = 0; i < base_candidates.size(); ++i) {
+                base_names.push_back(base_candidates[i].second.c_str());
+                if (base_candidates[i].first == item.addon_base_node_id) {
                     current_base = static_cast<int>(i);
                 }
             }
             if (ImGui::Combo(get_locale_cstr("label.addon_base_model"),
-                             &current_base, sdf_names.data(),
-                             static_cast<int>(sdf_candidates.size()))) {
+                             &current_base, base_names.data(),
+                             static_cast<int>(base_candidates.size()))) {
                 push_undo_now(item.id, std::nullopt, "Addon Base Node");
                 if (current_base >= 0 &&
-                    current_base < static_cast<int>(sdf_candidates.size())) {
-                    item.addon_base_node_id = sdf_candidates[current_base].first;
+                    current_base < static_cast<int>(base_candidates.size())) {
+                    item.addon_base_node_id = base_candidates[current_base].first;
                 }
             }
 
             if (item.addon_base_node_id >= 0) {
-                ImGui::Text(get_locale_cstr("label.addon_base_applied"),
-                            item.addon_base_node_id);
+                if (base_has_sdf) {
+                    ImGui::Text(get_locale_cstr("label.addon_base_applied"),
+                                item.addon_base_node_id);
+                } else {
+                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "%s (Mesh Only)",
+                                       std::to_string(item.addon_base_node_id).c_str());
+                }
             }
 
             ImGui::Separator();
@@ -293,9 +313,7 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         push_undo_now(item.id, std::nullopt, "STL Load Mode");
         item.stl_load_mode = load_mode_values[load_mode_idx];
         if (item.stl_load_mode ==
-                static_cast<int>(StlLoadMode::SURFACE_ONLY) ||
-            item.stl_load_mode ==
-                static_cast<int>(StlLoadMode::MESH_ONLY)) {
+                static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
             item.load_as_sdf = false;
         }
         if (item.stl_load_mode ==
@@ -370,11 +388,9 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             }
         }
 
-        // SDF 勾选框
+        // SDF 勾选框（只有 SURFACE_ONLY 模式不能加载 SDF）
         if (item.stl_load_mode !=
-                static_cast<int>(StlLoadMode::SURFACE_ONLY) &&
-            item.stl_load_mode !=
-                static_cast<int>(StlLoadMode::MESH_ONLY)) {
+                static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
             bool load_as_sdf = item.load_as_sdf;
             if (ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"),
                                 &load_as_sdf)) {
@@ -636,13 +652,11 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 }
             }
 
-            // Load as SDF checkbox for mesh/SDF node sources
+            // Load as SDF checkbox for mesh/SDF node sources（只有 SURFACE_ONLY 模式不能加载 SDF）
             if ((item.node_source_data_type == 0 ||
                  item.node_source_data_type == 1) &&
                 item.stl_load_mode !=
-                    static_cast<int>(StlLoadMode::SURFACE_ONLY) &&
-                item.stl_load_mode !=
-                    static_cast<int>(StlLoadMode::MESH_ONLY)) {
+                    static_cast<int>(StlLoadMode::SURFACE_ONLY)) {
                 ImGui::Separator();
                 bool load_as_sdf = item.load_as_sdf;
                 if (ImGui::Checkbox(get_locale_cstr("label.load_as_sdf"),

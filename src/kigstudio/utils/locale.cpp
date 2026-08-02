@@ -398,7 +398,7 @@ void init_locale_strings() {
     add_locale_string("label.stl_load_mode",
                       {{"en", "Load Mode"}, {"zh", "加载模式"}});
     add_locale_string("label.stl_load_mode.default",
-                      {{"en", "Default"}, {"zh", "默认"}});
+                      {{"en", "Voxelization"}, {"zh", "体素化"}});
     add_locale_string("label.stl_load_mode.sdf",
                       {{"en", "SDF"}, {"zh", "SDF"}});
     add_locale_string("label.stl_load_mode.silhouette",
@@ -1290,6 +1290,21 @@ void init_locale_strings() {
     add_locale_string("tooltip.move_point_down",
                       {{"en", "Move this point later in the curve order"},
                        {"zh", "将该点在曲线顺序中后移"}});
+    add_locale_string("tooltip.strand_more",
+                      {{"en", "More actions (Edit Section, Delete, Clear Points)"},
+                       {"zh", "更多操作（编辑截面、删除、清空点）"}});
+    add_locale_string("tooltip.edit_width",
+                      {{"en", "Edit width control points for this strand"},
+                       {"zh", "编辑此发束的宽度控制点"}});
+    add_locale_string("tooltip.edit_section",
+                      {{"en", "Edit cross-section shape for this strand"},
+                       {"zh", "编辑此发束的截面形状"}});
+    add_locale_string("tooltip.delete_strand",
+                      {{"en", "Delete this hair strand"},
+                       {"zh", "删除此发束"}});
+    add_locale_string("tooltip.clear_guide_points",
+                      {{"en", "Clear all guide curve points for this strand"},
+                       {"zh", "清空此发束的所有引导曲线点"}});
     add_locale_string("label.dist_to_center",
                       {{"en", "Distance to center"}, {"zh", "离中心距离"}});
     add_locale_string("label.move_step",
@@ -1316,6 +1331,9 @@ void init_locale_strings() {
                       {{"en", "Checked: strands subtract each other via SDF. "
                                "Unchecked: strands subtract each other with geometry booleans."},
                        {"zh", "勾选时发束之间用SDF相减，未勾选时用几何体布尔相减。"}});
+    add_locale_string("tooltip.addon_no_sdf_base",
+                      {{"en", "The base model has no SDF data. This SDF feature is unavailable."},
+                       {"zh", "底模没有SDF数据，此SDF功能不可用。"}});
 
     // Cross-section editor
     add_locale_string("window.cross_section_editor",
@@ -1358,6 +1376,8 @@ void init_locale_strings() {
                       {{"en", "Auto-Rot"}, {"zh", "自动旋转"}});
     add_locale_string("label.use_bezier_section",
                       {{"en", "Bezier"}, {"zh", "贝塞尔"}});
+    add_locale_string("label.radial_move",
+                      {{"en", "Radial Move"}, {"zh", "径向移动"}});
     add_locale_string("label.normalize_mode",
                       {{"en", "Norm"}, {"zh", "归一化"}});
     add_locale_string("label.normalize_x",
@@ -1519,6 +1539,12 @@ void init_locale_strings() {
                        {"zh", "应用全局截面将清除所有逐点截面覆盖。是否继续？"}});
     add_locale_string("action.update_hair_sdf",
                       {{"en", "Update Hair SDF"}, {"zh", "更新毛发SDF"}});
+    add_locale_string("tooltip.stop_edit_perpoint_section",
+                      {{"en", "Stop editing per-point section for this strand"},
+                       {"zh", "停止编辑截面"}});
+    add_locale_string("tooltip.edit_perpoint_section",
+                      {{"en", "Edit per-point section for this strand"},
+                       {"zh", "编辑局部的截面，允许局部微调顶点"}});
     add_locale_string("tooltip.update_hair_sdf",
                       {{"en", "Build SDF from all hair strands. The node will become SDF-capable for collision and rendering."},
                        {"zh", "从所有发束构建SDF。节点将具备SDF功能，可用于碰撞和渲染。"}});
