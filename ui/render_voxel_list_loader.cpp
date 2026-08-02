@@ -132,6 +132,8 @@ cJSON* hair_strand_to_json(const HairStrand& strand) {
     // Tip (shared)
     cJSON_AddNumberToObject(s_obj, "special_tip_length", static_cast<double>(strand.special_tip_length));
     cJSON_AddNumberToObject(s_obj, "special_tip_radius", static_cast<double>(strand.special_tip_radius));
+    // Tessellation quality (shared by special types)
+    cJSON_AddNumberToObject(s_obj, "special_quality", strand.special_quality);
     return s_obj;
 }
 
@@ -262,6 +264,10 @@ HairStrand hair_strand_from_json(const cJSON* s_obj) {
     cJSON* str_ = cJSON_GetObjectItem(s_obj, "special_tip_radius");
     if (str_ && cJSON_IsNumber(str_))
         strand.special_tip_radius = static_cast<float>(str_->valuedouble);
+    // Tessellation quality (shared by special types)
+    cJSON* sq = cJSON_GetObjectItem(s_obj, "special_quality");
+    if (sq && cJSON_IsNumber(sq))
+        strand.special_quality = sq->valueint;
     return strand;
 }
 

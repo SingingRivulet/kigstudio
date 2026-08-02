@@ -1349,6 +1349,11 @@ void init_locale_strings() {
                       {{"en", "Tip Length"}, {"zh", "尖端长度"}});
     add_locale_string("label.special_tip_radius",
                       {{"en", "Tip Radius"}, {"zh", "尖端半径"}});
+    add_locale_string("label.special_quality",
+                      {{"en", "Tessellation"}, {"zh", "细分精度"}});
+    add_locale_string("tooltip.special_quality",
+                      {{"en", "Polygon segment count for tubes, ellipsoids, cones and joints (higher = smoother)"},
+                       {"zh", "柱体/椭球/锥体/关节的多边形分段数（越高越平滑）"}});
     add_locale_string("label.dist_to_center",
                       {{"en", "Distance to center"}, {"zh", "离中心距离"}});
     add_locale_string("label.move_step",

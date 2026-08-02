@@ -208,6 +208,10 @@ struct HairStrand {
     // ---- Tip (shared by both special types) ----
     float special_tip_length = 4.0f;          // Teardrop cone length beyond sphere
     float special_tip_radius = 2.0f;          // Teardrop sphere radius
+
+    // ---- Tessellation quality (shared by both special types) ----
+    int special_quality = 16;                 // Polygon segments (4-64), controls
+                                              // cylinder/ellipsoid/cone/joint smoothness
 };
 
 /// Per-position angle configuration for semantic-coordinate ray casting.

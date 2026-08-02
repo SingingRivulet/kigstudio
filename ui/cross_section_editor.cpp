@@ -369,6 +369,7 @@ void RenderVoxelList::render_cross_section_editor() {
                     &state.use_bezier_section);
     if (old_bezier != state.use_bezier_section) {
         strand.mesh_dirty = true;
+        item.dirty = true;
     }
 
     // Normalize mode combo
@@ -395,6 +396,7 @@ void RenderVoxelList::render_cross_section_editor() {
                        &strand.section_rotation, -180.0f, 180.0f, "%.0f");
     if (old_rot != strand.section_rotation) {
         strand.mesh_dirty = true;
+        item.dirty = true;
     }
 
     ImGui::Separator();
@@ -557,6 +559,7 @@ void RenderVoxelList::render_cross_section_editor() {
             verts.insert(verts.begin() + static_cast<ptrdiff_t>(insert_idx),
                          new_vert);
             state.hovered_edge = -1;
+            item.dirty = true;
         }
 
         // Left click on vertex → start drag
@@ -573,6 +576,7 @@ void RenderVoxelList::render_cross_section_editor() {
                 verts.erase(verts.begin() + state.hovered_vertex);
                 state.hovered_vertex = -1;
                 state.dragged_vertex = -1;
+                item.dirty = true;
             }
         }
     }
@@ -584,6 +588,7 @@ void RenderVoxelList::render_cross_section_editor() {
             if (!state.edit_active) {
                 state.push_undo("Drag Vertex");
                 state.edit_active = true;
+                item.dirty = true;
             }
             ImVec2 mouse_pos = ImGui::GetMousePos();
             vec2f new_pos = canvas_to_world(
@@ -748,6 +753,7 @@ void RenderVoxelList::render_cross_section_editor() {
             }
             state.committed = verts;
             strand.mesh_dirty = true;
+            item.dirty = true;
             }  // else (no overrides → apply directly)
         }
         if (apply_disabled)
@@ -772,10 +778,12 @@ void RenderVoxelList::render_cross_section_editor() {
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) {
             state.undo();
             strand.mesh_dirty = true;
+            item.dirty = true;
         }
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Y)) {
             state.redo();
             strand.mesh_dirty = true;
+            item.dirty = true;
         }
     }
 
@@ -894,6 +902,7 @@ void RenderVoxelList::render_perpoint_section_editor() {
         if (ImGui::SmallButton(get_locale_cstr("action.undo"))) {
             state.undo();
             strand.mesh_dirty = true;
+            item.dirty = true;
         }
         if (undo_disabled)
             ImGui::EndDisabled();
@@ -903,6 +912,7 @@ void RenderVoxelList::render_perpoint_section_editor() {
         if (ImGui::SmallButton(get_locale_cstr("action.redo"))) {
             state.redo();
             strand.mesh_dirty = true;
+            item.dirty = true;
         }
         if (redo_disabled)
             ImGui::EndDisabled();
@@ -919,6 +929,7 @@ void RenderVoxelList::render_perpoint_section_editor() {
                     &state.use_bezier_section);
     if (old_bezier != state.use_bezier_section) {
         strand.mesh_dirty = true;
+        item.dirty = true;
     }
 
     // Normalize mode combo (per-point)
@@ -1055,6 +1066,7 @@ void RenderVoxelList::render_perpoint_section_editor() {
             if (!state.edit_active) {
                 state.push_undo("Drag Vertex");
                 state.edit_active = true;
+                item.dirty = true;
             }
             ImVec2 mouse_pos = ImGui::GetMousePos();
             vec2f new_pos = canvas_to_world(
@@ -1186,6 +1198,7 @@ void RenderVoxelList::render_perpoint_section_editor() {
                 }
             }
             strand.mesh_dirty = true;
+            item.dirty = true;
         }
         if (apply_disabled)
             ImGui::EndDisabled();
@@ -1195,6 +1208,7 @@ void RenderVoxelList::render_perpoint_section_editor() {
         if (ImGui::Button(get_locale_cstr("action.clear_perpoint_section"))) {
             state = SectionEditorState{};
             strand.mesh_dirty = true;
+            item.dirty = true;
         }
     }
 
@@ -1207,10 +1221,12 @@ void RenderVoxelList::render_perpoint_section_editor() {
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) {
             state.undo();
             strand.mesh_dirty = true;
+            item.dirty = true;
         }
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Y)) {
             state.redo();
             strand.mesh_dirty = true;
+            item.dirty = true;
         }
     }
 

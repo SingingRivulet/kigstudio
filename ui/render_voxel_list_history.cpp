@@ -125,11 +125,23 @@ void RenderVoxelList::begin_edit(int item_id) {
     auto it = items.find(item_id);
     if (it == items.end())
         return;
-    // Use collision_edit_active flag to prevent re-capture during multi-frame
-    // drags, instead of checking pending_undo (which can be stale from a
-    // different editor).
-    if (it->second->collision_edit_active)
-        return;
+    // collision_edit_active guard:
+    //   - Normal drag: begin_edit fires on frame 1 (IsItemActivated),
+    //     push_undo_now is blocked by collision_edit_active during frames 2..N,
+    //     then end_edit fires on release and clears the flag.
+    //   - Stale flag: if collision_edit_active is stuck true from a previous
+    //     interaction that never received its deactivation event, auto-commit
+    //     the stale pending_undo so no edit is silently lost, then proceed.
+    if (it->second->collision_edit_active) {
+        if (pending_undo.has_value() && pending_undo->item_id == item_id) {
+            it->second->undo_stack.push_back(pending_undo->snapshot);
+            it->second->undo_stack.back().description = "Edit";
+            it->second->redo_stack.clear();
+            it->second->dirty = true;
+            if (it->second->undo_stack.size() > kMaxUndoSize)
+                it->second->undo_stack.erase(it->second->undo_stack.begin());
+        }
+    }
     pending_undo.reset();
     pending_undo = PendingUndo{item_id, capture_snapshot(*it->second)};
     it->second->collision_edit_active = true;

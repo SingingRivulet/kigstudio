@@ -659,7 +659,7 @@ void RenderVoxelList::render_object_editor_sdf_node_split_mode(
     }
     if (transform_edit_result.deactivated_after_edit) {
         end_edit(item.id, "Source Transform");
-    } else if (transform_edit_result.value_changed) {
+    } else if (transform_edit_result.value_changed && !item.collision_edit_active) {
         push_undo_now(item.id, before_transform, "Source Transform");
     }
 }

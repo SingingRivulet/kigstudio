@@ -658,8 +658,9 @@ std::vector<MeshData> build_teardrop_primitives(
         tip_center.y + tangent.y * sphere_radius,
         tip_center.z + tangent.z * sphere_radius,
     };
+    int lat_seg = std::max(3, circle_segments / 2);
     out.push_back(build_ellipsoid_mesh(sphere_center, tangent, axis_u, axis_v,
-                                       sphere_radius, sphere_radius, 8, 16));
+                                       sphere_radius, sphere_radius, lat_seg, circle_segments));
 
     // Cone: from sphere equator to tip
     loft_vec3f cone_apex{
@@ -797,9 +798,12 @@ build_candied_hawthorn_mesh(const HairStrand& strand) {
 
     std::vector<MeshData> primitives;
 
+    int Q = std::clamp(strand.special_quality, 4, 64);
+    int Q_lat = std::max(4, Q / 2);  // latitude uses half resolution
+
     // 1. Core cylinder along the full guide curve
     primitives.push_back(
-        build_cylinder_mesh(guide_curve, strand.candy_cylinder_radius));
+        build_cylinder_mesh(guide_curve, strand.candy_cylinder_radius, Q));
 
     // 2. Ellipsoids at regular intervals
     // Compute total arc length
@@ -835,7 +839,8 @@ build_candied_hawthorn_mesh(const HairStrand& strand) {
             primitives.push_back(build_ellipsoid_mesh(
                 guide_curve[best_i], tangent, axis_u, axis_v,
                 strand.candy_ellipsoid_radius_a,
-                strand.candy_ellipsoid_radius_b));
+                strand.candy_ellipsoid_radius_b,
+                Q_lat, Q));
 
             // Optional joint ring at far side of ellipsoid
             if (strand.candy_use_joints) {
@@ -850,7 +855,7 @@ build_candied_hawthorn_mesh(const HairStrand& strand) {
                 float jr = strand.candy_ellipsoid_radius_a;
                 primitives.push_back(build_joint_ring_mesh(
                     joint_center, tangent, axis_u, axis_v,
-                    jr * 0.85f, jr * 1.15f, jr * 0.3f));
+                    jr * 0.85f, jr * 1.15f, jr * 0.3f, Q));
             }
 
             dist += strand.candy_ellipsoid_spacing;
@@ -864,13 +869,21 @@ build_candied_hawthorn_mesh(const HairStrand& strand) {
                               tangent, axis_u, axis_v);
         auto tip_parts = build_teardrop_primitives(
             guide_curve.back(), tangent, strand.special_tip_radius,
-            strand.special_tip_length);
+            strand.special_tip_length, Q);
         for (auto& p : tip_parts)
             primitives.push_back(std::move(p));
     }
 
-    // Union all primitives
-    MeshData merged = union_all_primitives(primitives);
+    // Concatenate all primitives (skip CGAL boolean union — the
+    // overlapping cylinders/ellipsoids cause cascading union failures
+    // that degrade the mesh; concatenation renders correctly for both
+    // braid and candied hawthorn visual styles).
+    MeshData merged;
+    size_t total_faces = 0;
+    for (auto& p : primitives) total_faces += p.size();
+    merged.reserve(total_faces);
+    for (auto& p : primitives)
+        merged.insert(merged.end(), p.begin(), p.end());
     if (merged.empty()) return empty_result;
 
     // Convert MeshData to return type (they are the same underlying types)
@@ -916,37 +929,94 @@ build_braid_mesh(const HairStrand& strand) {
 
     std::vector<MeshData> primitives;
 
+    int Q = std::clamp(strand.special_quality, 4, 64);
+
     // 1. Core cylinder
     primitives.push_back(
-        build_cylinder_mesh(guide_curve, strand.braid_core_radius));
+        build_cylinder_mesh(guide_curve, strand.braid_core_radius, Q));
 
-    // 2. Braid strands: for each outer strand, generate a spiral curve
+    // 2. Braid strands: true 3-strand braid topology.
+    //    Each strand oscillates between 3 "lanes" (left/center/right) via a
+    //    trapezoidal wave, never completing a full rotation around the axis.
+    //    The three strands are the same curve shifted by 2h along t.
+    //
+    //    Model: σ₁σ₂ alternating braid (standard 3-strand).
+    //    p(t): horizontal lane position  (period 6, trapezoidal with dwell)
+    //    q(t): over/under depth          (period 3)
+    //    h     = pitch / 6               (cross-step length)
+    //    a     = braid_braid_radius      (lane spacing)
+    //    b     = strand_radius * 1.5     (depth, ≥radius avoids interpenetration)
+
+    // --- p(t): trapezoidal horizontal wave, period 6 ---
+    auto braid_p = [](float t_mod6) -> float {
+        // t_mod6 in [0, 6)
+        if (t_mod6 < 1.0f)      // left→center: -(1+cos πt)/2
+            return -(1.0f + std::cos(3.14159265358979f * t_mod6)) * 0.5f;
+        else if (t_mod6 < 2.0f) // center→right: (1-cos π(t-1))/2
+            return (1.0f - std::cos(3.14159265358979f * (t_mod6 - 1.0f))) * 0.5f;
+        else if (t_mod6 < 3.0f) // right dwell: 1
+            return 1.0f;
+        else if (t_mod6 < 4.0f) // right→center: (1+cos π(t-3))/2
+            return (1.0f + std::cos(3.14159265358979f * (t_mod6 - 3.0f))) * 0.5f;
+        else if (t_mod6 < 5.0f) // center→left: -(1-cos π(t-4))/2
+            return -(1.0f - std::cos(3.14159265358979f * (t_mod6 - 4.0f))) * 0.5f;
+        else                     // left dwell: -1
+            return -1.0f;
+    };
+
+    // --- q(t): over/under depth, period 3 ---
+    auto braid_q = [](float t_mod3) -> float {
+        // t_mod3 in [0, 3)
+        if (t_mod3 < 1.0f)      // crossing over: +sin πt
+            return std::sin(3.14159265358979f * t_mod3);
+        else if (t_mod3 < 2.0f) // being crossed under: -sin π(t-1)
+            return -std::sin(3.14159265358979f * (t_mod3 - 1.0f));
+        else                     // rest (at edge, no crossing): 0
+            return 0.0f;
+    };
+
     int count = std::clamp(strand.braid_strand_count, 2, 6);
+    float pitch = std::max(strand.braid_twist_pitch, 0.01f);
+    float h_step = pitch / 6.0f;  // cross-step length
+    float a = strand.braid_braid_radius;  // lane spacing
+    float b = strand.braid_strand_radius * 1.5f;  // over/under depth
+
     for (int s = 0; s < count; ++s) {
-        float phase = static_cast<float>(s) * 2.0f * 3.14159265358979f /
-                      static_cast<float>(count);
-        std::vector<loft_vec3f> spiral(M);
+        // For the mathematically correct 3-strand model, strands are
+        // the same curve shifted by 2h. For other counts, spread
+        // evenly across the 6-step cycle.
+        float t_shift;
+        if (count == 3) {
+            t_shift = static_cast<float>(s) * 2.0f;  // shifts: 0, 2, 4
+        } else {
+            t_shift = static_cast<float>(s) * 6.0f / static_cast<float>(count);
+        }
+
+        std::vector<loft_vec3f> braid_curve(M);
         for (int i = 0; i < M; ++i) {
             float arc = accum_arc[i];
-            float angle = arc * 2.0f * 3.14159265358979f /
-                              std::max(strand.braid_twist_pitch, 0.01f) +
-                          phase;
-            float cos_a = std::cos(angle);
-            float sin_a = std::sin(angle);
-            spiral[i] = loft_vec3f{
+            float t = arc / h_step - t_shift;
+
+            // Wrap t into [0, 6) and [0, 3) for p and q
+            float t6 = std::fmod(t, 6.0f);
+            if (t6 < 0.0f) t6 += 6.0f;
+            float t3 = std::fmod(t, 3.0f);
+            if (t3 < 0.0f) t3 += 3.0f;
+
+            float px = a * braid_p(t6);  // horizontal lane offset
+            float py = b * braid_q(t3);  // over/under depth
+
+            braid_curve[i] = loft_vec3f{
                 guide_curve[i].x +
-                    strand.braid_braid_radius *
-                        (cos_a * axis_us[i].x + sin_a * axis_vs[i].x),
+                    px * axis_us[i].x + py * axis_vs[i].x,
                 guide_curve[i].y +
-                    strand.braid_braid_radius *
-                        (cos_a * axis_us[i].y + sin_a * axis_vs[i].y),
+                    px * axis_us[i].y + py * axis_vs[i].y,
                 guide_curve[i].z +
-                    strand.braid_braid_radius *
-                        (cos_a * axis_us[i].z + sin_a * axis_vs[i].z),
+                    px * axis_us[i].z + py * axis_vs[i].z,
             };
         }
         primitives.push_back(
-            build_cylinder_mesh(spiral, strand.braid_strand_radius));
+            build_cylinder_mesh(braid_curve, strand.braid_strand_radius, Q));
     }
 
     // 3. Joints at uniform intervals along the core
@@ -965,7 +1035,7 @@ build_braid_mesh(const HairStrand& strand) {
             float jr = strand.braid_braid_radius + strand.braid_strand_radius;
             primitives.push_back(build_joint_ring_mesh(
                 guide_curve[best_i], tangents[best_i], axis_us[best_i],
-                axis_vs[best_i], jr * 0.85f, jr * 1.15f, jr * 0.3f));
+                axis_vs[best_i], jr * 0.85f, jr * 1.15f, jr * 0.3f, Q));
             dist += joint_spacing;
         }
     }
@@ -974,12 +1044,18 @@ build_braid_mesh(const HairStrand& strand) {
     {
         auto tip_parts = build_teardrop_primitives(
             guide_curve.back(), tangents.back(),
-            strand.special_tip_radius, strand.special_tip_length);
+            strand.special_tip_radius, strand.special_tip_length, Q);
         for (auto& p : tip_parts)
             primitives.push_back(std::move(p));
     }
 
-    MeshData merged = union_all_primitives(primitives);
+    // Concatenate all primitives (same rationale as candied hawthorn)
+    MeshData merged;
+    size_t total_faces = 0;
+    for (auto& p : primitives) total_faces += p.size();
+    merged.reserve(total_faces);
+    for (auto& p : primitives)
+        merged.insert(merged.end(), p.begin(), p.end());
     if (merged.empty()) return empty_result;
 
     std::vector<std::tuple<loft_Triangle, loft_vec3f>> result;
