@@ -8,6 +8,9 @@
 #include <imgui/imgui.h>
 #include <imnodes.h>
 #include <stb/stb_truetype.h>
+// Use stb_image from bimg 3rdparty for overlay image loading
+#define STB_IMAGE_IMPLEMENTATION
+#include "../../dep/bgfx.cmake/bimg/3rdparty/stb/stb_image.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -824,6 +827,13 @@ void RenderVoxelList::render_object_editor_addons() {
             strand.expanded = true;
             item.hair_strands.push_back(strand);
         }
+
+        ImGui::SameLine();
+        if (ImGui::Button(get_locale_cstr("action.ortho_projection"))) {
+            show_ortho_setup_window = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("window.ortho_projection_setup"));
 
         ImGui::Separator();
 
@@ -2198,4 +2208,778 @@ void RenderVoxelList::render_angle_config_window() {
 
     ImGui::End();
 }
+// ============================================================================
+// Orthographic Projection Edit Mode
+// ============================================================================
+
+// Möller–Trumbore ray-triangle intersection
+// Returns true and sets t if ray hits triangle (v0,v1,v2), false otherwise.
+static bool ray_triangle_intersect(const vec3f& ray_origin,
+                                    const vec3f& ray_dir,
+                                    const vec3f& v0, const vec3f& v1,
+                                    const vec3f& v2, float& t) {
+    const float eps = 1e-8f;
+    vec3f e1 = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
+    vec3f e2 = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
+    vec3f pvec = {
+        ray_dir.y * e2.z - ray_dir.z * e2.y,
+        ray_dir.z * e2.x - ray_dir.x * e2.z,
+        ray_dir.x * e2.y - ray_dir.y * e2.x
+    };
+    float det = e1.x * pvec.x + e1.y * pvec.y + e1.z * pvec.z;
+    if (std::abs(det) < eps) return false;
+    float inv_det = 1.0f / det;
+    vec3f tvec = {ray_origin.x - v0.x, ray_origin.y - v0.y, ray_origin.z - v0.z};
+    float u = (tvec.x * pvec.x + tvec.y * pvec.y + tvec.z * pvec.z) * inv_det;
+    if (u < 0.0f || u > 1.0f) return false;
+    vec3f qvec = {
+        tvec.y * e1.z - tvec.z * e1.y,
+        tvec.z * e1.x - tvec.x * e1.z,
+        tvec.x * e1.y - tvec.y * e1.x
+    };
+    float v = (ray_dir.x * qvec.x + ray_dir.y * qvec.y + ray_dir.z * qvec.z) * inv_det;
+    if (v < 0.0f || u + v > 1.0f) return false;
+    t = (e2.x * qvec.x + e2.y * qvec.y + e2.z * qvec.z) * inv_det;
+    return t > eps;
+}
+
+// Raycast from ortho camera through image pixel (px,py) against base model triangles.
+// Returns true and sets world_pos to the nearest intersection point.
+static bool ortho_raycast(const OrthoProjectionState& state,
+                           int px, int py, vec3f& world_pos) {
+    if (state._base_triangles.empty()) return false;
+
+    int res = state.render_resolution;
+    float half = state.viewport_size * 0.5f;
+    float u = (static_cast<float>(px) / res - 0.5f);
+    float v = (0.5f - static_cast<float>(py) / res);
+
+    // World-space point on the image plane
+    vec3f plane_pt = {
+        state._center.x + state._cam_right.x * u * state.viewport_size +
+                          state._cam_up.x * v * state.viewport_size,
+        state._center.y + state._cam_right.y * u * state.viewport_size +
+                          state._cam_up.y * v * state.viewport_size,
+        state._center.z + state._cam_right.z * u * state.viewport_size +
+                          state._cam_up.z * v * state.viewport_size
+    };
+
+    // Ray direction (from camera position toward the model, along -projection_dir)
+    vec3f ray_dir = {
+        -state.projection_dir.x,
+        -state.projection_dir.y,
+        -state.projection_dir.z
+    };
+
+    float best_t = 1e30f;
+    bool hit = false;
+    for (const auto& tri : state._base_triangles) {
+        float t;
+        if (ray_triangle_intersect(plane_pt, ray_dir,
+                                    std::get<0>(tri), std::get<1>(tri),
+                                    std::get<2>(tri), t)) {
+            if (t < best_t) {
+                best_t = t;
+                hit = true;
+            }
+        }
+    }
+
+    if (hit) {
+        world_pos = {
+            plane_pt.x + ray_dir.x * best_t,
+            plane_pt.y + ray_dir.y * best_t,
+            plane_pt.z + ray_dir.z * best_t
+        };
+    }
+    return hit;
+}
+
+void RenderVoxelList::destroy_ortho_resources() {
+    if (bgfx::isValid(ortho_state.overlay_tex)) {
+        bgfx::destroy(ortho_state.overlay_tex);
+        ortho_state.overlay_tex = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(ortho_state.view_fb)) {
+        bgfx::destroy(ortho_state.view_fb);
+        ortho_state.view_fb = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(ortho_state.view_tex)) {
+        bgfx::destroy(ortho_state.view_tex);
+        ortho_state.view_tex = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(ortho_state.view_depth_tex)) {
+        bgfx::destroy(ortho_state.view_depth_tex);
+        ortho_state.view_depth_tex = BGFX_INVALID_HANDLE;
+    }
+    ortho_state.coord_map_ready = false;
+    ortho_state.view_tex_ready = false;
+    ortho_state.render_dirty = true;
+    ortho_state.ortho_render_stage = 0;
+    ortho_state._base_triangles.clear();
+}
+
+void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
+                                            RenderVoxelItem& base_item) {
+    destroy_ortho_resources();
+
+    // Build the orthographic camera matrices (stored for CPU-side raycasting)
+    vec3f dir = ortho_state.projection_dir;
+    vec3f center = item.addon_center_point;
+
+    float half = ortho_state.viewport_size * 0.5f;
+    vec3f world_up = (std::abs(dir.y) < 0.99f) ? vec3f{0, 1, 0} : vec3f{0, 0, 1};
+
+    // cam_right = normalize(cross(dir, world_up))
+    vec3f cam_right = {
+        dir.y * world_up.z - dir.z * world_up.y,
+        dir.z * world_up.x - dir.x * world_up.z,
+        dir.x * world_up.y - dir.y * world_up.x
+    };
+    float cr_len = std::sqrt(cam_right.x * cam_right.x +
+                             cam_right.y * cam_right.y +
+                             cam_right.z * cam_right.z);
+    if (cr_len > 1e-8f) {
+        cam_right.x /= cr_len; cam_right.y /= cr_len; cam_right.z /= cr_len;
+    } else {
+        cam_right = {1, 0, 0};
+    }
+
+    // cam_up = normalize(cross(cam_right, dir))
+    vec3f cam_up = {
+        cam_right.y * dir.z - cam_right.z * dir.y,
+        cam_right.z * dir.x - cam_right.x * dir.z,
+        cam_right.x * dir.y - cam_right.y * dir.x
+    };
+    float cu_len = std::sqrt(cam_up.x * cam_up.x +
+                             cam_up.y * cam_up.y +
+                             cam_up.z * cam_up.z);
+    if (cu_len > 1e-8f) {
+        cam_up.x /= cu_len; cam_up.y /= cu_len; cam_up.z /= cu_len;
+    } else {
+        cam_up = {0, 1, 0};
+    }
+
+    // Camera position: center + dir * 1000 (looking down -dir)
+    vec3f cam_pos = {center.x + dir.x * 1000.0f,
+                     center.y + dir.y * 1000.0f,
+                     center.z + dir.z * 1000.0f};
+
+    // Store ortho camera params for CPU raycasting
+    ortho_state._cam_right = cam_right;
+    ortho_state._cam_up = cam_up;
+    ortho_state._cam_pos = cam_pos;
+    ortho_state._center = center;
+
+    // Copy base model triangles for CPU-side raycasting
+    ortho_state._base_triangles.clear();
+    if (!base_item.cached_mesh.empty()) {
+        ortho_state._base_triangles.reserve(base_item.cached_mesh.size());
+        for (const auto& [tri, n] : base_item.cached_mesh) {
+            (void)n;
+            ortho_state._base_triangles.push_back(tri);
+        }
+    } else if (!base_item.source_triangles.empty()) {
+        ortho_state._base_triangles = base_item.source_triangles;
+    }
+
+    ortho_state.coord_map_ready = true;
+
+    // ---- Create GPU off-screen render resources ----
+    int res = ortho_state.render_resolution;
+    constexpr uint64_t tex_flags =
+        BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+
+    ortho_state.view_tex = bgfx::createTexture2D(
+        static_cast<uint16_t>(res), static_cast<uint16_t>(res), false, 1,
+        bgfx::TextureFormat::BGRA8, tex_flags);
+    ortho_state.view_depth_tex = bgfx::createTexture2D(
+        static_cast<uint16_t>(res), static_cast<uint16_t>(res), false, 1,
+        bgfx::TextureFormat::D32F, tex_flags);
+
+    bgfx::TextureHandle attachments[] = {ortho_state.view_tex,
+                                         ortho_state.view_depth_tex};
+    ortho_state.view_fb =
+        bgfx::createFrameBuffer(2, attachments, false);
+
+    // Create ortho shader (view 200 for off-screen render)
+    if (!ortho_shader_) {
+        ortho_shader_ = std::make_unique<RenderMeshShader>(kOrthoViewView, 0);
+    }
+
+    // Kick off multi-frame render
+    ortho_state.ortho_base_item_id = base_item.id;
+    ortho_state.ortho_render_stage = 1;  // RENDER
+    ortho_state.render_dirty = false;
+
+    std::cout << "[ortho_render] Setup off-screen render res=" << res
+              << " with " << ortho_state._base_triangles.size()
+              << " triangles, direction=("
+              << dir.x << "," << dir.y << "," << dir.z << ")"
+              << std::endl;
+}
+
+void RenderVoxelList::process_ortho_render() {
+    if (ortho_state.ortho_render_stage == 0)
+        return;  // IDLE
+
+    // Stage 1: Submit render commands
+    if (ortho_state.ortho_render_stage == 1) {
+        if (!bgfx::isValid(ortho_state.view_fb) || !ortho_shader_) {
+            ortho_state.ortho_render_stage = 0;
+            return;
+        }
+
+        if (!ortho_shader_->ensureGBufferProgram()) {
+            std::cerr << "[ortho_render] Failed to load GBuffer shader" << std::endl;
+            ortho_state.ortho_render_stage = 0;
+            return;
+        }
+
+        // Find the base item
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(ortho_state.ortho_base_item_id);
+        if (it == items.end()) {
+            ortho_state.ortho_render_stage = 0;
+            return;
+        }
+        auto& base_item = it->second;
+
+        // Check renderer availability
+        bool has_renderer = false;
+        if (base_item->mesh_only) {
+            has_renderer = !base_item->mesh_renderer.empty();
+        } else {
+            has_renderer = !base_item->voxel_renderer.empty();
+        }
+        if (!has_renderer) {
+            std::cerr << "[ortho_render] Base item has no renderer" << std::endl;
+            ortho_state.ortho_render_stage = 0;
+            return;
+        }
+
+        // Build orthographic view and projection matrices
+        vec3f dir = ortho_state.projection_dir;
+        vec3f center = ortho_state._center;
+        float half = ortho_state.viewport_size * 0.5f;
+
+        // View matrix: look at center from camera position along -dir
+        vec3f cam_pos = ortho_state._cam_pos;
+        vec3f cam_up = ortho_state._cam_up;
+
+        float view[16];
+        bx::mtxLookAt(view,
+                      bx::Vec3{cam_pos.x, cam_pos.y, cam_pos.z},
+                      bx::Vec3{center.x, center.y, center.z},
+                      bx::Vec3{cam_up.x, cam_up.y, cam_up.z});
+
+        float proj[16];
+        // bottom > top compensates for the implicit Y-flip when the OpenGL
+        // framebuffer (bottom-left origin) is displayed via ImGui::Image
+        // (top-left origin).  This way the rendered image orientation
+        // matches the CPU-side raycasting coordinate system.
+        bx::mtxOrtho(proj, -half, half, half, -half, -2000.0f, 2000.0f, 0.0f,
+                     bgfx::getCaps()->homogeneousDepth);
+
+        int res = ortho_state.render_resolution;
+        bgfx::setViewRect(kOrthoViewView, 0, 0, static_cast<uint16_t>(res),
+                          static_cast<uint16_t>(res));
+        bgfx::setViewFrameBuffer(kOrthoViewView, ortho_state.view_fb);
+        bgfx::setViewClear(kOrthoViewView,
+                           BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
+                           0x303030ff, 1.0f, 0);
+        bgfx::setViewTransform(kOrthoViewView, view, proj);
+
+        float identity[16];
+        bx::mtxIdentity(identity);
+
+        // Render base model
+        if (base_item->mesh_only) {
+            base_item->mesh_renderer.renderGBuffer(identity, *ortho_shader_);
+        } else {
+            base_item->voxel_renderer.renderGBuffer(identity, *ortho_shader_);
+        }
+        bgfx::touch(kOrthoViewView);
+
+        ortho_state.ortho_render_stage = 2;  // WAIT
+        ortho_state.ortho_wait_frames = 2;
+        return;
+    }
+
+    // Stage 2: Wait for render to complete
+    if (ortho_state.ortho_render_stage == 2) {
+        if (ortho_state.ortho_wait_frames > 0) {
+            ortho_state.ortho_wait_frames--;
+        }
+        if (ortho_state.ortho_wait_frames <= 0) {
+            ortho_state.ortho_render_stage = 3;  // DONE
+        }
+        return;
+    }
+
+    // Stage 3: Done
+    if (ortho_state.ortho_render_stage == 3) {
+        ortho_state.view_tex_ready = true;
+        ortho_state.ortho_render_stage = 0;  // back to IDLE
+        std::cout << "[ortho_render] View texture ready" << std::endl;
+    }
+}
+
+void RenderVoxelList::render_ortho_setup_window() {
+    if (!show_ortho_setup_window)
+        return;
+
+    ImGui::SetNextWindowSize(ImVec2(420, 320), ImGuiCond_Once);
+    if (!ImGui::Begin(get_locale_cstr("window.ortho_projection_setup"),
+                      &show_ortho_setup_window)) {
+        ImGui::End();
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(locker);
+    auto item_it = items.find(render_id);
+    if (item_it == items.end() || item_it->second->source_type != 2) {
+        ImGui::TextUnformatted(get_locale_cstr("label.no_active_item"));
+        ImGui::End();
+        return;
+    }
+
+    RenderVoxelItem& item = *item_it->second;
+
+    // Check base model
+    if (item.addon_base_node_id < 0) {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s",
+                           get_locale_cstr("label.ortho_no_base_model"));
+        ImGui::End();
+        return;
+    }
+
+    // ---- Direction mode selection ----
+    ImGui::TextUnformatted(get_locale_cstr("label.vector_mode"));
+    ImGui::SameLine();
+    const char* mode_names[] = {
+        get_locale_cstr("label.vector_mode_six"),
+        get_locale_cstr("label.vector_mode_pick"),
+    };
+    ImGui::Combo("##vector_mode", &ortho_state.vector_mode, mode_names, 2);
+
+    ImGui::Separator();
+
+    if (ortho_state.vector_mode == 0) {
+        // ---- Six view selection ----
+        const char* view_names[] = {
+            get_locale_cstr("label.six_view_front"),
+            get_locale_cstr("label.six_view_back"),
+            get_locale_cstr("label.six_view_left"),
+            get_locale_cstr("label.six_view_right"),
+            get_locale_cstr("label.six_view_top"),
+            get_locale_cstr("label.six_view_bottom"),
+        };
+        if (ImGui::Combo(get_locale_cstr("label.projection_direction"),
+                         &ortho_state.six_view_index, view_names, 6)) {
+            ortho_state.projection_dir =
+                six_view_direction(ortho_state.six_view_index);
+        }
+    } else {
+        // ---- Pick point on model ----
+        bool was_picking = ortho_state.is_picking_point;
+        if (ImGui::Button(get_locale_cstr("action.pick_projection"))) {
+            ortho_state.is_picking_point = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("action.picking_direction"));
+
+        if (ortho_state.is_picking_point && !was_picking) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.08f, 1.0f), "%s",
+                               get_locale_cstr("action.picking_direction"));
+        }
+    }
+
+    // Show current direction
+    ImGui::Text("%s: (%.2f, %.2f, %.2f)",
+                get_locale_cstr("label.projection_direction"),
+                ortho_state.projection_dir.x,
+                ortho_state.projection_dir.y,
+                ortho_state.projection_dir.z);
+
+    ImGui::Separator();
+
+    // ---- Viewport size ----
+    ImGui::DragFloat(get_locale_cstr("label.viewport_size"),
+                     &ortho_state.viewport_size, 1.0f, 10.0f, 500.0f, "%.1f");
+
+    // ---- Render resolution ----
+    int res = ortho_state.render_resolution;
+    const int res_options[] = {256, 512, 1024, 2048};
+    const char* res_names[] = {"256", "512", "1024", "2048"};
+    int res_idx = 2;
+    for (int i = 0; i < 4; ++i) {
+        if (res == res_options[i]) { res_idx = i; break; }
+    }
+    if (ImGui::Combo(get_locale_cstr("label.render_resolution"),
+                     &res_idx, res_names, 4)) {
+        ortho_state.render_resolution = res_options[res_idx];
+    }
+
+    ImGui::Separator();
+
+    // ---- Render button ----
+    if (ImGui::Button(get_locale_cstr("action.ortho_render"),
+                      ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+        auto base_it = items.find(item.addon_base_node_id);
+        if (base_it == items.end()) {
+            show_toast(get_locale_string("label.ortho_no_base_model"), 3000.0f);
+        } else {
+            RenderVoxelItem& base_item = *base_it->second;
+            if (base_item.source_triangles.empty() &&
+                base_item.cached_mesh.empty()) {
+                show_toast(get_locale_string("label.ortho_no_mesh_data"), 3000.0f);
+            } else {
+                perform_ortho_render(item, base_item);
+                ortho_state.active = true;
+                ortho_state.edit_window_open = true;
+                show_ortho_setup_window = false;
+                show_ortho_edit_window = true;
+            }
+        }
+    }
+
+    ImGui::End();
+}
+
+void RenderVoxelList::render_ortho_edit_window() {
+    if (!show_ortho_edit_window || !ortho_state.edit_window_open)
+        return;
+
+    ImGui::SetNextWindowSize(ImVec2(600, 700), ImGuiCond_Once);
+    bool window_open = true;
+    if (!ImGui::Begin(get_locale_cstr("window.ortho_edit"), &window_open)) {
+        ImGui::End();
+        return;
+    }
+
+    if (!window_open) {
+        show_ortho_edit_window = false;
+        ortho_state.edit_window_open = false;
+        ortho_state.active = false;
+        destroy_ortho_resources();
+        ImGui::End();
+        return;
+    }
+
+    // ---- Top toolbar: Load reference image ----
+    if (ImGui::Button(get_locale_cstr("action.load_reference_image"))) {
+        const char* filters[] = {"*.png", "*.jpg", "*.jpeg", "*.bmp"};
+        const char* path = tinyfd_openFileDialog(
+            get_locale_cstr("action.load_reference_image"), "", 4, filters,
+            get_locale_cstr("action.load_reference_image"), 0);
+        if (path) {
+            std::string utf8_path = tinyfd_path_to_utf8(path);
+            int w, h, comp;
+            unsigned char* data = stbi_load(utf8_path.c_str(), &w, &h, &comp, 4);
+            if (data) {
+                if (bgfx::isValid(ortho_state.overlay_tex))
+                    bgfx::destroy(ortho_state.overlay_tex);
+                ortho_state.overlay_tex = bgfx::createTexture2D(
+                    static_cast<uint16_t>(w), static_cast<uint16_t>(h), false, 1,
+                    bgfx::TextureFormat::BGRA8,
+                    BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+                bgfx::updateTexture2D(ortho_state.overlay_tex, 0, 0, 0, 0,
+                                      static_cast<uint16_t>(w),
+                                      static_cast<uint16_t>(h),
+                                      bgfx::copy(data, w * h * 4));
+                stbi_image_free(data);
+                ortho_state.overlay_image_path = utf8_path;
+                ortho_state.overlay_img_width = w;
+                ortho_state.overlay_img_height = h;
+                ortho_state.overlay_enabled = true;
+                ortho_state.overlay_offset = ImVec2(0, 0);
+                ortho_state.overlay_scale = 1.0f;
+            } else {
+                show_toast("Failed to load image: " + utf8_path, 3000.0f);
+            }
+        }
+    }
+
+    // Overlay enable checkbox (only shown when image loaded)
+    if (bgfx::isValid(ortho_state.overlay_tex)) {
+        ImGui::SameLine();
+        ImGui::Checkbox(get_locale_cstr("label.enable_overlay"),
+                        &ortho_state.overlay_enabled);
+
+        // Blend slider
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(150);
+        ImGui::SliderFloat(get_locale_cstr("label.blend_ratio"),
+                           &ortho_state.blend_ratio, 0.0f, 1.0f);
+    }
+
+    ImGui::Separator();
+
+    // ---- Canvas display area ----
+    if (!ortho_state.coord_map_ready) {
+        ImGui::TextUnformatted("No render data. Open Setup to render.");
+        ImGui::End();
+        return;
+    }
+
+    // Compute display size (fit within available width, keep square)
+    float avail_w = ImGui::GetContentRegionAvail().x - 10;
+    float display_size = std::min(avail_w, 600.0f);
+
+    int res = ortho_state.render_resolution;
+
+    // Display the rendered view image, or dark fallback if not ready yet
+    if (ortho_state.view_tex_ready && bgfx::isValid(ortho_state.view_tex)) {
+        ImGui::Image(ImGui::toId(ortho_state.view_tex, 0, 0),
+                     ImVec2(display_size, display_size));
+    } else {
+        // Dark canvas fallback (before GPU render completes, or on re-render)
+        ImVec2 fb_cursor = ImGui::GetCursorScreenPos();
+        ImDrawList* fb_dl = ImGui::GetWindowDrawList();
+        fb_dl->AddRectFilled(fb_cursor,
+            ImVec2(fb_cursor.x + display_size, fb_cursor.y + display_size),
+            ImGui::ColorConvertFloat4ToU32(ImVec4(0.18f, 0.18f, 0.20f, 1.0f)));
+        fb_dl->AddRect(fb_cursor,
+            ImVec2(fb_cursor.x + display_size, fb_cursor.y + display_size),
+            ImGui::ColorConvertFloat4ToU32(ImVec4(0.35f, 0.35f, 0.38f, 1.0f)));
+        ImGui::Dummy(ImVec2(display_size, display_size));
+    }
+
+    // Get the actual screen-space rect of the displayed image/fallback
+    ImVec2 img_cursor = ImGui::GetItemRectMin();
+    ImVec2 img_end = ImGui::GetItemRectMax();
+    // Recompute display_size from the actual rendered item
+    display_size = img_end.x - img_cursor.x;
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    // ---- Overlay image rendering ----
+    if (bgfx::isValid(ortho_state.overlay_tex) && ortho_state.overlay_enabled) {
+        float overlay_w = ortho_state.overlay_img_width * ortho_state.overlay_scale;
+        float overlay_h = ortho_state.overlay_img_height * ortho_state.overlay_scale;
+        ImVec2 overlay_pos = ImVec2(img_cursor.x + ortho_state.overlay_offset.x,
+                                    img_cursor.y + ortho_state.overlay_offset.y);
+        ImVec2 overlay_end = ImVec2(overlay_pos.x + overlay_w,
+                                    overlay_pos.y + overlay_h);
+
+        ImU32 tint = ImGui::ColorConvertFloat4ToU32(
+            ImVec4(1.0f, 1.0f, 1.0f, ortho_state.blend_ratio));
+        dl->AddImage(
+            ImGui::toId(ortho_state.overlay_tex, 0, 0),
+            overlay_pos, overlay_end, ImVec2(0, 0), ImVec2(1, 1), tint);
+    }
+
+    // ---- Strand preview overlays ----
+    auto project_world_to_image = [&](const vec3f& wp) -> ImVec2 {
+        vec3f dir = ortho_state.projection_dir;
+        vec3f center;
+        {
+            auto it = items.find(render_id);
+            if (it != items.end()) center = it->second->addon_center_point;
+        }
+        vec3f world_up = (std::abs(dir.y) < 0.99f) ? vec3f{0, 1, 0} : vec3f{0, 0, 1};
+        vec3f cr = {dir.y * world_up.z - dir.z * world_up.y,
+                    dir.z * world_up.x - dir.x * world_up.z,
+                    dir.x * world_up.y - dir.y * world_up.x};
+        float crl = std::sqrt(cr.x*cr.x + cr.y*cr.y + cr.z*cr.z);
+        if (crl > 1e-8f) { cr.x /= crl; cr.y /= crl; cr.z /= crl; }
+        vec3f cu = {cr.y * dir.z - cr.z * dir.y,
+                    cr.z * dir.x - cr.x * dir.z,
+                    cr.x * dir.y - cr.y * dir.x};
+        float cul = std::sqrt(cu.x*cu.x + cu.y*cu.y + cu.z*cu.z);
+        if (cul > 1e-8f) { cu.x /= cul; cu.y /= cul; cu.z /= cul; }
+
+        vec3f rel = {wp.x - center.x, wp.y - center.y, wp.z - center.z};
+        float h = ortho_state.viewport_size * 0.5f;
+        float rx = (rel.x * cr.x + rel.y * cr.y + rel.z * cr.z) / h;
+        float ry = (rel.x * cu.x + rel.y * cu.y + rel.z * cu.z) / h;
+        return ImVec2(img_cursor.x + (rx * 0.5f + 0.5f) * display_size,
+                       img_cursor.y + (0.5f - ry * 0.5f) * display_size);
+    };
+
+    if (ortho_state.show_guide_curves) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto item_it = items.find(render_id);
+        if (item_it != items.end()) {
+            for (size_t si = 0; si < item_it->second->hair_strands.size(); ++si) {
+                const auto& strand = item_it->second->hair_strands[si];
+                if (strand.guide_points.size() < 2) continue;
+
+                bool is_active =
+                    (item_it->second->guide_curve_drawing_active &&
+                     item_it->second->active_guide_draw_strand == static_cast<int>(si));
+                ImU32 color = is_active
+                    ? ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.84f, 0.08f, 1.0f))
+                    : ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 0.7f));
+
+                auto sampled = sample_bezier_guide_curve(
+                    strand.guide_points,
+                    std::max(strand.guide_samples_per_segment, 1));
+                for (size_t pi = 0; pi + 1 < sampled.size(); ++pi) {
+                    ImVec2 a = project_world_to_image(sampled[pi]);
+                    ImVec2 b = project_world_to_image(sampled[pi + 1]);
+                    dl->AddLine(a, b, color, 1.5f);
+                }
+
+                ImU32 marker_color = is_active
+                    ? ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.6f, 0.1f, 1.0f))
+                    : ImGui::ColorConvertFloat4ToU32(ImVec4(0.8f, 0.8f, 0.8f, 0.5f));
+                for (const auto& p : strand.guide_points) {
+                    ImVec2 pi = project_world_to_image(p);
+                    dl->AddCircleFilled(pi, 3.0f, marker_color);
+                }
+            }
+        }
+    }
+
+    if (ortho_state.show_width_vectors) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto item_it = items.find(render_id);
+        if (item_it != items.end()) {
+            ImU32 green = ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.9f, 0.3f, 1.0f));
+            for (const auto& strand : item_it->second->hair_strands) {
+                if (strand.guide_points.size() < 2) continue;
+                for (const auto& wp : strand.width_points) {
+                    if (wp.curve_id < 0.0f) continue;
+                    float max_id = static_cast<float>(strand.guide_points.size() - 1);
+                    if (wp.curve_id > max_id) continue;
+
+                    size_t seg_idx = static_cast<size_t>(wp.curve_id);
+                    if (seg_idx >= strand.guide_points.size() - 1)
+                        seg_idx = strand.guide_points.size() - 2;
+                    float t = wp.curve_id - static_cast<float>(seg_idx);
+
+                    const auto& gpts = strand.guide_points;
+                    size_t n = gpts.size();
+                    vec3f p0 = gpts[seg_idx], p3 = gpts[seg_idx + 1], p1, p2;
+                    if (seg_idx == 0)
+                        p1 = p0 + (p3 - p0) * (1.0f / 3.0f);
+                    else
+                        p1 = p0 + (p3 - gpts[seg_idx - 1]) * (1.0f / 6.0f);
+                    if (seg_idx + 2 >= n)
+                        p2 = p3 - (p3 - p0) * (1.0f / 3.0f);
+                    else
+                        p2 = p3 - (gpts[seg_idx + 2] - p0) * (1.0f / 6.0f);
+
+                    vec3f curve_pos = bezier_eval(p0, p1, p2, p3, t);
+                    vec3f end_pos = curve_pos + wp.direction * wp.scale;
+                    dl->AddLine(project_world_to_image(curve_pos),
+                                project_world_to_image(end_pos), green, 1.0f);
+                }
+            }
+        }
+    }
+
+    // ---- Mouse interaction (CPU raycasting) ----
+    ImVec2 mouse = ImGui::GetMousePos();
+    bool mouse_in_image =
+        (mouse.x >= img_cursor.x && mouse.x < img_cursor.x + display_size &&
+         mouse.y >= img_cursor.y && mouse.y < img_cursor.y + display_size);
+
+    if (mouse_in_image && !ortho_state.overlay_enabled &&
+        ortho_state.coord_map_ready) {
+        int px = static_cast<int>((mouse.x - img_cursor.x) / display_size * res);
+        int py = static_cast<int>((mouse.y - img_cursor.y) / display_size * res);
+        px = std::max(0, std::min(px, res - 1));
+        py = std::max(0, std::min(py, res - 1));
+
+        vec3f hit_pos;
+        bool valid = ortho_raycast(ortho_state, px, py, hit_pos);
+
+        ortho_state.is_hovering_model = valid;
+        if (valid) {
+            ortho_state.hovered_world_pos = hit_pos;
+            // Guide points and mouse_world_pos are stored in object space
+            // (the same space as the base model's source triangles and
+            // addon_center_point). The model_transform applied during
+            // overlay/GBuffer rendering handles rotation.
+            mouse_world_pos_valid = true;
+            mouse_world_pos = {hit_pos.x, hit_pos.y, hit_pos.z};
+
+            // Directly handle click-through: place guide point or width point
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                auto item_it = items.find(render_id);
+                if (item_it != items.end()) {
+                    auto& item = *item_it->second;
+
+                    if (item.guide_curve_drawing_active &&
+                        item.active_guide_draw_strand >= 0 &&
+                        item.active_guide_draw_strand <
+                            static_cast<int>(item.hair_strands.size())) {
+                        push_undo_now(render_id, std::nullopt, "Add Guide Point");
+                        auto& strand =
+                            item.hair_strands[item.active_guide_draw_strand];
+                        strand.guide_points.push_back(hit_pos);
+                        strand.mesh_dirty = true;
+                    } else if (item.width_editing_active &&
+                               item.active_width_edit_strand >= 0 &&
+                               item.active_width_edit_strand <
+                                   static_cast<int>(item.hair_strands.size())) {
+                        push_undo_now(render_id, std::nullopt, "Add Width Point");
+                        item.add_width_point_at(item.active_width_edit_strand,
+                                                hit_pos);
+                        item.hair_strands[item.active_width_edit_strand]
+                            .mesh_dirty = true;
+                    }
+                }
+            }
+        } else {
+            if (ortho_state.is_hovering_model) {
+                mouse_world_pos_valid = false;
+            }
+            ortho_state.is_hovering_model = false;
+        }
+    } else if (!mouse_in_image && ortho_state.is_hovering_model) {
+        ortho_state.is_hovering_model = false;
+    }
+
+    // ---- Overlay drag/zoom handling ----
+    if (mouse_in_image && ortho_state.overlay_enabled &&
+        bgfx::isValid(ortho_state.overlay_tex)) {
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            ortho_state.is_dragging_overlay = true;
+            ortho_state.drag_start_mouse = mouse;
+            ortho_state.drag_start_offset = ortho_state.overlay_offset;
+        }
+        float wheel = ImGui::GetIO().MouseWheel;
+        if (wheel != 0.0f) {
+            ortho_state.overlay_scale *= (1.0f + wheel * 0.1f);
+            ortho_state.overlay_scale = std::max(0.1f,
+                std::min(10.0f, ortho_state.overlay_scale));
+        }
+    }
+    if (ortho_state.is_dragging_overlay) {
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            ortho_state.overlay_offset.x =
+                ortho_state.drag_start_offset.x +
+                (mouse.x - ortho_state.drag_start_mouse.x);
+            ortho_state.overlay_offset.y =
+                ortho_state.drag_start_offset.y +
+                (mouse.y - ortho_state.drag_start_mouse.y);
+        } else {
+            ortho_state.is_dragging_overlay = false;
+        }
+    }
+
+    // ---- Footer toggles ----
+    ImGui::Separator();
+    ImGui::Checkbox(get_locale_cstr("label.show_guide_curves_2d"),
+                    &ortho_state.show_guide_curves);
+    ImGui::SameLine();
+    ImGui::Checkbox(get_locale_cstr("label.show_width_vectors_2d"),
+                    &ortho_state.show_width_vectors);
+
+    ImGui::SameLine();
+    if (ortho_state.is_hovering_model) {
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), " (%.1f, %.1f, %.1f)",
+                           ortho_state.hovered_world_pos.x,
+                           ortho_state.hovered_world_pos.y,
+                           ortho_state.hovered_world_pos.z);
+    }
+
+    ImGui::End();
+}
+
 }  // namespace sinriv::ui::render

@@ -286,6 +286,13 @@ void RenderVoxelList::brush_marked_voxels(
 }
 
 void RenderVoxelList::update_mouse_pos(RenderDeferred& deferred_renderer) {
+    // If ortho edit window is active and hovering the model, let it manage
+    // mouse_world_pos — the 3D viewport collision at the screen position
+    // under the ImGui window is not meaningful.
+    if (ortho_state.edit_window_open && ortho_state.is_hovering_model) {
+        return;
+    }
+
     if (mouse_world_pos_picked_auto_snapping &&
         deferred_renderer.mouse_highlight_[0] > 0.5f) {
         auto it = items.find(render_id);

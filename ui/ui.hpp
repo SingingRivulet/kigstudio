@@ -472,6 +472,24 @@ int ui_main(int argc, const char* const* argv) {
                                 item.hairline_point_picking_active = false;
                             }
                         }
+                    } else if (render_items.ortho_state.is_picking_point &&
+                               render_items.mouse_world_pos_valid) {
+                        // Ortho projection: click on model sets projection direction
+                        auto it = render_items.items.find(render_items.render_id);
+                        if (it != render_items.items.end()) {
+                            auto& item = *it->second;
+                            auto dir = sinriv::kigstudio::voxel::collision::vec3f{
+                                render_items.mouse_world_pos.x - item.addon_center_point.x,
+                                render_items.mouse_world_pos.y - item.addon_center_point.y,
+                                render_items.mouse_world_pos.z - item.addon_center_point.z
+                            };
+                            float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+                            if (len > 1e-6f) {
+                                dir.x /= len; dir.y /= len; dir.z /= len;
+                            }
+                            render_items.ortho_state.projection_dir = dir;
+                            render_items.ortho_state.is_picking_point = false;
+                        }
                     } else if (leftMouseDown &&
                                (std::abs(pitch) > 1e-6f ||
                                 std::abs(yaw) > 1e-6f)) {
@@ -751,6 +769,23 @@ int ui_main(int argc, const char* const* argv) {
         if (!nav_map_panning) {
             deferred_renderer.screen_mouse_pos_[0] = io.MousePos.x;
             deferred_renderer.screen_mouse_pos_[1] = io.MousePos.y;
+        }
+        // When the ortho edit window is active and the mouse hovers over
+        // valid model surface, override the shader red-cursor position
+        // so both 3D and 2D cursors stay in sync.
+        // mouse_world_pos was already transformed to model space via
+        // current_model_matrix in render_ortho_edit_window.
+        if (render_items.ortho_state.edit_window_open &&
+            render_items.ortho_state.is_hovering_model &&
+            render_items.mouse_world_pos_valid) {
+            deferred_renderer.mouse_pos_[0] = render_items.mouse_world_pos.x;
+            deferred_renderer.mouse_pos_[1] = render_items.mouse_world_pos.y;
+            deferred_renderer.mouse_pos_[2] = render_items.mouse_world_pos.z;
+            deferred_renderer.mouse_highlight_[0] = 1.0f;
+            deferred_renderer.mouse_highlight_[1] =
+                deferred_renderer.mouse_highlight_range_;
+            deferred_renderer.mouse_highlight_[2] = 1.0f;
+            deferred_renderer.mouse_highlight_[3] = 1.0f;
         }
         deferred_renderer.render();
         bgfx::setViewTransform(kOverlayView, view_2, proj);

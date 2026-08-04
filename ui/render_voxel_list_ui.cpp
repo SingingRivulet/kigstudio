@@ -23,6 +23,7 @@ void RenderVoxelList::render_ui() {
     static bool show_license_window = false;
 
     processThumbnails();
+    process_ortho_render();
     item_status_height = 0;
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.f);
@@ -421,6 +422,8 @@ void RenderVoxelList::render_ui() {
     render_perpoint_section_editor();
     render_hairline_plane_window();
     render_angle_config_window();
+    render_ortho_setup_window();
+    render_ortho_edit_window();
     render_file_loader();
     render_save_dialog();
     render_load_dialog();

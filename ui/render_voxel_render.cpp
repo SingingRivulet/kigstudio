@@ -22,8 +22,10 @@ bool contains_index(const std::vector<int>& indices, int value) {
 
 using vec3f = sinriv::kigstudio::voxel::vec3f;
 
+}  // end anonymous namespace
+
 // 评估三次贝塞尔曲线：B(t) = P0*(1-t)³ + P1*3(1-t)²t + P2*3(1-t)t² + P3*t³
-inline vec3f bezier_eval(const vec3f& p0, const vec3f& p1,
+vec3f bezier_eval(const vec3f& p0, const vec3f& p1,
                           const vec3f& p2, const vec3f& p3, float t) {
     const float u = 1.0f - t;
     const float u2 = u * u;
@@ -40,7 +42,7 @@ inline vec3f bezier_eval(const vec3f& p0, const vec3f& p1,
 // 返回采样后的密集点集
 std::vector<vec3f> sample_bezier_guide_curve(
     const std::vector<vec3f>& guide_points,
-    int samples_per_segment = 32) {
+    int samples_per_segment) {
     if (guide_points.size() < 2)
         return guide_points;
 
@@ -82,6 +84,8 @@ std::vector<vec3f> sample_bezier_guide_curve(
 
     return result;
 }
+
+namespace {  // resume anonymous namespace
 
 // 在引导曲线上查找离 world_pos 最近的点
 // 返回 {curve_id, curve_pos}，curve_id 整数部分=段索引，小数部分=段内t
@@ -2606,6 +2610,52 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 bgfx::submit(mesh_shader.overlay_view_id_,
                              mesh_shader.line_program_);
             }
+        }
+    }
+
+    // Ortho projection vector preview (shown when setup window is open)
+    if (manager && manager->show_ortho_setup_window &&
+        show_addon_center && mesh_shader.ensureLineProgram()) {
+        bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+        const uint32_t arrow_color = pack_abgr(0.2f, 0.6f, 1.0f, 1.0f);  // blue
+        vec3f dir = manager->ortho_state.projection_dir;
+        float vp_half = manager->ortho_state.viewport_size * 0.5f;
+        vec3f arrow_end = {
+            addon_center_point.x + dir.x * vp_half,
+            addon_center_point.y + dir.y * vp_half,
+            addon_center_point.z + dir.z * vp_half
+        };
+        std::vector<mesh_detail::ColorLineVertex> vertices;
+        // Main direction line
+        vertices.push_back({addon_center_point.x, -addon_center_point.y,
+                            addon_center_point.z, arrow_color});
+        vertices.push_back({arrow_end.x, -arrow_end.y, arrow_end.z, arrow_color});
+        // Small cross at arrow end
+        float cs = vp_half * 0.05f;
+        vertices.push_back({arrow_end.x - cs, -arrow_end.y, arrow_end.z, arrow_color});
+        vertices.push_back({arrow_end.x + cs, -arrow_end.y, arrow_end.z, arrow_color});
+        vertices.push_back({arrow_end.x, -(arrow_end.y - cs), arrow_end.z, arrow_color});
+        vertices.push_back({arrow_end.x, -(arrow_end.y + cs), arrow_end.z, arrow_color});
+        vertices.push_back({arrow_end.x, -arrow_end.y, arrow_end.z - cs, arrow_color});
+        vertices.push_back({arrow_end.x, -arrow_end.y, arrow_end.z + cs, arrow_color});
+
+        if (!vertices.empty() &&
+            bgfx::getAvailTransientVertexBuffer(
+                static_cast<uint32_t>(vertices.size()), layout) >=
+                vertices.size()) {
+            bgfx::TransientVertexBuffer tvb;
+            bgfx::allocTransientVertexBuffer(
+                &tvb, static_cast<uint32_t>(vertices.size()), layout);
+            std::memcpy(tvb.data, vertices.data(),
+                        vertices.size() * sizeof(mesh_detail::ColorLineVertex));
+            bgfx::setTransform(model_transform);
+            bgfx::setVertexBuffer(0, &tvb);
+            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                           BGFX_STATE_WRITE_Z |
+                           BGFX_STATE_DEPTH_TEST_LESS |
+                           BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+            bgfx::submit(mesh_shader.overlay_view_id_,
+                         mesh_shader.line_program_);
         }
     }
 

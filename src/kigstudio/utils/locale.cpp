@@ -1259,6 +1259,60 @@ void init_locale_strings() {
                       {{"en", "Clear Points"}, {"zh", "清空点"}});
     add_locale_string("action.clear_width_points",
                       {{"en", "Clear Points"}, {"zh", "清空点"}});
+
+    // ---- 正交投影编辑模式 ----
+    add_locale_string("action.ortho_projection",
+                      {{"en", "Ortho View"}, {"zh", "正交投影编辑"}});
+    add_locale_string("window.ortho_projection_setup",
+                      {{"en", "Ortho Projection Setup"}, {"zh", "正交投影设置"}});
+    add_locale_string("window.ortho_edit",
+                      {{"en", "Ortho Projection Editor"}, {"zh", "正交投影编辑器"}});
+    add_locale_string("label.projection_direction",
+                      {{"en", "Projection Direction"}, {"zh", "投影方向"}});
+    add_locale_string("label.viewport_size",
+                      {{"en", "Viewport Size"}, {"zh", "视口边长"}});
+    add_locale_string("label.render_resolution",
+                      {{"en", "Resolution"}, {"zh", "渲染分辨率"}});
+    add_locale_string("label.vector_mode",
+                      {{"en", "Direction Mode"}, {"zh", "方向模式"}});
+    add_locale_string("label.vector_mode_six",
+                      {{"en", "Six Views"}, {"zh", "六视图"}});
+    add_locale_string("label.vector_mode_pick",
+                      {{"en", "Pick Point on Model"}, {"zh", "模型上取点"}});
+    add_locale_string("label.six_view_front",
+                      {{"en", "Front"}, {"zh", "前"}});
+    add_locale_string("label.six_view_back",
+                      {{"en", "Back"}, {"zh", "后"}});
+    add_locale_string("label.six_view_left",
+                      {{"en", "Left"}, {"zh", "左"}});
+    add_locale_string("label.six_view_right",
+                      {{"en", "Right"}, {"zh", "右"}});
+    add_locale_string("label.six_view_top",
+                      {{"en", "Top"}, {"zh", "上"}});
+    add_locale_string("label.six_view_bottom",
+                      {{"en", "Bottom"}, {"zh", "下"}});
+    add_locale_string("action.ortho_render",
+                      {{"en", "Render"}, {"zh", "渲染"}});
+    add_locale_string("action.load_reference_image",
+                      {{"en", "Load Image..."}, {"zh", "载入图片..."}});
+    add_locale_string("label.enable_overlay",
+                      {{"en", "Enable Overlay"}, {"zh", "启用叠加"}});
+    add_locale_string("label.blend_ratio",
+                      {{"en", "Blend"}, {"zh", "混合比例"}});
+    add_locale_string("label.show_guide_curves_2d",
+                      {{"en", "Show Guide Curves"}, {"zh", "显示引导曲线"}});
+    add_locale_string("label.show_width_vectors_2d",
+                      {{"en", "Show Width Vectors"}, {"zh", "显示宽度向量"}});
+    add_locale_string("action.pick_projection",
+                      {{"en", "Pick from 3D View"}, {"zh", "在3D视图拾取"}});
+    add_locale_string("action.picking_direction",
+                      {{"en", "Click on model to set direction"}, {"zh", "点击模型设置方向"}});
+    add_locale_string("label.ortho_no_base_model",
+                      {{"en", "No base model selected. Please set a base model in the addon editor first."},
+                       {"zh", "未选择底模。请先在附加件编辑器中设置底模。"}});
+    add_locale_string("label.ortho_no_mesh_data",
+                      {{"en", "Base model has no mesh data. Please load or generate a mesh first."},
+                       {"zh", "底模无网格数据。请先加载或生成网格。"}});
     add_locale_string("action.edit_width",
                       {{"en", "Edit Width"}, {"zh", "编辑宽度"}});
     add_locale_string("action.stop_width_edit",

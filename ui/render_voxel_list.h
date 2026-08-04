@@ -214,6 +214,85 @@ struct HairStrand {
                                               // cylinder/ellipsoid/cone/joint smoothness
 };
 
+/// Orthographic projection edit mode state for hair strand editing.
+/// Holds projection settings, rendered textures, overlay image state,
+/// and interaction flags for the 2D ortho view editor.
+
+// Dedicated bgfx view IDs for ortho projection off-screen renders
+// (must not conflict with main pipeline 0-5, thumbnails 100-101)
+constexpr bgfx::ViewId kOrthoViewView = 200;
+constexpr bgfx::ViewId kOrthoCoordView = 201;
+constexpr bgfx::ViewId kOrthoOverlayView = 202;
+
+struct OrthoProjectionState {
+    bool active = false;              // master flag for edit mode
+
+    // Setup window
+    vec3f projection_dir = {0, 1, 0}; // default: top-down view
+    float viewport_size = 100.0f;     // world-space side length
+    int vector_mode = 0;              // 0 = six-view, 1 = pick point on model
+    int six_view_index = 0;           // 0-5: Front/Back/Left/Right/Top/Bottom
+    bool is_picking_point = false;    // waiting for 3D click for point-pick mode
+
+    // Edit window
+    bool edit_window_open = false;
+    int render_resolution = 1024;
+    bool render_dirty = true;
+    bool coord_map_ready = false;
+
+    // CPU-side ortho camera params (set by perform_ortho_render)
+    vec3f _cam_right = {1, 0, 0};
+    vec3f _cam_up = {0, 1, 0};
+    vec3f _cam_pos = {0, 0, 0};
+    vec3f _center = {0, 0, 0};
+
+    // CPU-side base model triangles for raycasting
+    std::vector<sinriv::kigstudio::voxel::Triangle> _base_triangles;
+
+    // GPU off-screen render for view image (multi-frame state machine)
+    bgfx::FrameBufferHandle view_fb = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle view_tex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle view_depth_tex = BGFX_INVALID_HANDLE;
+    bool view_tex_ready = false;
+    int ortho_render_stage = 0;  // 0=IDLE, 1=RENDER, 2=WAIT, 3=DONE
+    int ortho_wait_frames = 0;
+    int ortho_base_item_id = -1;
+
+    // Reference image overlay
+    std::string overlay_image_path;
+    bgfx::TextureHandle overlay_tex = BGFX_INVALID_HANDLE;
+    int overlay_img_width = 0;
+    int overlay_img_height = 0;
+    bool overlay_enabled = false;       // checkbox to activate drag/scale
+    ImVec2 overlay_offset = {0, 0};     // pan offset in pixels
+    float overlay_scale = 1.0f;         // zoom scale
+    float blend_ratio = 0.5f;           // blend slider
+
+    // Strand preview toggles
+    bool show_guide_curves = true;
+    bool show_width_vectors = true;
+
+    // Interaction state
+    bool is_dragging_overlay = false;
+    ImVec2 drag_start_mouse;
+    ImVec2 drag_start_offset;
+    bool is_hovering_model = false;     // mouse over valid mesh area
+    vec3f hovered_world_pos = {0, 0, 0};
+};
+
+// Six standard view directions (matches common orthographic views)
+inline vec3f six_view_direction(int index) {
+    switch (index) {
+        case 0: return {0, 0, 1};   // Front
+        case 1: return {0, 0, -1};  // Back
+        case 2: return {-1, 0, 0};  // Left
+        case 3: return {1, 0, 0};   // Right
+        case 4: return {0, 1, 0};   // Top
+        case 5: return {0, -1, 0};  // Bottom
+        default: return {0, 1, 0};
+    }
+}
+
 /// Per-position angle configuration for semantic-coordinate ray casting.
 /// Maps a semantic (X, Y) position to spherical angles that define the
 /// direction from which a ray is cast toward the center point.
@@ -255,6 +334,15 @@ bool compute_auto_section_rotation(const vec3f& point,
                                    const vec3f& tangent,
                                    const vec3f& center,
                                    float& out_angle_deg);
+// Bezier curve utilities (defined in render_voxel_render.cpp)
+sinriv::kigstudio::voxel::vec3f bezier_eval(
+    const sinriv::kigstudio::voxel::vec3f& p0,
+    const sinriv::kigstudio::voxel::vec3f& p1,
+    const sinriv::kigstudio::voxel::vec3f& p2,
+    const sinriv::kigstudio::voxel::vec3f& p3, float t);
+std::vector<sinriv::kigstudio::voxel::vec3f> sample_bezier_guide_curve(
+    const std::vector<sinriv::kigstudio::voxel::vec3f>& guide_points,
+    int samples_per_segment = 32);
 const char* geometry_type_name(const GeometryInstance& instance);
 EditResult edit_geometry_shape(GeometryInstance& instance);
 void add_collision_geometry(CollisionGroup& group, int type_index);
@@ -798,6 +886,9 @@ class RenderVoxelList {
     bgfx::TextureHandle thumb_depth_tex_ = BGFX_INVALID_HANDLE;
     std::unique_ptr<RenderMeshShader> thumb_shader_;
 
+    // Ortho view off-screen render shader
+    std::unique_ptr<RenderMeshShader> ortho_shader_;
+
     // 渲染
     int render_id = 0;
 
@@ -877,6 +968,11 @@ class RenderVoxelList {
     void render_width_editor_window();
     void render_cross_section_editor();
     void render_perpoint_section_editor();
+    void render_ortho_setup_window();
+    void render_ortho_edit_window();
+    void perform_ortho_render(RenderVoxelItem& item, RenderVoxelItem& base_item);
+    void destroy_ortho_resources();
+    void process_ortho_render();
     bool show_addon_window = false;
     bool show_guide_curve_window = false;
     bool show_width_editor_window = false;
@@ -884,6 +980,11 @@ class RenderVoxelList {
     bool show_perpoint_section_editor_window = false;
     bool show_hairline_plane_window = false;
     bool show_angle_config_window = false;
+    bool show_ortho_setup_window = false;
+    bool show_ortho_edit_window = false;
+
+    // Orthographic projection edit mode state (all settings, textures, interaction)
+    OrthoProjectionState ortho_state;
     // Per-point section conflict confirmation dialogs
     bool show_perpoint_confirm_global_open = false;
     bool show_perpoint_confirm_global_apply = false;
