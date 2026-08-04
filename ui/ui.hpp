@@ -474,14 +474,15 @@ int ui_main(int argc, const char* const* argv) {
                         }
                     } else if (render_items.ortho_state.is_picking_point &&
                                render_items.mouse_world_pos_valid) {
-                        // Ortho projection: click on model sets projection direction
+                        // Ortho projection: click on model sets look direction
+                        // (from picked point toward center).
                         auto it = render_items.items.find(render_items.render_id);
                         if (it != render_items.items.end()) {
                             auto& item = *it->second;
                             auto dir = sinriv::kigstudio::voxel::collision::vec3f{
-                                render_items.mouse_world_pos.x - item.addon_center_point.x,
-                                render_items.mouse_world_pos.y - item.addon_center_point.y,
-                                render_items.mouse_world_pos.z - item.addon_center_point.z
+                                item.addon_center_point.x - render_items.mouse_world_pos.x,
+                                item.addon_center_point.y - render_items.mouse_world_pos.y,
+                                item.addon_center_point.z - render_items.mouse_world_pos.z
                             };
                             float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
                             if (len > 1e-6f) {
@@ -545,38 +546,41 @@ int ui_main(int argc, const char* const* argv) {
             if (e.type == SDL_MOUSEMOTION) {
                 // Nav map infinite panning: when middle-mouse is held and
                 // ImGui captures the mouse (nav node graph window), hide the
-                // OS cursor and warp it back to the starting position whenever
-                // it approaches the screen edge, enabling unbounded dragging.
-                if (middleMouseDown && io.WantCaptureMouse && !middleMouseDownOnPick) {
+                // OS cursor and warp it inward when approaching the screen
+                // edge.  Uses SDL relative motion to accumulate io.MousePos
+                // so that warp-generated deltas don't cause jumps.
+                if (middleMouseDown && io.WantCaptureMouse &&
+                    !middleMouseDownOnPick) {
                     if (!nav_map_panning) {
                         nav_map_panning = true;
                         nav_map_pan_start_pos = io.MousePos;
-                        nav_map_pan_prev_pos =
-                            ImVec2((float)e.motion.x, (float)e.motion.y);
                         nav_map_pan_warped = false;
                         SDL_ShowCursor(SDL_DISABLE);
                     }
                     if (nav_map_pan_warped) {
-                        // This motion event was caused by our own warp —
-                        // just update tracking and skip processing.
-                        nav_map_pan_prev_pos =
-                            ImVec2((float)e.motion.x, (float)e.motion.y);
+                        // This motion event was caused by our own warp.
+                        // Skip it — keep io.MousePos at the pre-warp value
+                        // so that neither MousePos nor MouseDelta jumps.
                         nav_map_pan_warped = false;
-                        io.MousePos = nav_map_pan_prev_pos;
                     } else {
-                        ImVec2 current((float)e.motion.x, (float)e.motion.y);
-                        io.MousePos = current;
-                        nav_map_pan_prev_pos = current;
+                        // Accumulate relative motion — immune to warp jumps
+                        io.MousePos.x += e.motion.xrel;
+                        io.MousePos.y += e.motion.yrel;
 
-                        // Warp back to start when approaching screen edge
+                        // Warp inward when approaching screen edge
                         const int margin = 60;
+                        const float push = 200.0f;
+                        ImVec2 current((float)e.motion.x, (float)e.motion.y);
                         if (current.x < margin ||
                             current.x > (float)oldW - margin ||
                             current.y < margin ||
                             current.y > (float)oldH - margin) {
-                            SDL_WarpMouseInWindow(
-                                window, (int)nav_map_pan_start_pos.x,
-                                (int)nav_map_pan_start_pos.y);
+                            float tx = current.x, ty = current.y;
+                            if (current.x < margin) tx += push;
+                            else if (current.x > (float)oldW - margin) tx -= push;
+                            if (current.y < margin) ty += push;
+                            else if (current.y > (float)oldH - margin) ty -= push;
+                            SDL_WarpMouseInWindow(window, (int)tx, (int)ty);
                             nav_map_pan_warped = true;
                         }
                     }

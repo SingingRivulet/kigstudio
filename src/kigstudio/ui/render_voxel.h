@@ -213,6 +213,21 @@ namespace sinriv::ui::render {
             }
         }
 
+        inline void renderDepthColor(const float* transform, RenderMeshShader & shader,
+                                     const float* view_dir, const float* center_pos,
+                                     float depth_scale) {
+            if (!chunk_meshes_.empty()) {
+                for (auto& [key, mesh] : chunk_meshes_) {
+                    (void)key;
+                    mesh.showAxis = showAxis;
+                    mesh.renderDepthColor(transform, shader, view_dir, center_pos, depth_scale);
+                }
+            } else {
+                mesh_renderer_.showAxis = showAxis;
+                mesh_renderer_.renderDepthColor(transform, shader, view_dir, center_pos, depth_scale);
+            }
+        }
+
         inline void renderOverlay(RenderMeshShader & shader) {
             if (!chunk_meshes_.empty()) {
                 for (auto& [key, mesh] : chunk_meshes_) {

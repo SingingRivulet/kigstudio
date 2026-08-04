@@ -12,6 +12,8 @@ namespace sinriv::ui::render {
 #define TRACE_STACK() ((void)0)
 #endif
 
+RenderVoxelList::~RenderVoxelList() { release(); }
+
 void RenderVoxelList::process_queue_result() {
     // 在 UI 线程中安全释放被后台线程移入的 item
     {
@@ -1114,8 +1116,10 @@ float RenderVoxelList::getQueueProgress() {
 
 void RenderVoxelList::release() {
     stop_thread();
+    stop_api_server();
     destroyIcons();
     destroyThumbnailResources();
+    destroy_ortho_resources();
     items.clear();
     pending_deletion.clear();
 }

@@ -11,11 +11,14 @@
 // Use stb_image from bimg 3rdparty for overlay image loading
 #define STB_IMAGE_IMPLEMENTATION
 #include "../../dep/bgfx.cmake/bimg/3rdparty/stb/stb_image.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "../../dep/bgfx.cmake/bimg/3rdparty/stb/stb_image_write.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <type_traits>
 #include <set>
+#include <sys/stat.h>
 #include <unordered_set>
 #include <variant>
 #ifdef _WIN32
@@ -28,6 +31,7 @@
 #include "kigstudio/voxel/voxel2mesh.h"
 #include "kigstudio/agent/agent_handlers.h"
 #include "render_voxel_list.h"
+#include "external_api_server.h"
 #include "tinyfiledialogs.h"
 namespace sinriv::ui::render {
 
@@ -831,6 +835,7 @@ void RenderVoxelList::render_object_editor_addons() {
         ImGui::SameLine();
         if (ImGui::Button(get_locale_cstr("action.ortho_projection"))) {
             show_ortho_setup_window = true;
+            ortho_state.viewport_size_defaulted = false;
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", get_locale_cstr("window.ortho_projection_setup"));
@@ -2264,11 +2269,11 @@ static bool ortho_raycast(const OrthoProjectionState& state,
                           state._cam_up.z * v * state.viewport_size
     };
 
-    // Ray direction (from camera position toward the model, along -projection_dir)
+    // Ray direction (from camera position toward the model, same as look_dir)
     vec3f ray_dir = {
-        -state.projection_dir.x,
-        -state.projection_dir.y,
-        -state.projection_dir.z
+        state.projection_dir.x,
+        state.projection_dir.y,
+        state.projection_dir.z
     };
 
     float best_t = 1e30f;
@@ -2312,29 +2317,56 @@ void RenderVoxelList::destroy_ortho_resources() {
         bgfx::destroy(ortho_state.view_depth_tex);
         ortho_state.view_depth_tex = BGFX_INVALID_HANDLE;
     }
+    if (bgfx::isValid(ortho_state.ai_readback_tex)) {
+        bgfx::destroy(ortho_state.ai_readback_tex);
+        ortho_state.ai_readback_tex = BGFX_INVALID_HANDLE;
+    }
     ortho_state.coord_map_ready = false;
     ortho_state.view_tex_ready = false;
     ortho_state.render_dirty = true;
     ortho_state.ortho_render_stage = 0;
     ortho_state._base_triangles.clear();
+    ortho_state.ai_export_stage = 0;
+    ortho_state.ai_readback_pending = false;
+    ortho_state.ai_export_pending = false;
+
+    // Clear CPU-side overlay cache
+    overlay_cpu_rgba_.clear();
+    overlay_cpu_w_ = 0;
+    overlay_cpu_h_ = 0;
+
+    // Release shader programs while bgfx context is still valid
+    if (ortho_shader_) {
+        ortho_shader_->release();
+    }
 }
 
 void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
                                             RenderVoxelItem& base_item) {
     destroy_ortho_resources();
 
-    // Build the orthographic camera matrices (stored for CPU-side raycasting)
-    vec3f dir = ortho_state.projection_dir;
+    // Build the orthographic camera matrices (stored for CPU-side raycasting).
+    // projection_dir now means "look direction" (from camera toward center).
+    // We derive a "from-center" direction for constructing the camera basis.
+    vec3f look_dir = ortho_state.projection_dir;
+    vec3f from_center = {-look_dir.x, -look_dir.y, -look_dir.z};
     vec3f center = item.addon_center_point;
 
     float half = ortho_state.viewport_size * 0.5f;
-    vec3f world_up = (std::abs(dir.y) < 0.99f) ? vec3f{0, 1, 0} : vec3f{0, 0, 1};
+    // Use the semantic coordinate frame's north-pole as the preferred
+    // camera-up direction.  Fall back only when the projection direction
+    // is nearly parallel to the north pole.
+    vec3f np = {item.hair_north_pole.x, item.hair_north_pole.y, item.hair_north_pole.z};
+    float np_len = std::sqrt(np.x*np.x + np.y*np.y + np.z*np.z);
+    vec3f world_up = (np_len > 1e-8f) ? np : vec3f{0, 1, 0};
+    if (std::abs(from_center.x * world_up.x + from_center.y * world_up.y + from_center.z * world_up.z) > 0.99f)
+        world_up = vec3f{0, 0, 1};
 
-    // cam_right = normalize(cross(dir, world_up))
+    // cam_right = normalize(cross(from_center, world_up))
     vec3f cam_right = {
-        dir.y * world_up.z - dir.z * world_up.y,
-        dir.z * world_up.x - dir.x * world_up.z,
-        dir.x * world_up.y - dir.y * world_up.x
+        from_center.y * world_up.z - from_center.z * world_up.y,
+        from_center.z * world_up.x - from_center.x * world_up.z,
+        from_center.x * world_up.y - from_center.y * world_up.x
     };
     float cr_len = std::sqrt(cam_right.x * cam_right.x +
                              cam_right.y * cam_right.y +
@@ -2345,11 +2377,11 @@ void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
         cam_right = {1, 0, 0};
     }
 
-    // cam_up = normalize(cross(cam_right, dir))
+    // cam_up = normalize(cross(cam_right, from_center))
     vec3f cam_up = {
-        cam_right.y * dir.z - cam_right.z * dir.y,
-        cam_right.z * dir.x - cam_right.x * dir.z,
-        cam_right.x * dir.y - cam_right.y * dir.x
+        cam_right.y * from_center.z - cam_right.z * from_center.y,
+        cam_right.z * from_center.x - cam_right.x * from_center.z,
+        cam_right.x * from_center.y - cam_right.y * from_center.x
     };
     float cu_len = std::sqrt(cam_up.x * cam_up.x +
                              cam_up.y * cam_up.y +
@@ -2360,10 +2392,10 @@ void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
         cam_up = {0, 1, 0};
     }
 
-    // Camera position: center + dir * 1000 (looking down -dir)
-    vec3f cam_pos = {center.x + dir.x * 1000.0f,
-                     center.y + dir.y * 1000.0f,
-                     center.z + dir.z * 1000.0f};
+    // Camera position: move opposite the look direction from center
+    vec3f cam_pos = {center.x - look_dir.x * 1000.0f,
+                     center.y - look_dir.y * 1000.0f,
+                     center.z - look_dir.z * 1000.0f};
 
     // Store ortho camera params for CPU raycasting
     ortho_state._cam_right = cam_right;
@@ -2384,6 +2416,7 @@ void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
     }
 
     ortho_state.coord_map_ready = true;
+    ortho_state._base_triangle_count = ortho_state._base_triangles.size();
 
     // ---- Create GPU off-screen render resources ----
     int res = ortho_state.render_resolution;
@@ -2414,8 +2447,8 @@ void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
 
     std::cout << "[ortho_render] Setup off-screen render res=" << res
               << " with " << ortho_state._base_triangles.size()
-              << " triangles, direction=("
-              << dir.x << "," << dir.y << "," << dir.z << ")"
+              << " triangles, look_dir=("
+              << look_dir.x << "," << look_dir.y << "," << look_dir.z << ")"
               << std::endl;
 }
 
@@ -2430,10 +2463,20 @@ void RenderVoxelList::process_ortho_render() {
             return;
         }
 
-        if (!ortho_shader_->ensureGBufferProgram()) {
-            std::cerr << "[ortho_render] Failed to load GBuffer shader" << std::endl;
-            ortho_state.ortho_render_stage = 0;
-            return;
+        bool use_depth_color = ortho_state.depth_color_mode;
+
+        if (use_depth_color) {
+            if (!ortho_shader_->ensureOrthoDepthProgram()) {
+                std::cerr << "[ortho_render] Failed to load ortho depth shader" << std::endl;
+                ortho_state.ortho_render_stage = 0;
+                return;
+            }
+        } else {
+            if (!ortho_shader_->ensureGBufferProgram()) {
+                std::cerr << "[ortho_render] Failed to load GBuffer shader" << std::endl;
+                ortho_state.ortho_render_stage = 0;
+                return;
+            }
         }
 
         // Find the base item
@@ -2459,11 +2502,10 @@ void RenderVoxelList::process_ortho_render() {
         }
 
         // Build orthographic view and projection matrices
-        vec3f dir = ortho_state.projection_dir;
         vec3f center = ortho_state._center;
         float half = ortho_state.viewport_size * 0.5f;
 
-        // View matrix: look at center from camera position along -dir
+        // View matrix: look at center from the stored camera position
         vec3f cam_pos = ortho_state._cam_pos;
         vec3f cam_up = ortho_state._cam_up;
 
@@ -2494,10 +2536,36 @@ void RenderVoxelList::process_ortho_render() {
         bx::mtxIdentity(identity);
 
         // Render base model
-        if (base_item->mesh_only) {
-            base_item->mesh_renderer.renderGBuffer(identity, *ortho_shader_);
+        if (use_depth_color) {
+            // Depth-colour mode: map world-space depth along the view
+            // direction to a heatmap (blue=near, red=far).
+            vec3f look_dir = ortho_state.projection_dir;
+            float fl = std::sqrt(look_dir.x*look_dir.x + look_dir.y*look_dir.y + look_dir.z*look_dir.z);
+            if (fl > 1e-8f) {
+                look_dir.x /= fl; look_dir.y /= fl; look_dir.z /= fl;
+            }
+            float view_dir_arr[3] = {look_dir.x, look_dir.y, look_dir.z};
+            float center_arr[3] = {center.x, center.y, center.z};
+            // Use viewport_size as the depth range for normalisation
+            float depth_scale = ortho_state.viewport_size > 1e-8f
+                                    ? 1.0f / ortho_state.viewport_size
+                                    : 0.01f;
+
+            if (base_item->mesh_only) {
+                base_item->mesh_renderer.renderDepthColor(identity, *ortho_shader_,
+                                                          view_dir_arr, center_arr,
+                                                          depth_scale);
+            } else {
+                base_item->voxel_renderer.renderDepthColor(identity, *ortho_shader_,
+                                                           view_dir_arr, center_arr,
+                                                           depth_scale);
+            }
         } else {
-            base_item->voxel_renderer.renderGBuffer(identity, *ortho_shader_);
+            if (base_item->mesh_only) {
+                base_item->mesh_renderer.renderGBuffer(identity, *ortho_shader_);
+            } else {
+                base_item->voxel_renderer.renderGBuffer(identity, *ortho_shader_);
+            }
         }
         bgfx::touch(kOrthoViewView);
 
@@ -2523,6 +2591,223 @@ void RenderVoxelList::process_ortho_render() {
         ortho_state.ortho_render_stage = 0;  // back to IDLE
         std::cout << "[ortho_render] View texture ready" << std::endl;
     }
+}
+
+void RenderVoxelList::process_ai_export() {
+    auto& s = ortho_state;
+    if (s.ai_export_stage == 0)
+        return;  // idle
+
+    // Stage 1: Submit GPU blit + readback request
+    if (s.ai_export_stage == 1) {
+        if (!s.view_tex_ready || !bgfx::isValid(s.view_tex)) {
+            std::cerr << "[ai_export] View texture not ready for export" << std::endl;
+            s.ai_export_stage = 0;
+            s.ai_export_pending = false;
+            return;
+        }
+
+        int res = s.render_resolution;
+        if (!bgfx::isValid(s.ai_readback_tex)) {
+            s.ai_readback_tex = bgfx::createTexture2D(
+                static_cast<uint16_t>(res), static_cast<uint16_t>(res), false, 1,
+                bgfx::TextureFormat::BGRA8,
+                BGFX_TEXTURE_READ_BACK | BGFX_TEXTURE_BLIT_DST);
+            s.ai_readback_buffer.resize(static_cast<size_t>(res) * res * 4);
+        }
+
+        if (bgfx::isValid(s.ai_readback_tex)) {
+            bgfx::blit(kOrthoBlitView, s.ai_readback_tex, 0, 0,
+                       s.view_tex, 0, 0,
+                       static_cast<uint16_t>(res), static_cast<uint16_t>(res));
+            bgfx::touch(kOrthoBlitView);
+            bgfx::readTexture(s.ai_readback_tex, s.ai_readback_buffer.data());
+            s.ai_readback_pending = true;
+            std::cout << "[ai_export] Blit + readback submitted, res=" << res << std::endl;
+        } else {
+            std::cerr << "[ai_export] Failed to create readback texture" << std::endl;
+            s.ai_export_stage = 0;
+            s.ai_export_pending = false;
+            return;
+        }
+
+        s.ai_export_stage = 2;  // wait for next frame
+        return;
+    }
+
+    // Stage 2: Readback complete, save files to disk
+    if (s.ai_export_stage == 2) {
+        if (s.ai_readback_pending && !s.ai_readback_buffer.empty()) {
+            int res = s.render_resolution;
+
+            // Convert BGRA → RGBA for stb_image_write
+            size_t pixel_count = static_cast<size_t>(res) * res;
+            std::vector<uint8_t> rgba(pixel_count * 4);
+            for (size_t i = 0; i < pixel_count; i++) {
+                rgba[i * 4 + 0] = s.ai_readback_buffer[i * 4 + 2];  // R ← B
+                rgba[i * 4 + 1] = s.ai_readback_buffer[i * 4 + 1];  // G ← G
+                rgba[i * 4 + 2] = s.ai_readback_buffer[i * 4 + 0];  // B ← R
+                rgba[i * 4 + 3] = s.ai_readback_buffer[i * 4 + 3];  // A ← A
+            }
+
+            // Update API server's render cache so /render and /blend
+            // endpoints serve the most recent data.
+            if (api_server_running)
+                api_server->setRenderData(rgba.data(), res, res);
+
+            // Create export directory if needed
+            std::string export_dir = s.ai_export_dir;
+            if (export_dir.empty())
+                export_dir = "tools/kimi-agent/tmp";
+            std::filesystem::path dir_path = utf8_path(export_dir);
+            std::error_code ec;
+            std::filesystem::create_directories(dir_path, ec);
+
+            // Save render.png
+            std::string png_path = export_dir + "/render.png";
+            int write_ok = stbi_write_png(png_path.c_str(), res, res, 4,
+                                         rgba.data(), res * 4);
+            if (write_ok)
+                std::cout << "[ai_export] Saved " << png_path << " (" << res << "x" << res << ")" << std::endl;
+            else
+                std::cerr << "[ai_export] Failed to write " << png_path << std::endl;
+
+            // Write state.json with coordinate mapping parameters
+            cJSON* root = cJSON_CreateObject();
+            cJSON_AddNumberToObject(root, "version", 1);
+            cJSON_AddNumberToObject(root, "viewport_size", static_cast<double>(s.viewport_size));
+            cJSON_AddNumberToObject(root, "resolution", res);
+
+            cJSON* center_arr = cJSON_AddArrayToObject(root, "center");
+            cJSON_AddItemToArray(center_arr, cJSON_CreateNumber(static_cast<double>(s._center.x)));
+            cJSON_AddItemToArray(center_arr, cJSON_CreateNumber(static_cast<double>(s._center.y)));
+            cJSON_AddItemToArray(center_arr, cJSON_CreateNumber(static_cast<double>(s._center.z)));
+
+            cJSON* cam_right_arr = cJSON_AddArrayToObject(root, "cam_right");
+            cJSON_AddItemToArray(cam_right_arr, cJSON_CreateNumber(static_cast<double>(s._cam_right.x)));
+            cJSON_AddItemToArray(cam_right_arr, cJSON_CreateNumber(static_cast<double>(s._cam_right.y)));
+            cJSON_AddItemToArray(cam_right_arr, cJSON_CreateNumber(static_cast<double>(s._cam_right.z)));
+
+            cJSON* cam_up_arr = cJSON_AddArrayToObject(root, "cam_up");
+            cJSON_AddItemToArray(cam_up_arr, cJSON_CreateNumber(static_cast<double>(s._cam_up.x)));
+            cJSON_AddItemToArray(cam_up_arr, cJSON_CreateNumber(static_cast<double>(s._cam_up.y)));
+            cJSON_AddItemToArray(cam_up_arr, cJSON_CreateNumber(static_cast<double>(s._cam_up.z)));
+
+            // Overlay / reference image info
+            cJSON* overlay = cJSON_AddObjectToObject(root, "overlay");
+            cJSON_AddStringToObject(overlay, "image_path", s.overlay_image_path.c_str());
+            cJSON_AddNumberToObject(overlay, "img_width", s.overlay_img_width);
+            cJSON_AddNumberToObject(overlay, "img_height", s.overlay_img_height);
+            cJSON_AddNumberToObject(overlay, "offset_x", static_cast<double>(s.overlay_offset.x));
+            cJSON_AddNumberToObject(overlay, "offset_y", static_cast<double>(s.overlay_offset.y));
+            cJSON_AddNumberToObject(overlay, "scale", static_cast<double>(s.overlay_scale));
+            cJSON_AddBoolToObject(overlay, "enabled", s.overlay_enabled);
+            cJSON_AddBoolToObject(overlay, "locked", s.overlay_locked);
+
+            std::string state_path = export_dir + "/state.json";
+            char* json_str = cJSON_Print(root);
+            if (json_str) {
+                std::ofstream ofs(utf8_path(state_path), std::ios::out | std::ios::binary);
+                if (ofs.is_open()) {
+                    ofs << json_str;
+                    ofs.close();
+                    std::cout << "[ai_export] Saved " << state_path << std::endl;
+                }
+                cJSON_free(json_str);
+            }
+            cJSON_Delete(root);
+
+            s.ai_readback_pending = false;
+        }
+
+        // Cleanup readback resources
+        if (bgfx::isValid(s.ai_readback_tex)) {
+            bgfx::destroy(s.ai_readback_tex);
+            s.ai_readback_tex = BGFX_INVALID_HANDLE;
+        }
+        s.ai_readback_buffer.clear();
+        s.ai_export_stage = 0;
+        s.ai_export_pending = false;
+        std::cout << "[ai_export] Export complete" << std::endl;
+    }
+}
+
+void RenderVoxelList::start_api_server(int port) {
+    if (api_server_running) return;
+    if (!api_server)
+        api_server = new ExternalApiServer();
+    api_server->start(port);
+    api_server_running = api_server->isRunning();
+    if (api_server_running)
+        show_toast("API server started on http://127.0.0.1:" + std::to_string(port), 2000.0f);
+}
+
+void RenderVoxelList::stop_api_server() {
+    if (!api_server_running) return;
+    if (api_server) {
+        api_server->stop();
+        delete api_server;
+        api_server = nullptr;
+    }
+    api_server_running = false;
+    show_toast("API server stopped", 2000.0f);
+}
+
+void RenderVoxelList::update_api_server_caches() {
+    if (!api_server_running) return;
+
+    // Update overlay params from ortho_state
+    api_server->setOverlayParams(
+        ortho_state.overlay_offset.x, ortho_state.overlay_offset.y,
+        ortho_state.overlay_scale, ortho_state.blend_ratio);
+    api_server->setOverlayActive(ortho_state.overlay_enabled);
+
+    // Update overlay CPU data if we have it cached
+    if (!overlay_cpu_rgba_.empty()) {
+        api_server->setOverlayData(overlay_cpu_rgba_.data(),
+                                  overlay_cpu_w_, overlay_cpu_h_);
+    }
+
+    // Build state JSON for /state endpoint
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "version", 1);
+    cJSON_AddNumberToObject(root, "viewport_size",
+                            static_cast<double>(ortho_state.viewport_size));
+    cJSON_AddNumberToObject(root, "resolution", ortho_state.render_resolution);
+
+    cJSON* center_arr = cJSON_AddArrayToObject(root, "center");
+    cJSON_AddItemToArray(center_arr, cJSON_CreateNumber(static_cast<double>(ortho_state._center.x)));
+    cJSON_AddItemToArray(center_arr, cJSON_CreateNumber(static_cast<double>(ortho_state._center.y)));
+    cJSON_AddItemToArray(center_arr, cJSON_CreateNumber(static_cast<double>(ortho_state._center.z)));
+
+    cJSON* right_arr = cJSON_AddArrayToObject(root, "cam_right");
+    cJSON_AddItemToArray(right_arr, cJSON_CreateNumber(static_cast<double>(ortho_state._cam_right.x)));
+    cJSON_AddItemToArray(right_arr, cJSON_CreateNumber(static_cast<double>(ortho_state._cam_right.y)));
+    cJSON_AddItemToArray(right_arr, cJSON_CreateNumber(static_cast<double>(ortho_state._cam_right.z)));
+
+    cJSON* up_arr = cJSON_AddArrayToObject(root, "cam_up");
+    cJSON_AddItemToArray(up_arr, cJSON_CreateNumber(static_cast<double>(ortho_state._cam_up.x)));
+    cJSON_AddItemToArray(up_arr, cJSON_CreateNumber(static_cast<double>(ortho_state._cam_up.y)));
+    cJSON_AddItemToArray(up_arr, cJSON_CreateNumber(static_cast<double>(ortho_state._cam_up.z)));
+
+    cJSON* overlay = cJSON_AddObjectToObject(root, "overlay");
+    cJSON_AddStringToObject(overlay, "image_path",
+                            ortho_state.overlay_image_path.c_str());
+    cJSON_AddNumberToObject(overlay, "img_width", ortho_state.overlay_img_width);
+    cJSON_AddNumberToObject(overlay, "img_height", ortho_state.overlay_img_height);
+    cJSON_AddNumberToObject(overlay, "offset_x", static_cast<double>(ortho_state.overlay_offset.x));
+    cJSON_AddNumberToObject(overlay, "offset_y", static_cast<double>(ortho_state.overlay_offset.y));
+    cJSON_AddNumberToObject(overlay, "scale", static_cast<double>(ortho_state.overlay_scale));
+    cJSON_AddNumberToObject(overlay, "blend_ratio", static_cast<double>(ortho_state.blend_ratio));
+    cJSON_AddBoolToObject(overlay, "enabled", ortho_state.overlay_enabled);
+    cJSON_AddBoolToObject(overlay, "locked", ortho_state.overlay_locked);
+
+    char* json_str = cJSON_Print(root);
+    if (json_str) {
+        api_server->setStateJson(json_str);
+        cJSON_free(json_str);
+    }
+    cJSON_Delete(root);
 }
 
 void RenderVoxelList::render_ortho_setup_window() {
@@ -2554,6 +2839,41 @@ void RenderVoxelList::render_ortho_setup_window() {
         return;
     }
 
+    // ---- Auto-calculate viewport size default ----
+    if (!ortho_state.viewport_size_defaulted) {
+        auto base_it = items.find(item.addon_base_node_id);
+        if (base_it != items.end()) {
+            const auto& base = *base_it->second;
+            float max_dist2 = 0.0f;
+            auto check_vertex = [&](const vec3f& v) {
+                vec3f rel = {v.x - item.addon_center_point.x,
+                             v.y - item.addon_center_point.y,
+                             v.z - item.addon_center_point.z};
+                float d2 = rel.x*rel.x + rel.y*rel.y + rel.z*rel.z;
+                if (d2 > max_dist2) max_dist2 = d2;
+            };
+            if (!base.source_triangles.empty()) {
+                for (const auto& tri : base.source_triangles) {
+                    check_vertex(std::get<0>(tri));
+                    check_vertex(std::get<1>(tri));
+                    check_vertex(std::get<2>(tri));
+                }
+            } else if (!base.cached_mesh.empty()) {
+                for (const auto& tri_n : base.cached_mesh) {
+                    const auto& tri = std::get<0>(tri_n);
+                    check_vertex(std::get<0>(tri));
+                    check_vertex(std::get<1>(tri));
+                    check_vertex(std::get<2>(tri));
+                }
+            }
+            if (max_dist2 > 0.0f) {
+                float sphere_r = std::sqrt(max_dist2) * 1.05f;
+                ortho_state.viewport_size = sphere_r * 1.5f;
+            }
+        }
+        ortho_state.viewport_size_defaulted = true;
+    }
+
     // ---- Direction mode selection ----
     ImGui::TextUnformatted(get_locale_cstr("label.vector_mode"));
     ImGui::SameLine();
@@ -2578,7 +2898,9 @@ void RenderVoxelList::render_ortho_setup_window() {
         if (ImGui::Combo(get_locale_cstr("label.projection_direction"),
                          &ortho_state.six_view_index, view_names, 6)) {
             ortho_state.projection_dir =
-                six_view_direction(ortho_state.six_view_index);
+                six_view_direction(ortho_state.six_view_index,
+                                   item.hair_front_reference,
+                                   item.hair_north_pole);
         }
     } else {
         // ---- Pick point on model ----
@@ -2641,6 +2963,51 @@ void RenderVoxelList::render_ortho_setup_window() {
                 ortho_state.edit_window_open = true;
                 show_ortho_setup_window = false;
                 show_ortho_edit_window = true;
+
+                // If in six-view mode, restore saved overlay state from the item
+                if (ortho_state.vector_mode == 0) {
+                    int vi = ortho_state.six_view_index;
+                    const auto& saved = item.ortho_overlay[vi];
+                    ortho_state.overlay_image_path = saved.image_path;
+                    ortho_state.overlay_img_width = saved.img_width;
+                    ortho_state.overlay_img_height = saved.img_height;
+                    ortho_state.overlay_enabled = saved.enabled;
+                    ortho_state.overlay_offset =
+                        ImVec2(saved.offset_x, saved.offset_y);
+                    ortho_state.overlay_scale = saved.scale;
+                    ortho_state.blend_ratio = saved.blend_ratio;
+                    ortho_state.overlay_locked = saved.locked;
+
+                    // Reload the image texture if there's a saved path
+                    if (!saved.image_path.empty()) {
+                        int w, h, comp;
+                        unsigned char* data =
+                            stbi_load(saved.image_path.c_str(), &w, &h, &comp, 4);
+                        if (data) {
+                            if (bgfx::isValid(ortho_state.overlay_tex))
+                                bgfx::destroy(ortho_state.overlay_tex);
+                            ortho_state.overlay_tex = bgfx::createTexture2D(
+                                static_cast<uint16_t>(w),
+                                static_cast<uint16_t>(h), false, 1,
+                                bgfx::TextureFormat::RGBA8,
+                                BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+                            bgfx::updateTexture2D(
+                                ortho_state.overlay_tex, 0, 0, 0, 0,
+                                static_cast<uint16_t>(w),
+                                static_cast<uint16_t>(h),
+                                bgfx::copy(data, w * h * 4));
+                            // Keep CPU-side copy for API blending
+                            size_t cpu_sz = static_cast<size_t>(w) * h * 4;
+                            overlay_cpu_rgba_.resize(cpu_sz);
+                            memcpy(overlay_cpu_rgba_.data(), data, cpu_sz);
+                            overlay_cpu_w_ = w;
+                            overlay_cpu_h_ = h;
+                            stbi_image_free(data);
+                            ortho_state.overlay_img_width = w;
+                            ortho_state.overlay_img_height = h;
+                        }
+                    }
+                }
             }
         }
     }
@@ -2659,10 +3026,30 @@ void RenderVoxelList::render_ortho_edit_window() {
         return;
     }
 
+    // Helper: sync current overlay state back to the owning item (six-view only)
+    auto sync_overlay_to_item = [&]() {
+        if (ortho_state.vector_mode != 0) return;
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it == items.end() || it->second->source_type != 2) return;
+        auto& ol = it->second->ortho_overlay[ortho_state.six_view_index];
+        ol.image_path = ortho_state.overlay_image_path;
+        ol.img_width = ortho_state.overlay_img_width;
+        ol.img_height = ortho_state.overlay_img_height;
+        ol.enabled = ortho_state.overlay_enabled;
+        ol.offset_x = ortho_state.overlay_offset.x;
+        ol.offset_y = ortho_state.overlay_offset.y;
+        ol.scale = ortho_state.overlay_scale;
+        ol.blend_ratio = ortho_state.blend_ratio;
+        ol.locked = ortho_state.overlay_locked;
+    };
+
     if (!window_open) {
+        sync_overlay_to_item();
         show_ortho_edit_window = false;
         ortho_state.edit_window_open = false;
         ortho_state.active = false;
+        stop_api_server();  // clean up HTTP server
         destroy_ortho_resources();
         ImGui::End();
         return;
@@ -2683,12 +3070,18 @@ void RenderVoxelList::render_ortho_edit_window() {
                     bgfx::destroy(ortho_state.overlay_tex);
                 ortho_state.overlay_tex = bgfx::createTexture2D(
                     static_cast<uint16_t>(w), static_cast<uint16_t>(h), false, 1,
-                    bgfx::TextureFormat::BGRA8,
+                    bgfx::TextureFormat::RGBA8,
                     BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
                 bgfx::updateTexture2D(ortho_state.overlay_tex, 0, 0, 0, 0,
                                       static_cast<uint16_t>(w),
                                       static_cast<uint16_t>(h),
                                       bgfx::copy(data, w * h * 4));
+                // Keep CPU-side copy for API blending
+                size_t data_sz = static_cast<size_t>(w) * h * 4;
+                overlay_cpu_rgba_.resize(data_sz);
+                memcpy(overlay_cpu_rgba_.data(), data, data_sz);
+                overlay_cpu_w_ = w;
+                overlay_cpu_h_ = h;
                 stbi_image_free(data);
                 ortho_state.overlay_image_path = utf8_path;
                 ortho_state.overlay_img_width = w;
@@ -2696,6 +3089,7 @@ void RenderVoxelList::render_ortho_edit_window() {
                 ortho_state.overlay_enabled = true;
                 ortho_state.overlay_offset = ImVec2(0, 0);
                 ortho_state.overlay_scale = 1.0f;
+                sync_overlay_to_item();
             } else {
                 show_toast("Failed to load image: " + utf8_path, 3000.0f);
             }
@@ -2703,19 +3097,224 @@ void RenderVoxelList::render_ortho_edit_window() {
     }
 
     // Overlay enable checkbox (only shown when image loaded)
+    bool overlay_changed = false;
     if (bgfx::isValid(ortho_state.overlay_tex)) {
         ImGui::SameLine();
-        ImGui::Checkbox(get_locale_cstr("label.enable_overlay"),
-                        &ortho_state.overlay_enabled);
+        if (ImGui::Checkbox(get_locale_cstr("label.enable_overlay"),
+                            &ortho_state.overlay_enabled))
+            overlay_changed = true;
 
         // Blend slider
         ImGui::SameLine();
         ImGui::SetNextItemWidth(150);
-        ImGui::SliderFloat(get_locale_cstr("label.blend_ratio"),
-                           &ortho_state.blend_ratio, 0.0f, 1.0f);
+        if (ImGui::SliderFloat(get_locale_cstr("label.blend_ratio"),
+                               &ortho_state.blend_ratio, 0.0f, 1.0f))
+            overlay_changed = true;
+
+        // Lock button (toggle overlay drag/resize)
+        ImGui::SameLine();
+        if (ImGui::Button(ortho_state.overlay_locked
+                              ? get_locale_cstr("label.overlay_unlock")
+                              : get_locale_cstr("label.overlay_lock"))) {
+            ortho_state.overlay_locked = !ortho_state.overlay_locked;
+            overlay_changed = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.overlay_lock"));
+    }
+    if (overlay_changed)
+        sync_overlay_to_item();
+
+    ImGui::Separator();
+
+    // ---- AI / External tool integration ----
+    // Export button: save render + state for external AI tools
+    if (ImGui::Button(get_locale_cstr("action.ai_export"))) {
+        ortho_state.ai_export_dir = "tools/kimi-agent/tmp";
+        ortho_state.ai_export_pending = true;
+        ortho_state.ai_export_stage = 1;
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.ai_export"));
+
+    ImGui::SameLine();
+    bool was_watching = ortho_state.ai_watch_enabled;
+    if (ImGui::Checkbox(get_locale_cstr("label.ai_watch"),
+                        &ortho_state.ai_watch_enabled)) {
+        if (ortho_state.ai_watch_enabled) {
+            ortho_state.ai_result_path = "tools/kimi-agent/tmp/result.json";
+            ortho_state.ai_result_mtime = 0;
+        }
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.ai_watch"));
+
+    // ---- API Server start/stop ----
+    ImGui::SameLine();
+    if (!api_server_running) {
+        if (ImGui::Button(get_locale_cstr("action.api_start")))
+            start_api_server(19876);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.api_start"));
+    } else {
+        if (ImGui::Button(get_locale_cstr("action.api_stop")))
+            stop_api_server();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.api_stop"));
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f),
+                           "http://127.0.0.1:%d", api_server->port());
+    }
+
+    // Keep API server caches in sync (overlay params, state JSON)
+    if (api_server_running)
+        update_api_server_caches();
+
+    // Process AI export readback (if pending)
+    process_ai_export();
+
+    // Auto-import watch: detect result.json from external AI tool
+    if (ortho_state.ai_watch_enabled && !ortho_state.ai_result_path.empty()) {
+        struct _stat64 st;
+        if (_wstat64(utf8_to_wstring(ortho_state.ai_result_path).c_str(), &st) == 0) {
+            if (st.st_mtime != ortho_state.ai_result_mtime) {
+                ortho_state.ai_result_mtime = st.st_mtime;
+                // Read and import result.json
+                std::ifstream ifs(utf8_path(ortho_state.ai_result_path), std::ios::in | std::ios::binary);
+                if (ifs.is_open()) {
+                    std::string content((std::istreambuf_iterator<char>(ifs)),
+                                        std::istreambuf_iterator<char>());
+                    ifs.close();
+
+                    cJSON* root = cJSON_Parse(content.c_str());
+                    if (root) {
+                        cJSON* strands_json = cJSON_GetObjectItem(root, "strands");
+                        if (strands_json && cJSON_IsArray(strands_json)) {
+                            std::lock_guard<std::mutex> lock(locker);
+                            auto item_it = items.find(render_id);
+                            if (item_it != items.end() && item_it->second->source_type == 2) {
+                                auto& item = *item_it->second;
+                                int imported = 0;
+
+                                // Precompute image→world conversion factors
+                                float half_vp = ortho_state.viewport_size * 0.5f;
+                                // display_size will be computed when rendering below;
+                                // use a reasonable default if the canvas hasn't been
+                                // rendered yet.
+                                float avail_w2 = ImGui::GetContentRegionAvail().x - 10;
+                                float ds = std::min(avail_w2, 600.0f);
+
+                                // img_cursor is the screen position of the rendered
+                                // image, which we can estimate from the next frame.
+                                // For now, store the 2D coords and convert later.
+                                // We'll convert using the actual img_cursor once we
+                                // have it from the frame below.
+
+                                cJSON* strand_obj = nullptr;
+                                cJSON_ArrayForEach(strand_obj, strands_json) {
+                                    cJSON* id_json = cJSON_GetObjectItem(strand_obj, "id");
+                                    cJSON* pts_json = cJSON_GetObjectItem(strand_obj, "points_2d");
+                                    if (!id_json || !pts_json || !cJSON_IsArray(pts_json))
+                                        continue;
+
+                                    HairStrand strand;
+                                    strand.name = id_json->valuestring;
+                                    strand.expanded = true;
+                                    strand.mesh_dirty = true;
+
+                                    cJSON* pt = nullptr;
+                                    cJSON_ArrayForEach(pt, pts_json) {
+                                        if (cJSON_IsArray(pt) && cJSON_GetArraySize(pt) >= 2) {
+                                            double ref_x = cJSON_GetArrayItem(pt, 0)->valuedouble;
+                                            double ref_y = cJSON_GetArrayItem(pt, 1)->valuedouble;
+
+                                            // Convert from reference-image pixel coords
+                                            // to world space via overlay + camera params
+                                            double view_x = /*img_cursor.x +*/ ortho_state.overlay_offset.x + ref_x * ortho_state.overlay_scale;
+                                            double view_y = /*img_cursor.y +*/ ortho_state.overlay_offset.y + ref_y * ortho_state.overlay_scale;
+
+                                            // Normalized device coords [-1, 1]
+                                            double rx = (view_x / ds) * 2.0 - 1.0;
+                                            double ry = 1.0 - (view_y / ds) * 2.0;
+
+                                            // World space
+                                            vec3f wp;
+                                            wp.x = static_cast<float>(ortho_state._center.x + ortho_state._cam_right.x * rx * half_vp + ortho_state._cam_up.x * ry * half_vp);
+                                            wp.y = static_cast<float>(ortho_state._center.y + ortho_state._cam_right.y * rx * half_vp + ortho_state._cam_up.y * ry * half_vp);
+                                            wp.z = static_cast<float>(ortho_state._center.z + ortho_state._cam_right.z * rx * half_vp + ortho_state._cam_up.z * ry * half_vp);
+
+                                            strand.guide_points.push_back(wp);
+                                        }
+                                    }
+
+                                    if (!strand.guide_points.empty()) {
+                                        item.hair_strands.push_back(std::move(strand));
+                                        imported++;
+                                    }
+                                }
+
+                                if (imported > 0) {
+                                    push_undo_now(render_id, std::nullopt,
+                                                  "Import AI Guides (" + std::to_string(imported) + " strands)");
+                                    show_toast("Imported " + std::to_string(imported) + " strands from AI", 3000.0f);
+                                    std::cout << "[ai_import] Imported " << imported << " strands from result.json" << std::endl;
+                                }
+                            }
+                        }
+                        cJSON_Delete(root);
+                    } else {
+                        std::cerr << "[ai_import] Failed to parse result.json" << std::endl;
+                    }
+                }
+            }
+        }
+    } else if (!ortho_state.ai_watch_enabled && was_watching) {
+        ortho_state.ai_result_path.clear();
+        ortho_state.ai_result_mtime = 0;
     }
 
     ImGui::Separator();
+
+    // ---- Handle re-render requests ----
+    // Triggered by: depth-colour toggle, base-model changes, etc.
+    bool need_render = false;
+    if (ortho_state.render_dirty && ortho_state.view_tex_ready) {
+        need_render = true;
+    }
+    // Also detect base-model geometry changes (e.g. after voxel edit)
+    if (!need_render && ortho_state.view_tex_ready && ortho_state._base_triangle_count > 0) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto item_it = items.find(render_id);
+        if (item_it != items.end() && item_it->second->source_type == 2) {
+            auto& item = *item_it->second;
+            if (item.addon_base_node_id >= 0) {
+                auto base_it = items.find(item.addon_base_node_id);
+                if (base_it != items.end()) {
+                    auto& base = *base_it->second;
+                    size_t cur_count = base.cached_mesh.empty()
+                                           ? base.source_triangles.size()
+                                           : base.cached_mesh.size();
+                    if (cur_count != ortho_state._base_triangle_count) {
+                        ortho_state.render_dirty = true;
+                        need_render = true;
+                    }
+                }
+            }
+        }
+    }
+    if (need_render) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto item_it = items.find(render_id);
+        if (item_it != items.end() && item_it->second->source_type == 2) {
+            auto& item = *item_it->second;
+            if (item.addon_base_node_id >= 0) {
+                auto base_it = items.find(item.addon_base_node_id);
+                if (base_it != items.end()) {
+                    perform_ortho_render(item, *base_it->second);
+                }
+            }
+        }
+    }
 
     // ---- Canvas display area ----
     if (!ortho_state.coord_map_ready) {
@@ -2756,45 +3355,49 @@ void RenderVoxelList::render_ortho_edit_window() {
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
     // ---- Overlay image rendering ----
+    // Use ImGui::Image (same rendering path as the base model image) so
+    // alpha blending via the tint colour composes correctly.
+    // Save/restore cursor so GetItemRectMin/Max still refers to the base
+    // model image for coordinate mapping below.
+    ImVec2 prev_cursor_screen = ImGui::GetCursorScreenPos();
     if (bgfx::isValid(ortho_state.overlay_tex) && ortho_state.overlay_enabled) {
         float overlay_w = ortho_state.overlay_img_width * ortho_state.overlay_scale;
         float overlay_h = ortho_state.overlay_img_height * ortho_state.overlay_scale;
         ImVec2 overlay_pos = ImVec2(img_cursor.x + ortho_state.overlay_offset.x,
                                     img_cursor.y + ortho_state.overlay_offset.y);
-        ImVec2 overlay_end = ImVec2(overlay_pos.x + overlay_w,
-                                    overlay_pos.y + overlay_h);
 
-        ImU32 tint = ImGui::ColorConvertFloat4ToU32(
+        ImGui::SetCursorScreenPos(overlay_pos);
+        ImGui::Image(
+            ortho_state.overlay_tex,
+            ImVec2(overlay_w, overlay_h),
+            ImVec2(0, 0), ImVec2(1, 1),
             ImVec4(1.0f, 1.0f, 1.0f, ortho_state.blend_ratio));
-        dl->AddImage(
-            ImGui::toId(ortho_state.overlay_tex, 0, 0),
-            overlay_pos, overlay_end, ImVec2(0, 0), ImVec2(1, 1), tint);
+
+        // Invisible button covering the entire overlay to capture left-clicks
+        // and prevent the parent window from being dragged when the user
+        // interacts with the overlay image.
+        if (!ortho_state.overlay_locked) {
+            ImGui::SetCursorScreenPos(overlay_pos);
+            ImGui::InvisibleButton("##overlay_interact",
+                                   ImVec2(overlay_w, overlay_h));
+        }
     }
+    ImGui::SetCursorScreenPos(prev_cursor_screen);
 
     // ---- Strand preview overlays ----
+    // Project a world-space point onto the 2D image using the camera basis
+    // that was computed in perform_ortho_render().
     auto project_world_to_image = [&](const vec3f& wp) -> ImVec2 {
-        vec3f dir = ortho_state.projection_dir;
-        vec3f center;
-        {
-            auto it = items.find(render_id);
-            if (it != items.end()) center = it->second->addon_center_point;
-        }
-        vec3f world_up = (std::abs(dir.y) < 0.99f) ? vec3f{0, 1, 0} : vec3f{0, 0, 1};
-        vec3f cr = {dir.y * world_up.z - dir.z * world_up.y,
-                    dir.z * world_up.x - dir.x * world_up.z,
-                    dir.x * world_up.y - dir.y * world_up.x};
-        float crl = std::sqrt(cr.x*cr.x + cr.y*cr.y + cr.z*cr.z);
-        if (crl > 1e-8f) { cr.x /= crl; cr.y /= crl; cr.z /= crl; }
-        vec3f cu = {cr.y * dir.z - cr.z * dir.y,
-                    cr.z * dir.x - cr.x * dir.z,
-                    cr.x * dir.y - cr.y * dir.x};
-        float cul = std::sqrt(cu.x*cu.x + cu.y*cu.y + cu.z*cu.z);
-        if (cul > 1e-8f) { cu.x /= cul; cu.y /= cul; cu.z /= cul; }
-
-        vec3f rel = {wp.x - center.x, wp.y - center.y, wp.z - center.z};
+        vec3f rel = {wp.x - ortho_state._center.x,
+                      wp.y - ortho_state._center.y,
+                      wp.z - ortho_state._center.z};
         float h = ortho_state.viewport_size * 0.5f;
-        float rx = (rel.x * cr.x + rel.y * cr.y + rel.z * cr.z) / h;
-        float ry = (rel.x * cu.x + rel.y * cu.y + rel.z * cu.z) / h;
+        float rx = (rel.x * ortho_state._cam_right.x +
+                    rel.y * ortho_state._cam_right.y +
+                    rel.z * ortho_state._cam_right.z) / h;
+        float ry = (rel.x * ortho_state._cam_up.x +
+                    rel.y * ortho_state._cam_up.y +
+                    rel.z * ortho_state._cam_up.z) / h;
         return ImVec2(img_cursor.x + (rx * 0.5f + 0.5f) * display_size,
                        img_cursor.y + (0.5f - ry * 0.5f) * display_size);
     };
@@ -2873,13 +3476,88 @@ void RenderVoxelList::render_ortho_edit_window() {
     }
 
     // ---- Mouse interaction (CPU raycasting) ----
+    // Raycasting is always active within the image area.  Whether clicks
+    // place guide/width points depends on the overlay lock state:
+    //   locked   → click always passes through to the model
+    //   unlocked → click on overlay = resize/drag; click on canvas = model
     ImVec2 mouse = ImGui::GetMousePos();
     bool mouse_in_image =
         (mouse.x >= img_cursor.x && mouse.x < img_cursor.x + display_size &&
          mouse.y >= img_cursor.y && mouse.y < img_cursor.y + display_size);
 
-    if (mouse_in_image && !ortho_state.overlay_enabled &&
-        ortho_state.coord_map_ready) {
+    // Compute overlay bounds (when visible)
+    bool overlay_visible = ortho_state.overlay_enabled &&
+                           bgfx::isValid(ortho_state.overlay_tex);
+    float overlay_w = overlay_visible
+        ? ortho_state.overlay_img_width * ortho_state.overlay_scale : 0.0f;
+    float overlay_h = overlay_visible
+        ? ortho_state.overlay_img_height * ortho_state.overlay_scale : 0.0f;
+    ImVec2 overlay_pos = ImVec2(img_cursor.x + ortho_state.overlay_offset.x,
+                                img_cursor.y + ortho_state.overlay_offset.y);
+    ImVec2 overlay_end = ImVec2(overlay_pos.x + overlay_w,
+                                overlay_pos.y + overlay_h);
+    bool mouse_in_overlay = overlay_visible &&
+        (mouse.x >= overlay_pos.x && mouse.x < overlay_end.x &&
+         mouse.y >= overlay_pos.y && mouse.y < overlay_end.y);
+
+    // ---- Corner resize handles on overlay (draw list, drawn after overlay) ----
+    if (overlay_visible && !ortho_state.overlay_locked) {
+        const float handle_r = 5.0f;
+        ImU32 col_fill =
+            ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 0.9f));
+        ImU32 col_border =
+            ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.5f, 0.9f, 1.0f));
+
+        ImVec2 corners[4] = {
+            ImVec2(overlay_pos.x, overlay_pos.y),                  // 0: TL
+            ImVec2(overlay_end.x, overlay_pos.y),                  // 1: TR
+            ImVec2(overlay_pos.x, overlay_end.y),                  // 2: BL
+            ImVec2(overlay_end.x, overlay_end.y)                   // 3: BR
+        };
+        for (int i = 0; i < 4; i++) {
+            dl->AddCircleFilled(corners[i], handle_r, col_border);
+            dl->AddCircleFilled(corners[i], handle_r - 1.5f, col_fill);
+        }
+    }
+
+    // Four corner resize zones (15 px inset from each corner)
+    const float resize_margin = 15.0f;
+    int hovered_corner = -1;  // -1=none, 0=TL, 1=TR, 2=BL, 3=BR
+    if (overlay_visible && !ortho_state.overlay_locked) {
+        // TL
+        if (mouse.x >= overlay_pos.x && mouse.x < overlay_pos.x + resize_margin &&
+            mouse.y >= overlay_pos.y && mouse.y < overlay_pos.y + resize_margin)
+            hovered_corner = 0;
+        // TR
+        else if (mouse.x >= overlay_end.x - resize_margin &&
+                 mouse.x < overlay_end.x &&
+                 mouse.y >= overlay_pos.y &&
+                 mouse.y < overlay_pos.y + resize_margin)
+            hovered_corner = 1;
+        // BL
+        else if (mouse.x >= overlay_pos.x &&
+                 mouse.x < overlay_pos.x + resize_margin &&
+                 mouse.y >= overlay_end.y - resize_margin &&
+                 mouse.y < overlay_end.y)
+            hovered_corner = 2;
+        // BR
+        else if (mouse.x >= overlay_end.x - resize_margin &&
+                 mouse.x < overlay_end.x &&
+                 mouse.y >= overlay_end.y - resize_margin &&
+                 mouse.y < overlay_end.y)
+            hovered_corner = 3;
+    }
+
+    // ---- Cursor feedback ----
+    if (hovered_corner == 0 || hovered_corner == 3)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
+    else if (hovered_corner == 1 || hovered_corner == 2)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNESW);
+    else if (mouse_in_overlay && !ortho_state.overlay_locked)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+
+    // ---- Raycasting (always active) ----
+    if (mouse_in_image && ortho_state.coord_map_ready) {
         int px = static_cast<int>((mouse.x - img_cursor.x) / display_size * res);
         int py = static_cast<int>((mouse.y - img_cursor.y) / display_size * res);
         px = std::max(0, std::min(px, res - 1));
@@ -2891,15 +3569,17 @@ void RenderVoxelList::render_ortho_edit_window() {
         ortho_state.is_hovering_model = valid;
         if (valid) {
             ortho_state.hovered_world_pos = hit_pos;
-            // Guide points and mouse_world_pos are stored in object space
-            // (the same space as the base model's source triangles and
-            // addon_center_point). The model_transform applied during
-            // overlay/GBuffer rendering handles rotation.
             mouse_world_pos_valid = true;
             mouse_world_pos = {hit_pos.x, hit_pos.y, hit_pos.z};
 
-            // Directly handle click-through: place guide point or width point
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            // Click-through to place guide/width points:
+            // Only when overlay is locked, or mouse is outside the overlay
+            // (but still inside the canvas area).
+            bool pass_through =
+                !overlay_visible || ortho_state.overlay_locked ||
+                !mouse_in_overlay;
+            if (pass_through &&
+                ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 auto item_it = items.find(render_id);
                 if (item_it != items.end()) {
                     auto& item = *item_it->second;
@@ -2935,32 +3615,114 @@ void RenderVoxelList::render_ortho_edit_window() {
         ortho_state.is_hovering_model = false;
     }
 
-    // ---- Overlay drag/zoom handling ----
-    if (mouse_in_image && ortho_state.overlay_enabled &&
-        bgfx::isValid(ortho_state.overlay_tex)) {
+    // ---- Overlay interaction (left-drag body to move, left-drag corner to resize) ----
+    if (overlay_visible && !ortho_state.overlay_locked && mouse_in_image) {
+        bool on_corner = (hovered_corner >= 0);
+
+        // Left-click on a corner → start resize; on body → start drag
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            ortho_state.is_dragging_overlay = true;
-            ortho_state.drag_start_mouse = mouse;
-            ortho_state.drag_start_offset = ortho_state.overlay_offset;
+            if (on_corner) {
+                ortho_state.resize_corner = hovered_corner;
+                ortho_state.resize_start_mouse = mouse;
+                ortho_state.resize_start_scale = ortho_state.overlay_scale;
+                ortho_state.resize_start_offset = ortho_state.overlay_offset;
+            } else if (mouse_in_overlay) {
+                ortho_state.is_dragging_overlay = true;
+                ortho_state.drag_start_mouse = mouse;
+                ortho_state.drag_start_offset = ortho_state.overlay_offset;
+            }
         }
-        float wheel = ImGui::GetIO().MouseWheel;
-        if (wheel != 0.0f) {
-            ortho_state.overlay_scale *= (1.0f + wheel * 0.1f);
-            ortho_state.overlay_scale = std::max(0.1f,
-                std::min(10.0f, ortho_state.overlay_scale));
+
+        // Resize (4-corner, aspect-ratio-preserving)
+        if (ortho_state.resize_corner >= 0) {
+            if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                int corner = ortho_state.resize_corner;
+                float iw = static_cast<float>(ortho_state.overlay_img_width);
+                float ih = static_cast<float>(ortho_state.overlay_img_height);
+                float ref = std::sqrt(iw * iw + ih * ih);  // unit-scale diagonal
+                if (ref < 1e-6f) ref = 1.0f;
+
+                // Anchor is the opposite corner; direction from anchor → dragged corner
+                float adx = 0.0f, ady = 0.0f;  // anchor canvas offset
+                float ddx = 0.0f, ddy = 0.0f;  // diagonal unit-vector components
+                bool anchor_right = false, anchor_bottom = false;
+
+                switch (corner) {
+                case 0: // TL, anchor BR
+                    anchor_right = true; anchor_bottom = true;
+                    adx = ortho_state.resize_start_offset.x + iw * ortho_state.resize_start_scale;
+                    ady = ortho_state.resize_start_offset.y + ih * ortho_state.resize_start_scale;
+                    ddx = -iw / ref; ddy = -ih / ref;
+                    break;
+                case 1: // TR, anchor BL
+                    anchor_right = false; anchor_bottom = true;
+                    adx = ortho_state.resize_start_offset.x;
+                    ady = ortho_state.resize_start_offset.y + ih * ortho_state.resize_start_scale;
+                    ddx =  iw / ref; ddy = -ih / ref;
+                    break;
+                case 2: // BL, anchor TR
+                    anchor_right = true; anchor_bottom = false;
+                    adx = ortho_state.resize_start_offset.x + iw * ortho_state.resize_start_scale;
+                    ady = ortho_state.resize_start_offset.y;
+                    ddx = -iw / ref; ddy =  ih / ref;
+                    break;
+                case 3: // BR, anchor TL
+                default:
+                    anchor_right = false; anchor_bottom = false;
+                    adx = ortho_state.resize_start_offset.x;
+                    ady = ortho_state.resize_start_offset.y;
+                    ddx =  iw / ref; ddy =  ih / ref;
+                    break;
+                }
+
+                // Anchor screen position
+                ImVec2 anchor_screen(img_cursor.x + adx, img_cursor.y + ady);
+                float mx = mouse.x - anchor_screen.x;
+                float my = mouse.y - anchor_screen.y;
+                float proj = mx * ddx + my * ddy;
+                float new_scale = proj / ref;
+                new_scale = std::max(0.1f, std::min(10.0f, new_scale));
+
+                ortho_state.overlay_scale = new_scale;
+
+                // Adjust offset so the anchor stays fixed
+                if (anchor_right)
+                    ortho_state.overlay_offset.x =
+                        ortho_state.resize_start_offset.x +
+                        iw * (ortho_state.resize_start_scale - new_scale);
+                else
+                    ortho_state.overlay_offset.x = ortho_state.resize_start_offset.x;
+
+                if (anchor_bottom)
+                    ortho_state.overlay_offset.y =
+                        ortho_state.resize_start_offset.y +
+                        ih * (ortho_state.resize_start_scale - new_scale);
+                else
+                    ortho_state.overlay_offset.y = ortho_state.resize_start_offset.y;
+            } else {
+                ortho_state.resize_corner = -1;
+            }
+        }
+
+        // Drag (left-button on body) to move the overlay
+        if (ortho_state.is_dragging_overlay) {
+            if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                ortho_state.overlay_offset.x =
+                    ortho_state.drag_start_offset.x +
+                    (mouse.x - ortho_state.drag_start_mouse.x);
+                ortho_state.overlay_offset.y =
+                    ortho_state.drag_start_offset.y +
+                    (mouse.y - ortho_state.drag_start_mouse.y);
+            } else {
+                ortho_state.is_dragging_overlay = false;
+            }
         }
     }
-    if (ortho_state.is_dragging_overlay) {
-        if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            ortho_state.overlay_offset.x =
-                ortho_state.drag_start_offset.x +
-                (mouse.x - ortho_state.drag_start_mouse.x);
-            ortho_state.overlay_offset.y =
-                ortho_state.drag_start_offset.y +
-                (mouse.y - ortho_state.drag_start_mouse.y);
-        } else {
-            ortho_state.is_dragging_overlay = false;
-        }
+
+    // Clear overlay drag state when mouse leaves image area
+    if (!mouse_in_image) {
+        ortho_state.is_dragging_overlay = false;
+        ortho_state.resize_corner = -1;
     }
 
     // ---- Footer toggles ----
@@ -2970,6 +3732,15 @@ void RenderVoxelList::render_ortho_edit_window() {
     ImGui::SameLine();
     ImGui::Checkbox(get_locale_cstr("label.show_width_vectors_2d"),
                     &ortho_state.show_width_vectors);
+
+    ImGui::SameLine();
+    if (ImGui::Checkbox(get_locale_cstr("label.depth_color_mode"),
+                        &ortho_state.depth_color_mode)) {
+        // Re-render with the new colour mode
+        if (ortho_state.view_tex_ready) {
+            ortho_state.render_dirty = true;
+        }
+    }
 
     ImGui::SameLine();
     if (ortho_state.is_hovering_model) {

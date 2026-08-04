@@ -44,3 +44,31 @@ python hair_guides.py --image <参考图.png> --strands <发束定义.json> --ou
 ### 目录约定
 
 - 脚本与可复用的 JSON 放本目录；`tmp/` 存放渲染中间产物。
+
+## HTTP API 服务器
+在正交投影编辑器中新增了嵌入式 HTTP API 服务，支持外部工具（如 kimi-agent）直接获取渲染图、覆盖图和混合结果。
+
+启动方式
+在正交投影编辑窗口的工具栏中：
+
+点击 "启动API" 按钮，服务器在 http://127.0.0.1:19876 启动
+状态指示灯显示绿色 URL
+点击 "停止API" 可关闭服务器
+关闭编辑窗口时自动停止
+API 端点
+端点	方法	说明
+/ping	GET	健康检查，返回 {"ok":true}
+/state	GET	当前相机状态 JSON（viewport、center、cam_right/up、overlay 参数）
+/render	GET	底模渲染图的 PNG（需要先点击 "Export for AI" 导出）
+/overlay	GET	加载的参考图的 PNG（如果有的话）
+/blend?ratio=0.5	GET	底模+参考图混合的 PNG，ratio 参数控制混合比例（0.0=纯底模，1.0=纯参考图）
+使用示例
+
+### 在浏览器中打开混合图（默认 50% 混合）
+curl http://127.0.0.1:19876/blend?ratio=0.5 -o blended.png
+
+### 获取当前状态
+curl http://127.0.0.1:19876/state
+
+### 获取纯底模渲染
+curl http://127.0.0.1:19876/render -o render.png

@@ -40,6 +40,11 @@
 #include "ui/cross_section_editor.h"
 #include "ui/render_deferred.h"
 
+// Forward-declared to avoid pulling winsock2 into every TU
+namespace sinriv { namespace ui { namespace render {
+class ExternalApiServer;
+} } }
+
 namespace sinriv::ui::render {
 
 using namespace locale;
@@ -223,6 +228,22 @@ struct HairStrand {
 constexpr bgfx::ViewId kOrthoViewView = 200;
 constexpr bgfx::ViewId kOrthoCoordView = 201;
 constexpr bgfx::ViewId kOrthoOverlayView = 202;
+constexpr bgfx::ViewId kOrthoBlitView = 203;
+
+/// Per-view overlay state persisted per-node for each of the six standard
+/// orthographic views.  GPU handles are NOT stored here — they are
+/// recreated from the image file on restore.
+struct OrthoOverlayState {
+    std::string image_path;
+    int img_width = 0;
+    int img_height = 0;
+    bool enabled = false;
+    float offset_x = 0.0f;
+    float offset_y = 0.0f;
+    float scale = 1.0f;
+    float blend_ratio = 0.5f;
+    bool locked = false;
+};
 
 struct OrthoProjectionState {
     bool active = false;              // master flag for edit mode
@@ -230,6 +251,7 @@ struct OrthoProjectionState {
     // Setup window
     vec3f projection_dir = {0, 1, 0}; // default: top-down view
     float viewport_size = 100.0f;     // world-space side length
+    bool viewport_size_defaulted = false;  // true after auto-calculation
     int vector_mode = 0;              // 0 = six-view, 1 = pick point on model
     int six_view_index = 0;           // 0-5: Front/Back/Left/Right/Top/Bottom
     bool is_picking_point = false;    // waiting for 3D click for point-pick mode
@@ -248,6 +270,7 @@ struct OrthoProjectionState {
 
     // CPU-side base model triangles for raycasting
     std::vector<sinriv::kigstudio::voxel::Triangle> _base_triangles;
+    size_t _base_triangle_count = 0;   // for detecting base-model changes
 
     // GPU off-screen render for view image (multi-frame state machine)
     bgfx::FrameBufferHandle view_fb = BGFX_INVALID_HANDLE;
@@ -272,24 +295,63 @@ struct OrthoProjectionState {
     bool show_guide_curves = true;
     bool show_width_vectors = true;
 
+    // Depth-based colouring mode
+    bool depth_color_mode = false;
+
     // Interaction state
+    bool overlay_locked = false;         // lock overlay from drag/resize
     bool is_dragging_overlay = false;
     ImVec2 drag_start_mouse;
     ImVec2 drag_start_offset;
+    int resize_corner = -1;            // -1=none, 0=TL, 1=TR, 2=BL, 3=BR
+    ImVec2 resize_start_mouse;
+    ImVec2 resize_start_offset;
+    float resize_start_scale = 1.0f;
     bool is_hovering_model = false;     // mouse over valid mesh area
     vec3f hovered_world_pos = {0, 0, 0};
+
+    // ---- AI / external tool integration ----
+    bool ai_export_pending = false;     // user requested export for AI
+    bool ai_watch_enabled = false;      // auto-watch directory for AI results
+    std::string ai_export_dir;          // directory where render + state are saved
+    std::string ai_result_path;         // path to AI result.json to watch
+    // GPU readback state for saving the render to a PNG file on disk
+    bgfx::TextureHandle ai_readback_tex = BGFX_INVALID_HANDLE;
+    std::vector<uint8_t> ai_readback_buffer;
+    bool ai_readback_pending = false;
+    int ai_export_stage = 0;            // 0=idle, 1=wait-readback, 2=save-file
+    // Last modification time of result.json (for auto-import detection)
+    int64_t ai_result_mtime = 0;
 };
 
-// Six standard view directions (matches common orthographic views)
-inline vec3f six_view_direction(int index) {
+// Six standard view directions based on the semantic coordinate frame.
+// Front/Back follow hair_front_reference; Top/Bottom follow
+// hair_north_pole; Left/Right are derived via cross product.
+inline vec3f six_view_direction(int index,
+                                const sinriv::kigstudio::voxel::vec3f& front_ref,
+                                const sinriv::kigstudio::voxel::vec3f& north_pole) {
+    vec3f F = {front_ref.x, front_ref.y, front_ref.z};
+    vec3f N = {north_pole.x, north_pole.y, north_pole.z};
+    float fl = std::sqrt(F.x*F.x + F.y*F.y + F.z*F.z);
+    float nl = std::sqrt(N.x*N.x + N.y*N.y + N.z*N.z);
+    if (fl > 1e-8f) { F.x /= fl; F.y /= fl; F.z /= fl; }
+    if (nl > 1e-8f) { N.x /= nl; N.y /= nl; N.z /= nl; }
+    // Right = normalize(cross(F, N))
+    vec3f R = {F.y * N.z - F.z * N.y,
+               F.z * N.x - F.x * N.z,
+               F.x * N.y - F.y * N.x};
+    float rl = std::sqrt(R.x*R.x + R.y*R.y + R.z*R.z);
+    if (rl > 1e-8f) { R.x /= rl; R.y /= rl; R.z /= rl; }
+    // Direction convention: from outside toward the center (look direction).
+    // Front = looking from front toward center (along -F).
     switch (index) {
-        case 0: return {0, 0, 1};   // Front
-        case 1: return {0, 0, -1};  // Back
-        case 2: return {-1, 0, 0};  // Left
-        case 3: return {1, 0, 0};   // Right
-        case 4: return {0, 1, 0};   // Top
-        case 5: return {0, -1, 0};  // Bottom
-        default: return {0, 1, 0};
+        case 0: return {-F.x, -F.y, -F.z};  // Front
+        case 1: return F;             // Back
+        case 2: return R;             // Left
+        case 3: return {-R.x, -R.y, -R.z};  // Right
+        case 4: return {-N.x, -N.y, -N.z};  // Top
+        case 5: return N;             // Bottom
+        default: return {-N.x, -N.y, -N.z};
     }
 }
 
@@ -559,6 +621,8 @@ class RenderVoxelList {
         // 附加件中心点（所有发束共享），用于发根汇聚与反翘控制
         vec3f addon_center_point = {0.0f, 0.0f, 0.0f};
         bool show_addon_center = false;  // 是否显示/启用中心点
+        // Per-six-view ortho overlay state (saved to JSON per-node)
+        OrthoOverlayState ortho_overlay[6];
         // 发际线平面（用于纺锤宽度生成）
         bool hairline_plane_enabled = false;
         bool hairline_plane_use_y = true;  // true=Y水平面, false=三点平面
@@ -866,7 +930,7 @@ class RenderVoxelList {
         }
     };
     inline RenderVoxelList() { current_model_matrix.setIdentity(); }
-    inline ~RenderVoxelList() { release(); }
+    ~RenderVoxelList();
 
     std::map<int, std::unique_ptr<RenderVoxelItem>> items;
 
@@ -973,6 +1037,7 @@ class RenderVoxelList {
     void perform_ortho_render(RenderVoxelItem& item, RenderVoxelItem& base_item);
     void destroy_ortho_resources();
     void process_ortho_render();
+    void process_ai_export();
     bool show_addon_window = false;
     bool show_guide_curve_window = false;
     bool show_width_editor_window = false;
@@ -985,6 +1050,18 @@ class RenderVoxelList {
 
     // Orthographic projection edit mode state (all settings, textures, interaction)
     OrthoProjectionState ortho_state;
+
+    // Embedded HTTP API server for external tool integration
+    // Raw pointer – managed manually because unique_ptr<FwdDecl> requires the
+    // complete type in every TU that sees ~RenderVoxelList().
+    ExternalApiServer* api_server = nullptr;
+    bool api_server_running = false;
+    void start_api_server(int port = 19876);
+    void stop_api_server();
+    void update_api_server_caches();
+    // CPU-side copy of overlay for API blending (kept alongside GPU texture)
+    std::vector<uint8_t> overlay_cpu_rgba_;
+    int overlay_cpu_w_ = 0, overlay_cpu_h_ = 0;
     // Per-point section conflict confirmation dialogs
     bool show_perpoint_confirm_global_open = false;
     bool show_perpoint_confirm_global_apply = false;

@@ -550,6 +550,30 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
         }
         cJSON_AddItemToObject(obj, "hair_angle_config", ac_arr);
     }
+    // Ortho overlay states (per six-view, per-node)
+    {
+        cJSON* overlay_arr = cJSON_CreateArray();
+        for (int vi = 0; vi < 6; ++vi) {
+            const auto& ol = item.ortho_overlay[vi];
+            if (ol.image_path.empty() && !ol.enabled) continue;  // skip unused
+            cJSON* ol_obj = cJSON_CreateObject();
+            cJSON_AddNumberToObject(ol_obj, "view_index", vi);
+            cJSON_AddStringToObject(ol_obj, "image_path", ol.image_path.c_str());
+            cJSON_AddNumberToObject(ol_obj, "img_width", ol.img_width);
+            cJSON_AddNumberToObject(ol_obj, "img_height", ol.img_height);
+            cJSON_AddBoolToObject(ol_obj, "enabled", ol.enabled);
+            cJSON_AddNumberToObject(ol_obj, "offset_x", ol.offset_x);
+            cJSON_AddNumberToObject(ol_obj, "offset_y", ol.offset_y);
+            cJSON_AddNumberToObject(ol_obj, "scale", ol.scale);
+            cJSON_AddNumberToObject(ol_obj, "blend_ratio", ol.blend_ratio);
+            cJSON_AddBoolToObject(ol_obj, "locked", ol.locked);
+            cJSON_AddItemToArray(overlay_arr, ol_obj);
+        }
+        if (cJSON_GetArraySize(overlay_arr) > 0)
+            cJSON_AddItemToObject(obj, "ortho_overlay", overlay_arr);
+        else
+            cJSON_Delete(overlay_arr);
+    }
     cJSON_AddNumberToObject(obj, "silhouette_shape_mode",
                             static_cast<int>(item.silhouette_shape_mode));
     cJSON_AddNumberToObject(obj, "silhouette_subdivision",
@@ -1003,6 +1027,41 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                         ae.theta = 0.0f;
                     item->hair_angle_config[{ax, ay}] = ae;
                 }
+            }
+        }
+    }
+
+    // Ortho overlay states (per six-view)
+    {
+        const cJSON* overlay_arr = cJSON_GetObjectItem(obj, "ortho_overlay");
+        if (overlay_arr && cJSON_IsArray(overlay_arr)) {
+            int count = cJSON_GetArraySize(overlay_arr);
+            for (int i = 0; i < count; ++i) {
+                const cJSON* ol_obj = cJSON_GetArrayItem(overlay_arr, i);
+                if (!ol_obj || !cJSON_IsObject(ol_obj)) continue;
+                const cJSON* vi_json = cJSON_GetObjectItem(ol_obj, "view_index");
+                if (!vi_json || !cJSON_IsNumber(vi_json)) continue;
+                int vi = vi_json->valueint;
+                if (vi < 0 || vi >= 6) continue;
+                auto& ol = item->ortho_overlay[vi];
+                const cJSON* ip = cJSON_GetObjectItem(ol_obj, "image_path");
+                if (ip && cJSON_IsString(ip)) ol.image_path = ip->valuestring;
+                const cJSON* iw = cJSON_GetObjectItem(ol_obj, "img_width");
+                if (iw && cJSON_IsNumber(iw)) ol.img_width = iw->valueint;
+                const cJSON* ih = cJSON_GetObjectItem(ol_obj, "img_height");
+                if (ih && cJSON_IsNumber(ih)) ol.img_height = ih->valueint;
+                const cJSON* en = cJSON_GetObjectItem(ol_obj, "enabled");
+                if (en && cJSON_IsBool(en)) ol.enabled = cJSON_IsTrue(en);
+                const cJSON* ox = cJSON_GetObjectItem(ol_obj, "offset_x");
+                if (ox && cJSON_IsNumber(ox)) ol.offset_x = static_cast<float>(ox->valuedouble);
+                const cJSON* oy = cJSON_GetObjectItem(ol_obj, "offset_y");
+                if (oy && cJSON_IsNumber(oy)) ol.offset_y = static_cast<float>(oy->valuedouble);
+                const cJSON* sc = cJSON_GetObjectItem(ol_obj, "scale");
+                if (sc && cJSON_IsNumber(sc)) ol.scale = static_cast<float>(sc->valuedouble);
+                const cJSON* br = cJSON_GetObjectItem(ol_obj, "blend_ratio");
+                if (br && cJSON_IsNumber(br)) ol.blend_ratio = static_cast<float>(br->valuedouble);
+                const cJSON* lk = cJSON_GetObjectItem(ol_obj, "locked");
+                if (lk && cJSON_IsBool(lk)) ol.locked = cJSON_IsTrue(lk);
             }
         }
     }
@@ -2171,7 +2230,7 @@ bool RenderVoxelList::load_project(const std::string& folder) {
 			}
 			item.origin_mesh_renderer.loadGeometry(triangles);
 		}
-		item.origin_mesh_renderer.setBaseColor(1.0f, 0.4f, 0.6f, 1.0f);
+		item.origin_mesh_renderer.setBaseColor(1.0f, 0.9f, 0.7f, 1.0f);
 		item.showOriginMesh = true;
 	}
 

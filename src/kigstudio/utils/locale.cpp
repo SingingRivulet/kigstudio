@@ -1299,10 +1299,19 @@ void init_locale_strings() {
                       {{"en", "Enable Overlay"}, {"zh", "启用叠加"}});
     add_locale_string("label.blend_ratio",
                       {{"en", "Blend"}, {"zh", "混合比例"}});
+    add_locale_string("label.overlay_lock",
+                      {{"en", "Lock"}, {"zh", "锁定"}});
+    add_locale_string("label.overlay_unlock",
+                      {{"en", "Unlock"}, {"zh", "解锁"}});
+    add_locale_string("tooltip.overlay_lock",
+                      {{"en", "Lock overlay to enable click-through to model"},
+                       {"zh", "锁定图片后可点击穿透到模型"}});
     add_locale_string("label.show_guide_curves_2d",
                       {{"en", "Show Guide Curves"}, {"zh", "显示引导曲线"}});
     add_locale_string("label.show_width_vectors_2d",
                       {{"en", "Show Width Vectors"}, {"zh", "显示宽度向量"}});
+    add_locale_string("label.depth_color_mode",
+                      {{"en", "Depth Color"}, {"zh", "深度着色"}});
     add_locale_string("action.pick_projection",
                       {{"en", "Pick from 3D View"}, {"zh", "在3D视图拾取"}});
     add_locale_string("action.picking_direction",
@@ -1313,6 +1322,26 @@ void init_locale_strings() {
     add_locale_string("label.ortho_no_mesh_data",
                       {{"en", "Base model has no mesh data. Please load or generate a mesh first."},
                        {"zh", "底模无网格数据。请先加载或生成网格。"}});
+    add_locale_string("action.ai_export",
+                      {{"en", "Export for AI"}, {"zh", "导出供AI使用"}});
+    add_locale_string("tooltip.ai_export",
+                      {{"en", "Save the rendered view as PNG and camera state as JSON for external AI tools."},
+                       {"zh", "将渲染视图保存为PNG，相机状态保存为JSON，供外部AI工具使用。"}});
+    add_locale_string("label.ai_watch",
+                      {{"en", "Watch AI results"}, {"zh", "监听AI结果"}});
+    add_locale_string("tooltip.ai_watch",
+                      {{"en", "Auto-detect and import result.json from AI tools (tools/kimi-agent/tmp/)."},
+                       {"zh", "自动检测并导入AI工具生成的result.json (tools/kimi-agent/tmp/)。"}});
+    add_locale_string("action.api_start",
+                      {{"en", "Start API"}, {"zh", "启动API"}});
+    add_locale_string("action.api_stop",
+                      {{"en", "Stop API"}, {"zh", "停止API"}});
+    add_locale_string("tooltip.api_start",
+                      {{"en", "Start HTTP API server on localhost:19876. Endpoints: /ping /state /render /overlay /blend"},
+                       {"zh", "在localhost:19876启动HTTP API服务。端点：/ping /state /render /overlay /blend"}});
+    add_locale_string("tooltip.api_stop",
+                      {{"en", "Stop the HTTP API server."},
+                       {"zh", "停止HTTP API服务。"}});
     add_locale_string("action.edit_width",
                       {{"en", "Edit Width"}, {"zh", "编辑宽度"}});
     add_locale_string("action.stop_width_edit",

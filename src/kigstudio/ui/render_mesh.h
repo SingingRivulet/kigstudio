@@ -115,6 +115,11 @@ namespace sinriv::ui::render {
                 line_program_ = BGFX_INVALID_HANDLE;
                 std::cout << "RenderMeshShader shader(line_program_) destroyed" << std::endl;
             }
+            if (bgfx::isValid(ortho_depth_program_)) {
+                bgfx::destroy(ortho_depth_program_);
+                ortho_depth_program_ = BGFX_INVALID_HANDLE;
+                std::cout << "RenderMeshShader shader(ortho_depth_program_) destroyed" << std::endl;
+            }
         }
 
         inline void destroyUniforms() {
@@ -131,6 +136,18 @@ namespace sinriv::ui::render {
                 bgfx::destroy(u_exclude_from_tint_);
                 u_exclude_from_tint_ = BGFX_INVALID_HANDLE;
             }
+            if (bgfx::isValid(u_view_dir_)) {
+                bgfx::destroy(u_view_dir_);
+                u_view_dir_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(u_center_pos_)) {
+                bgfx::destroy(u_center_pos_);
+                u_center_pos_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(u_depth_scale_)) {
+                bgfx::destroy(u_depth_scale_);
+                u_depth_scale_ = BGFX_INVALID_HANDLE;
+            }
         }
 
         inline void ensureUniforms() {
@@ -142,6 +159,15 @@ namespace sinriv::ui::render {
             }
             if (!bgfx::isValid(u_exclude_from_tint_)) {
                 u_exclude_from_tint_ = bgfx::createUniform("u_excludeFromTint", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_view_dir_)) {
+                u_view_dir_ = bgfx::createUniform("u_viewDir", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_center_pos_)) {
+                u_center_pos_ = bgfx::createUniform("u_centerPos", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_depth_scale_)) {
+                u_depth_scale_ = bgfx::createUniform("u_depthScale", bgfx::UniformType::Vec4);
             }
         }
 
@@ -200,6 +226,35 @@ namespace sinriv::ui::render {
             return bgfx::isValid(gbuffer_addon_program_);
         }
 
+        // Ortho depth-colour program: reuses the GBuffer vertex shader but
+        // replaces the fragment shader with one that maps view-space depth to
+        // a heatmap colour ramp (blue=near, red=far).
+        inline bool ensureOrthoDepthProgram() {
+            if (bgfx::isValid(ortho_depth_program_)) {
+                return true;
+            }
+            ensureUniforms();
+
+            bgfx::ShaderHandle vs =
+                sinriv::kigstudio::ui::loadShader(shader_dir_ + "vs_mesh_gbuffer.bin");
+            bgfx::ShaderHandle fs =
+                sinriv::kigstudio::ui::loadShader(shader_dir_ + "fs_ortho_depth.bin");
+            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
+                if (bgfx::isValid(vs)) {
+                    bgfx::destroy(vs);
+                }
+                if (bgfx::isValid(fs)) {
+                    bgfx::destroy(fs);
+                }
+                std::cerr << "RenderMesh ortho depth shader load failed from "
+                          << shader_dir_ << std::endl;
+                return false;
+            }
+
+            ortho_depth_program_ = bgfx::createProgram(vs, fs, true);
+            return bgfx::isValid(ortho_depth_program_);
+        }
+
         inline bool ensureLineProgram() {
             if (bgfx::isValid(line_program_)) {
                 return true;
@@ -236,9 +291,13 @@ namespace sinriv::ui::render {
         bgfx::ProgramHandle gbuffer_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle gbuffer_addon_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle line_program_ = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle ortho_depth_program_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_base_color_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_depth_bias_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_exclude_from_tint_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_view_dir_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_center_pos_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_depth_scale_ = BGFX_INVALID_HANDLE;
         float identity_mtx_[16]{};
     };
 
@@ -486,6 +545,45 @@ namespace sinriv::ui::render {
             }
             bgfx::setState(state);
             bgfx::submit(shader.view_id_, shader.gbuffer_addon_program_);
+        }
+
+        // Ortho depth-colour render: maps view-space depth to a heatmap.
+        // Requires u_viewDir, u_centerPos, u_depthScale uniforms to be
+        // set on the shader before calling.
+        void renderDepthColor(const float* transform, RenderMeshShader & shader,
+                              const float* view_dir, const float* center_pos,
+                              float depth_scale) {
+            if (!layout_initialized_) {
+                mesh_detail::PosNormalVertex_bgfx::init(layout_);
+                layout_initialized_ = true;
+            }
+
+            if (empty() || !shader.ensureOrthoDepthProgram()) {
+                return;
+            }
+
+            bgfx::setTransform(transform);
+            bgfx::setVertexBuffer(0, mesh_.vbh);
+            bgfx::setIndexBuffer(mesh_.ibh);
+            shader.ensureUniforms();
+            // Depth bias uniform (used by vs_mesh_gbuffer vertex shader)
+            float depth_bias_vec[4] = {depth_bias_, 0.0f, 0.0f, 0.0f};
+            bgfx::setUniform(shader.u_depth_bias_, depth_bias_vec);
+            // Depth-colour uniforms for the fragment shader
+            float view_dir_vec[4] = {view_dir[0], view_dir[1], view_dir[2], 0.0f};
+            bgfx::setUniform(shader.u_view_dir_, view_dir_vec);
+            float center_vec[4] = {center_pos[0], center_pos[1], center_pos[2], 0.0f};
+            bgfx::setUniform(shader.u_center_pos_, center_vec);
+            float scale_vec[4] = {depth_scale, 0.0f, 0.0f, 0.0f};
+            bgfx::setUniform(shader.u_depth_scale_, scale_vec);
+            uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                             BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                             BGFX_STATE_MSAA;
+            if (cull_backface) {
+                state |= BGFX_STATE_CULL_CCW;
+            }
+            bgfx::setState(state);
+            bgfx::submit(shader.view_id_, shader.ortho_depth_program_);
         }
 
         void renderOverlay(RenderMeshShader & shader) {

@@ -2,7 +2,11 @@
 """hair_guides.py - 在动漫发型参考图上绘制每根发束的放样引导线，并校验与发束中心的重合度。
 
 用法:
+    # 独立模式（现有行为）
     python hair_guides.py --image <参考图> --strands <发束JSON> --out <输出图> [--verify] [--no-label]
+
+    # kigstudio 集成模式：读取 state.json + 参考图，输出 result.json
+    python hair_guides.py --from-kigstudio <state.json路径> --strands <发束JSON> [--verify]
 
 发束JSON格式:
     [
@@ -11,10 +15,16 @@
     ]
 points 从发根到发梢排列，脚本用 Catmull-Rom 样条插值成平滑曲线。
 --verify 会沿每条曲线采样，统计采样点落在发束像素上的比例和横向中心偏移。
+
+kigstudio 集成：
+    读取 state.json（包含相机参数、覆盖图状态），将发束坐标转换回 2D 参考图像素坐标，
+    输出 result.json 供 kigstudio 自动导入。
 """
 import argparse
 import json
 import math
+import os
+import sys
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -118,14 +128,232 @@ def verify(strand, curve, img):
     return ratio, mean_off, max_off
 
 
+# ---------------------------------------------------------------------------
+# kigstudio integration: 2D pixel ↔ world-space coordinate conversion
+# ---------------------------------------------------------------------------
+
+def load_kigstudio_state(state_json_path):
+    """读取 kigstudio 导出的 state.json，返回用于坐标转换的参数字典。"""
+    with open(state_json_path, encoding="utf-8") as f:
+        state = json.load(f)
+    return state
+
+
+def reference_to_world(ref_x, ref_y, state):
+    """
+    将参考图上的像素坐标 (ref_x, ref_y) 转换为 kigstudio 世界坐标。
+
+    转换链:
+      参考图像素 → 视图屏幕坐标 → 归一化设备坐标 [-1,1] → 世界坐标
+    """
+    overlay = state.get("overlay", {})
+    offset_x = overlay.get("offset_x", 0.0)
+    offset_y = overlay.get("offset_y", 0.0)
+    scale = overlay.get("scale", 1.0)
+
+    # 参考图像素 → 视图相对坐标（相对于 canvas 左上角）
+    view_x = offset_x + ref_x * scale
+    view_y = offset_y + ref_y * scale
+
+    # 需要 display_size 做归一化。如果 state 没有保存，用 resolution 估算。
+    display_size = state.get("display_size", float(state.get("resolution", 1024)))
+    half_vp = state.get("viewport_size", 100.0) * 0.5
+
+    # 归一化设备坐标 [-1, 1]
+    rx = (view_x / display_size) * 2.0 - 1.0
+    ry = 1.0 - (view_y / display_size) * 2.0
+
+    center = state.get("center", [0.0, 0.0, 0.0])
+    cam_right = state.get("cam_right", [1.0, 0.0, 0.0])
+    cam_up = state.get("cam_up", [0.0, 1.0, 0.0])
+
+    world = [
+        center[0] + cam_right[0] * rx * half_vp + cam_up[0] * ry * half_vp,
+        center[1] + cam_right[1] * rx * half_vp + cam_up[1] * ry * half_vp,
+        center[2] + cam_right[2] * rx * half_vp + cam_up[2] * ry * half_vp,
+    ]
+    return world
+
+
+def world_to_reference(world_x, world_y, world_z, state):
+    """
+    将 kigstudio 世界坐标反投影回参考图像素坐标。
+    （用于验证/调试，将已有的 3D 引导线投影回 2D 图像上）
+    """
+    center = state.get("center", [0.0, 0.0, 0.0])
+    cam_right = state.get("cam_right", [1.0, 0.0, 0.0])
+    cam_up = state.get("cam_up", [0.0, 1.0, 0.0])
+
+    rel_x = world_x - center[0]
+    rel_y = world_y - center[1]
+    rel_z = world_z - center[2]
+
+    half_vp = state.get("viewport_size", 100.0) * 0.5
+
+    rx = (rel_x * cam_right[0] + rel_y * cam_right[1] + rel_z * cam_right[2]) / half_vp
+    ry = (rel_x * cam_up[0] + rel_y * cam_up[1] + rel_z * cam_up[2]) / half_vp
+
+    display_size = state.get("display_size", float(state.get("resolution", 1024)))
+
+    view_x = (rx * 0.5 + 0.5) * display_size
+    view_y = (0.5 - ry * 0.5) * display_size
+
+    overlay = state.get("overlay", {})
+    offset_x = overlay.get("offset_x", 0.0)
+    offset_y = overlay.get("offset_y", 0.0)
+    scale = overlay.get("scale", 1.0)
+
+    ref_x = (view_x - offset_x) / scale if scale > 0 else view_x
+    ref_y = (view_y - offset_y) / scale if scale > 0 else view_y
+
+    return ref_x, ref_y
+
+
+def export_result_json(strands, output_path, state=None):
+    """
+    将发束数据导出为 kigstudio result.json 格式。
+
+    strands: 发束列表，每项 {'id': str, 'points': [[x,y],...], ...}
+    output_path: 输出 JSON 文件路径
+    state: 如果提供，将 points 从世界坐标转换为 2D 参考图坐标；
+           如果不提供，points 直接作为 2D 坐标输出。
+    """
+    result = {"version": 1, "strands": []}
+    for s in strands:
+        entry = {"id": s["id"], "points_2d": []}
+        for pt in s.get("points", []):
+            if state is not None and len(pt) >= 3:
+                # 世界坐标 → 2D 参考图像素
+                rx, ry = world_to_reference(pt[0], pt[1], pt[2], state)
+                entry["points_2d"].append([round(rx, 1), round(ry, 1)])
+            elif len(pt) >= 2:
+                # 直接使用 2D 像素坐标
+                entry["points_2d"].append([float(pt[0]), float(pt[1])])
+        result["strands"].append(entry)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    print(f"Exported result.json: {output_path} ({len(result['strands'])} strands)")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--image", required=True)
-    ap.add_argument("--strands", required=True)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--verify", action="store_true")
-    ap.add_argument("--no-label", action="store_true")
+    ap = argparse.ArgumentParser(
+        description="hair_guides - 发束引导线标注与校验（支持 kigstudio 集成）")
+    ap.add_argument("--image", help="参考图路径（独立模式）")
+    ap.add_argument("--strands", required=True,
+                    help="发束定义 JSON 文件路径")
+    ap.add_argument("--out", help="输出渲染图路径（独立模式）")
+    ap.add_argument("--verify", action="store_true",
+                    help="校验引导线与发束中心的重合度")
+    ap.add_argument("--no-label", action="store_true",
+                    help="不绘制发束 id 标签")
+    # kigstudio 集成选项
+    ap.add_argument("--from-kigstudio", metavar="STATE_JSON",
+                    help="kigstudio 集成模式：读取 state.json 并输出 result.json")
+    ap.add_argument("--export-result", metavar="RESULT_JSON",
+                    help="导出 result.json 供 kigstudio 导入（默认: tmp/result.json）")
+    ap.add_argument("--display-size", type=float, default=600.0,
+                    help="视图显示尺寸（用于坐标转换，默认 600）")
     args = ap.parse_args()
+
+    # ------------------------------------------------------------------
+    # kigstudio 集成模式
+    # ------------------------------------------------------------------
+    if args.from_kigstudio:
+        state_path = args.from_kigstudio
+        if not os.path.exists(state_path):
+            print(f"ERROR: state.json not found: {state_path}", file=sys.stderr)
+            sys.exit(1)
+
+        state = load_kigstudio_state(state_path)
+        print(f"Loaded state.json from {state_path}")
+
+        # 确定参考图路径
+        overlay = state.get("overlay", {})
+        image_path = overlay.get("image_path", "")
+        if image_path and os.path.exists(image_path):
+            print(f"Using reference image: {image_path}")
+        else:
+            # 回退：尝试使用同目录下的 render.png
+            state_dir = os.path.dirname(state_path)
+            fallback = os.path.join(state_dir, "render.png")
+            if os.path.exists(fallback):
+                image_path = fallback
+                print(f"Using fallback render image: {image_path}")
+            else:
+                print("ERROR: No reference image found. "
+                      "Please load a reference image in the ortho editor.",
+                      file=sys.stderr)
+                sys.exit(1)
+
+        # Ensure display_size is in state for coordinate conversion
+        if "display_size" not in state:
+            state["display_size"] = args.display_size
+
+        # Load strands JSON
+        with open(args.strands, encoding="utf-8") as f:
+            strands = json.load(f)
+
+        # Render verification image if requested
+        base = Image.open(image_path).convert("RGB")
+        draw = ImageDraw.Draw(base)
+        try:
+            font = ImageFont.truetype("arial.ttf", 13)
+        except OSError:
+            font = ImageFont.load_default()
+
+        img_np = np.asarray(base).astype(int)
+        print(f"{'strand':<12} {'on-hair':>8} {'mean|off|':>10} {'max|off|':>9}")
+
+        kigstudio_strands = []
+        for i, s in enumerate(strands):
+            color = s.get("color", PALETTE[i % len(PALETTE)])
+            curve = catmull_rom(s["points"])
+            draw.line(curve, fill=color, width=3)
+            for p in s["points"]:
+                draw.ellipse([p[0] - 3, p[1] - 3, p[0] + 3, p[1] + 3],
+                             outline=color, width=1)
+            if not args.no_label:
+                draw.text((s["points"][0][0] + 4, s["points"][0][1] - 8),
+                          s["id"], fill=color, font=font)
+
+            # Convert 2D reference-image points to world coordinates
+            world_pts = []
+            for pt in s["points"]:
+                wx, wy, wz = reference_to_world(pt[0], pt[1], state)
+                world_pts.append([wx, wy, wz])
+
+            kigstudio_strands.append({
+                "id": s["id"],
+                "points": world_pts,  # now in world space
+                "points_2d": s["points"]  # original 2D for result.json
+            })
+
+            if args.verify:
+                ratio, m, mx = verify(s, curve, img_np)
+                print(f"{s['id']:<12} {ratio:>7.0%} {m:>9.1f}px {mx:>8.1f}px")
+
+        # Save verification render
+        out_dir = os.path.dirname(state_path)
+        out_path = args.out or os.path.join(out_dir, "hair_guides_render.png")
+        base.save(out_path)
+        print(f"Saved render: {out_path}")
+
+        # Export result.json for kigstudio
+        result_path = args.export_result or os.path.join(out_dir, "result.json")
+        export_result_json(kigstudio_strands, result_path)
+        print("Done. kigstudio will auto-import result.json if 'Watch AI results' is enabled.")
+        return
+
+    # ------------------------------------------------------------------
+    # 独立模式（现有行为）
+    # ------------------------------------------------------------------
+    if not args.image or not args.out:
+        ap.error("独立模式需要 --image 和 --out 参数，或使用 --from-kigstudio 集成模式")
 
     with open(args.strands, encoding="utf-8") as f:
         strands = json.load(f)
