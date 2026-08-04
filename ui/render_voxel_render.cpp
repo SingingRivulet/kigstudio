@@ -2718,6 +2718,35 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
     if (manager && manager->show_angle_config_window && show_addon_center &&
         mesh_shader.ensureLineProgram()) {
 
+        // Lazy-build BVH if we have angle config entries but no BVH yet.
+        // The BVH is normally built when editing the angle config via UI
+        // or via the HTTP API, but older sessions or edge cases may leave
+        // it null.  We rebuild from the base node's mesh here so that
+        // crosshair markers can raycast to the model surface.
+        if (!hair_bvh && !hair_angle_config.empty() &&
+            addon_base_node_id >= 0) {
+            auto base_it = manager->items.find(addon_base_node_id);
+            if (base_it != manager->items.end()) {
+                auto& base = *base_it->second;
+                std::vector<sinriv::kigstudio::voxel::Triangle> tris;
+                if (!base.source_triangles.empty()) {
+                    tris = base.source_triangles;
+                } else if (!base.cached_mesh.empty()) {
+                    tris.reserve(base.cached_mesh.size());
+                    for (const auto& [tri, _] : base.cached_mesh)
+                        tris.push_back(tri);
+                }
+                if (!tris.empty()) {
+                    auto bvh = std::make_unique<
+                        sinriv::kigstudio::voxel::triangle_bvh<float>>();
+                    for (const auto& tri : tris)
+                        bvh->insert(tri);
+                    hair_bvh = std::move(bvh);
+                    hair_bvh_base_node_id = addon_base_node_id;
+                }
+            }
+        }
+
         // Build local spherical frame (same math as agent_handlers.h spherical_to_dir)
         vec3f N = hair_north_pole.normalize();
         vec3f F = hair_front_reference.normalize();
@@ -2790,11 +2819,40 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
             }
         }
 
-        // ---- Key point markers: only at axis entries (Y=0 or X=0) ----
+        // ---- Key point markers: at axis entries (Y=0 or X=0) ----
+        // For each key point, try to raycast from the sphere surface
+        // toward the center to find the intersection with the base model.
+        // If the ray hits the base model, display the crosshair at the
+        // hit point; otherwise fall back to the sphere surface position.
         const float marker_size = sphere_r * 0.03f;
         for (const auto& [xy, entry] : hair_angle_config) {
             if (xy.second != 0.0f && xy.first != 0.0f) continue;  // skip diagonals
-            vec3f p = sphere_point(entry.theta, entry.phi, sphere_r);
+            vec3f sphere_pt = sphere_point(entry.theta, entry.phi, sphere_r);
+
+            // Try raycast to base model surface
+            vec3f display_pt = sphere_pt;  // default: sphere surface
+            if (hair_bvh) {
+                vec3f dir = (sphere_pt - addon_center_point).normalize();
+                sinriv::kigstudio::ray<float> r;
+                r.begin = sphere_pt;          // from sphere surface
+                r.end = addon_center_point;    // toward center
+                float closest_dist = std::numeric_limits<float>::max();
+                vec3f hit_pt;
+                bool hit = false;
+                hair_bvh->rayTest(r, [&](auto, const vec3f& pos) {
+                    float dist = (pos - r.begin).length();
+                    if (dist < closest_dist) {
+                        closest_dist = dist;
+                        hit_pt = pos;
+                        hit = true;
+                    }
+                });
+                if (hit) {
+                    display_pt = hit_pt;
+                }
+            }
+
+            vec3f p = display_pt;
             // X-axis line
             vertices.push_back({p.x - marker_size, -p.y, p.z, key_color});
             vertices.push_back({p.x + marker_size, -p.y, p.z, key_color});

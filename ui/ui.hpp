@@ -53,6 +53,11 @@ int ui_main(int argc, const char* const* argv) {
     bool middleMouseDown = false;
     bool leftMouseDownOnPick = false;
     bool middleMouseDownOnPick = false;
+    // Nav map infinite panning state (middle-mouse drag in node graph)
+    bool nav_map_panning = false;
+    ImVec2 nav_map_pan_start_pos;
+    ImVec2 nav_map_pan_prev_pos;
+    bool nav_map_pan_warped = false;
     bool guide_curve_click_valid = false;
     bool width_edit_click_valid = false;
     bool hairline_point_pick_valid = false;
@@ -494,6 +499,13 @@ int ui_main(int argc, const char* const* argv) {
                     hairline_point_pick_valid = false;
                     io.MouseDown[0] = false;
                 } else if (e.button.button == SDL_BUTTON_MIDDLE) {
+                    if (nav_map_panning) {
+                        SDL_ShowCursor(SDL_ENABLE);
+                        SDL_WarpMouseInWindow(window,
+                            (int)nav_map_pan_start_pos.x,
+                            (int)nav_map_pan_start_pos.y);
+                        nav_map_panning = false;
+                    }
                     middleMouseDown = false;
                     middleMouseDownOnPick = false;
                     io.MouseDown[2] = false;
@@ -513,34 +525,82 @@ int ui_main(int argc, const char* const* argv) {
             }
 
             if (e.type == SDL_MOUSEMOTION) {
-                if (leftMouseDown && !io.WantCaptureMouse && !leftMouseDownOnPick) {
-                    yaw += e.motion.xrel * 0.3f;
-                    pitch += e.motion.yrel * 0.3f;
-                }
-                if (middleMouseDown && !io.WantCaptureMouse && !middleMouseDownOnPick) {
-                    const float fovRadians = bx::toRad(60.0f);
-                    const float viewportHeight = bx::max(1.0f, float(height));
-                    const float worldUnitsPerPixel = 2.0f * distance *
-                                                     tanf(fovRadians * 0.5f) /
-                                                     viewportHeight;
-                    cameraOffsetX += e.motion.xrel * worldUnitsPerPixel;
-                    cameraOffsetY -= e.motion.yrel * worldUnitsPerPixel;
-                }
-                // 体素刷选
-                if (leftMouseDown && leftMouseDownOnPick &&
-                    render_items.mouse_world_pos_valid) {
-                    bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
-                    auto it = render_items.items.find(render_items.render_id);
-                    if (it != render_items.items.end()) {
-                        auto& item = *it->second;
-                        if (item.voxel_picking_enabled && item.surface_cache_ready) {
-                            render_items.brush_marked_voxels(
-                                render_items.mouse_world_pos,
-                                item.voxel_pick_range, shift);
+                // Nav map infinite panning: when middle-mouse is held and
+                // ImGui captures the mouse (nav node graph window), hide the
+                // OS cursor and warp it back to the starting position whenever
+                // it approaches the screen edge, enabling unbounded dragging.
+                if (middleMouseDown && io.WantCaptureMouse && !middleMouseDownOnPick) {
+                    if (!nav_map_panning) {
+                        nav_map_panning = true;
+                        nav_map_pan_start_pos = io.MousePos;
+                        nav_map_pan_prev_pos =
+                            ImVec2((float)e.motion.x, (float)e.motion.y);
+                        nav_map_pan_warped = false;
+                        SDL_ShowCursor(SDL_DISABLE);
+                    }
+                    if (nav_map_pan_warped) {
+                        // This motion event was caused by our own warp —
+                        // just update tracking and skip processing.
+                        nav_map_pan_prev_pos =
+                            ImVec2((float)e.motion.x, (float)e.motion.y);
+                        nav_map_pan_warped = false;
+                        io.MousePos = nav_map_pan_prev_pos;
+                    } else {
+                        ImVec2 current((float)e.motion.x, (float)e.motion.y);
+                        io.MousePos = current;
+                        nav_map_pan_prev_pos = current;
+
+                        // Warp back to start when approaching screen edge
+                        const int margin = 60;
+                        if (current.x < margin ||
+                            current.x > (float)oldW - margin ||
+                            current.y < margin ||
+                            current.y > (float)oldH - margin) {
+                            SDL_WarpMouseInWindow(
+                                window, (int)nav_map_pan_start_pos.x,
+                                (int)nav_map_pan_start_pos.y);
+                            nav_map_pan_warped = true;
                         }
                     }
+                } else {
+                    // If we were panning in nav map but mouse left the
+                    // ImGui area, restore cursor and stop panning.
+                    if (nav_map_panning && middleMouseDown) {
+                        SDL_ShowCursor(SDL_ENABLE);
+                        SDL_WarpMouseInWindow(
+                            window, (int)nav_map_pan_start_pos.x,
+                            (int)nav_map_pan_start_pos.y);
+                        nav_map_panning = false;
+                    }
+                    if (leftMouseDown && !io.WantCaptureMouse && !leftMouseDownOnPick) {
+                        yaw += e.motion.xrel * 0.3f;
+                        pitch += e.motion.yrel * 0.3f;
+                    }
+                    if (middleMouseDown && !io.WantCaptureMouse && !middleMouseDownOnPick) {
+                        const float fovRadians = bx::toRad(60.0f);
+                        const float viewportHeight = bx::max(1.0f, float(height));
+                        const float worldUnitsPerPixel = 2.0f * distance *
+                                                         tanf(fovRadians * 0.5f) /
+                                                         viewportHeight;
+                        cameraOffsetX += e.motion.xrel * worldUnitsPerPixel;
+                        cameraOffsetY -= e.motion.yrel * worldUnitsPerPixel;
+                    }
+                    // 体素刷选
+                    if (leftMouseDown && leftMouseDownOnPick &&
+                        render_items.mouse_world_pos_valid) {
+                        bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+                        auto it = render_items.items.find(render_items.render_id);
+                        if (it != render_items.items.end()) {
+                            auto& item = *it->second;
+                            if (item.voxel_picking_enabled && item.surface_cache_ready) {
+                                render_items.brush_marked_voxels(
+                                    render_items.mouse_world_pos,
+                                    item.voxel_pick_range, shift);
+                            }
+                        }
+                    }
+                    io.MousePos = ImVec2((float)e.motion.x, (float)e.motion.y);
                 }
-                io.MousePos = ImVec2((float)e.motion.x, (float)e.motion.y);
             }
 
             if (e.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
@@ -686,8 +746,12 @@ int ui_main(int argc, const char* const* argv) {
         render_items.upload_collision(deferred_renderer);
         render_items.render_gbuffer(mtx_2, mesh_render_shader);
 
-        deferred_renderer.screen_mouse_pos_[0] = io.MousePos.x;
-        deferred_renderer.screen_mouse_pos_[1] = io.MousePos.y;
+        // During nav map panning, freeze the 3D viewport cursor so the
+        // red picking crosshair doesn't follow the warped/hidden cursor.
+        if (!nav_map_panning) {
+            deferred_renderer.screen_mouse_pos_[0] = io.MousePos.x;
+            deferred_renderer.screen_mouse_pos_[1] = io.MousePos.y;
+        }
         deferred_renderer.render();
         bgfx::setViewTransform(kOverlayView, view_2, proj);
 

@@ -642,7 +642,7 @@ curl -X PUT http://127.0.0.1:18920/api/v1/nodes/1/addon-options \
 
 | 编号 | 锚点 | 英文 |
 |------|------|------|
-| 0 | 鼻中线 / 前正中线 | Midline / Midsagittal |
+| 0 | 头顶 / 前正中线 | Midline / Midsagittal |
 | ±1 | 鼻翼外缘 | Ala of nose |
 | ±2 | 内眼角（内眦） | Inner canthus |
 | ±3 | 瞳孔中心 | Pupil center |

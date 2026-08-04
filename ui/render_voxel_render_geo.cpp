@@ -1993,7 +1993,7 @@ void RenderVoxelList::load_from_node(int target_item_id,
                     setQueueStatus(get_locale_string("status.saving_cache"));
                 }
             }
-            sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, path.string());
+            sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, path_to_utf8(path));
         } else if (data_type == 1) {
             auto path = get_sdf_cache_path(source_node_id);
             std::vector<std::tuple<Triangle, vec3f>> mesh;
@@ -2011,11 +2011,11 @@ void RenderVoxelList::load_from_node(int target_item_id,
                     setQueueStatus(get_locale_string("status.saving_cache"));
                 }
             }
-            sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, path.string());
+            sinriv::kigstudio::voxel::saveMeshToASCIISTL(mesh, path_to_utf8(path));
         } else if (data_type == 2) {
             auto path = get_voxel_cache_path(source_node_id);
             std::string error;
-            sinriv::kigstudio::save(path.string(), source_voxel_grid, &error);
+            sinriv::kigstudio::save(path_to_utf8(path), source_voxel_grid, &error);
         }
     } catch (const std::exception& e) {
         std::cerr << "[load_from_node] cache write failed: " << e.what()

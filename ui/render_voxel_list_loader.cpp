@@ -271,6 +271,116 @@ HairStrand hair_strand_from_json(const cJSON* s_obj) {
     return strand;
 }
 
+// ---- mesh binary I/O helpers ----
+
+using MeshTriangle = sinriv::kigstudio::voxel::Triangle;
+using MeshVec3f = sinriv::kigstudio::vec3<float>;
+using MeshData = std::vector<std::tuple<MeshTriangle, MeshVec3f>>;
+
+// Save cached_mesh (triangles with normals) to binary file
+static bool save_mesh_file(const std::filesystem::path& path,
+                           const MeshData& mesh) {
+    std::ofstream ofs(path, std::ios::binary);
+    if (!ofs) return false;
+    const uint32_t magic = 0x4D5348;  // "MSH"
+    const uint32_t version = 1;
+    const uint32_t tri_count = static_cast<uint32_t>(mesh.size());
+    const uint32_t flags = 1;  // has_normals
+    ofs.write(reinterpret_cast<const char*>(&magic), 4);
+    ofs.write(reinterpret_cast<const char*>(&version), 4);
+    ofs.write(reinterpret_cast<const char*>(&tri_count), 4);
+    ofs.write(reinterpret_cast<const char*>(&flags), 4);
+    for (const auto& [tri, n] : mesh) {
+        const float v[12] = {
+            std::get<0>(tri).x, std::get<0>(tri).y, std::get<0>(tri).z,
+            std::get<1>(tri).x, std::get<1>(tri).y, std::get<1>(tri).z,
+            std::get<2>(tri).x, std::get<2>(tri).y, std::get<2>(tri).z,
+            n.x, n.y, n.z,
+        };
+        ofs.write(reinterpret_cast<const char*>(v), sizeof(v));
+    }
+    return ofs.good();
+}
+
+// Save source_triangles (no normals) to binary file
+static bool save_mesh_file(const std::filesystem::path& path,
+                           const std::vector<MeshTriangle>& tris) {
+    std::ofstream ofs(path, std::ios::binary);
+    if (!ofs) return false;
+    const uint32_t magic = 0x4D5348;
+    const uint32_t version = 1;
+    const uint32_t tri_count = static_cast<uint32_t>(tris.size());
+    const uint32_t flags = 0;  // no normals
+    ofs.write(reinterpret_cast<const char*>(&magic), 4);
+    ofs.write(reinterpret_cast<const char*>(&version), 4);
+    ofs.write(reinterpret_cast<const char*>(&tri_count), 4);
+    ofs.write(reinterpret_cast<const char*>(&flags), 4);
+    for (const auto& tri : tris) {
+        const float v[9] = {
+            std::get<0>(tri).x, std::get<0>(tri).y, std::get<0>(tri).z,
+            std::get<1>(tri).x, std::get<1>(tri).y, std::get<1>(tri).z,
+            std::get<2>(tri).x, std::get<2>(tri).y, std::get<2>(tri).z,
+        };
+        ofs.write(reinterpret_cast<const char*>(v), sizeof(v));
+    }
+    return ofs.good();
+}
+
+// Load mesh from binary file. Returns mesh data with normals.
+// If source had no normals, computes face normals.
+static MeshData load_mesh_file(const std::filesystem::path& path, bool& ok) {
+    ok = false;
+    MeshData result;
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs) return result;
+
+    uint32_t magic = 0, version = 0, tri_count = 0, flags = 0;
+    ifs.read(reinterpret_cast<char*>(&magic), 4);
+    ifs.read(reinterpret_cast<char*>(&version), 4);
+    ifs.read(reinterpret_cast<char*>(&tri_count), 4);
+    ifs.read(reinterpret_cast<char*>(&flags), 4);
+
+    if (magic != 0x4D5348 || version != 1 || tri_count > 100'000'000)
+        return result;
+
+    const bool has_normals = (flags & 1) != 0;
+    result.reserve(tri_count);
+
+    if (has_normals) {
+        for (uint32_t i = 0; i < tri_count; ++i) {
+            float v[12];
+            ifs.read(reinterpret_cast<char*>(v), sizeof(v));
+            if (!ifs) return result;
+            MeshTriangle tri{MeshVec3f{v[0], v[1], v[2]},
+                             MeshVec3f{v[3], v[4], v[5]},
+                             MeshVec3f{v[6], v[7], v[8]}};
+            MeshVec3f n{v[9], v[10], v[11]};
+            result.emplace_back(tri, n);
+        }
+    } else {
+        for (uint32_t i = 0; i < tri_count; ++i) {
+            float v[9];
+            ifs.read(reinterpret_cast<char*>(v), sizeof(v));
+            if (!ifs) return result;
+            MeshTriangle tri{MeshVec3f{v[0], v[1], v[2]},
+                             MeshVec3f{v[3], v[4], v[5]},
+                             MeshVec3f{v[6], v[7], v[8]}};
+            MeshVec3f a = std::get<0>(tri);
+            MeshVec3f b = std::get<1>(tri);
+            MeshVec3f c = std::get<2>(tri);
+            MeshVec3f n = (b - a).cross(c - a);
+            float len = n.length();
+            if (len > 1e-8f)
+                n = n / len;
+            else
+                n = MeshVec3f{0, 0, 0};
+            result.emplace_back(tri, n);
+        }
+    }
+    ok = ifs.good() || ifs.eof();
+    return result;
+}
+
 }  // namespace
 
 cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
@@ -888,6 +998,9 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                         cJSON_GetObjectItem(ac_obj, "theta")->valuedouble);
                     ae.phi = static_cast<float>(
                         cJSON_GetObjectItem(ac_obj, "phi")->valuedouble);
+                    // (0,0) is the origin anchor; theta must always be 0°
+                    if (ax == 0.0f && ay == 0.0f)
+                        ae.theta = 0.0f;
                     item->hair_angle_config[{ax, ay}] = ae;
                 }
             }
@@ -1363,6 +1476,9 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                             cJSON_GetObjectItem(ac_obj, "theta")->valuedouble);
                         ae.phi = static_cast<float>(
                             cJSON_GetObjectItem(ac_obj, "phi")->valuedouble);
+                        // (0,0) is the origin anchor; theta must always be 0°
+                        if (ax == 0.0f && ay == 0.0f)
+                            ae.theta = 0.0f;
                         snapshot.hair_angle_config[{ax, ay}] = ae;
                     }
                 }
@@ -1516,6 +1632,33 @@ bool RenderVoxelList::save_project(const std::string& folder) {
         }
     }
     cJSON_AddItemToObject(root, "items", arr);
+
+    // 保存每个节点的mesh数据到 meshes/<id>.mesh
+    {
+        try {
+            std::filesystem::create_directories(dir / "meshes");
+        } catch (const std::exception& e) {
+            // non-fatal: continue without mesh cache
+            std::cerr << "[save_project] create_directories(meshes) failed: "
+                      << e.what() << std::endl;
+        }
+        for (const auto& [id, item] : items) {
+            std::filesystem::path mesh_path =
+                dir / "meshes" / (std::to_string(id) + ".mesh");
+            bool saved = false;
+            if (!item->cached_mesh.empty()) {
+                saved = save_mesh_file(mesh_path, item->cached_mesh);
+            } else if (!item->source_triangles.empty()) {
+                saved = save_mesh_file(mesh_path, item->source_triangles);
+            }
+            // Remove stale mesh file if node no longer has mesh data
+            // or if save failed (to avoid loading corrupt/incomplete data)
+            if (!saved && std::filesystem::exists(mesh_path)) {
+                std::error_code ec;
+                std::filesystem::remove(mesh_path, ec);
+            }
+        }
+    }
 
     // 保存工作流输入/输出（节点ID + 文件路径）
     {
@@ -1716,7 +1859,59 @@ bool RenderVoxelList::load_project(const std::string& folder) {
                 item->voxel_renderer.loadVoxelGridChunked(item->voxel_grid_data,
                                                            0.5, true);
             }
-            if (!item->stl_path.empty()) {
+
+            // 尝试从工程文件加载缓存的mesh数据
+            bool has_mesh_from_cache = false;
+            {
+                std::filesystem::path mesh_path =
+                    dir / "meshes" / (std::to_string(id) + ".mesh");
+                if (std::filesystem::exists(mesh_path)) {
+                    bool mesh_ok = false;
+                    auto loaded_mesh = load_mesh_file(mesh_path, mesh_ok);
+                    if (mesh_ok && !loaded_mesh.empty()) {
+                        item->cached_mesh = std::move(loaded_mesh);
+                        item->cached_mesh_dirty = false;
+                        item->exported_mesh_synced = false;
+
+                        // 从 cached_mesh 重建 source_triangles（去掉法线）
+                        item->source_triangles.clear();
+                        item->source_triangles.reserve(
+                            item->cached_mesh.size());
+                        for (const auto& [tri, n] : item->cached_mesh) {
+                            (void)n;
+                            item->source_triangles.push_back(tri);
+                        }
+
+                        // 上传到各渲染器
+                        item->mesh_renderer.clear();
+                        item->mesh_renderer.loadGeometry(
+                            item->cached_mesh);
+                        item->origin_mesh_renderer.clear();
+                        item->origin_mesh_renderer.setBaseColor(
+                            0.0f, 0.0f, 1.0f, 1.0f);
+                        item->origin_mesh_renderer.loadGeometry(
+                            item->cached_mesh);
+
+                        // 若需要SDF且source_triangles已恢复，构建SDF
+                        if (item->load_as_sdf &&
+                            !item->source_triangles.empty()) {
+                            auto mesh_sdf = std::make_shared<
+                                sinriv::kigstudio::sdf::SDF_Mesh>();
+                            mesh_sdf->loadTriangles(
+                                item->source_triangles);
+                            item->sdf_data = std::move(mesh_sdf);
+                        }
+
+                        has_mesh_from_cache = true;
+                        std::cout << "Loaded cached mesh for item " << id
+                                  << " (" << item->cached_mesh.size()
+                                  << " tris)" << std::endl;
+                    }
+                }
+            }
+
+            // 如果没有从缓存加载到mesh，尝试从STL文件重载
+            if (!has_mesh_from_cache && !item->stl_path.empty()) {
                 try {
                     std::cout << "Loading STL mesh for item " << id
                               << " from path: " << item->stl_path << std::endl;

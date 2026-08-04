@@ -1431,7 +1431,7 @@ static const AnchorPoint kAnchorPoints[] = {
     {-3,0,"Pupil center (L)","瞳孔中心（左）"},
     {-2,0,"Inner canthus (L)","内眼角（左）"},
     {-1,0,"Ala of nose (L)","鼻翼外缘（左）"},
-    {0,0,"Midline / Midsagittal","鼻中线 / 前正中线"},
+    {0,0,"Midline / Midsagittal","头顶 / 前正中线"},
     {1,0,"Ala of nose (R)","鼻翼外缘（右）"},
     {2,0,"Inner canthus (R)","内眼角（右）"},
     {3,0,"Pupil center (R)","瞳孔中心（右）"},
@@ -1519,6 +1519,8 @@ static bool validate_angle_grid(
     }
 
     // 2. Phi monotonicity per column (fixed X)
+    // Phi peaks at the crown (Y≈0) and decreases toward both front neck
+    // and back neck, so we check monotonicity separately for Y≤0 and Y≥0.
     for (int x = -10; x <= 10; ++x) {
         std::vector<std::pair<int, float>> col;  // (Y, phi)
         for (int y = -10; y <= 14; ++y) {
@@ -1528,16 +1530,34 @@ static bool validate_angle_grid(
             }
         }
         if (col.size() < 2) continue;
-        bool increasing = true, decreasing = true;
-        for (size_t i = 1; i < col.size(); ++i) {
-            if (col[i].second <= col[i-1].second) increasing = false;
-            if (col[i].second >= col[i-1].second) decreasing = false;
+
+        // Split at Y=0: back region (Y≤0) and front region (Y≥0).
+        // Each region independently must be monotonic.
+        auto check_monotonic = [](const std::vector<std::pair<int, float>>& seg) -> bool {
+            if (seg.size() < 2) return true;
+            bool increasing = true, decreasing = true;
+            for (size_t i = 1; i < seg.size(); ++i) {
+                if (seg[i].second <= seg[i-1].second) increasing = false;
+                if (seg[i].second >= seg[i-1].second) decreasing = false;
+            }
+            return increasing || decreasing;
+        };
+
+        std::vector<std::pair<int, float>> back_region, front_region;
+        for (const auto& p : col) {
+            if (p.first <= 0) back_region.push_back(p);
+            if (p.first >= 0) front_region.push_back(p);
         }
-        if (!increasing && !decreasing) return false;
+        if (!check_monotonic(back_region)) return false;
+        if (!check_monotonic(front_region)) return false;
     }
 
-    // 3. Midline separation: X=0 and X=±10 must not have overlapping theta
+    // 3. Midline separation: X=0 and X=±10 must not have overlapping theta.
+    // Only valid for Y ≥ 0 (front of head) where X=0 is anterior midline and
+    // X=±10 is posterior midline. For Y < 0 (top/back of head), all three
+    // reference the same posterior region so the separation check is skipped.
     for (int y = -10; y <= 14; ++y) {
+        if (y < 0) continue;  // skip back-of-head rows
         auto it0  = tmp.find({0.0f, static_cast<float>(y)});
         auto it10 = tmp.find({10.0f, static_cast<float>(y)});
         auto itm10 = tmp.find({-10.0f, static_cast<float>(y)});
@@ -1686,6 +1706,31 @@ void RenderVoxelList::render_angle_config_window() {
     }
     auto& item = *item_it->second;
 
+    // Helper: rebuild hair BVH from base node's mesh triangles.
+    // Called whenever hair_angle_config is modified so that crosshair
+    // markers can raycast to the base model surface.
+    auto rebuild_hair_bvh = [&]() {
+        if (item.addon_base_node_id < 0) return;
+        auto base_it = this->items.find(item.addon_base_node_id);
+        if (base_it == this->items.end()) return;
+        auto& base = *base_it->second;
+        std::vector<sinriv::kigstudio::voxel::Triangle> tris;
+        if (!base.source_triangles.empty()) {
+            tris = base.source_triangles;
+        } else if (!base.cached_mesh.empty()) {
+            tris.reserve(base.cached_mesh.size());
+            for (const auto& [tri, _] : base.cached_mesh)
+                tris.push_back(tri);
+        }
+        if (tris.empty()) return;
+        auto bvh = std::make_unique<
+            sinriv::kigstudio::voxel::triangle_bvh<float>>();
+        for (const auto& tri : tris)
+            bvh->insert(tri);
+        item.hair_bvh = std::move(bvh);
+        item.hair_bvh_base_node_id = item.addon_base_node_id;
+    };
+
     // Auto-enable center point and hairline plane when this window is open
     item.show_addon_center = true;
     item.hairline_plane_enabled = true;
@@ -1781,18 +1826,23 @@ void RenderVoxelList::render_angle_config_window() {
             // Action buttons
             ImGui::TableSetColumnIndex(4);
             char btn_id[48];
+            bool is_origin = (x == 0 && y == 0);
             if (configured) {
                 snprintf(btn_id, sizeof(btn_id), "%s##e%d_%d",
                     get_locale_cstr("action.angle_edit"), x, y);
                 if (ImGui::SmallButton(btn_id))
                     open_edit(it->second.theta, it->second.phi);
                 ImGui::SameLine();
+                if (is_origin)
+                    ImGui::BeginDisabled();
                 snprintf(btn_id, sizeof(btn_id), "%s##d%d_%d",
                     get_locale_cstr("action.angle_delete"), x, y);
                 if (ImGui::SmallButton(btn_id)) {
                     del_x = x;
                     del_y = y;
                 }
+                if (is_origin)
+                    ImGui::EndDisabled();
             } else {
                 snprintf(btn_id, sizeof(btn_id), "%s##a%d_%d",
                     get_locale_cstr("action.angle_add_entry"), x, y);
@@ -1808,6 +1858,7 @@ void RenderVoxelList::render_angle_config_window() {
             push_undo_now(item.id, std::nullopt, "Angle Config Delete");
             item.hair_angle_config.erase(
                 {static_cast<float>(del_x), static_cast<float>(del_y)});
+            rebuild_hair_bvh();
             for (auto& s : item.hair_strands) s.mesh_dirty = true;
             if (item.angle_config_editing_x == del_x &&
                 item.angle_config_editing_y == del_y) {
@@ -2076,8 +2127,21 @@ void RenderVoxelList::render_angle_config_window() {
 
             float& theta = item.angle_config_preview_theta;
             float& phi    = item.angle_config_preview_phi;
-            ImGui::DragFloat(get_locale_cstr("label.angle_theta"), &theta,
-                1.0f, -180.0f, 180.0f, "%.1f deg");
+
+            bool is_origin = (ex == 0 && ey == 0);
+            if (is_origin) {
+                // (0,0) is the origin: X=0 midline → theta must be locked at 0°
+                theta = 0.0f;
+                ImGui::BeginDisabled();
+                ImGui::DragFloat(get_locale_cstr("label.angle_theta"), &theta,
+                    1.0f, -180.0f, 180.0f, "%.1f deg");
+                ImGui::EndDisabled();
+                ImGui::SameLine();
+                ImGui::TextDisabled("(locked)");
+            } else {
+                ImGui::DragFloat(get_locale_cstr("label.angle_theta"), &theta,
+                    1.0f, -180.0f, 180.0f, "%.1f deg");
+            }
             ImGui::DragFloat(get_locale_cstr("label.angle_phi"), &phi,
                 1.0f, -90.0f, 90.0f, "%.1f deg");
 
@@ -2103,6 +2167,7 @@ void RenderVoxelList::render_angle_config_window() {
                                   "Angle Config Edit");
                     config[{static_cast<float>(ex), static_cast<float>(ey)}] =
                         HairAngleEntry{theta, phi};
+                    rebuild_hair_bvh();
                     for (auto& s : item.hair_strands) s.mesh_dirty = true;
                     item.angle_config_editing_x = kSentinel;
                     item.angle_config_editing_y = kSentinel;
