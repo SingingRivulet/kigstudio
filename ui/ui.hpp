@@ -810,6 +810,41 @@ int ui_main(int argc, const char* const* argv) {
         deferred_renderer.mouse_highlight_range_ = render_items.mouse_highlight_range;
         render_items.render_ui();
         ImGui::Render();
+
+        // Sync ImGui mouse-cursor requests to SDL.  bgfx's custom imgui
+        // backend does not forward ImGui::SetMouseCursor → OS cursor, so
+        // we read io.MouseCursor and call SDL_SetCursor ourselves.
+        {
+            static ImGuiMouseCursor s_last_cursor = ImGuiMouseCursor_COUNT;
+            static SDL_Cursor* s_cached_cursor = nullptr;
+            ImGuiMouseCursor cur = ImGui::GetMouseCursor();
+            if (cur != s_last_cursor) {
+                s_last_cursor = cur;
+                SDL_SystemCursor sc = SDL_SYSTEM_CURSOR_ARROW;
+                switch (cur) {
+                case ImGuiMouseCursor_ResizeNWSE:
+                    sc = SDL_SYSTEM_CURSOR_SIZENWSE; break;
+                case ImGuiMouseCursor_ResizeNESW:
+                    sc = SDL_SYSTEM_CURSOR_SIZENESW; break;
+                case ImGuiMouseCursor_ResizeAll:
+                    sc = SDL_SYSTEM_CURSOR_SIZEALL; break;
+                case ImGuiMouseCursor_ResizeNS:
+                    sc = SDL_SYSTEM_CURSOR_SIZENS; break;
+                case ImGuiMouseCursor_ResizeEW:
+                    sc = SDL_SYSTEM_CURSOR_SIZEWE; break;
+                case ImGuiMouseCursor_Hand:
+                    sc = SDL_SYSTEM_CURSOR_HAND; break;
+                case ImGuiMouseCursor_TextInput:
+                    sc = SDL_SYSTEM_CURSOR_IBEAM; break;
+                default:
+                    sc = SDL_SYSTEM_CURSOR_ARROW; break;
+                }
+                if (s_cached_cursor) SDL_FreeCursor(s_cached_cursor);
+                s_cached_cursor = SDL_CreateSystemCursor(sc);
+                SDL_SetCursor(s_cached_cursor);
+            }
+        }
+
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
             !io.WantCaptureMouse) {
             render_items.mouse_world_pos_picked = true;

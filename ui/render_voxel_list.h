@@ -237,7 +237,8 @@ struct OrthoOverlayState {
     bool enabled = false;
     float offset_x = 0.0f;
     float offset_y = 0.0f;
-    float scale = 1.0f;
+    float scale_x = 1.0f;
+    float scale_y = 1.0f;
     float blend_ratio = 0.5f;
     bool locked = false;
 };
@@ -286,7 +287,8 @@ struct OrthoProjectionState {
     int overlay_img_height = 0;
     bool overlay_enabled = false;       // checkbox to activate drag/scale
     ImVec2 overlay_offset = {0, 0};     // pan offset in screen pixels
-    float overlay_scale = 1.0f;         // zoom scale in screen pixels
+    float overlay_scale_x = 1.0f;       // zoom scale X in screen pixels
+    float overlay_scale_y = 1.0f;       // zoom scale Y in screen pixels
     float blend_ratio = 0.5f;           // blend slider
     float canvas_display_size = 600.0f; // display size when overlay was placed (for scaling)
 
@@ -305,7 +307,8 @@ struct OrthoProjectionState {
     int resize_corner = -1;            // -1=none, 0=TL, 1=TR, 2=BL, 3=BR
     ImVec2 resize_start_mouse;
     ImVec2 resize_start_offset;
-    float resize_start_scale = 1.0f;
+    float resize_start_scale_x = 1.0f;
+    float resize_start_scale_y = 1.0f;
     bool is_hovering_model = false;     // mouse over valid mesh area
     vec3f hovered_world_pos = {0, 0, 0};
     int hovered_px = 0, hovered_py = 0; // API 2D render-pixel coords

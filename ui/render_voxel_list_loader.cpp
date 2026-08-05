@@ -564,7 +564,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
             cJSON_AddBoolToObject(ol_obj, "enabled", ol.enabled);
             cJSON_AddNumberToObject(ol_obj, "offset_x", ol.offset_x);
             cJSON_AddNumberToObject(ol_obj, "offset_y", ol.offset_y);
-            cJSON_AddNumberToObject(ol_obj, "scale", ol.scale);
+            cJSON_AddNumberToObject(ol_obj, "scale_x", ol.scale_x);
+            cJSON_AddNumberToObject(ol_obj, "scale_y", ol.scale_y);
             cJSON_AddNumberToObject(ol_obj, "blend_ratio", ol.blend_ratio);
             cJSON_AddBoolToObject(ol_obj, "locked", ol.locked);
             cJSON_AddItemToArray(overlay_arr, ol_obj);
@@ -1056,8 +1057,16 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 if (ox && cJSON_IsNumber(ox)) ol.offset_x = static_cast<float>(ox->valuedouble);
                 const cJSON* oy = cJSON_GetObjectItem(ol_obj, "offset_y");
                 if (oy && cJSON_IsNumber(oy)) ol.offset_y = static_cast<float>(oy->valuedouble);
-                const cJSON* sc = cJSON_GetObjectItem(ol_obj, "scale");
-                if (sc && cJSON_IsNumber(sc)) ol.scale = static_cast<float>(sc->valuedouble);
+                const cJSON* scx = cJSON_GetObjectItem(ol_obj, "scale_x");
+                const cJSON* scy = cJSON_GetObjectItem(ol_obj, "scale_y");
+                if (scx && cJSON_IsNumber(scx)) ol.scale_x = static_cast<float>(scx->valuedouble);
+                if (scy && cJSON_IsNumber(scy)) ol.scale_y = static_cast<float>(scy->valuedouble);
+                // Backwards compat: old single "scale" field
+                if (!scx && !scy) {
+                    const cJSON* sc = cJSON_GetObjectItem(ol_obj, "scale");
+                    if (sc && cJSON_IsNumber(sc))
+                        ol.scale_x = ol.scale_y = static_cast<float>(sc->valuedouble);
+                }
                 const cJSON* br = cJSON_GetObjectItem(ol_obj, "blend_ratio");
                 if (br && cJSON_IsNumber(br)) ol.blend_ratio = static_cast<float>(br->valuedouble);
                 const cJSON* lk = cJSON_GetObjectItem(ol_obj, "locked");

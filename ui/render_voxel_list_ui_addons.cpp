@@ -2776,7 +2776,8 @@ void RenderVoxelList::update_api_server_caches() {
     agent_server_ptr->setOrthoOverlayParams(
         ortho_state.overlay_offset.x * render_scale,
         ortho_state.overlay_offset.y * render_scale,
-        ortho_state.overlay_scale * render_scale,
+        ortho_state.overlay_scale_x * render_scale,
+        ortho_state.overlay_scale_y * render_scale,
         ortho_state.blend_ratio);
     agent_server_ptr->setOrthoOverlayActive(ortho_state.overlay_enabled);
 
@@ -2816,7 +2817,8 @@ void RenderVoxelList::update_api_server_caches() {
     // Report overlay params in render-pixel space for API consumers
     cJSON_AddNumberToObject(overlay, "offset_x", static_cast<double>(ortho_state.overlay_offset.x * render_scale));
     cJSON_AddNumberToObject(overlay, "offset_y", static_cast<double>(ortho_state.overlay_offset.y * render_scale));
-    cJSON_AddNumberToObject(overlay, "scale", static_cast<double>(ortho_state.overlay_scale * render_scale));
+    cJSON_AddNumberToObject(overlay, "scale_x", static_cast<double>(ortho_state.overlay_scale_x * render_scale));
+    cJSON_AddNumberToObject(overlay, "scale_y", static_cast<double>(ortho_state.overlay_scale_y * render_scale));
     cJSON_AddNumberToObject(overlay, "blend_ratio", static_cast<double>(ortho_state.blend_ratio));
     cJSON_AddBoolToObject(overlay, "enabled", ortho_state.overlay_enabled);
     cJSON_AddBoolToObject(overlay, "locked", ortho_state.overlay_locked);
@@ -3001,7 +3003,8 @@ void RenderVoxelList::render_ortho_setup_window() {
                     ortho_state.overlay_enabled = saved.enabled;
                     ortho_state.overlay_offset =
                         ImVec2(saved.offset_x, saved.offset_y);
-                    ortho_state.overlay_scale = saved.scale;
+                    ortho_state.overlay_scale_x = saved.scale_x;
+			    ortho_state.overlay_scale_y = saved.scale_y;
                     ortho_state.blend_ratio = saved.blend_ratio;
                     ortho_state.overlay_locked = saved.locked;
 
@@ -3066,7 +3069,8 @@ void RenderVoxelList::render_ortho_edit_window() {
         ol.enabled = ortho_state.overlay_enabled;
         ol.offset_x = ortho_state.overlay_offset.x;
         ol.offset_y = ortho_state.overlay_offset.y;
-        ol.scale = ortho_state.overlay_scale;
+        ol.scale_x = ortho_state.overlay_scale_x;
+	    ol.scale_y = ortho_state.overlay_scale_y;
         ol.blend_ratio = ortho_state.blend_ratio;
         ol.locked = ortho_state.overlay_locked;
     };
@@ -3118,7 +3122,8 @@ void RenderVoxelList::render_ortho_edit_window() {
                 ortho_state.overlay_img_height = h;
                 ortho_state.overlay_enabled = true;
                 ortho_state.overlay_offset = ImVec2(0, 0);
-                ortho_state.overlay_scale = 1.0f;
+                ortho_state.overlay_scale_x = 1.0f;
+		ortho_state.overlay_scale_y = 1.0f;
                 sync_overlay_to_item();
             } else {
                 show_toast("Failed to load image: " + utf8_path, 3000.0f);
@@ -3136,9 +3141,21 @@ void RenderVoxelList::render_ortho_edit_window() {
 
         // Blend slider
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(150);
+        ImGui::SetNextItemWidth(120);
         if (ImGui::SliderFloat(get_locale_cstr("label.blend_ratio"),
                                &ortho_state.blend_ratio, 0.0f, 1.0f))
+            overlay_changed = true;
+
+        // Scale X/Y sliders (independent axis scaling)
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80);
+        if (ImGui::DragFloat("##scale_x", &ortho_state.overlay_scale_x,
+                             0.01f, 0.1f, 10.0f, "SX:%.2f"))
+            overlay_changed = true;
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80);
+        if (ImGui::DragFloat("##scale_y", &ortho_state.overlay_scale_y,
+                             0.01f, 0.1f, 10.0f, "SY:%.2f"))
             overlay_changed = true;
 
         // Lock button (toggle overlay drag/resize)
@@ -3273,6 +3290,15 @@ void RenderVoxelList::render_ortho_edit_window() {
     // Recompute display_size from the actual rendered item
     display_size = img_end.x - img_cursor.x;
 
+    // Invisible button over the entire image canvas.  It captures mouse
+    // events so ImGui won't see "void" clicks as window-drag starts.
+    // The overlay already has its own InvisibleButton when unlocked.
+    // All guide-point / overlay-interaction code below uses raw
+    // ImGui::IsMouse* checks, which are unaffected by InvisibleButton.
+    ImGui::SetCursorScreenPos(img_cursor);
+    ImGui::InvisibleButton("##canvas_interact",
+                           ImVec2(display_size, display_size));
+
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
     // ---- Overlay image rendering ----
@@ -3282,8 +3308,8 @@ void RenderVoxelList::render_ortho_edit_window() {
     // model image for coordinate mapping below.
     ImVec2 prev_cursor_screen = ImGui::GetCursorScreenPos();
     if (bgfx::isValid(ortho_state.overlay_tex) && ortho_state.overlay_enabled) {
-        float overlay_w = ortho_state.overlay_img_width * ortho_state.overlay_scale * ref_to_display;
-        float overlay_h = ortho_state.overlay_img_height * ortho_state.overlay_scale * ref_to_display;
+        float overlay_w = ortho_state.overlay_img_width * ortho_state.overlay_scale_x * ref_to_display;
+        float overlay_h = ortho_state.overlay_img_height * ortho_state.overlay_scale_y * ref_to_display;
         ImVec2 overlay_pos = ImVec2(img_cursor.x + ortho_state.overlay_offset.x * ref_to_display,
                                     img_cursor.y + ortho_state.overlay_offset.y * ref_to_display);
 
@@ -3410,9 +3436,9 @@ void RenderVoxelList::render_ortho_edit_window() {
     bool overlay_visible = ortho_state.overlay_enabled &&
                            bgfx::isValid(ortho_state.overlay_tex);
     float overlay_w = overlay_visible
-        ? ortho_state.overlay_img_width * ortho_state.overlay_scale * ref_to_display : 0.0f;
+        ? ortho_state.overlay_img_width * ortho_state.overlay_scale_x * ref_to_display : 0.0f;
     float overlay_h = overlay_visible
-        ? ortho_state.overlay_img_height * ortho_state.overlay_scale * ref_to_display : 0.0f;
+        ? ortho_state.overlay_img_height * ortho_state.overlay_scale_y * ref_to_display : 0.0f;
     ImVec2 overlay_pos = ImVec2(img_cursor.x + ortho_state.overlay_offset.x * ref_to_display,
                                 img_cursor.y + ortho_state.overlay_offset.y * ref_to_display);
     ImVec2 overlay_end = ImVec2(overlay_pos.x + overlay_w,
@@ -3441,41 +3467,63 @@ void RenderVoxelList::render_ortho_edit_window() {
         }
     }
 
-    // Four corner resize zones (15 px inset from each corner)
-    const float resize_margin = 15.0f;
-    int hovered_corner = -1;  // -1=none, 0=TL, 1=TR, 2=BL, 3=BR
+    // Four corner resize zones — centred on each corner so the visual
+    // handle circles (radius 5 px) sit inside the hit-test area.
+    const float corner_r = 12.0f;  // hit-test radius around corner centre
+    int hovered_corner = -1;       // -1=none, 0=TL, 1=TR, 2=BL, 3=BR
     if (overlay_visible && !ortho_state.overlay_locked) {
-        // TL
-        if (mouse.x >= overlay_pos.x && mouse.x < overlay_pos.x + resize_margin &&
-            mouse.y >= overlay_pos.y && mouse.y < overlay_pos.y + resize_margin)
+        auto in_range = [](float v, float c, float r) -> bool {
+            return v >= c - r && v < c + r;
+        };
+        // TL — centred at (overlay_pos.x, overlay_pos.y)
+        if (in_range(mouse.x, overlay_pos.x, corner_r) &&
+            in_range(mouse.y, overlay_pos.y, corner_r))
             hovered_corner = 0;
-        // TR
-        else if (mouse.x >= overlay_end.x - resize_margin &&
-                 mouse.x < overlay_end.x &&
-                 mouse.y >= overlay_pos.y &&
-                 mouse.y < overlay_pos.y + resize_margin)
+        // TR — centred at (overlay_end.x, overlay_pos.y)
+        else if (in_range(mouse.x, overlay_end.x, corner_r) &&
+                 in_range(mouse.y, overlay_pos.y, corner_r))
             hovered_corner = 1;
-        // BL
-        else if (mouse.x >= overlay_pos.x &&
-                 mouse.x < overlay_pos.x + resize_margin &&
-                 mouse.y >= overlay_end.y - resize_margin &&
-                 mouse.y < overlay_end.y)
+        // BL — centred at (overlay_pos.x, overlay_end.y)
+        else if (in_range(mouse.x, overlay_pos.x, corner_r) &&
+                 in_range(mouse.y, overlay_end.y, corner_r))
             hovered_corner = 2;
-        // BR
-        else if (mouse.x >= overlay_end.x - resize_margin &&
-                 mouse.x < overlay_end.x &&
-                 mouse.y >= overlay_end.y - resize_margin &&
-                 mouse.y < overlay_end.y)
+        // BR — centred at (overlay_end.x, overlay_end.y)
+        else if (in_range(mouse.x, overlay_end.x, corner_r) &&
+                 in_range(mouse.y, overlay_end.y, corner_r))
             hovered_corner = 3;
     }
 
-    // ---- Cursor feedback ----
-    if (hovered_corner == 0 || hovered_corner == 3)
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
-    else if (hovered_corner == 1 || hovered_corner == 2)
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNESW);
-    else if (mouse_in_overlay && !ortho_state.overlay_locked)
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    // ---- Cursor feedback (SDL directly — bgfx's imgui backend
+    //     does not forward ImGui cursor requests to the OS). ----
+    {
+        static int s_active_cursor = -1;  // last cursor we set (-1 = none)
+        int desired = -1;
+
+        if (mouse_in_image) {
+            if (hovered_corner == 0 || hovered_corner == 3)
+                desired = SDL_SYSTEM_CURSOR_SIZENWSE;
+            else if (hovered_corner == 1 || hovered_corner == 2)
+                desired = SDL_SYSTEM_CURSOR_SIZENESW;
+            else if (mouse_in_overlay && !ortho_state.overlay_locked)
+                desired = SDL_SYSTEM_CURSOR_SIZEALL;
+            else
+                desired = SDL_SYSTEM_CURSOR_ARROW;
+        }
+
+        // Reset to arrow when mouse left the image area and we had
+        // previously set a non-default cursor.
+        if (desired == -1 && s_active_cursor != -1)
+            desired = SDL_SYSTEM_CURSOR_ARROW;
+
+        if (desired != -1 && desired != s_active_cursor) {
+            s_active_cursor = desired;
+            static SDL_Cursor* s_cached = nullptr;
+            if (s_cached) SDL_FreeCursor(s_cached);
+            s_cached = SDL_CreateSystemCursor(
+                static_cast<SDL_SystemCursor>(desired));
+            SDL_SetCursor(s_cached);
+        }
+    }
 
     // ---- Raycasting (always active) ----
     if (mouse_in_image && ortho_state.coord_map_ready) {
@@ -3595,7 +3643,8 @@ void RenderVoxelList::render_ortho_edit_window() {
             if (on_corner) {
                 ortho_state.resize_corner = hovered_corner;
                 ortho_state.resize_start_mouse = mouse;
-                ortho_state.resize_start_scale = ortho_state.overlay_scale;
+                ortho_state.resize_start_scale_x = ortho_state.overlay_scale_x;
+		        ortho_state.resize_start_scale_y = ortho_state.overlay_scale_y;
                 ortho_state.resize_start_offset = ortho_state.overlay_offset;
             } else if (mouse_in_overlay) {
                 ortho_state.is_dragging_overlay = true;
@@ -3604,79 +3653,70 @@ void RenderVoxelList::render_ortho_edit_window() {
             }
         }
 
-        // Resize (4-corner, aspect-ratio-preserving)
+        // Resize (4-corner, free-drag — independent X/Y scaling)
         if (ortho_state.resize_corner >= 0) {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
                 int corner = ortho_state.resize_corner;
                 float iw = static_cast<float>(ortho_state.overlay_img_width);
                 float ih = static_cast<float>(ortho_state.overlay_img_height);
-                float ref = std::sqrt(iw * iw + ih * ih);  // unit-scale diagonal
-                if (ref < 1e-6f) ref = 1.0f;
+                if (iw < 1e-6f) iw = 1.0f;
+                if (ih < 1e-6f) ih = 1.0f;
 
-                // Anchor is the opposite corner; direction from anchor → dragged corner
-                float adx = 0.0f, ady = 0.0f;  // anchor canvas offset
-                float ddx = 0.0f, ddy = 0.0f;  // diagonal unit-vector components
-                bool anchor_right = false, anchor_bottom = false;
+                // Mouse delta in reference space
+                float dmx_ref = (mouse.x - ortho_state.resize_start_mouse.x) *
+                                display_to_ref;
+                float dmy_ref = (mouse.y - ortho_state.resize_start_mouse.y) *
+                                display_to_ref;
 
+                float new_sx = ortho_state.resize_start_scale_x;
+                float new_sy = ortho_state.resize_start_scale_y;
+                float new_ox = ortho_state.resize_start_offset.x;
+                float new_oy = ortho_state.resize_start_offset.y;
+
+                // Each corner independently controls X and Y based on
+                // mouse delta relative to the opposite (anchor) corner.
                 switch (corner) {
-                case 0: // TL, anchor BR
-                    anchor_right = true; anchor_bottom = true;
-                    adx = ortho_state.resize_start_offset.x + iw * ortho_state.resize_start_scale;
-                    ady = ortho_state.resize_start_offset.y + ih * ortho_state.resize_start_scale;
-                    ddx = -iw / ref; ddy = -ih / ref;
+                case 0: // TL — anchor is BR
+                    new_sx = ortho_state.resize_start_scale_x -
+                             dmx_ref / iw;
+                    new_sy = ortho_state.resize_start_scale_y -
+                             dmy_ref / ih;
+                    new_ox = ortho_state.resize_start_offset.x + dmx_ref;
+                    new_oy = ortho_state.resize_start_offset.y + dmy_ref;
                     break;
-                case 1: // TR, anchor BL
-                    anchor_right = false; anchor_bottom = true;
-                    adx = ortho_state.resize_start_offset.x;
-                    ady = ortho_state.resize_start_offset.y + ih * ortho_state.resize_start_scale;
-                    ddx =  iw / ref; ddy = -ih / ref;
+                case 1: // TR — anchor is BL
+                    new_sx = ortho_state.resize_start_scale_x +
+                             dmx_ref / iw;
+                    new_sy = ortho_state.resize_start_scale_y -
+                             dmy_ref / ih;
+                    new_oy = ortho_state.resize_start_offset.y + dmy_ref;
                     break;
-                case 2: // BL, anchor TR
-                    anchor_right = true; anchor_bottom = false;
-                    adx = ortho_state.resize_start_offset.x + iw * ortho_state.resize_start_scale;
-                    ady = ortho_state.resize_start_offset.y;
-                    ddx = -iw / ref; ddy =  ih / ref;
+                case 2: // BL — anchor is TR
+                    new_sx = ortho_state.resize_start_scale_x -
+                             dmx_ref / iw;
+                    new_sy = ortho_state.resize_start_scale_y +
+                             dmy_ref / ih;
+                    new_ox = ortho_state.resize_start_offset.x + dmx_ref;
                     break;
-                case 3: // BR, anchor TL
+                case 3: // BR — anchor is TL
                 default:
-                    anchor_right = false; anchor_bottom = false;
-                    adx = ortho_state.resize_start_offset.x;
-                    ady = ortho_state.resize_start_offset.y;
-                    ddx =  iw / ref; ddy =  ih / ref;
+                    new_sx = ortho_state.resize_start_scale_x +
+                             dmx_ref / iw;
+                    new_sy = ortho_state.resize_start_scale_y +
+                             dmy_ref / ih;
                     break;
                 }
 
-                // Anchor screen position (reference→screen conversion)
-                ImVec2 anchor_screen(img_cursor.x + adx * ref_to_display,
-                                     img_cursor.y + ady * ref_to_display);
-                float mx = mouse.x - anchor_screen.x;
-                float my = mouse.y - anchor_screen.y;
-                float proj = mx * ddx + my * ddy;
-                // new_scale is in screen space; convert back to reference space
-                float new_scale = (proj / ref) * display_to_ref;
-                new_scale = std::max(0.1f, std::min(10.0f, new_scale));
-
-                ortho_state.overlay_scale = new_scale;
-
-                // Adjust offset so the anchor stays fixed
-                if (anchor_right)
-                    ortho_state.overlay_offset.x =
-                        ortho_state.resize_start_offset.x +
-                        iw * (ortho_state.resize_start_scale - new_scale);
-                else
-                    ortho_state.overlay_offset.x = ortho_state.resize_start_offset.x;
-
-                if (anchor_bottom)
-                    ortho_state.overlay_offset.y =
-                        ortho_state.resize_start_offset.y +
-                        ih * (ortho_state.resize_start_scale - new_scale);
-                else
-                    ortho_state.overlay_offset.y = ortho_state.resize_start_offset.y;
+                ortho_state.overlay_scale_x =
+                    std::max(0.1f, std::min(10.0f, new_sx));
+                ortho_state.overlay_scale_y =
+                    std::max(0.1f, std::min(10.0f, new_sy));
+                ortho_state.overlay_offset.x = new_ox;
+                ortho_state.overlay_offset.y = new_oy;
             } else {
                 ortho_state.resize_corner = -1;
             }
         }
-
         // Drag (left-button on body) to move the overlay
         if (ortho_state.is_dragging_overlay) {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {

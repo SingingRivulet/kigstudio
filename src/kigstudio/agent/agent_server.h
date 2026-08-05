@@ -88,7 +88,8 @@ public:
 	void setOrthoOverlayData(const uint8_t* rgba, int w, int h);
 	/// Update overlay placement parameters.
 	void setOrthoOverlayParams(float offset_x, float offset_y,
-	                           float scale, float blend_ratio);
+	                           float scale_x, float scale_y,
+	                           float blend_ratio);
 	/// Enable/disable overlay blending.
 	void setOrthoOverlayActive(bool active);
 	/// Set the current camera/projection state as JSON string.

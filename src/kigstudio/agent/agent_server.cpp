@@ -73,7 +73,8 @@ struct AgentServer::Impl {
 	bool overlay_active_ = false;
 
 	float overlay_off_x_ = 0.f, overlay_off_y_ = 0.f;
-	float overlay_scale_ = 1.f, overlay_blend_ = 0.5f;
+	float overlay_scale_x_ = 1.f, overlay_scale_y_ = 1.f;
+	float overlay_blend_ = 0.5f;
 
 	std::string ortho_state_json_;
 };
@@ -245,11 +246,13 @@ void AgentServer::setOrthoOverlayData(const uint8_t* rgba, int w, int h) {
 }
 
 void AgentServer::setOrthoOverlayParams(float offset_x, float offset_y,
-                                         float scale, float blend_ratio) {
+                                         float scale_x, float scale_y,
+                                         float blend_ratio) {
 	std::lock_guard<std::mutex> lock(impl_->ortho_mtx_);
 	impl_->overlay_off_x_ = offset_x;
 	impl_->overlay_off_y_ = offset_y;
-	impl_->overlay_scale_ = scale;
+	impl_->overlay_scale_x_ = scale_x;
+	impl_->overlay_scale_y_ = scale_y;
 	impl_->overlay_blend_ = blend_ratio;
 }
 
@@ -316,18 +319,18 @@ bool AgentServer::sendOrthoBlendedPng(const httplib::Request& req,
 	// Blend overlay on top
 	if (impl.overlay_active_ && impl.overlay_valid_ && blend_ratio > 0.001f) {
 		int ov_w = impl.overlay_w_, ov_h = impl.overlay_h_;
-		float sc = impl.overlay_scale_;
-		if (sc <= 0.0f) sc = 1.0f;
-		int placed_w = (int)(ov_w * sc), placed_h = (int)(ov_h * sc);
+		float sc_x = impl.overlay_scale_x_, sc_y = impl.overlay_scale_y_;
+		if (sc_x <= 0.0f) sc_x = 1.0f; if (sc_y <= 0.0f) sc_y = 1.0f;
+		int placed_w = (int)(ov_w * sc_x), placed_h = (int)(ov_h * sc_y);
 		int off_x = (int)impl.overlay_off_x_, off_y = (int)impl.overlay_off_y_;
 
 		for (int dy = 0; dy < placed_h; dy++) {
-			int sy = (int)(dy / sc);
+			int sy = (int)(dy / sc_y);
 			if (sy < 0 || sy >= ov_h) continue;
 			int py = off_y + dy;
 			if (py < 0 || py >= out_h) continue;
 			for (int dx = 0; dx < placed_w; dx++) {
-				int sx = (int)(dx / sc);
+				int sx = (int)(dx / sc_x);
 				if (sx < 0 || sx >= ov_w) continue;
 				int px = off_x + dx;
 				if (px < 0 || px >= out_w) continue;
