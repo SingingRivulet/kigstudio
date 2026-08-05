@@ -490,6 +490,8 @@ int ui_main(int argc, const char* const* argv) {
                             }
                             render_items.ortho_state.projection_dir = dir;
                             render_items.ortho_state.is_picking_point = false;
+                            // Direction changed: re-render the off-screen texture
+                            render_items.ortho_state.render_dirty = true;
                         }
                     } else if (leftMouseDown &&
                                (std::abs(pitch) > 1e-6f ||

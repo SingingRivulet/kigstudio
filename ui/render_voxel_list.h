@@ -258,7 +258,7 @@ struct OrthoProjectionState {
 
     // Edit window
     bool edit_window_open = false;
-    int render_resolution = 1024;
+    int render_resolution = 2048;
     bool render_dirty = true;
     bool coord_map_ready = false;
 
@@ -273,6 +273,7 @@ struct OrthoProjectionState {
     size_t _base_triangle_count = 0;   // for detecting base-model changes
 
     // GPU off-screen render for view image (multi-frame state machine)
+    // High-res framebuffer (user-chosen resolution, used for AI export)
     bgfx::FrameBufferHandle view_fb = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle view_tex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle view_depth_tex = BGFX_INVALID_HANDLE;

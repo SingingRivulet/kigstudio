@@ -2421,19 +2421,61 @@ void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
     // ---- Create GPU off-screen render resources ----
     int res = ortho_state.render_resolution;
     constexpr uint64_t tex_flags =
-        BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP |
+        BGFX_SAMPLER_MIN_ANISOTROPIC | BGFX_SAMPLER_MAG_ANISOTROPIC;
 
+    // Create the render texture with mipmaps.  BGFX_RESOLVE_AUTO_GEN_MIPS
+    // auto-generates mip levels after rendering.  When the render is
+    // displayed at ~574 px via the font shader's texture2D(), the GPU
+    // auto-selects the appropriate mip LOD (e.g. log2(2048/574) ≈ 1.83)
+    // and trilinearly blends between levels, providing effective AA
+    // even at high minification ratios.
+    bool has_mips = true;
     ortho_state.view_tex = bgfx::createTexture2D(
-        static_cast<uint16_t>(res), static_cast<uint16_t>(res), false, 1,
+        static_cast<uint16_t>(res), static_cast<uint16_t>(res), has_mips, 1,
         bgfx::TextureFormat::BGRA8, tex_flags);
     ortho_state.view_depth_tex = bgfx::createTexture2D(
         static_cast<uint16_t>(res), static_cast<uint16_t>(res), false, 1,
         bgfx::TextureFormat::D32F, tex_flags);
 
-    bgfx::TextureHandle attachments[] = {ortho_state.view_tex,
-                                         ortho_state.view_depth_tex};
+    bgfx::Attachment fbo_att[2];
+    fbo_att[0].init(ortho_state.view_tex, bgfx::Access::Write, 0, 1, 0,
+                    BGFX_RESOLVE_AUTO_GEN_MIPS);
+    fbo_att[1].init(ortho_state.view_depth_tex, bgfx::Access::Write);
     ortho_state.view_fb =
-        bgfx::createFrameBuffer(2, attachments, false);
+        bgfx::createFrameBuffer(2, fbo_att, false);
+
+    // ---- DEBUG: dump all texture & framebuffer info ----
+    {
+        int mip_count = 1;
+        if (has_mips) {
+            int max_dim = res;
+            while (max_dim > 1) { mip_count++; max_dim /= 2; }
+        }
+        std::cout << "[ortho_debug] === Texture/Framebuffer Info ===" << std::endl;
+        std::cout << "[ortho_debug] render_resolution = " << res << std::endl;
+        std::cout << "[ortho_debug] viewport_size     = " << ortho_state.viewport_size << std::endl;
+        std::cout << "[ortho_debug] view_tex.idx      = " << ortho_state.view_tex.idx << std::endl;
+        std::cout << "[ortho_debug] view_tex size     = " << res << "x" << res << std::endl;
+        std::cout << "[ortho_debug] view_tex format   = BGRA8" << std::endl;
+        std::cout << "[ortho_debug] view_tex has_mips = " << (has_mips ? "true" : "false") << std::endl;
+        std::cout << "[ortho_debug] view_tex mip_count= " << mip_count << std::endl;
+        std::cout << "[ortho_debug] view_tex flags    = 0x" << std::hex << tex_flags << std::dec << std::endl;
+        std::cout << "[ortho_debug] BGFX_TEXTURE_RT   = 0x" << std::hex << BGFX_TEXTURE_RT << std::dec << std::endl;
+        std::cout << "[ortho_debug] BGFX_TEXTURE_RT_MASK=0x" << std::hex << BGFX_TEXTURE_RT_MASK << std::dec << std::endl;
+        std::cout << "[ortho_debug] flags & RT_MASK   = 0x" << std::hex << (tex_flags & BGFX_TEXTURE_RT_MASK) << std::dec << std::endl;
+        std::cout << "[ortho_debug] SAMPLER_MIN_ANISO = 0x" << std::hex << BGFX_SAMPLER_MIN_ANISOTROPIC << std::dec << std::endl;
+        std::cout << "[ortho_debug] SAMPLER_MAG_ANISO = 0x" << std::hex << BGFX_SAMPLER_MAG_ANISOTROPIC << std::dec << std::endl;
+        std::cout << "[ortho_debug] depth_tex.idx     = " << ortho_state.view_depth_tex.idx << std::endl;
+        std::cout << "[ortho_debug] depth_tex size    = " << res << "x" << res << std::endl;
+        std::cout << "[ortho_debug] view_fb.idx       = " << ortho_state.view_fb.idx << std::endl;
+        std::cout << "[ortho_debug] view_fb attach[0].resolve = 0x" << std::hex << (int)fbo_att[0].resolve << std::dec << std::endl;
+        std::cout << "[ortho_debug] AUTO_GEN_MIPS     = 0x" << std::hex << (int)BGFX_RESOLVE_AUTO_GEN_MIPS << std::dec << std::endl;
+        std::cout << "[ortho_debug] bgfx caps: homogeneousDepth=" << bgfx::getCaps()->homogeneousDepth << std::endl;
+        std::cout << "[ortho_debug] _center = (" << ortho_state._center.x << "," << ortho_state._center.y << "," << ortho_state._center.z << ")" << std::endl;
+        std::cout << "[ortho_debug] _cam_pos= (" << ortho_state._cam_pos.x << "," << ortho_state._cam_pos.y << "," << ortho_state._cam_pos.z << ")" << std::endl;
+        std::cout << "[ortho_debug] view half-extent = " << (ortho_state.viewport_size * 0.5f) << std::endl;
+    }
 
     // Create ortho shader (view 200 for off-screen render)
     if (!ortho_shader_) {
@@ -2488,18 +2530,32 @@ void RenderVoxelList::process_ortho_render() {
         }
         auto& base_item = it->second;
 
-        // Check renderer availability
-        bool has_renderer = false;
-        if (base_item->mesh_only) {
-            has_renderer = !base_item->mesh_renderer.empty();
-        } else {
-            has_renderer = !base_item->voxel_renderer.empty();
+        // Check renderer availability.
+        // The item-level mesh_renderer holds the smooth source mesh for BOTH
+        // mesh_only and voxel items (voxel_renderer's own main mesh is never
+        // populated for voxel items — only its chunked voxel surface is).
+        // The chunked surface is midpoint-snapped binary marching cubes
+        // (only axis-aligned / 45° edges at voxel resolution), which looks
+        // blocky / "mosaic-like" in ortho projection, so use it only as a
+        // last resort when no smooth mesh exists at all.
+        bool use_chunked = false;  // true → render chunked voxel surface
+        if (base_item->mesh_renderer.empty() && !base_item->cached_mesh.empty()) {
+            // Smooth mesh data exists CPU-side but was never uploaded
+            base_item->mesh_renderer.loadGeometry(base_item->cached_mesh);
         }
-        if (!has_renderer) {
-            std::cerr << "[ortho_render] Base item has no renderer" << std::endl;
-            ortho_state.ortho_render_stage = 0;
-            return;
+        if (base_item->mesh_renderer.empty()) {
+            if (base_item->mesh_only || base_item->voxel_renderer.empty()) {
+                std::cerr << "[ortho_render] Base item has no renderer" << std::endl;
+                ortho_state.ortho_render_stage = 0;
+                return;
+            }
+            use_chunked = true;
         }
+
+        std::cout << "[ortho_render] GPU mesh: "
+                  << (use_chunked ? "chunked(voxel)" : "mesh_renderer(smooth)")
+                  << " triangles=" << ortho_state._base_triangles.size()
+                  << std::endl;
 
         // Build orthographic view and projection matrices
         vec3f center = ortho_state._center;
@@ -2535,36 +2591,36 @@ void RenderVoxelList::process_ortho_render() {
         float identity[16];
         bx::mtxIdentity(identity);
 
-        // Render base model
+        // Depth-colour mode setup (used by both high-res and display renders)
+        float view_dir_arr[3] = {0, 0, 0};
+        float center_arr[3] = {center.x, center.y, center.z};
+        float depth_scale = ortho_state.viewport_size > 1e-8f
+                                ? 1.0f / ortho_state.viewport_size
+                                : 0.01f;
         if (use_depth_color) {
-            // Depth-colour mode: map world-space depth along the view
-            // direction to a heatmap (blue=near, red=far).
             vec3f look_dir = ortho_state.projection_dir;
             float fl = std::sqrt(look_dir.x*look_dir.x + look_dir.y*look_dir.y + look_dir.z*look_dir.z);
             if (fl > 1e-8f) {
                 look_dir.x /= fl; look_dir.y /= fl; look_dir.z /= fl;
             }
-            float view_dir_arr[3] = {look_dir.x, look_dir.y, look_dir.z};
-            float center_arr[3] = {center.x, center.y, center.z};
-            // Use viewport_size as the depth range for normalisation
-            float depth_scale = ortho_state.viewport_size > 1e-8f
-                                    ? 1.0f / ortho_state.viewport_size
-                                    : 0.01f;
+            view_dir_arr[0] = look_dir.x;
+            view_dir_arr[1] = look_dir.y;
+            view_dir_arr[2] = look_dir.z;
 
-            if (base_item->mesh_only) {
-                base_item->mesh_renderer.renderDepthColor(identity, *ortho_shader_,
-                                                          view_dir_arr, center_arr,
-                                                          depth_scale);
-            } else {
+            if (use_chunked) {
                 base_item->voxel_renderer.renderDepthColor(identity, *ortho_shader_,
                                                            view_dir_arr, center_arr,
                                                            depth_scale);
+            } else {
+                base_item->mesh_renderer.renderDepthColor(identity, *ortho_shader_,
+                                                          view_dir_arr, center_arr,
+                                                          depth_scale);
             }
         } else {
-            if (base_item->mesh_only) {
-                base_item->mesh_renderer.renderGBuffer(identity, *ortho_shader_);
-            } else {
+            if (use_chunked) {
                 base_item->voxel_renderer.renderGBuffer(identity, *ortho_shader_);
+            } else {
+                base_item->mesh_renderer.renderGBuffer(identity, *ortho_shader_);
             }
         }
         bgfx::touch(kOrthoViewView);
@@ -2868,7 +2924,7 @@ void RenderVoxelList::render_ortho_setup_window() {
             }
             if (max_dist2 > 0.0f) {
                 float sphere_r = std::sqrt(max_dist2) * 1.05f;
-                ortho_state.viewport_size = sphere_r * 1.5f;
+                ortho_state.viewport_size = sphere_r * 2.2f;
             }
         }
         ortho_state.viewport_size_defaulted = true;
@@ -2901,6 +2957,8 @@ void RenderVoxelList::render_ortho_setup_window() {
                 six_view_direction(ortho_state.six_view_index,
                                    item.hair_front_reference,
                                    item.hair_north_pole);
+            // Direction changed: the off-screen texture must be re-rendered
+            ortho_state.render_dirty = true;
         }
     } else {
         // ---- Pick point on model ----
@@ -2928,13 +2986,15 @@ void RenderVoxelList::render_ortho_setup_window() {
     ImGui::Separator();
 
     // ---- Viewport size ----
-    ImGui::DragFloat(get_locale_cstr("label.viewport_size"),
-                     &ortho_state.viewport_size, 1.0f, 10.0f, 500.0f, "%.1f");
+    if (ImGui::DragFloat(get_locale_cstr("label.viewport_size"),
+                         &ortho_state.viewport_size, 1.0f, 10.0f, 500.0f, "%.1f")) {
+        ortho_state.render_dirty = true;
+    }
 
     // ---- Render resolution ----
     int res = ortho_state.render_resolution;
-    const int res_options[] = {256, 512, 1024, 2048};
-    const char* res_names[] = {"256", "512", "1024", "2048"};
+    const int res_options[] = {512, 1024, 2048, 4096};
+    const char* res_names[] = {"512", "1024", "2048", "4096"};
     int res_idx = 2;
     for (int i = 0; i < 4; ++i) {
         if (res == res_options[i]) { res_idx = i; break; }
@@ -2942,6 +3002,8 @@ void RenderVoxelList::render_ortho_setup_window() {
     if (ImGui::Combo(get_locale_cstr("label.render_resolution"),
                      &res_idx, res_names, 4)) {
         ortho_state.render_resolution = res_options[res_idx];
+        // Mark dirty so the edit window knows to re-render
+        ortho_state.render_dirty = true;
     }
 
     ImGui::Separator();
@@ -3056,6 +3118,10 @@ void RenderVoxelList::render_ortho_edit_window() {
     }
 
     // ---- Top toolbar: Load reference image ----
+    if (ortho_state.view_tex_ready) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("res=%d", ortho_state.render_resolution);
+    }
     if (ImGui::Button(get_locale_cstr("action.load_reference_image"))) {
         const char* filters[] = {"*.png", "*.jpg", "*.jpeg", "*.bmp"};
         const char* path = tinyfd_openFileDialog(
@@ -3328,6 +3394,26 @@ void RenderVoxelList::render_ortho_edit_window() {
     float display_size = std::min(avail_w, 600.0f);
 
     int res = ortho_state.render_resolution;
+
+    // Debug: log display metrics once per resolution change
+    {
+        static int last_logged_res = -1;
+        static float last_logged_ds = -1;
+        if (ortho_state.view_tex_ready &&
+            (res != last_logged_res || std::abs(display_size - last_logged_ds) > 1.0f)) {
+            last_logged_res = res;
+            last_logged_ds = display_size;
+            float est_lod = std::log2(static_cast<float>(res) / std::max(display_size, 1.0f));
+            int mip0_size = static_cast<int>(res / std::pow(2.0f, std::floor(est_lod)));
+            std::cout << "[ortho_display] render_res=" << res
+                      << " display_size=" << display_size
+                      << " est_LOD=" << est_lod
+                      << " nearest_mip_size=" << mip0_size
+                      << " view_tex.idx=" << ortho_state.view_tex.idx
+                      << " fb.idx=" << ortho_state.view_fb.idx
+                      << std::endl;
+        }
+    }
 
     // Display the rendered view image, or dark fallback if not ready yet
     if (ortho_state.view_tex_ready && bgfx::isValid(ortho_state.view_tex)) {
