@@ -2409,6 +2409,7 @@ void RenderVoxelList::destroy_ortho_resources() {
     // Release shader programs while bgfx context is still valid
     if (ortho_shader_) {
         ortho_shader_->release();
+        ortho_shader_.reset();
     }
 }
 
@@ -2544,15 +2545,15 @@ void RenderVoxelList::process_ortho_render() {
             return;
         }
 
-        bool use_depth_color = ortho_state.depth_color_mode;
+        int render_mode = ortho_state.ortho_render_mode;
 
-        if (use_depth_color) {
+        if (render_mode == 1) {  // Depth
             if (!ortho_shader_->ensureOrthoDepthProgram()) {
                 std::cerr << "[ortho_render] Failed to load ortho depth shader" << std::endl;
                 ortho_state.ortho_render_stage = 0;
                 return;
             }
-        } else {
+        } else {  // Contour (0) or Lighting (2) — both use GBuffer + u_lightingMode
             if (!ortho_shader_->ensureGBufferProgram()) {
                 std::cerr << "[ortho_render] Failed to load GBuffer shader" << std::endl;
                 ortho_state.ortho_render_stage = 0;
@@ -2625,22 +2626,22 @@ void RenderVoxelList::process_ortho_render() {
         float identity[16];
         bx::mtxIdentity(identity);
 
-        // Depth-colour mode setup (used by both high-res and display renders)
+        // Depth / Lighting uniforms (used by depth and lighting modes)
         float view_dir_arr[3] = {0, 0, 0};
         float center_arr[3] = {center.x, center.y, center.z};
         float depth_scale = ortho_state.viewport_size > 1e-8f
                                 ? 1.0f / ortho_state.viewport_size
                                 : 0.01f;
-        if (use_depth_color) {
-            vec3f look_dir = ortho_state.projection_dir;
-            float fl = std::sqrt(look_dir.x*look_dir.x + look_dir.y*look_dir.y + look_dir.z*look_dir.z);
-            if (fl > 1e-8f) {
-                look_dir.x /= fl; look_dir.y /= fl; look_dir.z /= fl;
-            }
-            view_dir_arr[0] = look_dir.x;
-            view_dir_arr[1] = look_dir.y;
-            view_dir_arr[2] = look_dir.z;
+        vec3f look_dir = ortho_state.projection_dir;
+        float fl = std::sqrt(look_dir.x*look_dir.x + look_dir.y*look_dir.y + look_dir.z*look_dir.z);
+        if (fl > 1e-8f) {
+            look_dir.x /= fl; look_dir.y /= fl; look_dir.z /= fl;
+        }
+        view_dir_arr[0] = look_dir.x;
+        view_dir_arr[1] = look_dir.y;
+        view_dir_arr[2] = look_dir.z;
 
+        if (render_mode == 1) {  // Depth heatmap
             if (use_chunked) {
                 base_item->voxel_renderer.renderDepthColor(identity, *ortho_shader_,
                                                            view_dir_arr, center_arr,
@@ -2650,7 +2651,11 @@ void RenderVoxelList::process_ortho_render() {
                                                           view_dir_arr, center_arr,
                                                           depth_scale);
             }
-        } else {
+        } else {  // Contour or Lighting — both use GBuffer program
+            // Set lighting mode: 0.0 = contour, 1.0 = lighting
+            float lighting_vec[4] = { (render_mode == 2) ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f };
+            ortho_shader_->ensureUniforms();
+            bgfx::setUniform(ortho_shader_->u_lighting_mode_, lighting_vec);
             if (use_chunked) {
                 base_item->voxel_renderer.renderGBuffer(identity, *ortho_shader_);
             } else {
@@ -2862,38 +2867,47 @@ void RenderVoxelList::render_ortho_setup_window() {
         return;
     }
 
-    // ---- Auto-calculate viewport size default ----
+    // ---- Initialize viewport size & render resolution from
+    //     persisted per-node values, or auto-calculate on first open ----
     if (!ortho_state.viewport_size_defaulted) {
-        auto base_it = items.find(item.addon_base_node_id);
-        if (base_it != items.end()) {
-            const auto& base = *base_it->second;
-            float max_dist2 = 0.0f;
-            auto check_vertex = [&](const vec3f& v) {
-                vec3f rel = {v.x - item.addon_center_point.x,
-                             v.y - item.addon_center_point.y,
-                             v.z - item.addon_center_point.z};
-                float d2 = rel.x*rel.x + rel.y*rel.y + rel.z*rel.z;
-                if (d2 > max_dist2) max_dist2 = d2;
-            };
-            if (!base.source_triangles.empty()) {
-                for (const auto& tri : base.source_triangles) {
-                    check_vertex(std::get<0>(tri));
-                    check_vertex(std::get<1>(tri));
-                    check_vertex(std::get<2>(tri));
+        // Viewport: use saved value if present, otherwise auto-calc
+        if (item.ortho_viewport_size > 0.0f) {
+            ortho_state.viewport_size = item.ortho_viewport_size;
+        } else {
+            auto base_it = items.find(item.addon_base_node_id);
+            if (base_it != items.end()) {
+                const auto& base = *base_it->second;
+                float max_dist2 = 0.0f;
+                auto check_vertex = [&](const vec3f& v) {
+                    vec3f rel = {v.x - item.addon_center_point.x,
+                                 v.y - item.addon_center_point.y,
+                                 v.z - item.addon_center_point.z};
+                    float d2 = rel.x*rel.x + rel.y*rel.y + rel.z*rel.z;
+                    if (d2 > max_dist2) max_dist2 = d2;
+                };
+                if (!base.source_triangles.empty()) {
+                    for (const auto& tri : base.source_triangles) {
+                        check_vertex(std::get<0>(tri));
+                        check_vertex(std::get<1>(tri));
+                        check_vertex(std::get<2>(tri));
+                    }
+                } else if (!base.cached_mesh.empty()) {
+                    for (const auto& tri_n : base.cached_mesh) {
+                        const auto& tri = std::get<0>(tri_n);
+                        check_vertex(std::get<0>(tri));
+                        check_vertex(std::get<1>(tri));
+                        check_vertex(std::get<2>(tri));
+                    }
                 }
-            } else if (!base.cached_mesh.empty()) {
-                for (const auto& tri_n : base.cached_mesh) {
-                    const auto& tri = std::get<0>(tri_n);
-                    check_vertex(std::get<0>(tri));
-                    check_vertex(std::get<1>(tri));
-                    check_vertex(std::get<2>(tri));
+                if (max_dist2 > 0.0f) {
+                    float sphere_r = std::sqrt(max_dist2) * 1.05f;
+                    ortho_state.viewport_size = sphere_r * 2.2f;
                 }
-            }
-            if (max_dist2 > 0.0f) {
-                float sphere_r = std::sqrt(max_dist2) * 1.05f;
-                ortho_state.viewport_size = sphere_r * 2.2f;
             }
         }
+        // Render resolution: use saved value if present, else default
+        if (item.ortho_render_resolution > 0)
+            ortho_state.render_resolution = item.ortho_render_resolution;
         ortho_state.viewport_size_defaulted = true;
     }
 
@@ -2956,6 +2970,7 @@ void RenderVoxelList::render_ortho_setup_window() {
     if (ImGui::DragFloat(get_locale_cstr("label.viewport_size"),
                          &ortho_state.viewport_size, 1.0f, 10.0f, 500.0f, "%.1f")) {
         ortho_state.render_dirty = true;
+        item.ortho_viewport_size = ortho_state.viewport_size;
     }
 
     // ---- Render resolution ----
@@ -2969,7 +2984,7 @@ void RenderVoxelList::render_ortho_setup_window() {
     if (ImGui::Combo(get_locale_cstr("label.render_resolution"),
                      &res_idx, res_names, 4)) {
         ortho_state.render_resolution = res_options[res_idx];
-        // Mark dirty so the edit window knows to re-render
+        item.ortho_render_resolution = ortho_state.render_resolution;
         ortho_state.render_dirty = true;
     }
 
@@ -3748,9 +3763,14 @@ void RenderVoxelList::render_ortho_edit_window() {
                     &ortho_state.show_width_vectors);
 
     ImGui::SameLine();
-    if (ImGui::Checkbox(get_locale_cstr("label.depth_color_mode"),
-                        &ortho_state.depth_color_mode)) {
-        // Re-render with the new colour mode
+    const char* render_mode_names[] = {
+        get_locale_cstr("label.render_mode_contour"),
+        get_locale_cstr("label.render_mode_depth"),
+        get_locale_cstr("label.render_mode_lighting"),
+    };
+    ImGui::SetNextItemWidth(120);
+    if (ImGui::Combo("##render_mode", &ortho_state.ortho_render_mode,
+                     render_mode_names, 3)) {
         if (ortho_state.view_tex_ready) {
             ortho_state.render_dirty = true;
         }

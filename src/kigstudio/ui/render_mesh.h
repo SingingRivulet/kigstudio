@@ -120,6 +120,11 @@ namespace sinriv::ui::render {
                 ortho_depth_program_ = BGFX_INVALID_HANDLE;
                 std::cout << "RenderMeshShader shader(ortho_depth_program_) destroyed" << std::endl;
             }
+            if (bgfx::isValid(ortho_lighting_program_)) {
+                bgfx::destroy(ortho_lighting_program_);
+                ortho_lighting_program_ = BGFX_INVALID_HANDLE;
+                std::cout << "RenderMeshShader shader(ortho_lighting_program_) destroyed" << std::endl;
+            }
         }
 
         inline void destroyUniforms() {
@@ -135,6 +140,10 @@ namespace sinriv::ui::render {
             if (bgfx::isValid(u_exclude_from_tint_)) {
                 bgfx::destroy(u_exclude_from_tint_);
                 u_exclude_from_tint_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(u_lighting_mode_)) {
+                bgfx::destroy(u_lighting_mode_);
+                u_lighting_mode_ = BGFX_INVALID_HANDLE;
             }
             if (bgfx::isValid(u_view_dir_)) {
                 bgfx::destroy(u_view_dir_);
@@ -159,6 +168,9 @@ namespace sinriv::ui::render {
             }
             if (!bgfx::isValid(u_exclude_from_tint_)) {
                 u_exclude_from_tint_ = bgfx::createUniform("u_excludeFromTint", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_lighting_mode_)) {
+                u_lighting_mode_ = bgfx::createUniform("u_lightingMode", bgfx::UniformType::Vec4);
             }
             if (!bgfx::isValid(u_view_dir_)) {
                 u_view_dir_ = bgfx::createUniform("u_viewDir", bgfx::UniformType::Vec4);
@@ -255,6 +267,31 @@ namespace sinriv::ui::render {
             return bgfx::isValid(ortho_depth_program_);
         }
 
+        // Ortho lighting program: reuses the GBuffer vertex shader but
+        // replaces the fragment shader with one that computes diffuse
+        // lighting from the normal and base colour.
+        inline bool ensureOrthoLightingProgram() {
+            if (bgfx::isValid(ortho_lighting_program_)) {
+                return true;
+            }
+            ensureUniforms();
+
+            bgfx::ShaderHandle vs =
+                sinriv::kigstudio::ui::loadShader(shader_dir_ + "vs_mesh_gbuffer.bin");
+            bgfx::ShaderHandle fs =
+                sinriv::kigstudio::ui::loadShader(shader_dir_ + "fs_ortho_lighting.bin");
+            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
+                if (bgfx::isValid(vs)) { bgfx::destroy(vs); }
+                if (bgfx::isValid(fs)) { bgfx::destroy(fs); }
+                std::cerr << "RenderMesh ortho lighting shader load failed from "
+                          << shader_dir_ << std::endl;
+                return false;
+            }
+
+            ortho_lighting_program_ = bgfx::createProgram(vs, fs, true);
+            return bgfx::isValid(ortho_lighting_program_);
+        }
+
         inline bool ensureLineProgram() {
             if (bgfx::isValid(line_program_)) {
                 return true;
@@ -292,9 +329,11 @@ namespace sinriv::ui::render {
         bgfx::ProgramHandle gbuffer_addon_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle line_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle ortho_depth_program_ = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle ortho_lighting_program_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_base_color_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_depth_bias_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_exclude_from_tint_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_lighting_mode_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_view_dir_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_center_pos_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_depth_scale_ = BGFX_INVALID_HANDLE;
@@ -584,6 +623,39 @@ namespace sinriv::ui::render {
             }
             bgfx::setState(state);
             bgfx::submit(shader.view_id_, shader.ortho_depth_program_);
+        }
+
+        void renderOrthoLighting(const float* transform,
+                                 RenderMeshShader& shader) {
+            if (!layout_initialized_) {
+                mesh_detail::PosNormalVertex_bgfx::init(layout_);
+                layout_initialized_ = true;
+            }
+
+            if (empty() || !shader.ensureOrthoLightingProgram()) {
+                return;
+            }
+
+            bgfx::setTransform(transform);
+            bgfx::setVertexBuffer(0, mesh_.vbh);
+            bgfx::setIndexBuffer(mesh_.ibh);
+            shader.ensureUniforms();
+            // Depth bias and base colour uniforms
+            float depth_bias_vec[4] = {depth_bias_, 0.0f, 0.0f, 0.0f};
+            bgfx::setUniform(shader.u_depth_bias_, depth_bias_vec);
+            float base_vec[4] = {
+                base_color_[0], base_color_[1],
+                base_color_[2], base_color_[3]};
+            bgfx::setUniform(shader.u_base_color_, base_vec);
+            uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                             BGFX_STATE_WRITE_Z |
+                             BGFX_STATE_DEPTH_TEST_LESS |
+                             BGFX_STATE_MSAA;
+            if (cull_backface) {
+                state |= BGFX_STATE_CULL_CCW;
+            }
+            bgfx::setState(state);
+            bgfx::submit(shader.view_id_, shader.ortho_lighting_program_);
         }
 
         void renderOverlay(RenderMeshShader & shader) {

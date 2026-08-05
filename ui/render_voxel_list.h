@@ -297,7 +297,8 @@ struct OrthoProjectionState {
     bool show_width_vectors = true;
 
     // Depth-based colouring mode
-    bool depth_color_mode = false;
+    // 0=Contour, 1=Depth, 2=Lighting
+    int ortho_render_mode = 0;
 
     // Interaction state
     bool overlay_locked = false;         // lock overlay from drag/resize
@@ -623,6 +624,9 @@ class RenderVoxelList {
         bool show_addon_center = false;  // 是否显示/启用中心点
         // Per-six-view ortho overlay state (saved to JSON per-node)
         OrthoOverlayState ortho_overlay[6];
+        // Ortho editor global settings (persisted per-node)
+        float ortho_viewport_size = 0.0f;      // 0 = auto-calculate on next open
+        int ortho_render_resolution = 0;       // 0 = use default (2048)
         // 发际线平面（用于纺锤宽度生成）
         bool hairline_plane_enabled = false;
         bool hairline_plane_use_y = true;  // true=Y水平面, false=三点平面

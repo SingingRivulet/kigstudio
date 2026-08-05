@@ -574,6 +574,10 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
             cJSON_AddItemToObject(obj, "ortho_overlay", overlay_arr);
         else
             cJSON_Delete(overlay_arr);
+        cJSON_AddNumberToObject(obj, "ortho_viewport_size",
+                                static_cast<double>(item.ortho_viewport_size));
+        cJSON_AddNumberToObject(obj, "ortho_render_resolution",
+                                item.ortho_render_resolution);
     }
     cJSON_AddNumberToObject(obj, "silhouette_shape_mode",
                             static_cast<int>(item.silhouette_shape_mode));
@@ -1073,6 +1077,13 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 if (lk && cJSON_IsBool(lk)) ol.locked = cJSON_IsTrue(lk);
             }
         }
+        // Ortho editor global settings
+        const cJSON* ovs = cJSON_GetObjectItem(obj, "ortho_viewport_size");
+        if (ovs && cJSON_IsNumber(ovs))
+            item->ortho_viewport_size = static_cast<float>(ovs->valuedouble);
+        const cJSON* orr = cJSON_GetObjectItem(obj, "ortho_render_resolution");
+        if (orr && cJSON_IsNumber(orr))
+            item->ortho_render_resolution = orr->valueint;
     }
 
     // nav_layout_pos 与 nav_node_position 同轴

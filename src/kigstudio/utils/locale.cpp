@@ -1312,6 +1312,12 @@ void init_locale_strings() {
                       {{"en", "Show Width Vectors"}, {"zh", "显示宽度向量"}});
     add_locale_string("label.depth_color_mode",
                       {{"en", "Depth Color"}, {"zh", "深度着色"}});
+    add_locale_string("label.render_mode_contour",
+                      {{"en", "Contour"}, {"zh", "轮廓"}});
+    add_locale_string("label.render_mode_depth",
+                      {{"en", "Depth"}, {"zh", "深度"}});
+    add_locale_string("label.render_mode_lighting",
+                      {{"en", "Lighting"}, {"zh", "光照"}});
     add_locale_string("action.pick_projection",
                       {{"en", "Pick from 3D View"}, {"zh", "在3D视图拾取"}});
     add_locale_string("action.picking_direction",

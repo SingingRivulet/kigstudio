@@ -228,6 +228,20 @@ namespace sinriv::ui::render {
             }
         }
 
+        inline void renderOrthoLighting(const float* transform,
+                                         RenderMeshShader& shader) {
+            if (!chunk_meshes_.empty()) {
+                for (auto& [key, mesh] : chunk_meshes_) {
+                    (void)key;
+                    mesh.showAxis = showAxis;
+                    mesh.renderOrthoLighting(transform, shader);
+                }
+            } else {
+                mesh_renderer_.showAxis = showAxis;
+                mesh_renderer_.renderOrthoLighting(transform, shader);
+            }
+        }
+
         inline void renderOverlay(RenderMeshShader & shader) {
             if (!chunk_meshes_.empty()) {
                 for (auto& [key, mesh] : chunk_meshes_) {
