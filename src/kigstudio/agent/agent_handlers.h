@@ -32,6 +32,7 @@ using HairAngleEntry = sinriv::ui::render::HairAngleEntry;
 using MeshData = std::vector<std::tuple<
     sinriv::kigstudio::voxel::triangle_bvh<float>::triangle,
     sinriv::kigstudio::vec3<float>>>;
+using vec3f = sinriv::kigstudio::vec3<float>;
 
 // ---- helpers ----
 
@@ -1286,6 +1287,83 @@ inline cJSON* h_strand_update(cJSON* params, List& list) {
 ///   name (string, optional)    — strand display name
 ///   strand_index (int, opt)    — if set, update an existing strand instead of creating
 ///   guide_samples_per_segment (int, opt, default 64)
+/// Extrapolate a new guide point from existing 3D curve when raycast misses
+/// the model.  Builds a curvature-preserving tangent from the last 2+ guide
+/// points, then finds the closest approach between the camera ray and the
+/// extrapolated line.  Returns true and sets out_pt (on the ray).
+inline bool extrapolate_guide_along_ray(const vec3f& ro, const vec3f& rd,
+                                        const std::vector<vec3f>& existing,
+                                        vec3f& out_pt, float vp_size) {
+	const size_t n = existing.size();
+	if (n < 2) return false;
+
+	const vec3f& P_last = existing.back();
+
+	// ---- Build curvature-preserving tangent direction ----
+	vec3f T;
+	if (n == 2) {
+		const vec3f& A = existing[n - 2];
+		T = vec3f{P_last.x - A.x, P_last.y - A.y, P_last.z - A.z};
+	} else {
+		// Blend last 2-3 normalised segment directions, weighted toward recent
+		size_t seg_count = std::min(n - 1, size_t(3));
+		float w_sum = 0.0f;
+		T = vec3f{0, 0, 0};
+		for (size_t i = 0; i < seg_count; ++i) {
+			size_t idx = n - seg_count - 1 + i;
+			const vec3f& A = existing[idx];
+			const vec3f& B = existing[idx + 1];
+			vec3f dir{B.x - A.x, B.y - A.y, B.z - A.z};
+			float len = std::sqrt(dir.x * dir.x + dir.y * dir.y +
+			                      dir.z * dir.z);
+			if (len < 1e-8f) continue;
+			dir.x /= len; dir.y /= len; dir.z /= len;
+			float w = static_cast<float>(i + 1);  // linear ramp
+			T.x += dir.x * w; T.y += dir.y * w; T.z += dir.z * w;
+			w_sum += w;
+		}
+		if (w_sum > 0.0f) {
+			T.x /= w_sum; T.y /= w_sum; T.z /= w_sum;
+		} else {
+			const vec3f& A = existing[n - 2];
+			T = vec3f{P_last.x - A.x, P_last.y - A.y, P_last.z - A.z};
+		}
+	}
+
+	// Normalise
+	float t_len = std::sqrt(T.x * T.x + T.y * T.y + T.z * T.z);
+	if (t_len < 1e-8f) return false;
+	T.x /= t_len; T.y /= t_len; T.z /= t_len;
+
+	// ---- Two-line closest-point (ray vs extrapolation line) ----
+	float b = rd.x * T.x + rd.y * T.y + rd.z * T.z;
+	if (std::abs(b) > 0.9999f) return false;  // near-parallel
+
+	vec3f v{ro.x - P_last.x, ro.y - P_last.y, ro.z - P_last.z};
+	float d = -(v.x * rd.x + v.y * rd.y + v.z * rd.z);
+	float e = -(v.x * T.x + v.y * T.y + v.z * T.z);
+	float inv_det = 1.0f / (b * b - 1.0f);
+	float s = (d - b * e) * inv_det;
+	float t = (b * d - e) * inv_det;
+
+	// Clamp to forward direction (s>=0: in front of image plane;
+	// t>=0: forward along the extrapolated curve)
+	if (s < 0.0f) s = 0.0f;
+	if (t < 0.0f) t = 0.0f;
+
+	// Constrained closest-point pair
+	vec3f c_ray{ro.x + s * rd.x, ro.y + s * rd.y, ro.z + s * rd.z};
+	vec3f c_line{P_last.x + t * T.x, P_last.y + t * T.y,
+	             P_last.z + t * T.z};
+	float dist = std::sqrt((c_ray.x - c_line.x) * (c_ray.x - c_line.x) +
+	                       (c_ray.y - c_line.y) * (c_ray.y - c_line.y) +
+	                       (c_ray.z - c_line.z) * (c_ray.z - c_line.z));
+
+	if (dist > vp_size * 0.5f) return false;
+
+	out_pt = c_ray;
+	return true;}
+
 inline cJSON* h_strand_create_2d(cJSON* params, List& list) {
 	using vec3f = sinriv::kigstudio::voxel::vec3f;
 
@@ -1382,8 +1460,17 @@ inline cJSON* h_strand_create_2d(cJSON* params, List& list) {
 			});
 			hit_count++;
 		} else {
-			// Fallback: project onto the image plane
-			guide_3d.push_back(plane_pt);
+			// Try extrapolation from existing guide points
+			vec3f extrapolated;
+			if (guide_3d.size() >= 2 &&
+			    extrapolate_guide_along_ray(plane_pt, ray_dir,
+			                                guide_3d, extrapolated,
+			                                vp)) {
+				guide_3d.push_back(extrapolated);
+				hit_count++;  // count as surface hit
+			} else {
+				guide_3d.push_back(plane_pt);
+			}
 		}
 	}
 
