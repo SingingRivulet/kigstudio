@@ -1,5 +1,7 @@
 # kimi-agent 工具集
 
+> 快速上手：完整的"拉图 → 标注 → 校验 → 提交"流程见 [workflow.md](workflow.md)；HTTP API 细节见 [api.md](api.md)。
+
 ## hair_guides.py — 动漫发型放样引导线标注与校验
 
 在发型参考图上为每根发束绘制放样引导线（spine curve），并量化校验引导线是否与发束中心重合。

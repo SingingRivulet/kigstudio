@@ -45,3 +45,6 @@ dep/boost
 dep/eigen3
 .vs/*
 .claude/*
+
+*.pyc
+*.pyo
