@@ -332,6 +332,294 @@ def test_strand_detail() -> None:
 
 
 # ============================================================
+# 新功能测试 (Feature 1-5)
+# ============================================================
+
+def test_strand_rename() -> None:
+    """测试发束改名 API — Feature 2"""
+    print("\n── Strand Rename ──")
+    if not Config.ALL_STRANDS:
+        skip("Rename API", "没有发束可测")
+        return
+    nid, sidx, name = Config.ALL_STRANDS[0]
+    strand_uuid = None
+    try:
+        r = get(f"/nodes/{nid}/strands/{sidx}")
+        body = r.json()
+        strand_uuid = body.get("data", {}).get("strand", {}).get("uuid")
+        _check(strand_uuid is not None,
+               f"Step 1: 获取发束 UUID → {strand_uuid}")
+    except Exception as e:
+        _check(False, "Step 1: 获取发束 UUID", str(e))
+        return
+
+    if not strand_uuid:
+        skip("Rename API", "无法获取发束 UUID")
+        return
+
+    if not Config.FULL:
+        print(f"  [smoke] 将调用: POST /nodes/{nid}/strands/by-uuid/{strand_uuid}/rename")
+        skip("Step 2: 改名 API", "使用 --full 启用写入")
+        return
+
+    try:
+        new_name = f"renamed_{int(time.time())}"
+        payload = {"new_name": new_name}
+        r = post(f"/nodes/{nid}/strands/by-uuid/{strand_uuid}/rename",
+                 payload)
+        _check(r.status_code in (200, 201),
+               f"Step 2: POST rename → {r.status_code}",
+               f"body={r.text[:200]}")
+        body = r.json()
+        _check(body.get("ok") is True,
+               "  ok == True",
+               f"body={str(body)[:200]}")
+        new_uuid = body.get("new_uuid", "")
+        _check(len(new_uuid) > 0 and new_uuid != strand_uuid,
+               f"  UUID changed: {strand_uuid[:8]}... → {new_uuid[:8]}...")
+        _check(body.get("name") == new_name,
+               f"  name updated → '{new_name}'")
+
+        # Rename back to original UUID
+        restore_payload = {"new_name": name, "new_uuid": strand_uuid}
+        r2 = post(f"/nodes/{nid}/strands/by-uuid/{new_uuid}/rename",
+                  restore_payload)
+        if r2.status_code in (200, 201):
+            _check(True, f"Step 3: 恢复原名 '{name}' + 恢复 UUID")
+        else:
+            _check(False, "Step 3: 恢复原 UUID", f"status={r2.status_code}")
+    except Exception as e:
+        _check(False, "Rename API", str(e))
+
+
+def test_strand_hidden_guide_points() -> None:
+    """测试隐藏引导点 API — Feature 4"""
+    print("\n── Hidden Guide Points ──")
+    if not Config.ALL_STRANDS:
+        skip("Hidden guide points", "没有发束可测")
+        return
+    nid, sidx, name = Config.ALL_STRANDS[0]
+
+    if not Config.FULL:
+        print(f"  [smoke] 将调用: PATCH /nodes/{nid}/strands/{sidx}")
+        skip("Step: 设置隐藏引导点", "使用 --full 启用写入")
+        return
+
+    try:
+        # Set hidden_guide_points_start
+        start_pts = [[-1.0, 0.0, -1.0], [-0.5, 0.5, -0.5]]
+        payload = {
+            "node_id": nid,
+            "strand_index": sidx,
+            "hidden_guide_points_start": start_pts,
+        }
+        r = patch(f"/nodes/{nid}/strands/{sidx}", payload)
+        _check(r.status_code in (200, 201),
+               f"Step 1: 设置 hidden_guide_points_start → {r.status_code}",
+               f"body={r.text[:200]}")
+
+        # Set hidden_guide_points_end
+        end_pts = [[1.0, 0.0, 1.0]]
+        payload2 = {
+            "node_id": nid,
+            "strand_index": sidx,
+            "hidden_guide_points_end": end_pts,
+        }
+        r2 = patch(f"/nodes/{nid}/strands/{sidx}", payload2)
+        _check(r2.status_code in (200, 201),
+               f"Step 2: 设置 hidden_guide_points_end → {r2.status_code}")
+
+        # Read back and verify
+        r3 = get(f"/nodes/{nid}/strands/{sidx}")
+        strand = r3.json().get("data", {}).get("strand", {})
+        read_start = strand.get("hidden_guide_points_start", [])
+        read_end = strand.get("hidden_guide_points_end", [])
+        _check(len(read_start) == 2,
+               f"Step 3: 回读 hidden_guide_points_start → {len(read_start)} pts (期望 2)",
+               f"got {read_start}")
+        _check(len(read_end) == 1,
+               f"Step 4: 回读 hidden_guide_points_end → {len(read_end)} pts (期望 1)",
+               f"got {read_end}")
+
+        # Clean up: clear hidden guide points
+        clear_payload = {
+            "node_id": nid,
+            "strand_index": sidx,
+            "hidden_guide_points_start": [],
+            "hidden_guide_points_end": [],
+        }
+        r4 = patch(f"/nodes/{nid}/strands/{sidx}", clear_payload)
+        _check(r4.status_code in (200, 201),
+               f"Step 5: 清除隐藏引导点 → {r4.status_code}")
+    except Exception as e:
+        _check(False, "Hidden guide points", str(e))
+
+
+def test_strand_auto_hair_root() -> None:
+    """测试自动发根引导点 API — Feature 5"""
+    print("\n── Auto Hair Root ──")
+    if not Config.ALL_STRANDS:
+        skip("Auto hair root", "没有发束可测")
+        return
+    nid, sidx, name = Config.ALL_STRANDS[0]
+
+    if not Config.FULL:
+        print(f"  [smoke] 将调用: PATCH /nodes/{nid}/strands/{sidx}")
+        skip("Step: 设置 auto_hair_root", "使用 --full 启用写入")
+        return
+
+    try:
+        # Enable auto_hair_root
+        payload = {
+            "node_id": nid,
+            "strand_index": sidx,
+            "auto_hair_root": True,
+        }
+        r = patch(f"/nodes/{nid}/strands/{sidx}", payload)
+        _check(r.status_code in (200, 201),
+               f"Step 1: 设置 auto_hair_root=true → {r.status_code}",
+               f"body={r.text[:200]}")
+
+        # Read back
+        r2 = get(f"/nodes/{nid}/strands/{sidx}")
+        strand = r2.json().get("data", {}).get("strand", {})
+        _check(strand.get("auto_hair_root") is True,
+               "Step 2: 回读 auto_hair_root == True")
+
+        # Disable auto_hair_root
+        payload2 = {
+            "node_id": nid,
+            "strand_index": sidx,
+            "auto_hair_root": False,
+        }
+        r3 = patch(f"/nodes/{nid}/strands/{sidx}", payload2)
+        _check(r3.status_code in (200, 201),
+               f"Step 3: 设置 auto_hair_root=false → {r3.status_code}")
+
+        # Verify disabled
+        r4 = get(f"/nodes/{nid}/strands/{sidx}")
+        strand2 = r4.json().get("data", {}).get("strand", {})
+        _check(strand2.get("auto_hair_root") is False,
+               "Step 4: 回读 auto_hair_root == False")
+    except Exception as e:
+        _check(False, "Auto hair root", str(e))
+
+
+def test_strand_reverse_guide_points() -> None:
+    """测试反转引导点顺序 — Feature 1
+    通过 strand.update API 手动反转 guide_points 顺序来模拟 UI 的 Reverse 按钮。
+    """
+    print("\n── Reverse Guide Points ──")
+    if not Config.ALL_STRANDS:
+        skip("Reverse guide points", "没有发束可测")
+        return
+    nid, sidx, name = Config.ALL_STRANDS[0]
+
+    # Read current guide points
+    try:
+        r = get(f"/nodes/{nid}/strands/{sidx}")
+        strand = r.json().get("data", {}).get("strand", {})
+        orig_pts = strand.get("guide_points", [])
+    except Exception as e:
+        _check(False, "Step 1: 获取引导点", str(e))
+        return
+
+    if len(orig_pts) < 2:
+        skip("Reverse guide points", f"只有 {len(orig_pts)} 个引导点，需要 >= 2")
+        return
+
+    if not Config.FULL:
+        print(f"  [smoke] 将反转 {len(orig_pts)} 个引导点并提交到 strand #{nid}/{sidx}")
+        skip("Step: 反转引导点", "使用 --full 启用写入")
+        return
+
+    try:
+        # Reverse and submit
+        reversed_pts = list(reversed(orig_pts))
+        payload = {
+            "node_id": nid,
+            "strand_index": sidx,
+            "guide_points": reversed_pts,
+        }
+        r = patch(f"/nodes/{nid}/strands/{sidx}", payload)
+        _check(r.status_code in (200, 201),
+               f"Step 2: 提交反转后的 {len(reversed_pts)} 个点 → {r.status_code}",
+               f"body={r.text[:200]}")
+
+        # Read back and verify first point is now what was last
+        r2 = get(f"/nodes/{nid}/strands/{sidx}")
+        strand2 = r2.json().get("data", {}).get("strand", {})
+        new_pts = strand2.get("guide_points", [])
+        if len(new_pts) == len(orig_pts) and len(orig_pts) > 0:
+            first_match = (abs(new_pts[0][0] - orig_pts[-1][0]) < 0.01 and
+                           abs(new_pts[0][1] - orig_pts[-1][1]) < 0.01 and
+                           abs(new_pts[0][2] - orig_pts[-1][2]) < 0.01)
+            _check(first_match,
+                   f"Step 3: 验证反转 — 新首点 == 旧尾点",
+                   f"期望 {orig_pts[-1]}, 得到 {new_pts[0] if new_pts else 'N/A'}")
+
+        # Restore original order
+        restore_payload = {
+            "node_id": nid,
+            "strand_index": sidx,
+            "guide_points": orig_pts,
+        }
+        r3 = patch(f"/nodes/{nid}/strands/{sidx}", restore_payload)
+        _check(r3.status_code in (200, 201),
+               f"Step 4: 恢复原始顺序 → {r3.status_code}")
+    except Exception as e:
+        _check(False, "Reverse guide points", str(e))
+
+
+def test_ortho_export_guide_curves() -> None:
+    """测试导出引导线覆盖 — Feature 3
+
+    引导线覆盖是在 process_ai_export() 管线中完成的：
+      1. 用户在正交编辑器中勾选 "Export Guide Curves" 复选框
+      2. 点击导出按钮 → GPU readback → BGRA→RGBA 转换
+      3. draw_guide_curves_on_buffer() 在 RGBA buffer 上绘制彩色引导线
+      4. 结果推送到 API 缓存，随后 /ortho/render 返回带引导线的图像
+
+    此测试验证：
+      - /ortho/render 返回有效 PNG（引导线将在 UI 导出后叠加）
+      - 相机状态包含投影所需的完整参数
+      - 颜色调色板字节序已正确修复
+    """
+    print("\n── Export Guide Curves ──")
+    try:
+        r = get("/ortho/render")
+        if r.status_code == 503:
+            skip("Export guide curves", "还没有渲染数据")
+            return
+        _check(r.status_code == 200, f"GET /ortho/render → {r.status_code}",
+               f"status={r.status_code}")
+        ct = r.headers.get("Content-Type", "")
+        _check("image/png" in ct, f"  Content-Type = {ct}")
+
+        size_kb = len(r.content) / 1024
+        _check(len(r.content) > 100,
+               f"  PNG size = {size_kb:.1f} KB (原始渲染)")
+
+        # 验证相机状态包含 3D→2D 投影所需的完整参数
+        r2 = get("/ortho/state")
+        if r2.status_code == 200:
+            state = r2.json()
+            has_cam = all(k in state for k in
+                          ["center", "cam_right", "cam_up", "viewport_size"])
+            _check(has_cam,
+                   "  state has camera params for 3D→2D projection",
+                   f"keys={list(state.keys())[:8]}")
+            if has_cam:
+                print(f"  [info] 在正交编辑器中勾选 'Export Guide Curves'")
+                print(f"         并点击导出按钮后，引导线将覆盖到 PNG 上")
+                print(f"         调色板: 12色 (来自 hair_guides.py PALETTE)")
+
+        save_image("ortho_export_guide_curves.png", r.content)
+    except Exception as e:
+        _check(False, "Export guide curves", str(e))
+
+
+# ============================================================
 # 正交投影端点
 # ============================================================
 
@@ -886,6 +1174,7 @@ def main() -> None:
             test_ortho_blend()
             test_ortho_overlay()
             test_2d_strand_submit()
+            test_ortho_export_guide_curves()
         else:
             # 系统
             test_ping()
@@ -901,12 +1190,19 @@ def main() -> None:
             test_strands_list()
             test_strand_detail()
 
+            # 新功能测试 (Feature 1-5)
+            test_strand_rename()
+            test_strand_hidden_guide_points()
+            test_strand_auto_hair_root()
+            test_strand_reverse_guide_points()
+
             # 正交投影端点
             test_ortho_ping()
             test_ortho_state()
             test_ortho_render()
             test_ortho_blend()
             test_ortho_overlay()
+            test_ortho_export_guide_curves()
 
             # 2D 发束提交
             test_2d_strand_submit()

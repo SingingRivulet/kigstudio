@@ -1076,7 +1076,22 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 	using namespace sinriv::kigstudio::mesh::loft;
 	std::vector<std::tuple<loft_Triangle, loft_vec3f>> result;
 
-	if (strand.guide_points.size() < 2) return result;
+	// Merge hidden guide points with visible guide points for lofting
+	std::vector<sinriv::kigstudio::voxel::vec3f> all_guide_points;
+	all_guide_points.reserve(strand.hidden_guide_points_start.size() +
+	                         strand.guide_points.size() +
+	                         strand.hidden_guide_points_end.size());
+	all_guide_points.insert(all_guide_points.end(),
+	                        strand.hidden_guide_points_start.begin(),
+	                        strand.hidden_guide_points_start.end());
+	all_guide_points.insert(all_guide_points.end(),
+	                        strand.guide_points.begin(),
+	                        strand.guide_points.end());
+	all_guide_points.insert(all_guide_points.end(),
+	                        strand.hidden_guide_points_end.begin(),
+	                        strand.hidden_guide_points_end.end());
+
+	if (all_guide_points.size() < 2) return result;
 
 	// Dispatch to special strand type builders (parameter-driven, no width_points needed)
 	if (strand.gen_type == HairStrandGenType::CANDIED_HAWTHORN)
@@ -1113,7 +1128,7 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 
 	// Step 1: Sample guide curve as dense polyline
 	auto sampled = sample_bezier_guide_curve(
-	    strand.guide_points, std::max(strand.guide_samples_per_segment, 1));
+	    all_guide_points, std::max(strand.guide_samples_per_segment, 1));
 	if (sampled.size() < 2) return result;
 
 	// Convert sampled to loft_vec3f
@@ -1766,10 +1781,24 @@ RenderVoxelList::RenderVoxelItem::sample_guide_curve_at(
 }
 
 void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
-	addon_renderers.clear();
+	// Collect UUIDs of currently visible strands
+	std::unordered_set<std::string> needed;
 	for (auto& strand : hair_strands) {
-		// Skip invisible strands for display only (collision still processes them)
-		if (!strand.visible) continue;
+		if (strand.visible) needed.insert(strand.uuid);
+	}
+
+	// Remove entries for strands that were deleted or became invisible
+	for (auto it = addon_renderers.begin(); it != addon_renderers.end(); ) {
+		if (needed.find(it->first) == needed.end()) {
+			it = addon_renderers.erase(it);
+		} else {
+			++it;
+		}
+	}
+
+	// Build or rebuild only dirty strands
+	for (auto& strand : hair_strands) {
+		if (!strand.visible || !strand.mesh_dirty) continue;
 		try {
 			auto tris = build_hair_strand_mesh(strand);
 			if (tris.empty()) continue;
@@ -1842,9 +1871,10 @@ void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
 			for (const auto& tri : plain) {
 				out.emplace_back(tri, compute_triangle_normal(tri));
 			}
-			addon_renderers.emplace_back();
-			addon_renderers.back().setBaseColor(0.3f, 0.65f, 0.42f, 1.0f);
-			addon_renderers.back().loadGeometry(out);
+			auto renderer = std::make_unique<sinriv::ui::render::RenderMesh>();
+			renderer->setBaseColor(0.3f, 0.65f, 0.42f, 1.0f);
+			renderer->loadGeometry(out);
+			addon_renderers[strand.uuid] = std::move(renderer);
 		} catch (const std::exception& e) {
 			std::cerr << "[addon_mesh] build failed for strand: " << e.what()
 			          << std::endl;
@@ -1979,29 +2009,19 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     }
 
     // Rebuild addon meshes if any strand is dirty, or clear when
-    // all strands have been deleted (hair_strands empty but
-    // addon_renderers still holds stale GPU handles).
-    {
-        bool any_dirty = false;
-        for (const auto& strand : hair_strands) {
-            if (strand.mesh_dirty) {
-                any_dirty = true;
-                break;
-            }
-        }
-        if (any_dirty || (hair_strands.empty() && !addon_renderers.empty())) {
-            update_addon_meshes();
-            for (auto& strand : hair_strands)
-                strand.mesh_dirty = false;
-        }
+    // Rebuild addon meshes selectively (only dirty strands are rebuilt)
+    if (!hair_strands.empty() || !addon_renderers.empty()) {
+        update_addon_meshes();
+        for (auto& strand : hair_strands)
+            strand.mesh_dirty = false;
     }
 
     // 附加件渲染器（如毛发预览）：写入 albedo/normal/depth，与主模型正确
     // 互相遮挡，但不写 world_pos 通道，鼠标拾取可穿透它拾取下层模型
     if (!manager || showAddonMesh) {
-        for (auto& addon : addon_renderers) {
-            addon.cull_backface = false;
-            addon.renderGBufferAddon(transform, mesh_shader);
+        for (auto& [uuid, addon] : addon_renderers) {
+            addon->cull_backface = false;
+            addon->renderGBufferAddon(transform, mesh_shader);
         }
     }
 
@@ -2373,31 +2393,164 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 // idle strands → white
                 bool is_active =
                     (guide_curve_drawing_active &&
-                     active_guide_draw_strand == static_cast<int>(si)) ||
+                     active_guide_draw_strand == hair_strands[si].uuid) ||
                     (width_editing_active &&
-                     active_width_edit_strand == static_cast<int>(si));
+                     active_width_edit_strand == hair_strands[si].uuid);
                 uint32_t line_color =
                     is_active ? active_line_color : idle_line_color;
                 uint32_t marker_color =
                     is_active ? active_marker_color : idle_marker_color;
-                // 贝塞尔插值采样 → 平滑曲线折线
-                auto sampled = sample_bezier_guide_curve(
-                    strand.guide_points,
-                    std::max(strand.guide_samples_per_segment, 1));
-                for (size_t pi = 0; pi + 1 < sampled.size(); ++pi) {
-                    const auto& a = sampled[pi];
-                    const auto& b = sampled[pi + 1];
-                    vertices.push_back({a.x, -a.y, a.z, line_color});
-                    vertices.push_back({b.x, -b.y, b.z, line_color});
-                }
+                // --- Unified guide curve rendering ---
+                // When hidden guide points exist, sample from the same
+                // all_guide_points that build_hair_strand_mesh uses.
+                // Each line segment is colored gray (hidden) or
+                // white/yellow (visible) based on which control points
+                // it spans.  No double-draw, no sharp angles.
+                bool has_hidden =
+                    !strand.hidden_guide_points_start.empty() ||
+                    !strand.hidden_guide_points_end.empty();
+
+                const int sps =
+                    std::max(strand.guide_samples_per_segment, 1);
                 const float marker_size = sphere_r * 0.03f;
-                for (const auto& p : strand.guide_points) {
-                    vertices.push_back({p.x - marker_size, -p.y, p.z, marker_color});
-                    vertices.push_back({p.x + marker_size, -p.y, p.z, marker_color});
-                    vertices.push_back({p.x, -(p.y - marker_size), p.z, marker_color});
-                    vertices.push_back({p.x, -(p.y + marker_size), p.z, marker_color});
-                    vertices.push_back({p.x, -p.y, p.z - marker_size, marker_color});
-                    vertices.push_back({p.x, -p.y, p.z + marker_size, marker_color});
+
+                if (has_hidden) {
+                    // Build all_guide_points exactly as loft does
+                    std::vector<sinriv::kigstudio::voxel::vec3f> all_pts;
+                    all_pts.reserve(
+                        strand.hidden_guide_points_start.size() +
+                        strand.guide_points.size() +
+                        strand.hidden_guide_points_end.size());
+                    all_pts.insert(all_pts.end(),
+                                   strand.hidden_guide_points_start.begin(),
+                                   strand.hidden_guide_points_start.end());
+                    all_pts.insert(all_pts.end(),
+                                   strand.guide_points.begin(),
+                                   strand.guide_points.end());
+                    all_pts.insert(all_pts.end(),
+                                   strand.hidden_guide_points_end.begin(),
+                                   strand.hidden_guide_points_end.end());
+
+                    if (all_pts.size() < 2) continue;
+
+                    auto sampled = sample_bezier_guide_curve(all_pts, sps);
+                    const int H =
+                        static_cast<int>(strand.hidden_guide_points_start.size());
+                    const int V =
+                        static_cast<int>(strand.guide_points.size());
+
+                    const uint32_t hidden_line_col =
+                        pack_abgr(0.45f, 0.45f, 0.45f, 0.5f);
+                    const uint32_t hidden_marker_col =
+                        pack_abgr(0.5f, 0.5f, 0.5f, 0.7f);
+
+                    // Segment s (connecting all_pts[s]→all_pts[s+1]) is
+                    // visible-white only when both endpoints are
+                    // guide_points, i.e. H <= s < H+V-1.
+                    // Everything else is gray.
+                    for (size_t k = 0; k + 1 < sampled.size(); ++k) {
+                        int seg = static_cast<int>(k) / sps;
+                        bool vis = (seg >= H && seg < H + V - 1);
+                        uint32_t col =
+                            vis ? line_color : hidden_line_col;
+                        const auto& a = sampled[k];
+                        const auto& b = sampled[k + 1];
+                        vertices.push_back(
+                            {a.x, -a.y, a.z, col});
+                        vertices.push_back(
+                            {b.x, -b.y, b.z, col});
+                    }
+
+                    // Visible guide points → normal markers
+                    for (const auto& p : strand.guide_points) {
+                        vertices.push_back({p.x - marker_size, -p.y, p.z,
+                                            marker_color});
+                        vertices.push_back({p.x + marker_size, -p.y, p.z,
+                                            marker_color});
+                        vertices.push_back({p.x,
+                                            -(p.y - marker_size), p.z,
+                                            marker_color});
+                        vertices.push_back({p.x,
+                                            -(p.y + marker_size), p.z,
+                                            marker_color});
+                        vertices.push_back({p.x, -p.y,
+                                            p.z - marker_size,
+                                            marker_color});
+                        vertices.push_back({p.x, -p.y,
+                                            p.z + marker_size,
+                                            marker_color});
+                    }
+
+                    // Hidden guide points → gray cross markers
+                    for (const auto& p :
+                         strand.hidden_guide_points_start) {
+                        vertices.push_back({p.x - marker_size, -p.y, p.z,
+                                            hidden_marker_col});
+                        vertices.push_back({p.x + marker_size, -p.y, p.z,
+                                            hidden_marker_col});
+                        vertices.push_back({p.x,
+                                            -(p.y - marker_size), p.z,
+                                            hidden_marker_col});
+                        vertices.push_back({p.x,
+                                            -(p.y + marker_size), p.z,
+                                            hidden_marker_col});
+                        vertices.push_back({p.x, -p.y,
+                                            p.z - marker_size,
+                                            hidden_marker_col});
+                        vertices.push_back({p.x, -p.y,
+                                            p.z + marker_size,
+                                            hidden_marker_col});
+                    }
+                    for (const auto& p :
+                         strand.hidden_guide_points_end) {
+                        vertices.push_back({p.x - marker_size, -p.y, p.z,
+                                            hidden_marker_col});
+                        vertices.push_back({p.x + marker_size, -p.y, p.z,
+                                            hidden_marker_col});
+                        vertices.push_back({p.x,
+                                            -(p.y - marker_size), p.z,
+                                            hidden_marker_col});
+                        vertices.push_back({p.x,
+                                            -(p.y + marker_size), p.z,
+                                            hidden_marker_col});
+                        vertices.push_back({p.x, -p.y,
+                                            p.z - marker_size,
+                                            hidden_marker_col});
+                        vertices.push_back({p.x, -p.y,
+                                            p.z + marker_size,
+                                            hidden_marker_col});
+                    }
+                } else {
+                    // No hidden points — simple path: sample guide_points
+                    // directly
+                    auto sampled = sample_bezier_guide_curve(
+                        strand.guide_points, sps);
+                    for (size_t k = 0; k + 1 < sampled.size(); ++k) {
+                        const auto& a = sampled[k];
+                        const auto& b = sampled[k + 1];
+                        vertices.push_back(
+                            {a.x, -a.y, a.z, line_color});
+                        vertices.push_back(
+                            {b.x, -b.y, b.z, line_color});
+                    }
+                    for (const auto& p : strand.guide_points) {
+                        vertices.push_back({p.x - marker_size, -p.y, p.z,
+                                            marker_color});
+                        vertices.push_back({p.x + marker_size, -p.y, p.z,
+                                            marker_color});
+                        vertices.push_back({p.x,
+                                            -(p.y - marker_size), p.z,
+                                            marker_color});
+                        vertices.push_back({p.x,
+                                            -(p.y + marker_size), p.z,
+                                            marker_color});
+                        vertices.push_back({p.x, -p.y,
+                                            p.z - marker_size,
+                                            marker_color});
+                        vertices.push_back({p.x, -p.y,
+                                            p.z + marker_size,
+                                            marker_color});
+                    }
                 }
             }
             if (!vertices.empty() &&
@@ -2440,7 +2593,7 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
             int si = 0;
             for (const auto& strand : hair_strands) {
                 bool is_active_strand =
-                    (si == active_width_edit_strand);
+                    (hair_strands[si].uuid == active_width_edit_strand);
                 int wi = 0;
                 for (const auto& wp : strand.width_points) {
                     // 越界检查：curve_id 超出有效范围则不显示

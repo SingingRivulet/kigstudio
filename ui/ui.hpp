@@ -426,16 +426,16 @@ int ui_main(int argc, const char* const* argv) {
                         if (it != render_items.items.end()) {
                             auto& item = *it->second;
                             if (item.guide_curve_drawing_active &&
-                                item.active_guide_draw_strand >= 0 &&
-                                item.active_guide_draw_strand <
-                                    static_cast<int>(item.hair_strands.size())) {
-                                render_items.push_undo_now(
-                                    render_items.render_id, std::nullopt,
-                                    "Add Guide Point");
-                                auto& strand = item.hair_strands[item.active_guide_draw_strand];
-                                strand.guide_points.push_back(
-                                    render_items.mouse_world_pos);
-                                strand.mesh_dirty = true;
+                                !item.active_guide_draw_strand.empty()) {
+                                auto* strand_ptr = item.find_strand_by_uuid(item.active_guide_draw_strand);
+                                if (strand_ptr) {
+                                    render_items.push_undo_now(
+                                        render_items.render_id, std::nullopt,
+                                        "Add Guide Point");
+                                    strand_ptr->guide_points.push_back(
+                                        render_items.mouse_world_pos);
+                                    strand_ptr->mesh_dirty = true;
+                                }
                             }
                         }
                     } else if (width_edit_click_valid &&
@@ -445,17 +445,18 @@ int ui_main(int argc, const char* const* argv) {
                         if (it != render_items.items.end()) {
                             auto& item = *it->second;
                             if (item.width_editing_active &&
-                                item.active_width_edit_strand >= 0 &&
-                                item.active_width_edit_strand <
-                                    static_cast<int>(item.hair_strands.size())) {
-                                render_items.push_undo_now(
-                                    render_items.render_id, std::nullopt,
-                                    "Add Width Point");
-                                item.add_width_point_at(
-                                    item.active_width_edit_strand,
-                                    render_items.mouse_world_pos);
-                                item.hair_strands[item.active_width_edit_strand]
-                                    .mesh_dirty = true;
+                                !item.active_width_edit_strand.empty()) {
+                                auto* strand_ptr = item.find_strand_by_uuid(item.active_width_edit_strand);
+                                if (strand_ptr) {
+                                    int strand_idx = static_cast<int>(strand_ptr - item.hair_strands.data());
+                                    render_items.push_undo_now(
+                                        render_items.render_id, std::nullopt,
+                                        "Add Width Point");
+                                    item.add_width_point_at(
+                                        strand_idx,
+                                        render_items.mouse_world_pos);
+                                    strand_ptr->mesh_dirty = true;
+                                }
                             }
                         }
                     } else if (hairline_point_pick_valid &&

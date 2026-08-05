@@ -79,8 +79,10 @@ void section_state_from_json(const cJSON* obj, SectionEditorState& state) {
 cJSON* hair_strand_to_json(const HairStrand& strand) {
     cJSON* s_obj = cJSON_CreateObject();
     cJSON_AddStringToObject(s_obj, "name", strand.name.c_str());
+    cJSON_AddStringToObject(s_obj, "uuid", strand.uuid.c_str());
     cJSON_AddBoolToObject(s_obj, "expanded", strand.expanded);
     cJSON_AddBoolToObject(s_obj, "visible", strand.visible);
+    cJSON_AddBoolToObject(s_obj, "auto_hair_root", strand.auto_hair_root);
     cJSON_AddNumberToObject(s_obj, "section_rotation",
                             static_cast<double>(strand.section_rotation));
     cJSON_AddNumberToObject(s_obj, "guide_samples_per_segment",
@@ -95,6 +97,19 @@ cJSON* hair_strand_to_json(const HairStrand& strand) {
         cJSON_AddItemToArray(pts_arr, sinriv::kigstudio::to_json(pt));
     }
     cJSON_AddItemToObject(s_obj, "guide_points", pts_arr);
+    // Hidden guide points (participate in lofting, not editable)
+    if (!strand.hidden_guide_points_start.empty()) {
+        cJSON* hsp_start = cJSON_CreateArray();
+        for (const auto& pt : strand.hidden_guide_points_start)
+            cJSON_AddItemToArray(hsp_start, sinriv::kigstudio::to_json(pt));
+        cJSON_AddItemToObject(s_obj, "hidden_guide_points_start", hsp_start);
+    }
+    if (!strand.hidden_guide_points_end.empty()) {
+        cJSON* hsp_end = cJSON_CreateArray();
+        for (const auto& pt : strand.hidden_guide_points_end)
+            cJSON_AddItemToArray(hsp_end, sinriv::kigstudio::to_json(pt));
+        cJSON_AddItemToObject(s_obj, "hidden_guide_points_end", hsp_end);
+    }
     if (!strand.width_points.empty()) {
         cJSON* wp_arr = cJSON_CreateArray();
         for (const auto& wp : strand.width_points) {
@@ -143,12 +158,20 @@ HairStrand hair_strand_from_json(const cJSON* s_obj) {
     cJSON* name_obj = cJSON_GetObjectItem(s_obj, "name");
     if (name_obj && cJSON_IsString(name_obj))
         strand.name = name_obj->valuestring;
+    cJSON* uuid_obj = cJSON_GetObjectItem(s_obj, "uuid");
+    if (uuid_obj && cJSON_IsString(uuid_obj) && uuid_obj->valuestring[0])
+        strand.uuid = uuid_obj->valuestring;
+    else
+        strand.uuid = generate_uuid();  // backward compat: old project files
     cJSON* exp_obj = cJSON_GetObjectItem(s_obj, "expanded");
     if (exp_obj)
         strand.expanded = exp_obj->valueint != 0;
     cJSON* vis_obj = cJSON_GetObjectItem(s_obj, "visible");
     if (vis_obj)
         strand.visible = vis_obj->valueint != 0;
+    cJSON* ahr_obj = cJSON_GetObjectItem(s_obj, "auto_hair_root");
+    if (ahr_obj && cJSON_IsBool(ahr_obj))
+        strand.auto_hair_root = cJSON_IsTrue(ahr_obj);
     cJSON* rot_obj = cJSON_GetObjectItem(s_obj, "section_rotation");
     if (rot_obj && cJSON_IsNumber(rot_obj))
         strand.section_rotation = static_cast<float>(rot_obj->valuedouble);
@@ -167,6 +190,26 @@ HairStrand hair_strand_from_json(const cJSON* s_obj) {
             cJSON* pt_obj = cJSON_GetArrayItem(pts_arr, pi);
             vec3f pt = sinriv::kigstudio::vec3_from_json<vec3f>(pt_obj);
             strand.guide_points.push_back(pt);
+        }
+    }
+    // Load hidden guide points (start)
+    cJSON* hsp_start = cJSON_GetObjectItem(s_obj, "hidden_guide_points_start");
+    if (hsp_start && cJSON_IsArray(hsp_start)) {
+        int hc = cJSON_GetArraySize(hsp_start);
+        for (int hi = 0; hi < hc; ++hi) {
+            cJSON* pt_obj = cJSON_GetArrayItem(hsp_start, hi);
+            strand.hidden_guide_points_start.push_back(
+                sinriv::kigstudio::vec3_from_json<vec3f>(pt_obj));
+        }
+    }
+    // Load hidden guide points (end)
+    cJSON* hsp_end = cJSON_GetObjectItem(s_obj, "hidden_guide_points_end");
+    if (hsp_end && cJSON_IsArray(hsp_end)) {
+        int hc = cJSON_GetArraySize(hsp_end);
+        for (int hi = 0; hi < hc; ++hi) {
+            cJSON* pt_obj = cJSON_GetArrayItem(hsp_end, hi);
+            strand.hidden_guide_points_end.push_back(
+                sinriv::kigstudio::vec3_from_json<vec3f>(pt_obj));
         }
     }
     cJSON* wp_arr = cJSON_GetObjectItem(s_obj, "width_points");

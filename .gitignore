@@ -37,6 +37,8 @@ tmp
 
 *.bin
 
+tools/kimi-agent/export
+tools/kimi-agent/tmp
 dep/tmp
 dep/ogre
 dep/SDL2-2.30.11

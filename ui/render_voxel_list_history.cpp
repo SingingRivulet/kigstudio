@@ -119,6 +119,16 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.addon_base_node_id = snapshot.addon_base_node_id;
     item.sdf_precision_cache = snapshot.sdf_precision_cache;
     item.joint_wireframe_dirty = true;
+
+    // Validate active strand UUIDs after snapshot restore
+    auto validate_strand_uuid = [&](std::string& uuid) {
+        if (!uuid.empty() && !item.find_strand_by_uuid(uuid))
+            uuid.clear();
+    };
+    validate_strand_uuid(item.active_guide_draw_strand);
+    validate_strand_uuid(item.active_width_edit_strand);
+    validate_strand_uuid(item.active_section_edit_strand);
+    validate_strand_uuid(item.active_perpoint_section_edit_strand);
 }
 
 void RenderVoxelList::begin_edit(int item_id) {

@@ -856,6 +856,10 @@ private:
 			    p, "strand_index",
 			    prop_int("strand_index",
 			             "Strand index (0-based)", 0));
+			cJSON_AddItemToObject(
+			    p, "strand_uuid",
+			    prop_str("strand_uuid",
+			             "Strand UUID (alternative to strand_index)", ""));
 			add_tool(
 			    "strand_get",
 			    "Get full data for one hair strand (guide points, width points, section)",
@@ -888,6 +892,10 @@ private:
 			    p, "strand_index",
 			    prop_int("strand_index", "Strand index to delete",
 			             0));
+			cJSON_AddItemToObject(
+			    p, "strand_uuid",
+			    prop_str("strand_uuid",
+			             "Strand UUID (alternative to strand_index)", ""));
 			add_tool(
 			    "strand_delete",
 			    "Delete a hair strand from a node",
@@ -906,6 +914,10 @@ private:
 			    p, "strand_index",
 			    prop_int("strand_index", "Strand index to update",
 			             0));
+			cJSON_AddItemToObject(
+			    p, "strand_uuid",
+			    prop_str("strand_uuid",
+			             "Strand UUID (alternative to strand_index)", ""));
 			cJSON_AddItemToObject(
 			    p, "name",
 			    prop_str("name", "New strand name", ""));
@@ -973,6 +985,10 @@ private:
 			    prop_int("strand_index", "Strand index to move",
 			             0));
 			cJSON_AddItemToObject(
+			    p, "strand_uuid",
+			    prop_str("strand_uuid",
+			             "Strand UUID (alternative to strand_index)", ""));
+			cJSON_AddItemToObject(
 			    p, "direction",
 			    prop_str("direction",
 			             "Move direction", "up", "up,down"));
@@ -985,6 +1001,33 @@ private:
 			        req_list(
 			            {"node_id", "strand_index", "direction"}),
 			        "Move Strand"));
+		}
+		{
+			cJSON* p = cJSON_CreateObject();
+			cJSON_AddItemToObject(
+			    p, "node_id",
+			    prop_int("node_id",
+			             "Node ID containing the strand", 0));
+			cJSON_AddItemToObject(
+			    p, "strand_uuid",
+			    prop_str("strand_uuid",
+			             "Strand UUID to rename", ""));
+			cJSON_AddItemToObject(
+			    p, "new_name",
+			    prop_str("new_name",
+			             "New display name for the strand", ""));
+			cJSON_AddItemToObject(
+			    p, "new_uuid",
+			    prop_str("new_uuid",
+			             "New UUID (auto-generated if empty)", ""));
+			add_tool(
+			    "strand_rename",
+			    "Rename a hair strand (generates new UUID, moves renderer key)",
+			    "strand.rename",
+			    schema_obj(
+			        p,
+			        req_list({"node_id", "strand_uuid", "new_name"}),
+			        "Rename Strand"));
 		}
 		{
 			cJSON* p = cJSON_CreateObject();
@@ -1098,6 +1141,10 @@ private:
 			    prop_int("strand_index",
 			             "Strand index to add guide point to", 0));
 			cJSON_AddItemToObject(
+			    p, "strand_uuid",
+			    prop_str("strand_uuid",
+			             "Strand UUID (alternative to strand_index)", ""));
+			cJSON_AddItemToObject(
 			    p, "x",
 			    prop_num("x",
 			             "Semantic X coordinate (-10 to +10)",
@@ -1129,6 +1176,10 @@ private:
 			    p, "strand_index",
 			    prop_int("strand_index",
 			             "Strand index to add width point to", 0));
+			cJSON_AddItemToObject(
+			    p, "strand_uuid",
+			    prop_str("strand_uuid",
+			             "Strand UUID (alternative to strand_index)", ""));
 			cJSON_AddItemToObject(
 			    p, "x",
 			    prop_num("x",

@@ -33,6 +33,7 @@ using MeshData = std::vector<std::tuple<
     sinriv::kigstudio::voxel::triangle_bvh<float>::triangle,
     sinriv::kigstudio::vec3<float>>>;
 using vec3f = sinriv::kigstudio::vec3<float>;
+using sinriv::ui::render::generate_uuid;
 
 // ---- helpers ----
 
@@ -142,6 +143,7 @@ cJSON* h_strand_create(cJSON* params, List& list);
 cJSON* h_strand_delete(cJSON* params, List& list);
 cJSON* h_strand_update(cJSON* params, List& list);
 cJSON* h_strand_move(cJSON* params, List& list);
+cJSON* h_strand_rename(cJSON* params, List& list);
 cJSON* h_strand_set_center_point(cJSON* params, List& list);
 cJSON* h_strand_set_addon_options(cJSON* params, List& list);
 cJSON* h_strand_set_angle_config(cJSON* params, List& list);
@@ -197,6 +199,7 @@ inline cJSON* agent_dispatch(const std::string& method, cJSON* params,
 	        {"strand.delete", h_strand_delete},
 	        {"strand.update", h_strand_update},
 	        {"strand.move", h_strand_move},
+	        {"strand.rename", h_strand_rename},
 	        {"strand.setCenterPoint", h_strand_set_center_point},
 	        {"strand.setAddonOptions", h_strand_set_addon_options},
 	        {"strand.setAngleConfig", h_strand_set_angle_config},
@@ -937,6 +940,17 @@ inline HairStrand* find_strand(Item* item, int strand_index, cJSON*& err) {
 	return &item->hair_strands[strand_index];
 }
 
+/// Helper: get strand by UUID, returns nullptr and sets err on failure
+inline HairStrand* find_strand_by_uuid(Item* item,
+                                        const std::string& strand_uuid,
+                                        cJSON*& err) {
+	for (auto& s : item->hair_strands) {
+		if (s.uuid == strand_uuid) return &s;
+	}
+	err = error_response("STRAND_NOT_FOUND", "strand uuid not found");
+	return nullptr;
+}
+
 inline cJSON* h_strand_list(cJSON* params, List& list) {
 	int node_id = json_int(params, "node_id", -1);
 	cJSON_Delete(params);
@@ -959,6 +973,7 @@ inline cJSON* h_strand_list(cJSON* params, List& list) {
 		cJSON* so = cJSON_CreateObject();
 		cJSON_AddNumberToObject(so, "index", static_cast<int>(i));
 		cJSON_AddStringToObject(so, "name", s.name.c_str());
+		cJSON_AddStringToObject(so, "uuid", s.uuid.c_str());
 		cJSON_AddNumberToObject(so, "guide_point_count",
 		                        static_cast<int>(s.guide_points.size()));
 		cJSON_AddNumberToObject(so, "width_point_count",
@@ -997,13 +1012,19 @@ inline cJSON* h_strand_list(cJSON* params, List& list) {
 inline cJSON* h_strand_get(cJSON* params, List& list) {
 	int node_id = json_int(params, "node_id", -1);
 	int strand_index = json_int(params, "strand_index", -1);
+	const char* strand_uuid = json_str(params, "strand_uuid", "");
 	cJSON_Delete(params);
 
 	std::lock_guard<std::mutex> lock(list.locker);
 	cJSON* err = nullptr;
 	Item* item = find_item(list, node_id, err);
 	if (!item) return err;
-	HairStrand* strand = find_strand(item, strand_index, err);
+	HairStrand* strand = nullptr;
+	if (strand_uuid && strand_uuid[0]) {
+		strand = find_strand_by_uuid(item, strand_uuid, err);
+	} else {
+		strand = find_strand(item, strand_index, err);
+	}
 	if (!strand) return err;
 
 	cJSON* r = cJSON_CreateObject();
@@ -1012,6 +1033,7 @@ inline cJSON* h_strand_get(cJSON* params, List& list) {
 	cJSON* sd = cJSON_CreateObject();
 	cJSON_AddNumberToObject(sd, "index", strand_index);
 	cJSON_AddStringToObject(sd, "name", strand->name.c_str());
+	cJSON_AddStringToObject(sd, "uuid", strand->uuid.c_str());
 	cJSON_AddNumberToObject(sd, "section_rotation",
 	                        static_cast<double>(strand->section_rotation));
 	cJSON_AddNumberToObject(sd, "guide_samples_per_segment",
@@ -1032,6 +1054,20 @@ inline cJSON* h_strand_get(cJSON* params, List& list) {
 	}
 	cJSON_AddItemToObject(sd, "guide_points", gps);
 
+
+	// Hidden guide points start (feature 4)
+	cJSON* hgps_start = cJSON_CreateArray();
+	for (const auto& hp : strand->hidden_guide_points_start)
+		cJSON_AddItemToArray(hgps_start, vec3_to_json(hp));
+	cJSON_AddItemToObject(sd, "hidden_guide_points_start", hgps_start);
+
+	// Hidden guide points end (feature 4)
+	cJSON* hgps_end = cJSON_CreateArray();
+	for (const auto& hp : strand->hidden_guide_points_end)
+		cJSON_AddItemToArray(hgps_end, vec3_to_json(hp));
+	cJSON_AddItemToObject(sd, "hidden_guide_points_end", hgps_end);
+
+	cJSON_AddBoolToObject(sd, "auto_hair_root", strand->auto_hair_root);
 	// Width points
 	cJSON* wps = cJSON_CreateArray();
 	for (const auto& wp : strand->width_points) {
@@ -1084,6 +1120,7 @@ inline cJSON* h_strand_create(cJSON* params, List& list) {
 	if (!item) return err;
 
 	HairStrand strand;
+	strand.uuid = generate_uuid();
 	if (name && name[0]) {
 		strand.name = name;
 	} else {
@@ -1115,22 +1152,17 @@ inline cJSON* h_strand_delete(cJSON* params, List& list) {
 	if (!strand) return err;
 
 	// Deactivate any active editing on this strand
-	if (item->active_guide_draw_strand == strand_index) {
+	auto& strand_uuid = item->hair_strands[strand_index].uuid;
+	if (item->active_guide_draw_strand == strand_uuid) {
 		item->guide_curve_drawing_active = false;
-		item->active_guide_draw_strand = -1;
-	} else if (item->active_guide_draw_strand > strand_index) {
-		item->active_guide_draw_strand--;
+		item->active_guide_draw_strand.clear();
 	}
-	if (item->active_width_edit_strand == strand_index) {
+	if (item->active_width_edit_strand == strand_uuid) {
 		item->width_editing_active = false;
-		item->active_width_edit_strand = -1;
-	} else if (item->active_width_edit_strand > strand_index) {
-		item->active_width_edit_strand--;
+		item->active_width_edit_strand.clear();
 	}
-	if (item->active_section_edit_strand == strand_index) {
-		item->active_section_edit_strand = -1;
-	} else if (item->active_section_edit_strand > strand_index) {
-		item->active_section_edit_strand--;
+	if (item->active_section_edit_strand == strand_uuid) {
+		item->active_section_edit_strand.clear();
 	}
 
 	item->hair_strands.erase(item->hair_strands.begin() + strand_index);
@@ -1264,6 +1296,42 @@ inline cJSON* h_strand_update(cJSON* params, List& list) {
 		strand->section_state.normalize_mode =
 		    static_cast<sinriv::ui::render::NormalizeMode>(
 		        std::clamp(mode, 0, 2));
+		strand->mesh_dirty = true;
+	}
+
+	// Feature 4: hidden guide points start
+	if (cJSON_HasObjectItem(params, "hidden_guide_points_start")) {
+		cJSON* hgps = cJSON_GetObjectItem(params, "hidden_guide_points_start");
+		if (cJSON_IsArray(hgps)) {
+			strand->hidden_guide_points_start.clear();
+			int n = cJSON_GetArraySize(hgps);
+			for (int i = 0; i < n; ++i) {
+				sinriv::kigstudio::voxel::vec3f v;
+				if (json_to_vec3(cJSON_GetArrayItem(hgps, i), v))
+					strand->hidden_guide_points_start.push_back(v);
+			}
+			strand->mesh_dirty = true;
+		}
+	}
+
+	// Feature 4: hidden guide points end
+	if (cJSON_HasObjectItem(params, "hidden_guide_points_end")) {
+		cJSON* hgpe = cJSON_GetObjectItem(params, "hidden_guide_points_end");
+		if (cJSON_IsArray(hgpe)) {
+			strand->hidden_guide_points_end.clear();
+			int n = cJSON_GetArraySize(hgpe);
+			for (int i = 0; i < n; ++i) {
+				sinriv::kigstudio::voxel::vec3f v;
+				if (json_to_vec3(cJSON_GetArrayItem(hgpe, i), v))
+					strand->hidden_guide_points_end.push_back(v);
+			}
+			strand->mesh_dirty = true;
+		}
+	}
+
+	// Feature 5: auto hair root
+	if (cJSON_HasObjectItem(params, "auto_hair_root")) {
+		strand->auto_hair_root = json_bool(params, "auto_hair_root", false);
 		strand->mesh_dirty = true;
 	}
 
@@ -1535,6 +1603,7 @@ inline cJSON* h_strand_create_2d(cJSON* params, List& list) {
 		strand = &item->hair_strands[strand_index];
 	} else {
 		HairStrand s;
+		s.uuid = generate_uuid();
 		if (name && name[0])
 			s.name = name;
 		else
@@ -1596,19 +1665,6 @@ inline cJSON* h_strand_move(cJSON* params, List& list) {
 		item->hair_strands[si].mesh_dirty = true;
 		item->hair_strands[si - 1].mesh_dirty = true;
 
-		// Adjust active indices
-		if (item->active_guide_draw_strand == strand_index)
-			item->active_guide_draw_strand--;
-		else if (item->active_guide_draw_strand == strand_index - 1)
-			item->active_guide_draw_strand++;
-		if (item->active_width_edit_strand == strand_index)
-			item->active_width_edit_strand--;
-		else if (item->active_width_edit_strand == strand_index - 1)
-			item->active_width_edit_strand++;
-		if (item->active_section_edit_strand == strand_index)
-			item->active_section_edit_strand--;
-		else if (item->active_section_edit_strand == strand_index - 1)
-			item->active_section_edit_strand++;
 	} else if (std::strcmp(direction, "down") == 0) {
 		if (si >= item->hair_strands.size() - 1) {
 			return error_response("INVALID_PARAMS",
@@ -1618,24 +1674,56 @@ inline cJSON* h_strand_move(cJSON* params, List& list) {
 		item->hair_strands[si].mesh_dirty = true;
 		item->hair_strands[si + 1].mesh_dirty = true;
 
-		if (item->active_guide_draw_strand == strand_index)
-			item->active_guide_draw_strand++;
-		else if (item->active_guide_draw_strand == strand_index + 1)
-			item->active_guide_draw_strand--;
-		if (item->active_width_edit_strand == strand_index)
-			item->active_width_edit_strand++;
-		else if (item->active_width_edit_strand == strand_index + 1)
-			item->active_width_edit_strand--;
-		if (item->active_section_edit_strand == strand_index)
-			item->active_section_edit_strand++;
-		else if (item->active_section_edit_strand == strand_index + 1)
-			item->active_section_edit_strand--;
 	} else {
 		return error_response("INVALID_PARAMS",
 		                      "direction must be 'up' or 'down'");
 	}
 
 	return ok_response();
+}
+
+inline cJSON* h_strand_rename(cJSON* params, List& list) {
+	int node_id = json_int(params, "node_id", -1);
+	const char* strand_uuid = json_str(params, "strand_uuid", "");
+	const char* new_name = json_str(params, "new_name", "");
+	const char* new_uuid = json_str(params, "new_uuid", "");
+	cJSON_Delete(params);
+
+	if (node_id < 0 || !strand_uuid || !strand_uuid[0]) {
+		return error_response("INVALID_PARAMS",
+		                      "node_id and strand_uuid are required");
+	}
+
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) return err;
+	HairStrand* strand = find_strand_by_uuid(item, strand_uuid, err);
+	if (!strand) return err;
+
+	// Update name if provided
+	if (new_name && new_name[0]) {
+		strand->name = new_name;
+	}
+
+	// Generate or use provided new UUID
+	std::string actual_new_uuid;
+	if (new_uuid && new_uuid[0]) {
+		actual_new_uuid = new_uuid;
+	} else {
+		actual_new_uuid = generate_uuid();
+	}
+
+	// Rename (move renderer key if UUID changes)
+	if (actual_new_uuid != strand_uuid) {
+		item->rename_strand(strand_uuid, actual_new_uuid);
+	}
+
+	cJSON* r = cJSON_CreateObject();
+	cJSON_AddTrueToObject(r, "ok");
+	cJSON_AddStringToObject(r, "new_uuid", actual_new_uuid.c_str());
+	cJSON_AddStringToObject(r, "name", strand->name.c_str());
+	return r;
 }
 
 inline cJSON* h_strand_set_center_point(cJSON* params, List& list) {

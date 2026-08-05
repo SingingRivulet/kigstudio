@@ -34,6 +34,12 @@
 #include "tinyfiledialogs.h"
 namespace sinriv::ui::render {
 
+// Forward declaration for ray-triangle intersection (defined later in this file)
+static bool ray_triangle_intersect(const vec3f& ray_origin,
+                                    const vec3f& ray_dir,
+                                    const vec3f& v0, const vec3f& v1,
+                                    const vec3f& v2, float& t);
+
 void RenderVoxelList::render_guide_curve_window() {
     if (!show_addon_window)
         return;
@@ -45,7 +51,7 @@ void RenderVoxelList::render_guide_curve_window() {
         auto wit = items.find(render_id);
         if (wit != items.end()) {
             wit->second->width_editing_active = false;
-            wit->second->active_width_edit_strand = -1;
+            wit->second->active_width_edit_strand.clear();
         }
         show_width_editor_window = false;
     }
@@ -53,7 +59,7 @@ void RenderVoxelList::render_guide_curve_window() {
     if (show_cross_section_editor_window) {
         auto sit = items.find(render_id);
         if (sit != items.end()) {
-            sit->second->active_section_edit_strand = -1;
+            sit->second->active_section_edit_strand.clear();
         }
         show_cross_section_editor_window = false;
     }
@@ -62,7 +68,7 @@ void RenderVoxelList::render_guide_curve_window() {
         auto pit = items.find(render_id);
         if (pit != items.end()) {
             pit->second->perpoint_section_editing_active = false;
-            pit->second->active_perpoint_section_edit_strand = -1;
+            pit->second->active_perpoint_section_edit_strand.clear();
             pit->second->active_perpoint_section_edit_width_idx = -1;
         }
         show_perpoint_section_editor_window = false;
@@ -88,7 +94,7 @@ void RenderVoxelList::render_guide_curve_window() {
         auto it = items.find(render_id);
         if (it != items.end()) {
             it->second->guide_curve_drawing_active = false;
-            it->second->active_guide_draw_strand = -1;
+            it->second->active_guide_draw_strand.clear();
         }
         show_guide_curve_window = false;
         ImGui::End();
@@ -104,17 +110,17 @@ void RenderVoxelList::render_guide_curve_window() {
     }
 
     RenderVoxelItem& item = *item_it->second;
-    int idx = item.active_guide_draw_strand;
+    std::string strand_uuid = item.active_guide_draw_strand;
 
-    if (idx < 0 || idx >= static_cast<int>(item.hair_strands.size()) ||
+    if (strand_uuid.empty() || !item.find_strand_by_uuid(strand_uuid) ||
         !item.guide_curve_drawing_active) {
         show_guide_curve_window = false;
         ImGui::End();
         return;
     }
 
-    auto& strand = item.hair_strands[idx];
-    ImGui::Text(get_locale_cstr("label.hair_strand"), idx + 1);
+    auto& strand = *item.find_strand_by_uuid(strand_uuid);
+    ImGui::Text("%s", strand.name.c_str());
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.08f, 1.0f), "%s",
                        get_locale_cstr("action.draw_guide_curve"));
@@ -140,6 +146,23 @@ void RenderVoxelList::render_guide_curve_window() {
         }
         if (redo_disabled)
             ImGui::EndDisabled();
+
+        // Reverse guide points order button
+        {
+            bool reverse_disabled = strand.guide_points.size() < 2;
+            if (reverse_disabled)
+                ImGui::BeginDisabled();
+            ImGui::SameLine();
+            if (ImGui::SmallButton(get_locale_cstr("action.reverse_guide_points"))) {
+                push_undo_now(item.id, std::nullopt, "Reverse Guide Points");
+                std::reverse(strand.guide_points.begin(), strand.guide_points.end());
+                strand.mesh_dirty = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.reverse_guide_points"));
+            if (reverse_disabled)
+                ImGui::EndDisabled();
+        }
     }
 
     // Keyboard shortcuts (Ctrl+Z / Ctrl+Y)
@@ -157,6 +180,91 @@ void RenderVoxelList::render_guide_curve_window() {
     }
 
     ImGui::Separator();
+
+    // Auto hair root checkbox (only when north_pole direction is configured)
+    {
+        float np_len = std::sqrt(item.hair_north_pole.x * item.hair_north_pole.x +
+                                 item.hair_north_pole.y * item.hair_north_pole.y +
+                                 item.hair_north_pole.z * item.hair_north_pole.z);
+        if (np_len > 0.001f) {
+            bool prev = strand.auto_hair_root;
+            if (ImGui::Checkbox(get_locale_cstr("label.auto_hair_root"),
+                                &strand.auto_hair_root)) {
+                if (strand.auto_hair_root) {
+                    // Compute ray from north-pole direction toward center,
+                    // find first hit on base model triangles
+                    vec3f dir = {item.hair_north_pole.x / np_len,
+                                 item.hair_north_pole.y / np_len,
+                                 item.hair_north_pole.z / np_len};
+                    vec3f origin = {item.addon_center_point.x + dir.x * 500.0f,
+                                    item.addon_center_point.y + dir.y * 500.0f,
+                                    item.addon_center_point.z + dir.z * 500.0f};
+                    vec3f ray_dir = {-dir.x, -dir.y, -dir.z};
+                    vec3f hit = {item.addon_center_point.x,
+                                 item.addon_center_point.y,
+                                 item.addon_center_point.z};
+                    bool found = false;
+                    float best_t = 1e30f;
+
+                    // Try raycast against base model triangles
+                    if (item.addon_base_node_id >= 0) {
+                        auto base_it = items.find(item.addon_base_node_id);
+                        if (base_it != items.end()) {
+                            auto& base = *base_it->second;
+                            // Use cached_mesh if available, else source_triangles
+                            auto test_tri = [&](const vec3f& v0,
+                                                 const vec3f& v1,
+                                                 const vec3f& v2) {
+                                float t;
+                                if (ray_triangle_intersect(origin, ray_dir,
+                                                           v0, v1, v2, t) &&
+                                    t < best_t) {
+                                    best_t = t;
+                                    hit = {origin.x + ray_dir.x * t,
+                                           origin.y + ray_dir.y * t,
+                                           origin.z + ray_dir.z * t};
+                                    found = true;
+                                }
+                            };
+                            if (!base.cached_mesh.empty()) {
+                                for (const auto& entry : base.cached_mesh) {
+                                    const auto& tri = std::get<0>(entry);
+                                    auto tv0 = std::get<0>(tri);
+                                    auto tv1 = std::get<1>(tri);
+                                    auto tv2 = std::get<2>(tri);
+                                    test_tri({tv0.x, tv0.y, tv0.z},
+                                             {tv1.x, tv1.y, tv1.z},
+                                             {tv2.x, tv2.y, tv2.z});
+                                }
+                            } else {
+                                for (const auto& tri : base.source_triangles) {
+                                    auto tv0 = std::get<0>(tri);
+                                    auto tv1 = std::get<1>(tri);
+                                    auto tv2 = std::get<2>(tri);
+                                    test_tri({tv0.x, tv0.y, tv0.z},
+                                             {tv1.x, tv1.y, tv1.z},
+                                             {tv2.x, tv2.y, tv2.z});
+                                }
+                            }
+                        }
+                    }
+                    if (!found) {
+                        // Fallback: project center along north pole direction
+                        hit = {item.addon_center_point.x - dir.x * 10.0f,
+                               item.addon_center_point.y - dir.y * 10.0f,
+                               item.addon_center_point.z - dir.z * 10.0f};
+                    }
+                    strand.hidden_guide_points_start = {hit};
+                } else {
+                    strand.hidden_guide_points_start.clear();
+                }
+                strand.mesh_dirty = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.auto_hair_root"));
+        }
+    }
+
     ImGui::Text(get_locale_cstr("label.guide_curve_points"),
                 static_cast<int>(strand.guide_points.size()));
 
@@ -343,7 +451,7 @@ void RenderVoxelList::render_width_editor_window() {
         auto git = items.find(render_id);
         if (git != items.end()) {
             git->second->guide_curve_drawing_active = false;
-            git->second->active_guide_draw_strand = -1;
+            git->second->active_guide_draw_strand.clear();
         }
         show_guide_curve_window = false;
     }
@@ -368,9 +476,9 @@ void RenderVoxelList::render_width_editor_window() {
         auto it = items.find(render_id);
         if (it != items.end()) {
             it->second->width_editing_active = false;
-            it->second->active_width_edit_strand = -1;
+            it->second->active_width_edit_strand.clear();
             it->second->perpoint_section_editing_active = false;
-            it->second->active_perpoint_section_edit_strand = -1;
+            it->second->active_perpoint_section_edit_strand.clear();
             it->second->active_perpoint_section_edit_width_idx = -1;
         }
         show_width_editor_window = false;
@@ -387,21 +495,21 @@ void RenderVoxelList::render_width_editor_window() {
     }
 
     RenderVoxelItem& item = *item_it->second;
-    int idx = item.active_width_edit_strand;
+    std::string strand_uuid = item.active_width_edit_strand;
 
-    if (idx < 0 || idx >= static_cast<int>(item.hair_strands.size()) ||
+    if (strand_uuid.empty() || !item.find_strand_by_uuid(strand_uuid) ||
         !item.width_editing_active) {
         show_width_editor_window = false;
         show_perpoint_section_editor_window = false;
         item.perpoint_section_editing_active = false;
-        item.active_perpoint_section_edit_strand = -1;
+        item.active_perpoint_section_edit_strand.clear();
         item.active_perpoint_section_edit_width_idx = -1;
         ImGui::End();
         return;
     }
 
-    auto& strand = item.hair_strands[idx];
-    ImGui::Text(get_locale_cstr("label.hair_strand"), idx + 1);
+    auto& strand = *item.find_strand_by_uuid(strand_uuid);
+    ImGui::Text("%s", strand.name.c_str());
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(0.2f, 0.7f, 0.3f, 1.0f), "%s",
                        get_locale_cstr("action.edit_width"));
@@ -507,7 +615,8 @@ void RenderVoxelList::render_width_editor_window() {
             if (item.show_addon_center) {
                 if (ImGui::SmallButton(
                         get_locale_cstr("action.auto_rotate_section"))) {
-                    auto sample = item.sample_guide_curve_at(idx, wp.curve_id);
+                    int strand_idx_auto = static_cast<int>(&strand - item.hair_strands.data());
+                    auto sample = item.sample_guide_curve_at(strand_idx_auto, wp.curve_id);
                     float angle_deg = 0.0f;
                     if (compute_auto_section_rotation(
                             sample.position, sample.tangent,
@@ -524,8 +633,9 @@ void RenderVoxelList::render_width_editor_window() {
                 static float wp_move_step = 0.5f;
 
                 auto move_along_center = [&](float sign) {
+                    int strand_idx_mv = static_cast<int>(&strand - item.hair_strands.data());
                     auto sample =
-                        item.sample_guide_curve_at(idx, wp.curve_id);
+                        item.sample_guide_curve_at(strand_idx_mv, wp.curve_id);
                     vec3f P = sample.position;
                     vec3f W = P + wp.direction * wp.scale;  // 向量端点
                     vec3f to_center = item.addon_center_point - W;
@@ -564,7 +674,8 @@ void RenderVoxelList::render_width_editor_window() {
 
                 // 右键菜单：直接编辑端点离中心距离与移动步长
                 if (ImGui::BeginPopup("wp_center_menu")) {
-                    auto sample = item.sample_guide_curve_at(idx, wp.curve_id);
+                    int strand_idx_popup = static_cast<int>(&strand - item.hair_strands.data());
+                    auto sample = item.sample_guide_curve_at(strand_idx_popup, wp.curve_id);
                     vec3f P = sample.position;
                     vec3f W = P + wp.direction * wp.scale;  // 向量端点
                     vec3f to_center = item.addon_center_point - W;
@@ -604,7 +715,7 @@ void RenderVoxelList::render_width_editor_window() {
 
             // --- Per-point section editor button ---
             bool is_perpoint_editing =
-                (item.active_perpoint_section_edit_strand == idx &&
+                (item.active_perpoint_section_edit_strand == strand_uuid &&
                  item.active_perpoint_section_edit_width_idx ==
                      static_cast<int>(wi));
             if (is_perpoint_editing) {
@@ -617,17 +728,17 @@ void RenderVoxelList::render_width_editor_window() {
                         : get_locale_cstr("action.edit_perpoint_section"))) {
                 if (is_perpoint_editing) {
                     item.perpoint_section_editing_active = false;
-                    item.active_perpoint_section_edit_strand = -1;
+                    item.active_perpoint_section_edit_strand.clear();
                     item.active_perpoint_section_edit_width_idx = -1;
                     show_perpoint_section_editor_window = false;
                 } else {
                     // Close global section editor (mutual exclusion)
                     if (show_cross_section_editor_window) {
-                        item.active_section_edit_strand = -1;
+                        item.active_section_edit_strand.clear();
                         show_cross_section_editor_window = false;
                     }
                     item.perpoint_section_editing_active = true;
-                    item.active_perpoint_section_edit_strand = idx;
+                    item.active_perpoint_section_edit_strand = strand_uuid;
                     item.active_perpoint_section_edit_width_idx =
                         static_cast<int>(wi);
                     show_perpoint_section_editor_window = true;
@@ -693,13 +804,13 @@ void RenderVoxelList::render_width_editor_window() {
         if (delete_wp >= 0) {
             // Clean up per-point section editor if the deleted point was
             // being edited
-            if (item.active_perpoint_section_edit_strand == idx &&
+            if (item.active_perpoint_section_edit_strand == strand_uuid &&
                 item.active_perpoint_section_edit_width_idx == delete_wp) {
                 item.perpoint_section_editing_active = false;
-                item.active_perpoint_section_edit_strand = -1;
+                item.active_perpoint_section_edit_strand.clear();
                 item.active_perpoint_section_edit_width_idx = -1;
                 show_perpoint_section_editor_window = false;
-            } else if (item.active_perpoint_section_edit_strand == idx &&
+            } else if (item.active_perpoint_section_edit_strand == strand_uuid &&
                        item.active_perpoint_section_edit_width_idx >
                            delete_wp) {
                 item.active_perpoint_section_edit_width_idx--;
@@ -826,6 +937,7 @@ void RenderVoxelList::render_object_editor_addons() {
         if (ImGui::Button(get_locale_cstr("action.add_hair_strand"))) {
             push_undo_now(item.id, std::nullopt, "Add Hair Strand");
             HairStrand strand;
+            strand.uuid = generate_uuid();
             strand.name = "Strand " + std::to_string(item.hair_strands.size() + 1);
             strand.expanded = true;
             item.hair_strands.push_back(strand);
@@ -848,9 +960,14 @@ void RenderVoxelList::render_object_editor_addons() {
             ImGui::PushID(static_cast<int>(i));
 
             char header_label[64];
-            snprintf(header_label, sizeof(header_label),
-                     get_locale_cstr("label.hair_strand"),
-                     static_cast<int>(i + 1));
+            if (!strand.name.empty()) {
+                snprintf(header_label, sizeof(header_label), "%s##strand_%zu",
+                         strand.name.c_str(), i);
+            } else {
+                snprintf(header_label, sizeof(header_label),
+                         get_locale_cstr("label.hair_strand"),
+                         static_cast<int>(i + 1));
+            }
             int header_flags = ImGuiTreeNodeFlags_AllowOverlap;
             if (strand.expanded)
                 header_flags |= ImGuiTreeNodeFlags_DefaultOpen;
@@ -926,7 +1043,7 @@ void RenderVoxelList::render_object_editor_addons() {
                 // 绘制引导曲线（自锁按钮）
                 ImGui::SameLine();
                 bool is_drawing =
-                    (item.active_guide_draw_strand == static_cast<int>(i) &&
+                    (item.active_guide_draw_strand == item.hair_strands[i].uuid &&
                      item.guide_curve_drawing_active);
                 if (is_drawing) {
                     ImGui::PushStyleColor(ImGuiCol_Button,
@@ -938,17 +1055,17 @@ void RenderVoxelList::render_object_editor_addons() {
                             : get_locale_cstr("action.draw_guide_curve"))) {
                     if (is_drawing) {
                         item.guide_curve_drawing_active = false;
-                        item.active_guide_draw_strand = -1;
+                        item.active_guide_draw_strand.clear();
                         show_guide_curve_window = false;
                     } else {
                         // 互斥：打开引导曲线时关闭宽度编辑器
                         if (item.width_editing_active) {
                             item.width_editing_active = false;
-                            item.active_width_edit_strand = -1;
+                            item.active_width_edit_strand.clear();
                             show_width_editor_window = false;
                         }
                         item.guide_curve_drawing_active = true;
-                        item.active_guide_draw_strand = static_cast<int>(i);
+                        item.active_guide_draw_strand = item.hair_strands[i].uuid;
                         show_guide_curve_window = true;
                     }
                 }
@@ -960,7 +1077,7 @@ void RenderVoxelList::render_object_editor_addons() {
                 if (is_normal) {
                     ImGui::SameLine();
                     bool is_width_editing_popup =
-                        (item.active_width_edit_strand == static_cast<int>(i) &&
+                        (item.active_width_edit_strand == item.hair_strands[i].uuid &&
                             item.width_editing_active);
                     if (ImGui::Button(
                             is_width_editing_popup
@@ -968,16 +1085,16 @@ void RenderVoxelList::render_object_editor_addons() {
                                 : get_locale_cstr("action.edit_width"))) {
                         if (is_width_editing_popup) {
                             item.width_editing_active = false;
-                            item.active_width_edit_strand = -1;
+                            item.active_width_edit_strand.clear();
                             show_width_editor_window = false;
                         } else {
                             if (item.guide_curve_drawing_active) {
                                 item.guide_curve_drawing_active = false;
-                                item.active_guide_draw_strand = -1;
+                                item.active_guide_draw_strand.clear();
                                 show_guide_curve_window = false;
                             }
                             item.width_editing_active = true;
-                            item.active_width_edit_strand = static_cast<int>(i);
+                            item.active_width_edit_strand = item.hair_strands[i].uuid;
                             show_width_editor_window = true;
                         }
                     }
@@ -999,13 +1116,13 @@ void RenderVoxelList::render_object_editor_addons() {
                     // --- 编辑截面（仅普通发束可用） ---
                     if (!is_normal) ImGui::BeginDisabled();
                     bool is_section_editing_popup =
-                        (item.active_section_edit_strand == static_cast<int>(i));
+                        (item.active_section_edit_strand == item.hair_strands[i].uuid);
                     if (ImGui::MenuItem(
                             is_section_editing_popup
                                 ? get_locale_cstr("action.stop_edit_section")
                                 : get_locale_cstr("action.edit_section"))) {
                         if (is_section_editing_popup) {
-                            item.active_section_edit_strand = -1;
+                            item.active_section_edit_strand.clear();
                             show_cross_section_editor_window = false;
                         } else {
                             bool has_overrides = false;
@@ -1022,7 +1139,7 @@ void RenderVoxelList::render_object_editor_addons() {
                                     static_cast<int>(i);
                             } else {
                                 item.active_section_edit_strand =
-                                    static_cast<int>(i);
+                                    item.hair_strands[i].uuid;
                                 show_cross_section_editor_window = true;
                             }
                         }
@@ -1032,6 +1149,17 @@ void RenderVoxelList::render_object_editor_addons() {
                     if (!is_normal) ImGui::EndDisabled();
 
                     ImGui::Separator();
+
+                    // --- 重命名发束 ---
+                    if (ImGui::MenuItem(get_locale_cstr("action.rename_strand"))) {
+                        pending_rename_strand_uuid = item.hair_strands[i].uuid;
+                        strncpy(rename_buffer, item.hair_strands[i].name.c_str(),
+                                sizeof(rename_buffer) - 1);
+                        rename_buffer[sizeof(rename_buffer) - 1] = '\0';
+                        // OpenPopup is called after EndPopup below
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.rename_strand"));
 
                     // --- 删除发束 ---
                     if (ImGui::MenuItem(get_locale_cstr("action.delete_strand"))) {
@@ -1299,41 +1427,82 @@ void RenderVoxelList::render_object_editor_addons() {
         // 延迟删除
         if (delete_idx >= 0) {
             // 如果正在绘制/编辑被删除的发束，先停止
-            if (item.active_guide_draw_strand == delete_idx) {
+            if (item.active_guide_draw_strand == item.hair_strands[delete_idx].uuid) {
                 item.guide_curve_drawing_active = false;
-                item.active_guide_draw_strand = -1;
+                item.active_guide_draw_strand.clear();
                 show_guide_curve_window = false;
-            } else if (item.active_guide_draw_strand > delete_idx) {
-                item.active_guide_draw_strand--;
             }
-            if (item.active_width_edit_strand == delete_idx) {
+            if (item.active_width_edit_strand == item.hair_strands[delete_idx].uuid) {
                 item.width_editing_active = false;
-                item.active_width_edit_strand = -1;
+                item.active_width_edit_strand.clear();
                 show_width_editor_window = false;
-            } else if (item.active_width_edit_strand > delete_idx) {
-                item.active_width_edit_strand--;
             }
-            if (item.active_section_edit_strand == delete_idx) {
-                item.active_section_edit_strand = -1;
+            if (item.active_section_edit_strand == item.hair_strands[delete_idx].uuid) {
+                item.active_section_edit_strand.clear();
                 show_cross_section_editor_window = false;
-            } else if (item.active_section_edit_strand > delete_idx) {
-                item.active_section_edit_strand--;
             }
-            // Clean up per-point section editor
-            if (item.active_perpoint_section_edit_strand == delete_idx) {
+            if (item.active_perpoint_section_edit_strand == item.hair_strands[delete_idx].uuid) {
                 item.perpoint_section_editing_active = false;
-                item.active_perpoint_section_edit_strand = -1;
+                item.active_perpoint_section_edit_strand.clear();
                 item.active_perpoint_section_edit_width_idx = -1;
                 show_perpoint_section_editor_window = false;
-            } else if (item.active_perpoint_section_edit_strand >
-                       delete_idx) {
-                item.active_perpoint_section_edit_strand--;
             }
             push_undo_now(item.id, std::nullopt, "Delete Hair Strand");
             item.hair_strands.erase(item.hair_strands.begin() + delete_idx);
             for (auto& s : item.hair_strands) s.mesh_dirty = true;
         }
 
+    }
+
+    // --- Rename strand window (non-modal, so it doesn't block the UI) ---
+    if (!pending_rename_strand_uuid.empty()) {
+        ImGui::SetNextWindowSize(ImVec2(380, 120), ImGuiCond_Once);
+        char win_title[128];
+        snprintf(win_title, sizeof(win_title), "%s##RenameStrandWin",
+                 get_locale_cstr("action.rename_strand"));
+        bool rename_open = true;
+        if (ImGui::Begin(win_title, &rename_open,
+                         ImGuiWindowFlags_NoCollapse |
+                             ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted(
+                get_locale_cstr("label.rename_strand_prompt"));
+
+            ImGui::SetNextItemWidth(280);
+            if (ImGui::IsWindowAppearing())
+                ImGui::SetKeyboardFocusHere();
+            ImGui::InputText("##rename_input", rename_buffer,
+                             sizeof(rename_buffer));
+
+            bool confirm_disabled = rename_buffer[0] == '\0';
+            if (confirm_disabled) ImGui::BeginDisabled();
+            if (ImGui::Button(get_locale_cstr("action.ok")) ||
+                (!confirm_disabled &&
+                 ImGui::IsKeyPressed(ImGuiKey_Enter))) {
+                auto* s = item.find_strand_by_uuid(
+                    pending_rename_strand_uuid);
+                if (s) {
+                    std::string old_uuid = s->uuid;
+                    std::string new_uuid_val = generate_uuid();
+                    s->name = rename_buffer;
+                    item.rename_strand(old_uuid, new_uuid_val);
+                    s->mesh_dirty = true;
+                }
+                pending_rename_strand_uuid.clear();
+                rename_buffer[0] = '\0';
+            }
+            if (confirm_disabled) ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button(get_locale_cstr("action.cancel")) ||
+                ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                pending_rename_strand_uuid.clear();
+                rename_buffer[0] = '\0';
+            }
+        }
+        if (!rename_open) {
+            pending_rename_strand_uuid.clear();
+            rename_buffer[0] = '\0';
+        }
+        ImGui::End();
     }
 
     ImGui::End();
@@ -1350,7 +1519,7 @@ void RenderVoxelList::render_hairline_plane_window() {
         auto git = items.find(render_id);
         if (git != items.end()) {
             git->second->guide_curve_drawing_active = false;
-            git->second->active_guide_draw_strand = -1;
+            git->second->active_guide_draw_strand.clear();
         }
         show_guide_curve_window = false;
     }
@@ -1358,7 +1527,7 @@ void RenderVoxelList::render_hairline_plane_window() {
         auto wit = items.find(render_id);
         if (wit != items.end()) {
             wit->second->width_editing_active = false;
-            wit->second->active_width_edit_strand = -1;
+            wit->second->active_width_edit_strand.clear();
         }
         show_width_editor_window = false;
     }
@@ -1660,7 +1829,7 @@ void RenderVoxelList::render_angle_config_window() {
         auto it = items.find(render_id);
         if (it != items.end()) {
             it->second->guide_curve_drawing_active = false;
-            it->second->active_guide_draw_strand = -1;
+            it->second->active_guide_draw_strand.clear();
         }
         show_guide_curve_window = false;
     }
@@ -1668,20 +1837,20 @@ void RenderVoxelList::render_angle_config_window() {
         auto wit = items.find(render_id);
         if (wit != items.end()) {
             wit->second->width_editing_active = false;
-            wit->second->active_width_edit_strand = -1;
+            wit->second->active_width_edit_strand.clear();
         }
         show_width_editor_window = false;
     }
     if (show_cross_section_editor_window) {
         auto sit = items.find(render_id);
-        if (sit != items.end()) sit->second->active_section_edit_strand = -1;
+        if (sit != items.end()) sit->second->active_section_edit_strand.clear();
         show_cross_section_editor_window = false;
     }
     if (show_perpoint_section_editor_window) {
         auto pit = items.find(render_id);
         if (pit != items.end()) {
             pit->second->perpoint_section_editing_active = false;
-            pit->second->active_perpoint_section_edit_strand = -1;
+            pit->second->active_perpoint_section_edit_strand.clear();
             pit->second->active_perpoint_section_edit_width_idx = -1;
         }
         show_perpoint_section_editor_window = false;
@@ -2689,6 +2858,130 @@ void RenderVoxelList::process_ortho_render() {
     }
 }
 
+// Draw a pixel on an RGBA buffer (clamped to bounds).
+static void draw_pixel(std::vector<uint8_t>& rgba, int w, int h,
+                       int px, int py, uint8_t r, uint8_t g, uint8_t b,
+                       uint8_t a = 255) {
+    if (px < 0 || px >= w || py < 0 || py >= h) return;
+    size_t idx = (static_cast<size_t>(py) * w + px) * 4;
+    // Alpha blend
+    float sa = a / 255.0f;
+    float da = rgba[idx + 3] / 255.0f;
+    float out_a = sa + da * (1.0f - sa);
+    if (out_a < 0.001f) return;
+    rgba[idx + 0] = static_cast<uint8_t>(
+        (r * sa + rgba[idx + 0] * da * (1.0f - sa)) / out_a);
+    rgba[idx + 1] = static_cast<uint8_t>(
+        (g * sa + rgba[idx + 1] * da * (1.0f - sa)) / out_a);
+    rgba[idx + 2] = static_cast<uint8_t>(
+        (b * sa + rgba[idx + 2] * da * (1.0f - sa)) / out_a);
+    rgba[idx + 3] = static_cast<uint8_t>(out_a * 255.0f);
+}
+
+// Bresenham line draw on RGBA buffer.
+static void draw_line(std::vector<uint8_t>& rgba, int w, int h,
+                      int x0, int y0, int x1, int y1,
+                      uint8_t r, uint8_t g, uint8_t b) {
+    int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    while (true) {
+        draw_pixel(rgba, w, h, x0, y0, r, g, b);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+// Draw a small filled circle (for control point markers).
+static void draw_circle_marker(std::vector<uint8_t>& rgba, int w, int h,
+                               int cx, int cy, int radius,
+                               uint8_t r, uint8_t g, uint8_t b) {
+    for (int dy = -radius; dy <= radius; ++dy) {
+        for (int dx = -radius; dx <= radius; ++dx) {
+            if (dx * dx + dy * dy <= radius * radius) {
+                draw_pixel(rgba, w, h, cx + dx, cy + dy, r, g, b);
+            }
+        }
+    }
+}
+
+// Draw guide curves on an RGBA pixel buffer using ortho camera projection.
+static void draw_guide_curves_on_buffer(
+    std::vector<uint8_t>& rgba, int w, int h,
+    const OrthoProjectionState& ortho_state,
+    const std::vector<HairStrand>& hair_strands,
+    bool color_code) {
+    // Color palette (matching hair_guides.py)
+    static const uint32_t kPalette[] = {
+        0xff4040ff, 0x40c8ffff, 0xffe040ff, 0x60ff80ff,
+        0xff80d0ff, 0xffa040ff, 0xa080ffff, 0x40ffc8ff,
+        0xffff80ff, 0xff8080ff, 0x80a0ffff, 0x80ff40ff,
+    };
+    constexpr int kPaletteSize =
+        sizeof(kPalette) / sizeof(kPalette[0]);
+
+    // Camera parameters
+    vec3f center = ortho_state._center;
+    vec3f cam_right = ortho_state._cam_right;
+    vec3f cam_up = ortho_state._cam_up;
+    float half = ortho_state.viewport_size * 0.5f;
+
+    auto project = [&](const vec3f& world) -> std::pair<int, int> {
+        float rx = (world.x - center.x) * cam_right.x +
+                   (world.y - center.y) * cam_right.y +
+                   (world.z - center.z) * cam_right.z;
+        float ry = (world.x - center.x) * cam_up.x +
+                   (world.y - center.y) * cam_up.y +
+                   (world.z - center.z) * cam_up.z;
+        float ndc_x = rx / half;  // [-1, 1]
+        float ndc_y = ry / half;  // [-1, 1]
+        int px = static_cast<int>((ndc_x * 0.5f + 0.5f) * w);
+        int py = static_cast<int>((0.5f - ndc_y * 0.5f) * h);
+        return {px, py};
+    };
+
+    std::cout << "[draw_guide_curves] center=(" << center.x << "," << center.y
+              << "," << center.z << ") half=" << half << " res=" << w
+              << "x" << h << std::endl;
+
+    int color_idx = 0;
+    for (const auto& strand : hair_strands) {
+        if (!strand.visible || strand.guide_points.size() < 2)
+            continue;
+
+        // Pick color
+        uint32_t col = color_code
+                           ? kPalette[color_idx % kPaletteSize]
+                           : 0xffffffff;  // white
+        ++color_idx;
+        // Palette values are packed as 0xRRGGBBAA (RGBA), so read
+        // from the high bytes downward.
+        uint8_t cr = static_cast<uint8_t>((col >> 24) & 0xff);
+        uint8_t cg = static_cast<uint8_t>((col >> 16) & 0xff);
+        uint8_t cb = static_cast<uint8_t>((col >> 8) & 0xff);
+
+        // Sample bezier curve
+        auto sampled = sample_bezier_guide_curve(
+            strand.guide_points,
+            std::max(strand.guide_samples_per_segment, 1));
+
+        // Draw line segments
+        for (size_t pi = 0; pi + 1 < sampled.size(); ++pi) {
+            auto [px0, py0] = project(sampled[pi]);
+            auto [px1, py1] = project(sampled[pi + 1]);
+            draw_line(rgba, w, h, px0, py0, px1, py1, cr, cg, cb);
+        }
+
+        // Draw control point markers
+        for (const auto& p : strand.guide_points) {
+            auto [px, py] = project(p);
+            draw_circle_marker(rgba, w, h, px, py, 3, cr, cg, cb);
+        }
+    }
+}
+
 void RenderVoxelList::process_ai_export() {
     auto& s = ortho_state;
     if (s.ai_export_stage == 0)
@@ -2751,6 +3044,35 @@ void RenderVoxelList::process_ai_export() {
                 rgba[i * 4 + 1] = s.ai_readback_buffer[i * 4 + 1];  // G ← G
                 rgba[i * 4 + 2] = s.ai_readback_buffer[i * 4 + 0];  // B ← R
                 rgba[i * 4 + 3] = s.ai_readback_buffer[i * 4 + 3];  // A ← A
+            }
+
+            // Draw guide curves overlay if enabled
+            if (s.export_show_guide_curves && render_id >= 0) {
+                std::lock_guard<std::mutex> lock(locker);
+                auto item_it = items.find(render_id);
+                if (item_it != items.end() &&
+                    item_it->second->source_type == 2) {
+                    int n_visible = 0;
+                    for (const auto& st : item_it->second->hair_strands)
+                        if (st.visible && st.guide_points.size() >= 2)
+                            ++n_visible;
+                    std::cout << "[ai_readback] Export guide curves: "
+                              << item_it->second->hair_strands.size()
+                              << " strands, " << n_visible
+                              << " drawable" << std::endl;
+                    draw_guide_curves_on_buffer(
+                        rgba, res, res, s,
+                        item_it->second->hair_strands,
+                        s.export_color_code_strands);
+                } else {
+                    std::cerr << "[ai_readback] Export guide curves skipped: "
+                              << "item=" << (item_it != items.end() ? "found" : "not-found")
+                              << " type=" << (item_it != items.end() ? item_it->second->source_type : -1)
+                              << std::endl;
+                }
+            } else if (s.export_show_guide_curves) {
+                std::cerr << "[ai_readback] Export guide curves skipped: "
+                          << "render_id=" << render_id << std::endl;
             }
 
             // Push to API cache → available at /api/v1/ortho/render and /blend
@@ -3374,7 +3696,7 @@ void RenderVoxelList::render_ortho_edit_window() {
 
                 bool is_active =
                     (item_it->second->guide_curve_drawing_active &&
-                     item_it->second->active_guide_draw_strand == static_cast<int>(si));
+                     item_it->second->active_guide_draw_strand == item_it->second->hair_strands[si].uuid);
                 ImU32 color = is_active
                     ? ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.84f, 0.08f, 1.0f))
                     : ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 0.7f));
@@ -3556,11 +3878,10 @@ void RenderVoxelList::render_ortho_edit_window() {
             if (item_it != items.end()) {
                 auto& item = *item_it->second;
                 if (item.guide_curve_drawing_active &&
-                    item.active_guide_draw_strand >= 0 &&
-                    item.active_guide_draw_strand <
-                        static_cast<int>(item.hair_strands.size())) {
+                    !item.active_guide_draw_strand.empty() &&
+                    item.find_strand_by_uuid(item.active_guide_draw_strand)) {
                     auto& strand =
-                        item.hair_strands[item.active_guide_draw_strand];
+                        *item.find_strand_by_uuid(item.active_guide_draw_strand);
                     if (strand.guide_points.size() >= 2) {
                         // Construct camera ray from pixel
                         float u = (static_cast<float>(px) / res - 0.5f);
@@ -3619,23 +3940,22 @@ void RenderVoxelList::render_ortho_edit_window() {
                     auto& item = *item_it->second;
 
                     if (item.guide_curve_drawing_active &&
-                        item.active_guide_draw_strand >= 0 &&
-                        item.active_guide_draw_strand <
-                            static_cast<int>(item.hair_strands.size())) {
+                        !item.active_guide_draw_strand.empty() &&
+                        item.find_strand_by_uuid(item.active_guide_draw_strand)) {
                         push_undo_now(render_id, std::nullopt, "Add Guide Point");
                         auto& strand =
-                            item.hair_strands[item.active_guide_draw_strand];
+                            *item.find_strand_by_uuid(item.active_guide_draw_strand);
                         strand.guide_points.push_back(hit_pos);
                         strand.mesh_dirty = true;
                     } else if (item.width_editing_active &&
-                               item.active_width_edit_strand >= 0 &&
-                               item.active_width_edit_strand <
-                                   static_cast<int>(item.hair_strands.size())) {
-                        push_undo_now(render_id, std::nullopt, "Add Width Point");
-                        item.add_width_point_at(item.active_width_edit_strand,
-                                                hit_pos);
-                        item.hair_strands[item.active_width_edit_strand]
-                            .mesh_dirty = true;
+                               !item.active_width_edit_strand.empty()) {
+                        auto* w_strand_ptr = item.find_strand_by_uuid(item.active_width_edit_strand);
+                        if (w_strand_ptr) {
+                            push_undo_now(render_id, std::nullopt, "Add Width Point");
+                            int strand_idx = static_cast<int>(w_strand_ptr - item.hair_strands.data());
+                            item.add_width_point_at(strand_idx, hit_pos);
+                            w_strand_ptr->mesh_dirty = true;
+                        }
                     }
                 }
             }
@@ -3761,6 +4081,22 @@ void RenderVoxelList::render_ortho_edit_window() {
     ImGui::SameLine();
     ImGui::Checkbox(get_locale_cstr("label.show_width_vectors_2d"),
                     &ortho_state.show_width_vectors);
+
+    ImGui::SameLine();
+    if (ImGui::Checkbox(get_locale_cstr("label.export_guide_curves"),
+                        &ortho_state.export_show_guide_curves))
+        ortho_state.api_render_dirty = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.export_guide_curves"));
+
+    ImGui::SameLine();
+    if (!ortho_state.export_show_guide_curves) ImGui::BeginDisabled();
+    if (ImGui::Checkbox(get_locale_cstr("label.export_color_code"),
+                        &ortho_state.export_color_code_strands))
+        ortho_state.api_render_dirty = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.export_color_code"));
+    if (!ortho_state.export_show_guide_curves) ImGui::EndDisabled();
 
     ImGui::SameLine();
     const char* render_mode_names[] = {

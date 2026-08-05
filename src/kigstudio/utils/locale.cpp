@@ -495,6 +495,7 @@ void init_locale_strings() {
                       {{"en", "Open File Dialog"}, {"zh", "选择文件"}});
     add_locale_string("action.open", {{"en", "Open"}, {"zh", "打开"}});
     add_locale_string("action.cancel", {{"en", "Cancel"}, {"zh", "取消"}});
+    add_locale_string("action.ok", {{"en", "OK"}, {"zh", "确定"}});
     add_locale_string("action.yes", {{"en", "Yes"}, {"zh", "是"}});
     add_locale_string("action.add_shape",
                       {{"en", "Add shape"}, {"zh", "添加形状"}});
@@ -1255,10 +1256,22 @@ void init_locale_strings() {
                        {"zh", "在底模上点击以添加引导曲线点。"}});
     add_locale_string("action.delete_strand",
                       {{"en", "Delete"}, {"zh", "删除"}});
+    add_locale_string("action.rename_strand",
+                      {{"en", "Rename..."}, {"zh", "改名..."}});
+    add_locale_string("label.rename_strand_prompt",
+                      {{"en", "Enter new name for this strand:"},
+                       {"zh", "输入此发束的新名称："}});
     add_locale_string("action.clear_guide_points",
                       {{"en", "Clear Points"}, {"zh", "清空点"}});
+    add_locale_string("action.reverse_guide_points",
+                      {{"en", "Reverse"}, {"zh", "反转顺序"}});
     add_locale_string("action.clear_width_points",
                       {{"en", "Clear Points"}, {"zh", "清空点"}});
+    add_locale_string("label.auto_hair_root",
+                      {{"en", "Auto Hair Root"}, {"zh", "自动发根引导点"}});
+    add_locale_string("tooltip.auto_hair_root",
+                      {{"en", "Place a hidden guide point at the scalp collision from top-of-head direction"},
+                       {"zh", "从头顶方向向底模投射，自动放置隐藏发根引导点"}});
 
     // ---- 正交投影编辑模式 ----
     add_locale_string("action.ortho_projection",
@@ -1308,6 +1321,16 @@ void init_locale_strings() {
                        {"zh", "锁定图片后可点击穿透到模型"}});
     add_locale_string("label.show_guide_curves_2d",
                       {{"en", "Show Guide Curves"}, {"zh", "显示引导曲线"}});
+    add_locale_string("label.export_guide_curves",
+                      {{"en", "Export Guide Curves"}, {"zh", "导出引导线"}});
+    add_locale_string("tooltip.export_guide_curves",
+                      {{"en", "Overlay hair guide curves on the exported image"},
+                       {"zh", "在导出图片上叠加发束引导曲线"}});
+    add_locale_string("label.export_color_code",
+                      {{"en", "Color Code"}, {"zh", "颜色区分"}});
+    add_locale_string("tooltip.export_color_code",
+                      {{"en", "Use different colors for each strand and label names"},
+                       {"zh", "用不同颜色区分发束"}});
     add_locale_string("label.show_width_vectors_2d",
                       {{"en", "Show Width Vectors"}, {"zh", "显示宽度向量"}});
     add_locale_string("label.depth_color_mode",
@@ -1391,9 +1414,15 @@ void init_locale_strings() {
     add_locale_string("tooltip.delete_strand",
                       {{"en", "Delete this hair strand"},
                        {"zh", "删除此发束"}});
+    add_locale_string("tooltip.rename_strand",
+                      {{"en", "Rename this hair strand (generates new UUID)"},
+                       {"zh", "重命名此发束（生成新UUID）"}});
     add_locale_string("tooltip.clear_guide_points",
                       {{"en", "Clear all guide curve points for this strand"},
                        {"zh", "清空此发束的所有引导曲线点"}});
+    add_locale_string("tooltip.reverse_guide_points",
+                      {{"en", "Reverse the order of all guide curve points"},
+                       {"zh", "反转所有引导曲线点的顺序"}});
     // Special strand type labels
     add_locale_string("label.strand_type_normal",
                       {{"en", "Normal"}, {"zh", "普通"}});

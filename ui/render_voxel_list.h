@@ -15,7 +15,10 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <memory>
+#include <random>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #ifdef _WIN32
@@ -144,8 +147,19 @@ enum class HairStrandGenType : int {
 // 一根发束
 struct HairStrand {
     std::string name;
+    /// Stable unique identifier (12 hex chars), generated at creation.
+    /// Used as the key in addon_renderers map and for active strand tracking.
+    std::string uuid;
     // 引导曲线上的拾取点（世界坐标）
     std::vector<sinriv::kigstudio::voxel::vec3f> guide_points;
+
+    // Special hidden guide points at strand start/end.
+    // These participate in lofting and width-vector processing but are NOT
+    // editable in the UI, NOT shown in export images, and NOT visible in the
+    // orthogonal editor. They ARE rendered in the 3D model editor (gray color).
+    std::vector<sinriv::kigstudio::voxel::vec3f> hidden_guide_points_start;
+    std::vector<sinriv::kigstudio::voxel::vec3f> hidden_guide_points_end;
+
     // UI 折叠状态
     bool expanded = true;
     // 显示/隐藏此发束（仅影响显示，不影响碰撞生成）
@@ -186,6 +200,9 @@ struct HairStrand {
     // Reset on every rebuild; shown as a warning indicator in the UI.
     bool repair_failed = false;
 
+    // Auto-compute root hidden guide point from top-of-head direction
+    bool auto_hair_root = false;
+
     // Dirty flag: set to true when any data affecting the loft mesh changes
     bool mesh_dirty = true;
 
@@ -215,6 +232,25 @@ struct HairStrand {
     int special_quality = 16;                 // Polygon segments (4-64), controls
                                               // cylinder/ellipsoid/cone/joint smoothness
 };
+
+/// Generate a random 12-char hex string for strand UUIDs.
+/// Thread-local mt19937 seeded from steady_clock XOR thread::id hash.
+/// Collision probability is negligible for the expected strand count per file.
+inline std::string generate_uuid() {
+    thread_local std::mt19937 rng(
+        static_cast<unsigned>(
+            std::chrono::steady_clock::now()
+                .time_since_epoch()
+                .count()) ^
+        std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    std::uniform_int_distribution<int> dist(0, 15);
+    const char hex[] = "0123456789abcdef";
+    std::string id;
+    id.reserve(12);
+    for (int i = 0; i < 12; ++i)
+        id += hex[dist(rng)];
+    return id;
+}
 
 /// Orthographic projection edit mode state for hair strand editing.
 /// Holds projection settings, rendered textures, overlay image state,
@@ -295,6 +331,10 @@ struct OrthoProjectionState {
     // Strand preview toggles
     bool show_guide_curves = true;
     bool show_width_vectors = true;
+
+    // Export guide curves overlay on output image
+    bool export_show_guide_curves = false;
+    bool export_color_code_strands = true;
 
     // Depth-based colouring mode
     // 0=Contour, 1=Depth, 2=Lighting
@@ -602,11 +642,11 @@ class RenderVoxelList {
         sinriv::ui::render::RenderMesh origin_mesh_renderer;
         sinriv::ui::render::RenderMesh mesh_renderer;
         sinriv::ui::render::RenderMesh exported_mesh_renderer;
-        // 附加件渲染器数组（如毛发预览）：随 GBuffer 一同渲染，与主模型
-        // 正确互相遮挡，但不写 world_pos 通道，鼠标拾取可穿透它拾取
-        // 下层模型。RenderMesh 持有 bgfx 句柄且不可拷贝，用 deque 存放
-        // 以避免插入时搬移元素
-        std::deque<sinriv::ui::render::RenderMesh> addon_renderers;
+        // 附加件渲染器（如毛发预览）：按发束 UUID 索引，支持增量更新。
+        // RenderMesh 持有 bgfx 句柄且不可拷贝/移动，用 unique_ptr 管理。
+        std::unordered_map<std::string,
+                           std::unique_ptr<sinriv::ui::render::RenderMesh>>
+            addon_renderers;
 
         // 附加件模式：选中的底模节点ID（-1表示未选择）
         int addon_base_node_id = -1;
@@ -640,18 +680,54 @@ class RenderVoxelList {
         void apply_hairline_spindle();
         // 毛发数据
         std::vector<HairStrand> hair_strands;
-        // 当前正在绘制引导曲线的发束索引（-1表示无）
-        int active_guide_draw_strand = -1;
+
+        /// Find a strand by UUID (O(n) linear search). Returns nullptr if not found.
+        HairStrand* find_strand_by_uuid(const std::string& id) {
+            for (auto& s : hair_strands)
+                if (s.uuid == id) return &s;
+            return nullptr;
+        }
+        const HairStrand* find_strand_by_uuid(const std::string& id) const {
+            for (const auto& s : hair_strands)
+                if (s.uuid == id) return &s;
+            return nullptr;
+        }
+
+        /// Rename a strand: assign a new UUID and move the addon_renderers entry.
+        /// Active-tracking fields are updated if they reference the old UUID.
+        void rename_strand(const std::string& old_uuid,
+                           const std::string& new_uuid) {
+            auto* s = find_strand_by_uuid(old_uuid);
+            if (!s) return;
+            s->uuid = new_uuid;
+            auto it = addon_renderers.find(old_uuid);
+            if (it != addon_renderers.end()) {
+                auto node = addon_renderers.extract(it);
+                node.key() = new_uuid;
+                addon_renderers.insert(std::move(node));
+            }
+            if (active_guide_draw_strand == old_uuid)
+                active_guide_draw_strand = new_uuid;
+            if (active_width_edit_strand == old_uuid)
+                active_width_edit_strand = new_uuid;
+            if (active_section_edit_strand == old_uuid)
+                active_section_edit_strand = new_uuid;
+            if (active_perpoint_section_edit_strand == old_uuid)
+                active_perpoint_section_edit_strand = new_uuid;
+        }
+
+        // 当前正在绘制引导曲线的发束 UUID（空=无）
+        std::string active_guide_draw_strand;   // empty = none
         bool guide_curve_drawing_active = false;
-        // 当前正在编辑宽度的发束索引（-1表示无）
-        int active_width_edit_strand = -1;
+        // 当前正在编辑宽度的发束 UUID（空=无）
+        std::string active_width_edit_strand;   // empty = none
         bool width_editing_active = false;
         // Width point index highlighted in 3D viewport (hovered in width editor UI)
         int hovered_width_point_index = -1;
-        // 当前正在编辑截面的发束索引（-1表示无）
-        int active_section_edit_strand = -1;
+        // 当前正在编辑截面的发束 UUID（空=无）
+        std::string active_section_edit_strand;  // empty = none
         // Per-point section editor state
-        int active_perpoint_section_edit_strand = -1;
+        std::string active_perpoint_section_edit_strand;  // empty = none
         int active_perpoint_section_edit_width_idx = -1;
         bool perpoint_section_editing_active = false;
         // 发际线三点拾取状态
@@ -1066,6 +1142,9 @@ class RenderVoxelList {
     bool show_perpoint_confirm_global_open = false;
     bool show_perpoint_confirm_global_apply = false;
     int pending_global_section_strand = -1;
+    // Strand rename popup state
+    std::string pending_rename_strand_uuid;
+    char rename_buffer[256] = {};
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_hairline_plane_window();

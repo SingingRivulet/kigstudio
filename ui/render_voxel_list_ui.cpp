@@ -532,7 +532,7 @@ void RenderVoxelList::render_ui() {
                         .mesh_dirty = true;
                     // Open global section editor
                     it->second->active_section_edit_strand =
-                        pending_global_section_strand;
+                        it->second->hair_strands[pending_global_section_strand].uuid;
                     show_cross_section_editor_window = true;
                 }
                 pending_global_section_strand = -1;

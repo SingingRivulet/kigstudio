@@ -248,7 +248,7 @@ void RenderVoxelList::render_cross_section_editor() {
         auto git = items.find(render_id);
         if (git != items.end()) {
             git->second->guide_curve_drawing_active = false;
-            git->second->active_guide_draw_strand = -1;
+            git->second->active_guide_draw_strand.clear();
         }
         show_guide_curve_window = false;
     }
@@ -256,7 +256,7 @@ void RenderVoxelList::render_cross_section_editor() {
         auto pit = items.find(render_id);
         if (pit != items.end()) {
             pit->second->perpoint_section_editing_active = false;
-            pit->second->active_perpoint_section_edit_strand = -1;
+            pit->second->active_perpoint_section_edit_strand.clear();
             pit->second->active_perpoint_section_edit_width_idx = -1;
         }
         show_perpoint_section_editor_window = false;
@@ -283,7 +283,7 @@ void RenderVoxelList::render_cross_section_editor() {
         std::lock_guard<std::mutex> lock(locker);
         auto it = items.find(render_id);
         if (it != items.end()) {
-            it->second->active_section_edit_strand = -1;
+            it->second->active_section_edit_strand.clear();
         }
         show_cross_section_editor_window = false;
         ImGui::End();
@@ -300,15 +300,16 @@ void RenderVoxelList::render_cross_section_editor() {
     }
 
     RenderVoxelItem& item = *item_it->second;
-    int idx = item.active_section_edit_strand;
+    std::string strand_uuid = item.active_section_edit_strand;
 
-    if (idx < 0 || idx >= static_cast<int>(item.hair_strands.size())) {
+    auto* strand_ptr = item.find_strand_by_uuid(strand_uuid);
+    if (!strand_ptr) {
         show_cross_section_editor_window = false;
         ImGui::End();
         return;
     }
-
-    auto& strand = item.hair_strands[idx];
+    auto& strand = *strand_ptr;
+    int idx = static_cast<int>(strand_ptr - item.hair_strands.data());
     auto& state = strand.section_state;
     auto& verts = state.vertices;
 
@@ -801,14 +802,14 @@ void RenderVoxelList::render_perpoint_section_editor() {
         auto git = items.find(render_id);
         if (git != items.end()) {
             git->second->guide_curve_drawing_active = false;
-            git->second->active_guide_draw_strand = -1;
+            git->second->active_guide_draw_strand.clear();
         }
         show_guide_curve_window = false;
     }
     if (show_cross_section_editor_window) {
         auto sit = items.find(render_id);
         if (sit != items.end()) {
-            sit->second->active_section_edit_strand = -1;
+            sit->second->active_section_edit_strand.clear();
         }
         show_cross_section_editor_window = false;
     }
@@ -834,7 +835,7 @@ void RenderVoxelList::render_perpoint_section_editor() {
         auto it = items.find(render_id);
         if (it != items.end()) {
             it->second->perpoint_section_editing_active = false;
-            it->second->active_perpoint_section_edit_strand = -1;
+            it->second->active_perpoint_section_edit_strand.clear();
             it->second->active_perpoint_section_edit_width_idx = -1;
         }
         show_perpoint_section_editor_window = false;
@@ -852,19 +853,20 @@ void RenderVoxelList::render_perpoint_section_editor() {
     }
 
     RenderVoxelItem& item = *item_it->second;
-    int strand_idx = item.active_perpoint_section_edit_strand;
+    std::string strand_uuid = item.active_perpoint_section_edit_strand;
     int wp_idx = item.active_perpoint_section_edit_width_idx;
 
-    if (strand_idx < 0 ||
-        strand_idx >= static_cast<int>(item.hair_strands.size()) ||
+    auto* strand_ptr = item.find_strand_by_uuid(strand_uuid);
+    if (!strand_ptr ||
         wp_idx < 0 || wp_idx >= static_cast<int>(
-                          item.hair_strands[strand_idx].width_points.size())) {
+                          strand_ptr->width_points.size())) {
         show_perpoint_section_editor_window = false;
         ImGui::End();
         return;
     }
 
-    auto& strand = item.hair_strands[strand_idx];
+    auto& strand = *strand_ptr;
+    int strand_idx = static_cast<int>(strand_ptr - item.hair_strands.data());
     auto& wp = strand.width_points[wp_idx];
     auto& state = wp.section_state;
     auto& verts = state.vertices;

@@ -460,6 +460,22 @@ void AgentServer::register_routes() {
 		return std::atoi(num.c_str());
 	};
 
+	// Helper: extract a path segment by index as a string
+	auto path_str_param = [](const httplib::Request& req,
+	                         size_t segment_idx) -> std::string {
+		const std::string& path = req.path;
+		size_t pos = 0;
+		for (size_t i = 0; i <= segment_idx && pos < path.size(); ++i) {
+			pos = path.find('/', pos);
+			if (pos == std::string::npos) return "";
+			++pos;
+		}
+		if (pos >= path.size()) return "";
+		size_t end = path.find('/', pos);
+		return (end == std::string::npos) ? path.substr(pos)
+		                                  : path.substr(pos, end - pos);
+	};
+
 	// Helper: parse query params into a cJSON object
 	auto parse_query = [](const httplib::Request& req) -> cJSON* {
 		if (req.params.empty()) return cJSON_CreateObject();
@@ -921,6 +937,134 @@ void AgentServer::register_routes() {
 		         cJSON_AddNumberToObject(params, "node_id", node_id);
 		         cJSON_AddNumberToObject(params, "strand_index",
 		                                strand_index);
+		         run_command(req, res, "strand.addSemanticWidthPoint",
+		                     params);
+	         });
+
+	// --- UUID-based strand routes (alternative to :index) ---
+
+	// GET /api/v1/nodes/:id/strands/by-uuid/:uuid
+	svr.Get(R"(/api/v1/nodes/(\d+)/strands/by-uuid/([a-f0-9]+))",
+	        [=](const httplib::Request& req, httplib::Response& res) {
+		        int node_id = path_int_param(req, 3);
+		        std::string strand_uuid = path_str_param(req, 6);
+		        cJSON* params = cJSON_CreateObject();
+		        cJSON_AddNumberToObject(params, "node_id", node_id);
+		        cJSON_AddStringToObject(params, "strand_uuid",
+		                                strand_uuid.c_str());
+		        run_command(req, res, "strand.get", params);
+	        });
+
+	// DELETE /api/v1/nodes/:id/strands/by-uuid/:uuid
+	svr.Delete(R"(/api/v1/nodes/(\d+)/strands/by-uuid/([a-f0-9]+))",
+	           [=](const httplib::Request& req, httplib::Response& res) {
+		           int node_id = path_int_param(req, 3);
+		           std::string strand_uuid = path_str_param(req, 6);
+		           cJSON* params = cJSON_CreateObject();
+		           cJSON_AddNumberToObject(params, "node_id", node_id);
+		           cJSON_AddStringToObject(params, "strand_uuid",
+		                                   strand_uuid.c_str());
+		           run_command(req, res, "strand.delete", params);
+	           });
+
+	// PATCH /api/v1/nodes/:id/strands/by-uuid/:uuid
+	svr.Patch(R"(/api/v1/nodes/(\d+)/strands/by-uuid/([a-f0-9]+))",
+	          [=](const httplib::Request& req, httplib::Response& res) {
+		          int node_id = path_int_param(req, 3);
+		          std::string strand_uuid = path_str_param(req, 6);
+		          std::string err;
+		          cJSON* params = json_parse_body(req.body, err);
+		          if (!params) {
+			          res.status = 400;
+			          res.set_content(
+			              "{\"ok\":false,\"error\":\"" + err + "\"}",
+			              "application/json");
+			          return;
+		          }
+		          cJSON_AddNumberToObject(params, "node_id", node_id);
+		          cJSON_AddStringToObject(params, "strand_uuid",
+		                                  strand_uuid.c_str());
+		          run_command(req, res, "strand.update", params);
+	          });
+
+	// POST /api/v1/nodes/:id/strands/by-uuid/:uuid/move
+	svr.Post(R"(/api/v1/nodes/(\d+)/strands/by-uuid/([a-f0-9]+)/move)",
+	         [=](const httplib::Request& req, httplib::Response& res) {
+		         int node_id = path_int_param(req, 3);
+		         std::string strand_uuid = path_str_param(req, 6);
+		         std::string err;
+		         cJSON* params = json_parse_body(req.body, err);
+		         if (!params) {
+			         res.status = 400;
+			         res.set_content(
+			             "{\"ok\":false,\"error\":\"" + err + "\"}",
+			             "application/json");
+			         return;
+		         }
+		         cJSON_AddNumberToObject(params, "node_id", node_id);
+		         cJSON_AddStringToObject(params, "strand_uuid",
+		                                 strand_uuid.c_str());
+		         run_command(req, res, "strand.move", params);
+	         });
+
+	// POST /api/v1/nodes/:id/strands/by-uuid/:uuid/rename
+	svr.Post(R"(/api/v1/nodes/(\d+)/strands/by-uuid/([a-f0-9]+)/rename)",
+	         [=](const httplib::Request& req, httplib::Response& res) {
+		         int node_id = path_int_param(req, 3);
+		         std::string strand_uuid = path_str_param(req, 6);
+		         std::string err;
+		         cJSON* params = json_parse_body(req.body, err);
+		         if (!params) {
+			         res.status = 400;
+			         res.set_content(
+			             "{\"ok\":false,\"error\":\"" + err + "\"}",
+			             "application/json");
+			         return;
+		         }
+		         cJSON_AddNumberToObject(params, "node_id", node_id);
+		         cJSON_AddStringToObject(params, "strand_uuid",
+		                                 strand_uuid.c_str());
+		         run_command(req, res, "strand.rename", params);
+	         });
+
+	// POST /api/v1/nodes/:id/strands/by-uuid/:uuid/guide-points/semantic
+	svr.Post(R"(/api/v1/nodes/(\d+)/strands/by-uuid/([a-f0-9]+)/guide-points/semantic)",
+	         [=](const httplib::Request& req, httplib::Response& res) {
+		         int node_id = path_int_param(req, 3);
+		         std::string strand_uuid = path_str_param(req, 6);
+		         std::string err;
+		         cJSON* params = json_parse_body(req.body, err);
+		         if (!params) {
+			         res.status = 400;
+			         res.set_content(
+			             "{\"ok\":false,\"error\":\"" + err + "\"}",
+			             "application/json");
+			         return;
+		         }
+		         cJSON_AddNumberToObject(params, "node_id", node_id);
+		         cJSON_AddStringToObject(params, "strand_uuid",
+		                                 strand_uuid.c_str());
+		         run_command(req, res, "strand.addSemanticGuidePoint",
+		                     params);
+	         });
+
+	// POST /api/v1/nodes/:id/strands/by-uuid/:uuid/width-points/semantic
+	svr.Post(R"(/api/v1/nodes/(\d+)/strands/by-uuid/([a-f0-9]+)/width-points/semantic)",
+	         [=](const httplib::Request& req, httplib::Response& res) {
+		         int node_id = path_int_param(req, 3);
+		         std::string strand_uuid = path_str_param(req, 6);
+		         std::string err;
+		         cJSON* params = json_parse_body(req.body, err);
+		         if (!params) {
+			         res.status = 400;
+			         res.set_content(
+			             "{\"ok\":false,\"error\":\"" + err + "\"}",
+			             "application/json");
+			         return;
+		         }
+		         cJSON_AddNumberToObject(params, "node_id", node_id);
+		         cJSON_AddStringToObject(params, "strand_uuid",
+		                                 strand_uuid.c_str());
 		         run_command(req, res, "strand.addSemanticWidthPoint",
 		                     params);
 	         });
