@@ -22,6 +22,10 @@
 namespace sinriv::ui::render {
 class RenderVoxelList;
 }
+namespace httplib {
+struct Request;
+struct Response;
+}
 
 namespace sinriv::kigstudio::agent {
 
@@ -77,6 +81,19 @@ public:
 	/// Thread-safe — can be called from any thread.
 	void broadcast_event(const char* type, cJSON* data);
 
+	// ---- Ortho render data providers (called from UI thread) ----
+	/// Set the latest ortho-projection render as RGBA pixel data.
+	void setOrthoRenderData(const uint8_t* rgba, int w, int h);
+	/// Set the overlay/reference image as RGBA pixel data.
+	void setOrthoOverlayData(const uint8_t* rgba, int w, int h);
+	/// Update overlay placement parameters.
+	void setOrthoOverlayParams(float offset_x, float offset_y,
+	                           float scale, float blend_ratio);
+	/// Enable/disable overlay blending.
+	void setOrthoOverlayActive(bool active);
+	/// Set the current camera/projection state as JSON string.
+	void setOrthoState(const std::string& json);
+
 	// ---- accessors ----
 
 	AgentCommandQueue& command_queue() { return queue_; }
@@ -86,6 +103,10 @@ private:
 	void register_routes();
 	static std::string json_print(cJSON* obj);
 	cJSON* json_parse_body(const std::string& body, std::string& error_out);
+
+	// Ortho blend helper (implementation in .cpp; fwd-declared httplib types above)
+	bool sendOrthoBlendedPng(const httplib::Request& req,
+	                         httplib::Response& res);
 
 	AgentCommandQueue queue_;
 	AgentHandlerFn handler_;

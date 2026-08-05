@@ -1116,7 +1116,6 @@ float RenderVoxelList::getQueueProgress() {
 
 void RenderVoxelList::release() {
     stop_thread();
-    stop_api_server();
     destroyIcons();
     destroyThumbnailResources();
     destroy_ortho_resources();

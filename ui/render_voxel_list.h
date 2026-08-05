@@ -40,10 +40,7 @@
 #include "ui/cross_section_editor.h"
 #include "ui/render_deferred.h"
 
-// Forward-declared to avoid pulling winsock2 into every TU
-namespace sinriv { namespace ui { namespace render {
-class ExternalApiServer;
-} } }
+#include "kigstudio/agent/agent_server.h"
 
 namespace sinriv::ui::render {
 
@@ -288,9 +285,10 @@ struct OrthoProjectionState {
     int overlay_img_width = 0;
     int overlay_img_height = 0;
     bool overlay_enabled = false;       // checkbox to activate drag/scale
-    ImVec2 overlay_offset = {0, 0};     // pan offset in pixels
-    float overlay_scale = 1.0f;         // zoom scale
+    ImVec2 overlay_offset = {0, 0};     // pan offset in screen pixels
+    float overlay_scale = 1.0f;         // zoom scale in screen pixels
     float blend_ratio = 0.5f;           // blend slider
+    float canvas_display_size = 600.0f; // display size when overlay was placed (for scaling)
 
     // Strand preview toggles
     bool show_guide_curves = true;
@@ -310,19 +308,17 @@ struct OrthoProjectionState {
     float resize_start_scale = 1.0f;
     bool is_hovering_model = false;     // mouse over valid mesh area
     vec3f hovered_world_pos = {0, 0, 0};
+    int hovered_px = 0, hovered_py = 0; // API 2D render-pixel coords
 
     // ---- AI / external tool integration ----
-    bool ai_export_pending = false;     // user requested export for AI
-    bool ai_watch_enabled = false;      // auto-watch directory for AI results
-    std::string ai_export_dir;          // directory where render + state are saved
-    std::string ai_result_path;         // path to AI result.json to watch
+    bool api_render_dirty = false;      // new render → trigger GPU readback for API cache
+    bool ai_export_pending = false;     // readback pipeline is active
     // GPU readback state for saving the render to a PNG file on disk
     bgfx::TextureHandle ai_readback_tex = BGFX_INVALID_HANDLE;
     std::vector<uint8_t> ai_readback_buffer;
     bool ai_readback_pending = false;
-    int ai_export_stage = 0;            // 0=idle, 1=wait-readback, 2=save-file
-    // Last modification time of result.json (for auto-import detection)
-    int64_t ai_result_mtime = 0;
+    int ai_export_stage = 0;            // 0=idle, 1=wait-readback, 2=wait-frames-then-save
+    int ai_readback_frame_wait = 0;     // countdown frames until GPU readback is ready
 };
 
 // Six standard view directions based on the semantic coordinate frame.
@@ -1052,13 +1048,9 @@ class RenderVoxelList {
     // Orthographic projection edit mode state (all settings, textures, interaction)
     OrthoProjectionState ortho_state;
 
-    // Embedded HTTP API server for external tool integration
-    // Raw pointer – managed manually because unique_ptr<FwdDecl> requires the
-    // complete type in every TU that sees ~RenderVoxelList().
-    ExternalApiServer* api_server = nullptr;
-    bool api_server_running = false;
-    void start_api_server(int port = 19876);
-    void stop_api_server();
+    // Pointer to the main Agent API server (owned by ui.hpp).
+    // Ortho render/overlay/blend data is pushed here each frame.
+    sinriv::kigstudio::agent::AgentServer* agent_server_ptr = nullptr;
     void update_api_server_caches();
     // CPU-side copy of overlay for API blending (kept alongside GPU texture)
     std::vector<uint8_t> overlay_cpu_rgba_;

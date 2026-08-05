@@ -20,6 +20,17 @@
 
 #include <cJSON.h>
 
+// stb_image_write for PNG encoding (ortho /blend endpoint)
+#ifdef __cplusplus
+extern "C" {
+#endif
+int stbi_write_png_to_func(
+    void (*func)(void* context, void* data, int size),
+    void* context, int w, int h, int comp, const void* data, int stride);
+#ifdef __cplusplus
+}
+#endif
+
 // Suppress some warnings from httplib.h in MSVC
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -49,6 +60,22 @@ struct AgentServer::Impl {
 
 	// MCP SSE handler (initialised in start() with queue reference)
 	std::unique_ptr<McpHandler> mcp_handler;
+
+	// ---- Ortho render data cache (mutex-protected) ----
+	std::mutex ortho_mtx_;
+	std::vector<uint8_t> render_rgba_;
+	int render_w_ = 0, render_h_ = 0;
+	bool render_valid_ = false;
+
+	std::vector<uint8_t> overlay_rgba_;
+	int overlay_w_ = 0, overlay_h_ = 0;
+	bool overlay_valid_ = false;
+	bool overlay_active_ = false;
+
+	float overlay_off_x_ = 0.f, overlay_off_y_ = 0.f;
+	float overlay_scale_ = 1.f, overlay_blend_ = 0.5f;
+
+	std::string ortho_state_json_;
 };
 
 // ==========================================================================
@@ -184,6 +211,154 @@ void AgentServer::broadcast_event(const char* type, cJSON* data) {
 	for (auto* ws : impl_->ws_clients) {
 		ws->send(msg);
 	}
+}
+
+// ==========================================================================
+// Ortho render data providers (called from UI thread)
+// ==========================================================================
+
+void AgentServer::setOrthoRenderData(const uint8_t* rgba, int w, int h) {
+	if (!rgba || w <= 0 || h <= 0) return;
+	std::lock_guard<std::mutex> lock(impl_->ortho_mtx_);
+	size_t size = (size_t)w * h * 4;
+	impl_->render_rgba_.resize(size);
+	memcpy(impl_->render_rgba_.data(), rgba, size);
+	impl_->render_w_ = w;
+	impl_->render_h_ = h;
+	impl_->render_valid_ = true;
+}
+
+void AgentServer::setOrthoOverlayData(const uint8_t* rgba, int w, int h) {
+	std::lock_guard<std::mutex> lock(impl_->ortho_mtx_);
+	if (!rgba || w <= 0 || h <= 0) {
+		impl_->overlay_rgba_.clear();
+		impl_->overlay_w_ = impl_->overlay_h_ = 0;
+		impl_->overlay_valid_ = false;
+		return;
+	}
+	size_t size = (size_t)w * h * 4;
+	impl_->overlay_rgba_.resize(size);
+	memcpy(impl_->overlay_rgba_.data(), rgba, size);
+	impl_->overlay_w_ = w;
+	impl_->overlay_h_ = h;
+	impl_->overlay_valid_ = true;
+}
+
+void AgentServer::setOrthoOverlayParams(float offset_x, float offset_y,
+                                         float scale, float blend_ratio) {
+	std::lock_guard<std::mutex> lock(impl_->ortho_mtx_);
+	impl_->overlay_off_x_ = offset_x;
+	impl_->overlay_off_y_ = offset_y;
+	impl_->overlay_scale_ = scale;
+	impl_->overlay_blend_ = blend_ratio;
+}
+
+void AgentServer::setOrthoOverlayActive(bool active) {
+	impl_->overlay_active_ = active;
+}
+
+void AgentServer::setOrthoState(const std::string& json) {
+	std::lock_guard<std::mutex> lock(impl_->ortho_mtx_);
+	impl_->ortho_state_json_ = json;
+}
+
+// ==========================================================================
+// Ortho blended PNG helper (CPU-side render + overlay blend)
+// ==========================================================================
+
+bool AgentServer::sendOrthoBlendedPng(const httplib::Request& req,
+                                       httplib::Response& res) {
+	auto& impl = *impl_;
+	std::lock_guard<std::mutex> lock(impl.ortho_mtx_);
+
+	// Parse blend ratio from query
+	float blend_ratio = 0.5f;
+	if (req.has_param("ratio")) {
+		try { blend_ratio = std::stof(req.get_param_value("ratio")); }
+		catch (...) { blend_ratio = 0.5f; }
+	}
+	blend_ratio = std::max(0.0f, std::min(1.0f, blend_ratio));
+
+	int out_w = impl.render_valid_ ? impl.render_w_ : 512;
+	int out_h = impl.render_valid_ ? impl.render_h_ : 512;
+	if (out_w <= 0 || out_h <= 0) {
+		res.status = 503;
+		res.set_content("{\"error\":\"no render data available\"}", "application/json");
+		return true;
+	}
+
+	std::vector<uint8_t> out(out_w * out_h * 4, 0);
+
+	// Fill with render data (or dark grey if no render)
+	if (impl.render_valid_) {
+		for (int y = 0; y < out_h; y++) {
+			for (int x = 0; x < out_w; x++) {
+				int src = (y * impl.render_w_ + x) * 4;
+				int dst = (y * out_w + x) * 4;
+				if (x < impl.render_w_ && y < impl.render_h_) {
+					out[dst + 0] = impl.render_rgba_[src + 0];
+					out[dst + 1] = impl.render_rgba_[src + 1];
+					out[dst + 2] = impl.render_rgba_[src + 2];
+					out[dst + 3] = 255;
+				} else {
+					out[dst + 0] = out[dst + 1] = out[dst + 2] = 48;
+					out[dst + 3] = 255;
+				}
+			}
+		}
+	} else {
+		for (int i = 0; i < out_w * out_h * 4; i += 4) {
+			out[i + 0] = out[i + 1] = out[i + 2] = 48;
+			out[i + 3] = 255;
+		}
+	}
+
+	// Blend overlay on top
+	if (impl.overlay_active_ && impl.overlay_valid_ && blend_ratio > 0.001f) {
+		int ov_w = impl.overlay_w_, ov_h = impl.overlay_h_;
+		float sc = impl.overlay_scale_;
+		if (sc <= 0.0f) sc = 1.0f;
+		int placed_w = (int)(ov_w * sc), placed_h = (int)(ov_h * sc);
+		int off_x = (int)impl.overlay_off_x_, off_y = (int)impl.overlay_off_y_;
+
+		for (int dy = 0; dy < placed_h; dy++) {
+			int sy = (int)(dy / sc);
+			if (sy < 0 || sy >= ov_h) continue;
+			int py = off_y + dy;
+			if (py < 0 || py >= out_h) continue;
+			for (int dx = 0; dx < placed_w; dx++) {
+				int sx = (int)(dx / sc);
+				if (sx < 0 || sx >= ov_w) continue;
+				int px = off_x + dx;
+				if (px < 0 || px >= out_w) continue;
+				int oi = (sy * ov_w + sx) * 4;
+				int di = (py * out_w + px) * 4;
+				float ov_a = impl.overlay_rgba_[oi + 3] / 255.0f * blend_ratio;
+				out[di + 0] = (uint8_t)(out[di + 0] * (1.f - ov_a) + impl.overlay_rgba_[oi + 0] * ov_a);
+				out[di + 1] = (uint8_t)(out[di + 1] * (1.f - ov_a) + impl.overlay_rgba_[oi + 1] * ov_a);
+				out[di + 2] = (uint8_t)(out[di + 2] * (1.f - ov_a) + impl.overlay_rgba_[oi + 2] * ov_a);
+			}
+		}
+	}
+
+	// Render PNG to buffer via stb_image_write callback
+	struct PngBuf { std::vector<uint8_t> buf; };
+	PngBuf png;
+	auto writer = [](void* ctx, void* d, int sz) {
+		auto* p = (PngBuf*)ctx;
+		p->buf.insert(p->buf.end(), (uint8_t*)d, (uint8_t*)d + sz);
+	};
+	int ok = stbi_write_png_to_func(writer, &png, out_w, out_h, 4,
+	                                 out.data(), out_w * 4);
+	if (!ok) {
+		res.status = 500;
+		res.set_content("{\"error\":\"png encode failed\"}", "application/json");
+	} else {
+		res.set_content(
+		    std::string(reinterpret_cast<const char*>(png.buf.data()), png.buf.size()),
+		    "image/png");
+	}
+	return true;
 }
 
 // ==========================================================================
@@ -836,6 +1011,99 @@ void AgentServer::register_routes() {
 		}
 		impl_->mcp_handler->handle_message(req, res);
 	});
-}
+
+		// ================================================================
+		// Ortho projection endpoints (render, overlay, blend, state)
+		// ================================================================
+
+		svr.Get("/api/v1/ortho/ping", [this](const httplib::Request& /*req*/,
+		                                     httplib::Response& res) {
+			res.set_content("{\"ok\":true,\"service\":\"kigstudio-ortho-api\"}",
+			                "application/json");
+		});
+
+		svr.Get("/api/v1/ortho/state", [this](const httplib::Request& /*req*/,
+		                                      httplib::Response& res) {
+			std::lock_guard<std::mutex> lock(impl_->ortho_mtx_);
+			res.set_content(
+			    impl_->ortho_state_json_.empty() ? "{}" : impl_->ortho_state_json_,
+			    "application/json");
+		});
+
+		svr.Get("/api/v1/ortho/render", [this](const httplib::Request& /*req*/,
+		                                       httplib::Response& res) {
+			std::lock_guard<std::mutex> lock(impl_->ortho_mtx_);
+			if (!impl_->render_valid_) {
+				res.status = 503;
+				res.set_content("{\"error\":\"no render data available\"}",
+				                "application/json");
+				return;
+			}
+			// Encode to PNG via callback
+			struct Buf { std::vector<uint8_t> d; };
+			Buf buf;
+			auto w = [](void* c, void* d, int s) {
+				((Buf*)c)->d.insert(((Buf*)c)->d.end(), (uint8_t*)d, (uint8_t*)d + s);
+			};
+			int ok = stbi_write_png_to_func(w, &buf,
+			    impl_->render_w_, impl_->render_h_, 4,
+			    impl_->render_rgba_.data(), impl_->render_w_ * 4);
+			if (!ok) {
+				res.status = 500;
+				res.set_content("{\"error\":\"png encode failed\"}", "application/json");
+			} else {
+				res.set_content(
+				    std::string((const char*)buf.d.data(), buf.d.size()),
+				    "image/png");
+			}
+		});
+
+		svr.Get("/api/v1/ortho/overlay", [this](const httplib::Request& /*req*/,
+		                                        httplib::Response& res) {
+			std::lock_guard<std::mutex> lock(impl_->ortho_mtx_);
+			if (!impl_->overlay_valid_) {
+				res.status = 404;
+				res.set_content("{\"error\":\"no overlay loaded\"}",
+				                "application/json");
+				return;
+			}
+			struct Buf { std::vector<uint8_t> d; };
+			Buf buf;
+			auto w = [](void* c, void* d, int s) {
+				((Buf*)c)->d.insert(((Buf*)c)->d.end(), (uint8_t*)d, (uint8_t*)d + s);
+			};
+			int ok = stbi_write_png_to_func(w, &buf,
+			    impl_->overlay_w_, impl_->overlay_h_, 4,
+			    impl_->overlay_rgba_.data(), impl_->overlay_w_ * 4);
+			if (!ok) {
+				res.status = 500;
+				res.set_content("{\"error\":\"png encode failed\"}", "application/json");
+			} else {
+				res.set_content(
+				    std::string((const char*)buf.d.data(), buf.d.size()),
+				    "image/png");
+			}
+		});
+
+		svr.Get("/api/v1/ortho/blend", [this](const httplib::Request& req,
+		                                      httplib::Response& res) {
+			sendOrthoBlendedPng(req, res);
+		});
+
+		// POST /api/v1/ortho/strand — create/update strand from 2D pixel coords
+		svr.Post("/api/v1/ortho/strand", [=](const httplib::Request& req,
+		                                     httplib::Response& res) {
+			std::string err;
+			cJSON* params = json_parse_body(req.body, err);
+			if (!params) {
+				res.status = 400;
+				res.set_content(
+				    "{\"ok\":false,\"error\":\"" + err + "\"}",
+				    "application/json");
+				return;
+			}
+			run_command(req, res, "strand.create2d", params);
+		});
+	}
 
 }  // namespace sinriv::kigstudio::agent

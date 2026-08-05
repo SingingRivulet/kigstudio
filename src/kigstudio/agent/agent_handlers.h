@@ -147,6 +147,7 @@ cJSON* h_strand_set_angle_config(cJSON* params, List& list);
 cJSON* h_strand_add_semantic_guide_point(cJSON* params, List& list);
 cJSON* h_strand_add_semantic_width_point(cJSON* params, List& list);
 cJSON* h_strand_apply_hairline_spindle(cJSON* params, List& list);
+cJSON* h_strand_create_2d(cJSON* params, List& list);
 
 // ---- dispatch ----
 
@@ -204,6 +205,7 @@ inline cJSON* agent_dispatch(const std::string& method, cJSON* params,
 	         h_strand_add_semantic_width_point},
 	        {"strand.applyHairlineSpindle",
 	         h_strand_apply_hairline_spindle},
+	        {"strand.create2d", h_strand_create_2d},
 	    };
 
 	auto it = table.find(method);
@@ -306,12 +308,15 @@ inline cJSON* h_system_toast(cJSON* params, List& list) {
 inline cJSON* h_project_info(cJSON* /*params*/, List& list) {
 	cJSON* r = cJSON_CreateObject();
 	cJSON_AddTrueToObject(r, "ok");
-	cJSON_AddStringToObject(r, "path", list.project_path.c_str());
-	cJSON_AddNumberToObject(r, "node_count",
+
+	cJSON* data = cJSON_CreateObject();
+	cJSON_AddStringToObject(data, "path", list.project_path.c_str());
+	cJSON_AddNumberToObject(data, "node_count",
 	                        static_cast<int>(list.items.size()));
-	cJSON_AddNumberToObject(r, "memory_mb",
+	cJSON_AddNumberToObject(data, "memory_mb",
 	                        static_cast<double>(list.memory_current / 1024 / 1024));
-	cJSON_AddBoolToObject(r, "dirty", list.has_dirty_items());
+	cJSON_AddBoolToObject(data, "dirty", list.has_dirty_items());
+	cJSON_AddItemToObject(r, "data", data);
 	return r;
 }
 
@@ -380,8 +385,10 @@ inline cJSON* h_project_create(cJSON* /*params*/, List& list) {
 inline cJSON* h_node_list(cJSON* /*params*/, List& list) {
 	cJSON* r = cJSON_CreateObject();
 	cJSON_AddTrueToObject(r, "ok");
+
+	cJSON* data = cJSON_CreateObject();
 	cJSON* nodes = cJSON_CreateArray();
-	cJSON_AddItemToObject(r, "nodes", nodes);
+	cJSON_AddItemToObject(data, "nodes", nodes);
 
 	std::lock_guard<std::mutex> lock(list.locker);
 	for (const auto& [id, item_ptr] : list.items) {
@@ -409,6 +416,8 @@ inline cJSON* h_node_list(cJSON* /*params*/, List& list) {
 
 		cJSON_AddItemToArray(nodes, n);
 	}
+
+	cJSON_AddItemToObject(r, "data", data);
 	return r;
 }
 
@@ -568,16 +577,19 @@ inline cJSON* h_node_get_bounds(cJSON* params, List& list) {
 
 	cJSON* r = cJSON_CreateObject();
 	cJSON_AddTrueToObject(r, "ok");
+
+	cJSON* data = cJSON_CreateObject();
 	cJSON* bmin = cJSON_CreateObject();
 	cJSON_AddNumberToObject(bmin, "x", static_cast<double>(vmin.x));
 	cJSON_AddNumberToObject(bmin, "y", static_cast<double>(vmin.y));
 	cJSON_AddNumberToObject(bmin, "z", static_cast<double>(vmin.z));
-	cJSON_AddItemToObject(r, "min", bmin);
+	cJSON_AddItemToObject(data, "min", bmin);
 	cJSON* bmax = cJSON_CreateObject();
 	cJSON_AddNumberToObject(bmax, "x", static_cast<double>(vmax.x));
 	cJSON_AddNumberToObject(bmax, "y", static_cast<double>(vmax.y));
 	cJSON_AddNumberToObject(bmax, "z", static_cast<double>(vmax.z));
-	cJSON_AddItemToObject(r, "max", bmax);
+	cJSON_AddItemToObject(data, "max", bmax);
+	cJSON_AddItemToObject(r, "data", data);
 	return r;
 }
 
@@ -935,7 +947,9 @@ inline cJSON* h_strand_list(cJSON* params, List& list) {
 
 	cJSON* r = cJSON_CreateObject();
 	cJSON_AddTrueToObject(r, "ok");
-	cJSON_AddNumberToObject(r, "strand_count",
+
+	cJSON* data = cJSON_CreateObject();
+	cJSON_AddNumberToObject(data, "strand_count",
 	                        static_cast<int>(item->hair_strands.size()));
 
 	cJSON* strands = cJSON_CreateArray();
@@ -952,7 +966,7 @@ inline cJSON* h_strand_list(cJSON* params, List& list) {
 		cJSON_AddBoolToObject(so, "repair_failed", s.repair_failed);
 		cJSON_AddItemToArray(strands, so);
 	}
-	cJSON_AddItemToObject(r, "strands", strands);
+	cJSON_AddItemToObject(data, "strands", strands);
 
 	// Also include shared center point
 	cJSON* cp = cJSON_CreateObject();
@@ -963,7 +977,7 @@ inline cJSON* h_strand_list(cJSON* params, List& list) {
 	cJSON_AddNumberToObject(cp, "z",
 	                        static_cast<double>(item->addon_center_point.z));
 	cJSON_AddBoolToObject(cp, "show", item->show_addon_center);
-	cJSON_AddItemToObject(r, "center_point", cp);
+	cJSON_AddItemToObject(data, "center_point", cp);
 
 	// Addon options
 	cJSON* opts = cJSON_CreateObject();
@@ -973,8 +987,9 @@ inline cJSON* h_strand_list(cJSON* params, List& list) {
 	cJSON_AddBoolToObject(opts, "split", item->addon_split);
 	cJSON_AddBoolToObject(opts, "sdf_boolean", item->addon_sdf_boolean);
 	cJSON_AddBoolToObject(opts, "sdf_split", item->addon_sdf_split);
-	cJSON_AddItemToObject(r, "addon_options", opts);
+	cJSON_AddItemToObject(data, "addon_options", opts);
 
+	cJSON_AddItemToObject(r, "data", data);
 	return r;
 }
 
@@ -1051,7 +1066,9 @@ inline cJSON* h_strand_get(cJSON* params, List& list) {
 	                      strand->section_state.use_bezier_section);
 	cJSON_AddItemToObject(sd, "section_state", sec);
 
-	cJSON_AddItemToObject(r, "strand", sd);
+	cJSON* data = cJSON_CreateObject();
+	cJSON_AddItemToObject(data, "strand", sd);
+	cJSON_AddItemToObject(r, "data", data);
 	return r;
 }
 
@@ -1077,8 +1094,10 @@ inline cJSON* h_strand_create(cJSON* params, List& list) {
 
 	cJSON* r = cJSON_CreateObject();
 	cJSON_AddTrueToObject(r, "ok");
-	cJSON_AddNumberToObject(r, "strand_index",
+	cJSON* data = cJSON_CreateObject();
+	cJSON_AddNumberToObject(data, "strand_index",
 	                        static_cast<int>(item->hair_strands.size() - 1));
+	cJSON_AddItemToObject(r, "data", data);
 	return r;
 }
 
@@ -1249,6 +1268,217 @@ inline cJSON* h_strand_update(cJSON* params, List& list) {
 
 	cJSON_Delete(params);
 	return ok_response();
+}
+
+/// strand.create2d — create/update a strand from 2D pixel coordinates.
+///
+/// Takes 2D guide points in render-pixel space and raycasts each one
+/// against the base model's triangle mesh to find the true 3D surface
+/// intersection — exactly the same path as manual guide-point clicking
+/// in the ortho editor.
+///
+/// If a pixel does not hit the model, the point is silently projected
+/// onto the image plane as a fallback.
+///
+/// Body params:
+///   node_id (int)              — the node that owns the strand
+///   guide_points_2d (array)    — [[x0,y0], [x1,y1], …] in render-resolution pixels
+///   name (string, optional)    — strand display name
+///   strand_index (int, opt)    — if set, update an existing strand instead of creating
+///   guide_samples_per_segment (int, opt, default 64)
+inline cJSON* h_strand_create_2d(cJSON* params, List& list) {
+	using vec3f = sinriv::kigstudio::voxel::vec3f;
+
+	int node_id = json_int(params, "node_id", -1);
+	const char* name = json_str(params, "name", "");
+	int strand_index = json_int(params, "strand_index", -1);
+	int guide_samples = json_int(params, "guide_samples_per_segment", 64);
+
+	cJSON* gps_2d = cJSON_GetObjectItem(params, "guide_points_2d");
+	if (!gps_2d || !cJSON_IsArray(gps_2d) || cJSON_GetArraySize(gps_2d) < 2) {
+		cJSON_Delete(params);
+		return error_response("INVALID_PARAMS",
+		                      "guide_points_2d array with >=2 points is required");
+	}
+
+	// --- Read ortho camera state for 2D → 3D conversion ---
+	auto& os = list.ortho_state;
+	int res = os.render_resolution;
+	float half = os.viewport_size * 0.5f;
+	vec3f center = os._center;
+	vec3f cam_right = os._cam_right;
+	vec3f cam_up = os._cam_up;
+	vec3f ray_dir = os.projection_dir;       // toward the model
+	float vp = os.viewport_size;
+
+	// --- Möller–Trumbore ray-triangle intersection lambda ---
+	auto ray_tri_hit = [](const vec3f& ro, const vec3f& rd,
+	                      const vec3f& v0, const vec3f& v1,
+	                      const vec3f& v2, float& t) -> bool {
+		const float eps = 1e-8f;
+		vec3f e1{v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
+		vec3f e2{v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
+		vec3f pvec{rd.y * e2.z - rd.z * e2.y,
+		            rd.z * e2.x - rd.x * e2.z,
+		            rd.x * e2.y - rd.y * e2.x};
+		float det = e1.x * pvec.x + e1.y * pvec.y + e1.z * pvec.z;
+		if (std::abs(det) < eps) return false;
+		float inv_det = 1.0f / det;
+		vec3f tvec{ro.x - v0.x, ro.y - v0.y, ro.z - v0.z};
+		float u = (tvec.x * pvec.x + tvec.y * pvec.y + tvec.z * pvec.z) * inv_det;
+		if (u < 0.0f || u > 1.0f) return false;
+		vec3f qvec{tvec.y * e1.z - tvec.z * e1.y,
+		            tvec.z * e1.x - tvec.x * e1.z,
+		            tvec.x * e1.y - tvec.y * e1.x};
+		float v = (rd.x * qvec.x + rd.y * qvec.y + rd.z * qvec.z) * inv_det;
+		if (v < 0.0f || u + v > 1.0f) return false;
+		t = (e2.x * qvec.x + e2.y * qvec.y + e2.z * qvec.z) * inv_det;
+		return t > eps;
+	};
+
+	// --- Convert each 2D pixel → 3D surface point ---
+	auto& triangles = os._base_triangles;
+	int n = cJSON_GetArraySize(gps_2d);
+	int hit_count = 0;
+	std::vector<vec3f> guide_3d;
+	guide_3d.reserve(n);
+
+	for (int i = 0; i < n; ++i) {
+		cJSON* pt = cJSON_GetArrayItem(gps_2d, i);
+		if (!cJSON_IsArray(pt) || cJSON_GetArraySize(pt) < 2) {
+			cJSON_Delete(params);
+			return error_response("INVALID_PARAMS",
+			                      "each guide_points_2d entry must be [x, y]");
+		}
+		float px = static_cast<float>(cJSON_GetArrayItem(pt, 0)->valuedouble);
+		float py = static_cast<float>(cJSON_GetArrayItem(pt, 1)->valuedouble);
+
+		// Image-plane point (in front of the model)
+		float u = (px / res - 0.5f);
+		float v = (0.5f - py / res);
+		vec3f plane_pt{
+			center.x + cam_right.x * u * vp + cam_up.x * v * vp,
+			center.y + cam_right.y * u * vp + cam_up.y * v * vp,
+			center.z + cam_right.z * u * vp + cam_up.z * v * vp
+		};
+
+		// Raycast against the base-model surface
+		float best_t = 1e30f;
+		bool hit = false;
+		for (const auto& tri : triangles) {
+			float t;
+			if (ray_tri_hit(plane_pt, ray_dir,
+			                std::get<0>(tri), std::get<1>(tri),
+			                std::get<2>(tri), t)) {
+				if (t < best_t) { best_t = t; hit = true; }
+			}
+		}
+
+		if (hit) {
+			guide_3d.push_back({
+				plane_pt.x + ray_dir.x * best_t,
+				plane_pt.y + ray_dir.y * best_t,
+				plane_pt.z + ray_dir.z * best_t
+			});
+			hit_count++;
+		} else {
+			// Fallback: project onto the image plane
+			guide_3d.push_back(plane_pt);
+		}
+	}
+
+	// --- Process width_points_2d if provided ---
+	int wp_total = 0, wp_surface_hits = 0;
+	std::vector<HairStrand::WidthPoint> width_3d;
+
+	cJSON* wps_2d = cJSON_GetObjectItem(params, "width_points_2d");
+	if (wps_2d && cJSON_IsArray(wps_2d)) {
+		int wn = cJSON_GetArraySize(wps_2d);
+		for (int i = 0; i < wn; ++i) {
+			cJSON* wo = cJSON_GetArrayItem(wps_2d, i);
+			if (!cJSON_IsObject(wo)) continue;
+
+			HairStrand::WidthPoint wp;
+			wp.curve_id = json_float(wo, "curve_id", static_cast<float>(i));
+			wp.scale = json_float(wo, "scale", 1.0f);
+
+			// Convert 2D direction → 3D image-plane direction
+			cJSON* dir2d = cJSON_GetObjectItem(wo, "direction_2d");
+			float dx = 1.0f, dy = 0.0f;
+			if (cJSON_IsArray(dir2d) && cJSON_GetArraySize(dir2d) >= 2) {
+				dx = static_cast<float>(
+				    cJSON_GetArrayItem(dir2d, 0)->valuedouble);
+				dy = static_cast<float>(
+				    cJSON_GetArrayItem(dir2d, 1)->valuedouble);
+			}
+			// Normalise 2D direction
+			float dlen2 = std::sqrt(dx*dx + dy*dy);
+			if (dlen2 > 1e-8f) { dx /= dlen2; dy /= dlen2; }
+
+			// 3D = cam_right * dx + cam_up * dy
+			vec3f wdir{
+				cam_right.x * dx + cam_up.x * dy,
+				cam_right.y * dx + cam_up.y * dy,
+				cam_right.z * dx + cam_up.z * dy
+			};
+			float dlen3 = std::sqrt(wdir.x*wdir.x + wdir.y*wdir.y + wdir.z*wdir.z);
+			if (dlen3 > 1e-8f) {
+				wdir.x /= dlen3; wdir.y /= dlen3; wdir.z /= dlen3;
+			}
+
+			wp.direction = wdir;
+			width_3d.push_back(std::move(wp));
+			wp_total++;
+		}
+	}
+
+	cJSON_Delete(params);
+
+	// --- Create or update strand ---
+	std::lock_guard<std::mutex> lock(list.locker);
+	cJSON* err = nullptr;
+	Item* item = find_item(list, node_id, err);
+	if (!item) return err;
+
+	HairStrand* strand = nullptr;
+	int actual_index = strand_index;
+	bool is_new = false;
+
+	if (strand_index >= 0 && strand_index < static_cast<int>(item->hair_strands.size())) {
+		strand = &item->hair_strands[strand_index];
+	} else {
+		HairStrand s;
+		if (name && name[0])
+			s.name = name;
+		else
+			s.name = "Strand " + std::to_string(item->hair_strands.size() + 1);
+		s.expanded = true;
+		item->hair_strands.push_back(std::move(s));
+		actual_index = static_cast<int>(item->hair_strands.size() - 1);
+		strand = &item->hair_strands[actual_index];
+		is_new = true;
+	}
+
+	strand->guide_points = guide_3d;
+	guide_3d.clear();
+	strand->guide_samples_per_segment = std::max(guide_samples, 2);
+	if (!width_3d.empty()) {
+		strand->width_points = std::move(width_3d);
+	}
+	strand->mesh_dirty = true;
+
+	cJSON* r = cJSON_CreateObject();
+	cJSON_AddTrueToObject(r, "ok");
+	cJSON* data = cJSON_CreateObject();
+	cJSON_AddNumberToObject(data, "strand_index", actual_index);
+	cJSON_AddBoolToObject(data, "created", is_new);
+	cJSON_AddNumberToObject(data, "guide_point_count",
+	                        static_cast<int>(strand->guide_points.size()));
+	cJSON_AddNumberToObject(data, "surface_hits", hit_count);
+	cJSON_AddNumberToObject(data, "width_point_count",
+	                        static_cast<int>(strand->width_points.size()));
+	cJSON_AddItemToObject(r, "data", data);
+	return r;
 }
 
 inline cJSON* h_strand_move(cJSON* params, List& list) {

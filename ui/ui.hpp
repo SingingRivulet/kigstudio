@@ -202,6 +202,7 @@ int ui_main(int argc, const char* const* argv) {
     }
     if (enable_agent && agent_port > 0) {
         if (agent_server.start(static_cast<std::uint16_t>(agent_port))) {
+            render_items.agent_server_ptr = &agent_server;
             std::cout << "Agent API: http://127.0.0.1:" << agent_port
                       << "/api/v1" << std::endl;
         } else {

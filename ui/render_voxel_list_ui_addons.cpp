@@ -31,7 +31,6 @@
 #include "kigstudio/voxel/voxel2mesh.h"
 #include "kigstudio/agent/agent_handlers.h"
 #include "render_voxel_list.h"
-#include "external_api_server.h"
 #include "tinyfiledialogs.h"
 namespace sinriv::ui::render {
 
@@ -2301,10 +2300,9 @@ static bool ortho_raycast(const OrthoProjectionState& state,
 }
 
 void RenderVoxelList::destroy_ortho_resources() {
-    if (bgfx::isValid(ortho_state.overlay_tex)) {
-        bgfx::destroy(ortho_state.overlay_tex);
-        ortho_state.overlay_tex = BGFX_INVALID_HANDLE;
-    }
+    // NOTE: overlay_tex and overlay_cpu_rgba_ are intentionally left alone.
+    // They are independent of the base-model render and should survive
+    // re-renders triggered by depth-colour toggles, viewport changes, etc.
     if (bgfx::isValid(ortho_state.view_fb)) {
         bgfx::destroy(ortho_state.view_fb);
         ortho_state.view_fb = BGFX_INVALID_HANDLE;
@@ -2329,11 +2327,6 @@ void RenderVoxelList::destroy_ortho_resources() {
     ortho_state.ai_export_stage = 0;
     ortho_state.ai_readback_pending = false;
     ortho_state.ai_export_pending = false;
-
-    // Clear CPU-side overlay cache
-    overlay_cpu_rgba_.clear();
-    overlay_cpu_w_ = 0;
-    overlay_cpu_h_ = 0;
 
     // Release shader programs while bgfx context is still valid
     if (ortho_shader_) {
@@ -2445,38 +2438,6 @@ void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
     ortho_state.view_fb =
         bgfx::createFrameBuffer(2, fbo_att, false);
 
-    // ---- DEBUG: dump all texture & framebuffer info ----
-    {
-        int mip_count = 1;
-        if (has_mips) {
-            int max_dim = res;
-            while (max_dim > 1) { mip_count++; max_dim /= 2; }
-        }
-        std::cout << "[ortho_debug] === Texture/Framebuffer Info ===" << std::endl;
-        std::cout << "[ortho_debug] render_resolution = " << res << std::endl;
-        std::cout << "[ortho_debug] viewport_size     = " << ortho_state.viewport_size << std::endl;
-        std::cout << "[ortho_debug] view_tex.idx      = " << ortho_state.view_tex.idx << std::endl;
-        std::cout << "[ortho_debug] view_tex size     = " << res << "x" << res << std::endl;
-        std::cout << "[ortho_debug] view_tex format   = BGRA8" << std::endl;
-        std::cout << "[ortho_debug] view_tex has_mips = " << (has_mips ? "true" : "false") << std::endl;
-        std::cout << "[ortho_debug] view_tex mip_count= " << mip_count << std::endl;
-        std::cout << "[ortho_debug] view_tex flags    = 0x" << std::hex << tex_flags << std::dec << std::endl;
-        std::cout << "[ortho_debug] BGFX_TEXTURE_RT   = 0x" << std::hex << BGFX_TEXTURE_RT << std::dec << std::endl;
-        std::cout << "[ortho_debug] BGFX_TEXTURE_RT_MASK=0x" << std::hex << BGFX_TEXTURE_RT_MASK << std::dec << std::endl;
-        std::cout << "[ortho_debug] flags & RT_MASK   = 0x" << std::hex << (tex_flags & BGFX_TEXTURE_RT_MASK) << std::dec << std::endl;
-        std::cout << "[ortho_debug] SAMPLER_MIN_ANISO = 0x" << std::hex << BGFX_SAMPLER_MIN_ANISOTROPIC << std::dec << std::endl;
-        std::cout << "[ortho_debug] SAMPLER_MAG_ANISO = 0x" << std::hex << BGFX_SAMPLER_MAG_ANISOTROPIC << std::dec << std::endl;
-        std::cout << "[ortho_debug] depth_tex.idx     = " << ortho_state.view_depth_tex.idx << std::endl;
-        std::cout << "[ortho_debug] depth_tex size    = " << res << "x" << res << std::endl;
-        std::cout << "[ortho_debug] view_fb.idx       = " << ortho_state.view_fb.idx << std::endl;
-        std::cout << "[ortho_debug] view_fb attach[0].resolve = 0x" << std::hex << (int)fbo_att[0].resolve << std::dec << std::endl;
-        std::cout << "[ortho_debug] AUTO_GEN_MIPS     = 0x" << std::hex << (int)BGFX_RESOLVE_AUTO_GEN_MIPS << std::dec << std::endl;
-        std::cout << "[ortho_debug] bgfx caps: homogeneousDepth=" << bgfx::getCaps()->homogeneousDepth << std::endl;
-        std::cout << "[ortho_debug] _center = (" << ortho_state._center.x << "," << ortho_state._center.y << "," << ortho_state._center.z << ")" << std::endl;
-        std::cout << "[ortho_debug] _cam_pos= (" << ortho_state._cam_pos.x << "," << ortho_state._cam_pos.y << "," << ortho_state._cam_pos.z << ")" << std::endl;
-        std::cout << "[ortho_debug] view half-extent = " << (ortho_state.viewport_size * 0.5f) << std::endl;
-    }
-
     // Create ortho shader (view 200 for off-screen render)
     if (!ortho_shader_) {
         ortho_shader_ = std::make_unique<RenderMeshShader>(kOrthoViewView, 0);
@@ -2551,11 +2512,6 @@ void RenderVoxelList::process_ortho_render() {
             }
             use_chunked = true;
         }
-
-        std::cout << "[ortho_render] GPU mesh: "
-                  << (use_chunked ? "chunked(voxel)" : "mesh_renderer(smooth)")
-                  << " triangles=" << ortho_state._base_triangles.size()
-                  << std::endl;
 
         // Build orthographic view and projection matrices
         vec3f center = ortho_state._center;
@@ -2644,6 +2600,7 @@ void RenderVoxelList::process_ortho_render() {
     // Stage 3: Done
     if (ortho_state.ortho_render_stage == 3) {
         ortho_state.view_tex_ready = true;
+        ortho_state.api_render_dirty = true;  // trigger GPU readback for API cache
         ortho_state.ortho_render_stage = 0;  // back to IDLE
         std::cout << "[ortho_render] View texture ready" << std::endl;
     }
@@ -2657,7 +2614,7 @@ void RenderVoxelList::process_ai_export() {
     // Stage 1: Submit GPU blit + readback request
     if (s.ai_export_stage == 1) {
         if (!s.view_tex_ready || !bgfx::isValid(s.view_tex)) {
-            std::cerr << "[ai_export] View texture not ready for export" << std::endl;
+            std::cerr << "[ai_readback] View texture not ready" << std::endl;
             s.ai_export_stage = 0;
             s.ai_export_pending = false;
             return;
@@ -2679,24 +2636,31 @@ void RenderVoxelList::process_ai_export() {
             bgfx::touch(kOrthoBlitView);
             bgfx::readTexture(s.ai_readback_tex, s.ai_readback_buffer.data());
             s.ai_readback_pending = true;
-            std::cout << "[ai_export] Blit + readback submitted, res=" << res << std::endl;
+            s.ai_readback_frame_wait = 2;  // need 2 frames for GPU → CPU readback
+            std::cout << "[ai_readback] Blit + readback submitted, res=" << res << std::endl;
         } else {
-            std::cerr << "[ai_export] Failed to create readback texture" << std::endl;
+            std::cerr << "[ai_readback] Failed to create readback texture" << std::endl;
             s.ai_export_stage = 0;
             s.ai_export_pending = false;
             return;
         }
 
-        s.ai_export_stage = 2;  // wait for next frame
+        s.ai_export_stage = 2;  // wait for next frames
         return;
     }
 
-    // Stage 2: Readback complete, save files to disk
+    // Stage 2: Wait for bgfx readback to complete (needs 2+ frames),
+    // then push pixels to API cache — no files written to disk.
     if (s.ai_export_stage == 2) {
+        if (s.ai_readback_frame_wait > 0) {
+            s.ai_readback_frame_wait--;
+            return;  // still waiting for GPU readback
+        }
+
         if (s.ai_readback_pending && !s.ai_readback_buffer.empty()) {
             int res = s.render_resolution;
 
-            // Convert BGRA → RGBA for stb_image_write
+            // Convert BGRA → RGBA
             size_t pixel_count = static_cast<size_t>(res) * res;
             std::vector<uint8_t> rgba(pixel_count * 4);
             for (size_t i = 0; i < pixel_count; i++) {
@@ -2706,72 +2670,9 @@ void RenderVoxelList::process_ai_export() {
                 rgba[i * 4 + 3] = s.ai_readback_buffer[i * 4 + 3];  // A ← A
             }
 
-            // Update API server's render cache so /render and /blend
-            // endpoints serve the most recent data.
-            if (api_server_running)
-                api_server->setRenderData(rgba.data(), res, res);
-
-            // Create export directory if needed
-            std::string export_dir = s.ai_export_dir;
-            if (export_dir.empty())
-                export_dir = "tools/kimi-agent/tmp";
-            std::filesystem::path dir_path = utf8_path(export_dir);
-            std::error_code ec;
-            std::filesystem::create_directories(dir_path, ec);
-
-            // Save render.png
-            std::string png_path = export_dir + "/render.png";
-            int write_ok = stbi_write_png(png_path.c_str(), res, res, 4,
-                                         rgba.data(), res * 4);
-            if (write_ok)
-                std::cout << "[ai_export] Saved " << png_path << " (" << res << "x" << res << ")" << std::endl;
-            else
-                std::cerr << "[ai_export] Failed to write " << png_path << std::endl;
-
-            // Write state.json with coordinate mapping parameters
-            cJSON* root = cJSON_CreateObject();
-            cJSON_AddNumberToObject(root, "version", 1);
-            cJSON_AddNumberToObject(root, "viewport_size", static_cast<double>(s.viewport_size));
-            cJSON_AddNumberToObject(root, "resolution", res);
-
-            cJSON* center_arr = cJSON_AddArrayToObject(root, "center");
-            cJSON_AddItemToArray(center_arr, cJSON_CreateNumber(static_cast<double>(s._center.x)));
-            cJSON_AddItemToArray(center_arr, cJSON_CreateNumber(static_cast<double>(s._center.y)));
-            cJSON_AddItemToArray(center_arr, cJSON_CreateNumber(static_cast<double>(s._center.z)));
-
-            cJSON* cam_right_arr = cJSON_AddArrayToObject(root, "cam_right");
-            cJSON_AddItemToArray(cam_right_arr, cJSON_CreateNumber(static_cast<double>(s._cam_right.x)));
-            cJSON_AddItemToArray(cam_right_arr, cJSON_CreateNumber(static_cast<double>(s._cam_right.y)));
-            cJSON_AddItemToArray(cam_right_arr, cJSON_CreateNumber(static_cast<double>(s._cam_right.z)));
-
-            cJSON* cam_up_arr = cJSON_AddArrayToObject(root, "cam_up");
-            cJSON_AddItemToArray(cam_up_arr, cJSON_CreateNumber(static_cast<double>(s._cam_up.x)));
-            cJSON_AddItemToArray(cam_up_arr, cJSON_CreateNumber(static_cast<double>(s._cam_up.y)));
-            cJSON_AddItemToArray(cam_up_arr, cJSON_CreateNumber(static_cast<double>(s._cam_up.z)));
-
-            // Overlay / reference image info
-            cJSON* overlay = cJSON_AddObjectToObject(root, "overlay");
-            cJSON_AddStringToObject(overlay, "image_path", s.overlay_image_path.c_str());
-            cJSON_AddNumberToObject(overlay, "img_width", s.overlay_img_width);
-            cJSON_AddNumberToObject(overlay, "img_height", s.overlay_img_height);
-            cJSON_AddNumberToObject(overlay, "offset_x", static_cast<double>(s.overlay_offset.x));
-            cJSON_AddNumberToObject(overlay, "offset_y", static_cast<double>(s.overlay_offset.y));
-            cJSON_AddNumberToObject(overlay, "scale", static_cast<double>(s.overlay_scale));
-            cJSON_AddBoolToObject(overlay, "enabled", s.overlay_enabled);
-            cJSON_AddBoolToObject(overlay, "locked", s.overlay_locked);
-
-            std::string state_path = export_dir + "/state.json";
-            char* json_str = cJSON_Print(root);
-            if (json_str) {
-                std::ofstream ofs(utf8_path(state_path), std::ios::out | std::ios::binary);
-                if (ofs.is_open()) {
-                    ofs << json_str;
-                    ofs.close();
-                    std::cout << "[ai_export] Saved " << state_path << std::endl;
-                }
-                cJSON_free(json_str);
-            }
-            cJSON_Delete(root);
+            // Push to API cache → available at /api/v1/ortho/render and /blend
+            if (agent_server_ptr && agent_server_ptr->is_running())
+                agent_server_ptr->setOrthoRenderData(rgba.data(), res, res);
 
             s.ai_readback_pending = false;
         }
@@ -2784,43 +2685,26 @@ void RenderVoxelList::process_ai_export() {
         s.ai_readback_buffer.clear();
         s.ai_export_stage = 0;
         s.ai_export_pending = false;
-        std::cout << "[ai_export] Export complete" << std::endl;
     }
-}
-
-void RenderVoxelList::start_api_server(int port) {
-    if (api_server_running) return;
-    if (!api_server)
-        api_server = new ExternalApiServer();
-    api_server->start(port);
-    api_server_running = api_server->isRunning();
-    if (api_server_running)
-        show_toast("API server started on http://127.0.0.1:" + std::to_string(port), 2000.0f);
-}
-
-void RenderVoxelList::stop_api_server() {
-    if (!api_server_running) return;
-    if (api_server) {
-        api_server->stop();
-        delete api_server;
-        api_server = nullptr;
-    }
-    api_server_running = false;
-    show_toast("API server stopped", 2000.0f);
 }
 
 void RenderVoxelList::update_api_server_caches() {
-    if (!api_server_running) return;
+    if (!agent_server_ptr || !agent_server_ptr->is_running()) return;
 
-    // Update overlay params from ortho_state
-    api_server->setOverlayParams(
-        ortho_state.overlay_offset.x, ortho_state.overlay_offset.y,
-        ortho_state.overlay_scale, ortho_state.blend_ratio);
-    api_server->setOverlayActive(ortho_state.overlay_enabled);
+    // Overlay params are stored in a fixed 600px reference space.
+    // Convert to render-pixel space for the API blend (render_resolution × render_resolution).
+    constexpr float kRefDisplaySize = 600.0f;
+    float render_scale = (float)ortho_state.render_resolution / kRefDisplaySize;
+    agent_server_ptr->setOrthoOverlayParams(
+        ortho_state.overlay_offset.x * render_scale,
+        ortho_state.overlay_offset.y * render_scale,
+        ortho_state.overlay_scale * render_scale,
+        ortho_state.blend_ratio);
+    agent_server_ptr->setOrthoOverlayActive(ortho_state.overlay_enabled);
 
     // Update overlay CPU data if we have it cached
     if (!overlay_cpu_rgba_.empty()) {
-        api_server->setOverlayData(overlay_cpu_rgba_.data(),
+        agent_server_ptr->setOrthoOverlayData(overlay_cpu_rgba_.data(),
                                   overlay_cpu_w_, overlay_cpu_h_);
     }
 
@@ -2851,16 +2735,19 @@ void RenderVoxelList::update_api_server_caches() {
                             ortho_state.overlay_image_path.c_str());
     cJSON_AddNumberToObject(overlay, "img_width", ortho_state.overlay_img_width);
     cJSON_AddNumberToObject(overlay, "img_height", ortho_state.overlay_img_height);
-    cJSON_AddNumberToObject(overlay, "offset_x", static_cast<double>(ortho_state.overlay_offset.x));
-    cJSON_AddNumberToObject(overlay, "offset_y", static_cast<double>(ortho_state.overlay_offset.y));
-    cJSON_AddNumberToObject(overlay, "scale", static_cast<double>(ortho_state.overlay_scale));
+    // Report overlay params in render-pixel space for API consumers
+    cJSON_AddNumberToObject(overlay, "offset_x", static_cast<double>(ortho_state.overlay_offset.x * render_scale));
+    cJSON_AddNumberToObject(overlay, "offset_y", static_cast<double>(ortho_state.overlay_offset.y * render_scale));
+    cJSON_AddNumberToObject(overlay, "scale", static_cast<double>(ortho_state.overlay_scale * render_scale));
     cJSON_AddNumberToObject(overlay, "blend_ratio", static_cast<double>(ortho_state.blend_ratio));
     cJSON_AddBoolToObject(overlay, "enabled", ortho_state.overlay_enabled);
     cJSON_AddBoolToObject(overlay, "locked", ortho_state.overlay_locked);
+    cJSON_AddNumberToObject(overlay, "canvas_display_size", static_cast<double>(ortho_state.canvas_display_size));
+    cJSON_AddNumberToObject(overlay, "render_resolution", ortho_state.render_resolution);
 
     char* json_str = cJSON_Print(root);
     if (json_str) {
-        api_server->setStateJson(json_str);
+        agent_server_ptr->setOrthoState(json_str);
         cJSON_free(json_str);
     }
     cJSON_Delete(root);
@@ -3111,7 +2998,6 @@ void RenderVoxelList::render_ortho_edit_window() {
         show_ortho_edit_window = false;
         ortho_state.edit_window_open = false;
         ortho_state.active = false;
-        stop_api_server();  // clean up HTTP server
         destroy_ortho_resources();
         ImGui::End();
         return;
@@ -3191,153 +3077,31 @@ void RenderVoxelList::render_ortho_edit_window() {
     if (overlay_changed)
         sync_overlay_to_item();
 
-    ImGui::Separator();
+    // ImGui::Separator();
 
-    // ---- AI / External tool integration ----
-    // Export button: save render + state for external AI tools
-    if (ImGui::Button(get_locale_cstr("action.ai_export"))) {
-        ortho_state.ai_export_dir = "tools/kimi-agent/tmp";
+    // // ---- API status (shared with main Agent API) ----
+    // if (agent_server_ptr && agent_server_ptr->is_running()) {
+    //     ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f),
+    //                        "● API:%d", agent_server_ptr->port());
+    //     if (ImGui::IsItemHovered())
+    //         ImGui::SetTooltip("Ortho endpoints: http://127.0.0.1:%d/api/v1/ortho",
+    //                           agent_server_ptr->port());
+    // }
+
+    // Keep API server caches in sync (ortho render, overlay params, state JSON)
+    if (agent_server_ptr && agent_server_ptr->is_running())
+        update_api_server_caches();
+
+    // Auto-trigger GPU readback when a new render is available,
+    // pushing pixels to the API cache (no disk files).
+    if (ortho_state.api_render_dirty && ortho_state.ai_export_stage == 0) {
+        ortho_state.api_render_dirty = false;
         ortho_state.ai_export_pending = true;
         ortho_state.ai_export_stage = 1;
     }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.ai_export"));
-
-    ImGui::SameLine();
-    bool was_watching = ortho_state.ai_watch_enabled;
-    if (ImGui::Checkbox(get_locale_cstr("label.ai_watch"),
-                        &ortho_state.ai_watch_enabled)) {
-        if (ortho_state.ai_watch_enabled) {
-            ortho_state.ai_result_path = "tools/kimi-agent/tmp/result.json";
-            ortho_state.ai_result_mtime = 0;
-        }
-    }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.ai_watch"));
-
-    // ---- API Server start/stop ----
-    ImGui::SameLine();
-    if (!api_server_running) {
-        if (ImGui::Button(get_locale_cstr("action.api_start")))
-            start_api_server(19876);
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.api_start"));
-    } else {
-        if (ImGui::Button(get_locale_cstr("action.api_stop")))
-            stop_api_server();
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.api_stop"));
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f),
-                           "http://127.0.0.1:%d", api_server->port());
-    }
-
-    // Keep API server caches in sync (overlay params, state JSON)
-    if (api_server_running)
-        update_api_server_caches();
 
     // Process AI export readback (if pending)
     process_ai_export();
-
-    // Auto-import watch: detect result.json from external AI tool
-    if (ortho_state.ai_watch_enabled && !ortho_state.ai_result_path.empty()) {
-        struct _stat64 st;
-        if (_wstat64(utf8_to_wstring(ortho_state.ai_result_path).c_str(), &st) == 0) {
-            if (st.st_mtime != ortho_state.ai_result_mtime) {
-                ortho_state.ai_result_mtime = st.st_mtime;
-                // Read and import result.json
-                std::ifstream ifs(utf8_path(ortho_state.ai_result_path), std::ios::in | std::ios::binary);
-                if (ifs.is_open()) {
-                    std::string content((std::istreambuf_iterator<char>(ifs)),
-                                        std::istreambuf_iterator<char>());
-                    ifs.close();
-
-                    cJSON* root = cJSON_Parse(content.c_str());
-                    if (root) {
-                        cJSON* strands_json = cJSON_GetObjectItem(root, "strands");
-                        if (strands_json && cJSON_IsArray(strands_json)) {
-                            std::lock_guard<std::mutex> lock(locker);
-                            auto item_it = items.find(render_id);
-                            if (item_it != items.end() && item_it->second->source_type == 2) {
-                                auto& item = *item_it->second;
-                                int imported = 0;
-
-                                // Precompute image→world conversion factors
-                                float half_vp = ortho_state.viewport_size * 0.5f;
-                                // display_size will be computed when rendering below;
-                                // use a reasonable default if the canvas hasn't been
-                                // rendered yet.
-                                float avail_w2 = ImGui::GetContentRegionAvail().x - 10;
-                                float ds = std::min(avail_w2, 600.0f);
-
-                                // img_cursor is the screen position of the rendered
-                                // image, which we can estimate from the next frame.
-                                // For now, store the 2D coords and convert later.
-                                // We'll convert using the actual img_cursor once we
-                                // have it from the frame below.
-
-                                cJSON* strand_obj = nullptr;
-                                cJSON_ArrayForEach(strand_obj, strands_json) {
-                                    cJSON* id_json = cJSON_GetObjectItem(strand_obj, "id");
-                                    cJSON* pts_json = cJSON_GetObjectItem(strand_obj, "points_2d");
-                                    if (!id_json || !pts_json || !cJSON_IsArray(pts_json))
-                                        continue;
-
-                                    HairStrand strand;
-                                    strand.name = id_json->valuestring;
-                                    strand.expanded = true;
-                                    strand.mesh_dirty = true;
-
-                                    cJSON* pt = nullptr;
-                                    cJSON_ArrayForEach(pt, pts_json) {
-                                        if (cJSON_IsArray(pt) && cJSON_GetArraySize(pt) >= 2) {
-                                            double ref_x = cJSON_GetArrayItem(pt, 0)->valuedouble;
-                                            double ref_y = cJSON_GetArrayItem(pt, 1)->valuedouble;
-
-                                            // Convert from reference-image pixel coords
-                                            // to world space via overlay + camera params
-                                            double view_x = /*img_cursor.x +*/ ortho_state.overlay_offset.x + ref_x * ortho_state.overlay_scale;
-                                            double view_y = /*img_cursor.y +*/ ortho_state.overlay_offset.y + ref_y * ortho_state.overlay_scale;
-
-                                            // Normalized device coords [-1, 1]
-                                            double rx = (view_x / ds) * 2.0 - 1.0;
-                                            double ry = 1.0 - (view_y / ds) * 2.0;
-
-                                            // World space
-                                            vec3f wp;
-                                            wp.x = static_cast<float>(ortho_state._center.x + ortho_state._cam_right.x * rx * half_vp + ortho_state._cam_up.x * ry * half_vp);
-                                            wp.y = static_cast<float>(ortho_state._center.y + ortho_state._cam_right.y * rx * half_vp + ortho_state._cam_up.y * ry * half_vp);
-                                            wp.z = static_cast<float>(ortho_state._center.z + ortho_state._cam_right.z * rx * half_vp + ortho_state._cam_up.z * ry * half_vp);
-
-                                            strand.guide_points.push_back(wp);
-                                        }
-                                    }
-
-                                    if (!strand.guide_points.empty()) {
-                                        item.hair_strands.push_back(std::move(strand));
-                                        imported++;
-                                    }
-                                }
-
-                                if (imported > 0) {
-                                    push_undo_now(render_id, std::nullopt,
-                                                  "Import AI Guides (" + std::to_string(imported) + " strands)");
-                                    show_toast("Imported " + std::to_string(imported) + " strands from AI", 3000.0f);
-                                    std::cout << "[ai_import] Imported " << imported << " strands from result.json" << std::endl;
-                                }
-                            }
-                        }
-                        cJSON_Delete(root);
-                    } else {
-                        std::cerr << "[ai_import] Failed to parse result.json" << std::endl;
-                    }
-                }
-            }
-        }
-    } else if (!ortho_state.ai_watch_enabled && was_watching) {
-        ortho_state.ai_result_path.clear();
-        ortho_state.ai_result_mtime = 0;
-    }
 
     ImGui::Separator();
 
@@ -3389,31 +3153,24 @@ void RenderVoxelList::render_ortho_edit_window() {
         return;
     }
 
-    // Compute display size (fit within available width, keep square)
-    float avail_w = ImGui::GetContentRegionAvail().x - 10;
-    float display_size = std::min(avail_w, 600.0f);
+    // Compute display size from window width (stable, avoids ContentRegionAvail
+    // fluctuations that can cause flicker from scrollbar appear/disappear).
+    float avail_w = ImGui::GetWindowWidth() - 30.0f;
+    float display_size = std::max(200.0f, avail_w);  // min 200px, no upper cap
+
+    // Overlay params (offset, scale) are stored in a fixed 600px reference space.
+    // They are NEVER auto-modified by window resize — only by user interaction
+    // or explicit API calls.  At display time we convert:
+    //   screen  = ref × (display_size / 600)
+    //   render  = ref × (render_resolution / 600)
+    constexpr float kRefDisplaySize = 600.0f;
+    float ref_to_display = display_size / kRefDisplaySize;
+    float display_to_ref = kRefDisplaySize / std::max(display_size, 1.0f);
+
+    // Track actual display size for API state reporting
+    ortho_state.canvas_display_size = display_size;
 
     int res = ortho_state.render_resolution;
-
-    // Debug: log display metrics once per resolution change
-    {
-        static int last_logged_res = -1;
-        static float last_logged_ds = -1;
-        if (ortho_state.view_tex_ready &&
-            (res != last_logged_res || std::abs(display_size - last_logged_ds) > 1.0f)) {
-            last_logged_res = res;
-            last_logged_ds = display_size;
-            float est_lod = std::log2(static_cast<float>(res) / std::max(display_size, 1.0f));
-            int mip0_size = static_cast<int>(res / std::pow(2.0f, std::floor(est_lod)));
-            std::cout << "[ortho_display] render_res=" << res
-                      << " display_size=" << display_size
-                      << " est_LOD=" << est_lod
-                      << " nearest_mip_size=" << mip0_size
-                      << " view_tex.idx=" << ortho_state.view_tex.idx
-                      << " fb.idx=" << ortho_state.view_fb.idx
-                      << std::endl;
-        }
-    }
 
     // Display the rendered view image, or dark fallback if not ready yet
     if (ortho_state.view_tex_ready && bgfx::isValid(ortho_state.view_tex)) {
@@ -3447,10 +3204,10 @@ void RenderVoxelList::render_ortho_edit_window() {
     // model image for coordinate mapping below.
     ImVec2 prev_cursor_screen = ImGui::GetCursorScreenPos();
     if (bgfx::isValid(ortho_state.overlay_tex) && ortho_state.overlay_enabled) {
-        float overlay_w = ortho_state.overlay_img_width * ortho_state.overlay_scale;
-        float overlay_h = ortho_state.overlay_img_height * ortho_state.overlay_scale;
-        ImVec2 overlay_pos = ImVec2(img_cursor.x + ortho_state.overlay_offset.x,
-                                    img_cursor.y + ortho_state.overlay_offset.y);
+        float overlay_w = ortho_state.overlay_img_width * ortho_state.overlay_scale * ref_to_display;
+        float overlay_h = ortho_state.overlay_img_height * ortho_state.overlay_scale * ref_to_display;
+        ImVec2 overlay_pos = ImVec2(img_cursor.x + ortho_state.overlay_offset.x * ref_to_display,
+                                    img_cursor.y + ortho_state.overlay_offset.y * ref_to_display);
 
         ImGui::SetCursorScreenPos(overlay_pos);
         ImGui::Image(
@@ -3571,15 +3328,15 @@ void RenderVoxelList::render_ortho_edit_window() {
         (mouse.x >= img_cursor.x && mouse.x < img_cursor.x + display_size &&
          mouse.y >= img_cursor.y && mouse.y < img_cursor.y + display_size);
 
-    // Compute overlay bounds (when visible)
+    // Compute overlay bounds (when visible) — converted from reference to screen space
     bool overlay_visible = ortho_state.overlay_enabled &&
                            bgfx::isValid(ortho_state.overlay_tex);
     float overlay_w = overlay_visible
-        ? ortho_state.overlay_img_width * ortho_state.overlay_scale : 0.0f;
+        ? ortho_state.overlay_img_width * ortho_state.overlay_scale * ref_to_display : 0.0f;
     float overlay_h = overlay_visible
-        ? ortho_state.overlay_img_height * ortho_state.overlay_scale : 0.0f;
-    ImVec2 overlay_pos = ImVec2(img_cursor.x + ortho_state.overlay_offset.x,
-                                img_cursor.y + ortho_state.overlay_offset.y);
+        ? ortho_state.overlay_img_height * ortho_state.overlay_scale * ref_to_display : 0.0f;
+    ImVec2 overlay_pos = ImVec2(img_cursor.x + ortho_state.overlay_offset.x * ref_to_display,
+                                img_cursor.y + ortho_state.overlay_offset.y * ref_to_display);
     ImVec2 overlay_end = ImVec2(overlay_pos.x + overlay_w,
                                 overlay_pos.y + overlay_h);
     bool mouse_in_overlay = overlay_visible &&
@@ -3653,6 +3410,8 @@ void RenderVoxelList::render_ortho_edit_window() {
         bool valid = ortho_raycast(ortho_state, px, py, hit_pos);
 
         ortho_state.is_hovering_model = valid;
+        ortho_state.hovered_px = px;
+        ortho_state.hovered_py = py;
         if (valid) {
             ortho_state.hovered_world_pos = hit_pos;
             mouse_world_pos_valid = true;
@@ -3761,12 +3520,14 @@ void RenderVoxelList::render_ortho_edit_window() {
                     break;
                 }
 
-                // Anchor screen position
-                ImVec2 anchor_screen(img_cursor.x + adx, img_cursor.y + ady);
+                // Anchor screen position (reference→screen conversion)
+                ImVec2 anchor_screen(img_cursor.x + adx * ref_to_display,
+                                     img_cursor.y + ady * ref_to_display);
                 float mx = mouse.x - anchor_screen.x;
                 float my = mouse.y - anchor_screen.y;
                 float proj = mx * ddx + my * ddy;
-                float new_scale = proj / ref;
+                // new_scale is in screen space; convert back to reference space
+                float new_scale = (proj / ref) * display_to_ref;
                 new_scale = std::max(0.1f, std::min(10.0f, new_scale));
 
                 ortho_state.overlay_scale = new_scale;
@@ -3793,12 +3554,13 @@ void RenderVoxelList::render_ortho_edit_window() {
         // Drag (left-button on body) to move the overlay
         if (ortho_state.is_dragging_overlay) {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                // Mouse delta (screen pixels) → reference space
                 ortho_state.overlay_offset.x =
                     ortho_state.drag_start_offset.x +
-                    (mouse.x - ortho_state.drag_start_mouse.x);
+                    (mouse.x - ortho_state.drag_start_mouse.x) * display_to_ref;
                 ortho_state.overlay_offset.y =
                     ortho_state.drag_start_offset.y +
-                    (mouse.y - ortho_state.drag_start_mouse.y);
+                    (mouse.y - ortho_state.drag_start_mouse.y) * display_to_ref;
             } else {
                 ortho_state.is_dragging_overlay = false;
             }
@@ -3829,11 +3591,19 @@ void RenderVoxelList::render_ortho_edit_window() {
     }
 
     ImGui::SameLine();
-    if (ortho_state.is_hovering_model) {
-        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), " (%.1f, %.1f, %.1f)",
-                           ortho_state.hovered_world_pos.x,
-                           ortho_state.hovered_world_pos.y,
-                           ortho_state.hovered_world_pos.z);
+    if (mouse_in_image) {
+        int api_x = ortho_state.hovered_px;
+        int api_y = ortho_state.hovered_py;
+        if (ortho_state.is_hovering_model) {
+            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f),
+                               " (%d,%d) \xE2\x86\x92 (%.1f, %.1f, %.1f)",
+                               api_x, api_y,
+                               ortho_state.hovered_world_pos.x,
+                               ortho_state.hovered_world_pos.y,
+                               ortho_state.hovered_world_pos.z);
+        } else {
+            ImGui::TextDisabled(" (%d,%d)", api_x, api_y);
+        }
     }
 
     ImGui::End();
