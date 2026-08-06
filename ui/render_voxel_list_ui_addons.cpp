@@ -3592,6 +3592,85 @@ void RenderVoxelList::render_ortho_setup_window() {
 
     RenderVoxelItem& item = *item_it->second;
 
+    // Helper: apply overlay state for the current view (six-view or pick-point).
+    // Reloads the image texture so the reference image updates immediately when
+    // the user switches views, matching the "Render" button behaviour.
+    auto apply_overlay_for_view = [&]() {
+        if (ortho_state.vector_mode == 0) {
+            int vi = ortho_state.six_view_index;
+            const auto& saved = item.ortho_overlay[vi];
+            ortho_state.overlay_image_path = saved.image_path;
+            ortho_state.overlay_img_width = saved.img_width;
+            ortho_state.overlay_img_height = saved.img_height;
+            ortho_state.overlay_enabled = saved.enabled;
+            ortho_state.overlay_offset =
+                ImVec2(saved.offset_x, saved.offset_y);
+            ortho_state.overlay_scale_x = saved.scale_x;
+            ortho_state.overlay_scale_y = saved.scale_y;
+            ortho_state.blend_ratio = saved.blend_ratio;
+            ortho_state.overlay_locked = saved.locked;
+
+            // Reload the image texture if there's a saved path
+            if (!saved.image_path.empty()) {
+                int w, h, comp;
+                unsigned char* data =
+#ifdef _WIN32
+                    stbi_load_utf8(saved.image_path.c_str(), &w, &h, &comp, 4);
+#else
+                    stbi_load(saved.image_path.c_str(), &w, &h, &comp, 4);
+#endif
+                if (data) {
+                    if (bgfx::isValid(ortho_state.overlay_tex))
+                        bgfx::destroy(ortho_state.overlay_tex);
+                    ortho_state.overlay_tex = bgfx::createTexture2D(
+                        static_cast<uint16_t>(w),
+                        static_cast<uint16_t>(h), false, 1,
+                        bgfx::TextureFormat::RGBA8,
+                        BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+                    bgfx::updateTexture2D(
+                        ortho_state.overlay_tex, 0, 0, 0, 0,
+                        static_cast<uint16_t>(w),
+                        static_cast<uint16_t>(h),
+                        bgfx::copy(data, w * h * 4));
+                    // Keep CPU-side copy for API blending
+                    size_t cpu_sz = static_cast<size_t>(w) * h * 4;
+                    overlay_cpu_rgba_.resize(cpu_sz);
+                    memcpy(overlay_cpu_rgba_.data(), data, cpu_sz);
+                    overlay_cpu_w_ = w;
+                    overlay_cpu_h_ = h;
+                    stbi_image_free(data);
+                    ortho_state.overlay_img_width = w;
+                    ortho_state.overlay_img_height = h;
+                }
+            } else {
+                // No reference image for this view — destroy old texture
+                if (bgfx::isValid(ortho_state.overlay_tex))
+                    bgfx::destroy(ortho_state.overlay_tex);
+                ortho_state.overlay_tex = BGFX_INVALID_HANDLE;
+                overlay_cpu_rgba_.clear();
+                overlay_cpu_w_ = 0;
+                overlay_cpu_h_ = 0;
+            }
+        } else {
+            // Pick-point mode: clear any overlay from a previous six-view session
+            if (bgfx::isValid(ortho_state.overlay_tex))
+                bgfx::destroy(ortho_state.overlay_tex);
+            ortho_state.overlay_tex = BGFX_INVALID_HANDLE;
+            ortho_state.overlay_image_path.clear();
+            ortho_state.overlay_enabled = false;
+            ortho_state.overlay_img_width = 0;
+            ortho_state.overlay_img_height = 0;
+            ortho_state.overlay_offset = ImVec2(0, 0);
+            ortho_state.overlay_scale_x = 1.0f;
+            ortho_state.overlay_scale_y = 1.0f;
+            ortho_state.blend_ratio = 0.5f;
+            ortho_state.overlay_locked = false;
+            overlay_cpu_rgba_.clear();
+            overlay_cpu_w_ = 0;
+            overlay_cpu_h_ = 0;
+        }
+    };
+
     // Check base model
     if (item.addon_base_node_id < 0) {
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s",
@@ -3660,7 +3739,9 @@ void RenderVoxelList::render_ortho_setup_window() {
         get_locale_cstr("label.vector_mode_six"),
         get_locale_cstr("label.vector_mode_pick"),
     };
-    ImGui::Combo("##vector_mode", &ortho_state.vector_mode, mode_names, 2);
+    if (ImGui::Combo("##vector_mode", &ortho_state.vector_mode, mode_names, 2)) {
+        apply_overlay_for_view();
+    }
 
     ImGui::Separator();
 
@@ -3682,6 +3763,8 @@ void RenderVoxelList::render_ortho_setup_window() {
                                    item.hair_north_pole);
             // Direction changed: the off-screen texture must be re-rendered
             ortho_state.render_dirty = true;
+            // Immediately apply the reference image for the new view
+            apply_overlay_for_view();
         }
     } else {
         // ---- Pick point on model ----
