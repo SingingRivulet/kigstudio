@@ -165,19 +165,8 @@ void RenderVoxelList::render_guide_curve_window() {
         }
     }
 
-    // Keyboard shortcuts (Ctrl+Z / Ctrl+Y)
-    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) {
-        if (can_undo(item.id)) {
-            undo(item.id);
-            for (auto& s : item.hair_strands) s.mesh_dirty = true;
-        }
-    }
-    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Y)) {
-        if (can_redo(item.id)) {
-            redo(item.id);
-            for (auto& s : item.hair_strands) s.mesh_dirty = true;
-        }
-    }
+    // Keyboard shortcuts (Ctrl+Z / Ctrl+Y) are handled globally
+    // by the SDL event loop in ui.hpp to avoid double-firing.
 
     ImGui::Separator();
 
@@ -537,19 +526,8 @@ void RenderVoxelList::render_width_editor_window() {
             ImGui::EndDisabled();
     }
 
-    // Keyboard shortcuts (Ctrl+Z / Ctrl+Y)
-    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) {
-        if (can_undo(item.id)) {
-            undo(item.id);
-            for (auto& s : item.hair_strands) s.mesh_dirty = true;
-        }
-    }
-    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Y)) {
-        if (can_redo(item.id)) {
-            redo(item.id);
-            for (auto& s : item.hair_strands) s.mesh_dirty = true;
-        }
-    }
+    // Keyboard shortcuts (Ctrl+Z / Ctrl+Y) are handled globally
+    // by the SDL event loop in ui.hpp to avoid double-firing.
 
     ImGui::Separator();
     ImGui::Text(get_locale_cstr("label.width_points"),
@@ -3436,6 +3414,15 @@ void RenderVoxelList::render_ortho_setup_window() {
         // Render resolution: use saved value if present, else default
         if (item.ortho_render_resolution > 0)
             ortho_state.render_resolution = item.ortho_render_resolution;
+
+        // Sync projection_dir with the default six_view_index on first open.
+        // Otherwise the default projection_dir {0,1,0} (top-down) is used
+        // while the combo shows "Front" (index 0), causing a mismatch.
+        ortho_state.projection_dir =
+            six_view_direction(ortho_state.six_view_index,
+                               item.hair_front_reference,
+                               item.hair_north_pole);
+
         ortho_state.viewport_size_defaulted = true;
     }
 

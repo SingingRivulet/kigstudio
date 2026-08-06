@@ -377,22 +377,23 @@ inline vec3f six_view_direction(int index,
     float nl = std::sqrt(N.x*N.x + N.y*N.y + N.z*N.z);
     if (fl > 1e-8f) { F.x /= fl; F.y /= fl; F.z /= fl; }
     if (nl > 1e-8f) { N.x /= nl; N.y /= nl; N.z /= nl; }
-    // Right = normalize(cross(F, N))
-    vec3f R = {F.y * N.z - F.z * N.y,
-               F.z * N.x - F.x * N.z,
-               F.x * N.y - F.y * N.x};
+    // Right = normalize(cross(N, F)) — cross(F, N) gives left in a RH system
+    vec3f R = {N.y * F.z - N.z * F.y,
+               N.z * F.x - N.x * F.z,
+               N.x * F.y - N.y * F.x};
     float rl = std::sqrt(R.x*R.x + R.y*R.y + R.z*R.z);
     if (rl > 1e-8f) { R.x /= rl; R.y /= rl; R.z /= rl; }
     // Direction convention: from outside toward the center (look direction).
-    // Front = looking from front toward center (along -F).
+    // F points toward nose (front), N points toward top of head (up).
+    // Front = looking from front toward center (along F).
     switch (index) {
-        case 0: return {-F.x, -F.y, -F.z};  // Front
-        case 1: return F;             // Back
-        case 2: return R;             // Left
-        case 3: return {-R.x, -R.y, -R.z};  // Right
-        case 4: return {-N.x, -N.y, -N.z};  // Top
-        case 5: return N;             // Bottom
-        default: return {-N.x, -N.y, -N.z};
+        case 0: return F;                          // Front
+        case 1: return {-F.x, -F.y, -F.z};         // Back
+        case 2: return R;                          // Left
+        case 3: return {-R.x, -R.y, -R.z};         // Right
+        case 4: return N;                          // Top
+        case 5: return {-N.x, -N.y, -N.z};         // Bottom
+        default: return N;
     }
 }
 
