@@ -2405,29 +2405,27 @@ static bool ortho_raycast(const OrthoProjectionState& state,
                           state._cam_up.z * v * state.viewport_size
     };
 
-    // Ray direction from camera toward model center.
-    // cam_pos = center + look_dir * 1000, so camera→center = -look_dir.
+    // Ray direction: go from the face side toward/through center.
+    // Uses +projection_dir (not -projection_dir) so the ray origin
+    // lands on the face side of the model.
     vec3f ray_dir = {
-        -state.projection_dir.x,
-        -state.projection_dir.y,
-        -state.projection_dir.z
+        state.projection_dir.x,
+        state.projection_dir.y,
+        state.projection_dir.z
     };
     float rl = std::sqrt(ray_dir.x * ray_dir.x + ray_dir.y * ray_dir.y +
                          ray_dir.z * ray_dir.z);
     if (rl < 1e-8f) return false;
     ray_dir.x /= rl; ray_dir.y /= rl; ray_dir.z /= rl;
 
-    // Move the ray origin from the center plane back onto the camera plane
-    // (through _cam_pos, perpendicular to ray_dir).  Surfaces between the
-    // camera and the center plane (e.g. the face in a front view) must be
-    // hittable too — otherwise the first surface found along the ray is on
-    // the far side of the model (back of the head).
+    // Put ray origin on the face side (opposite to _cam_pos).
+    // Negating cam_off flips the origin across the center plane.
     float cam_off = (plane_pt.x - state._cam_pos.x) * ray_dir.x +
                     (plane_pt.y - state._cam_pos.y) * ray_dir.y +
                     (plane_pt.z - state._cam_pos.z) * ray_dir.z;
-    plane_pt.x -= ray_dir.x * cam_off;
-    plane_pt.y -= ray_dir.y * cam_off;
-    plane_pt.z -= ray_dir.z * cam_off;
+    plane_pt.x -= ray_dir.x * (-cam_off);
+    plane_pt.y -= ray_dir.y * (-cam_off);
+    plane_pt.z -= ray_dir.z * (-cam_off);
 
     float best_t = 1e30f;
     bool hit = false;
@@ -4584,13 +4582,9 @@ void RenderVoxelList::render_ortho_edit_window() {
                                     ortho_state.viewport_size +
                                 ortho_state._cam_up.z * v *
                                     ortho_state.viewport_size};
-                        vec3f ray_dir = {-ortho_state.projection_dir.x,
-                                         -ortho_state.projection_dir.y,
-                                         -ortho_state.projection_dir.z};
-                        // Same camera-plane offset as ortho_raycast: the
-                        // ray must start in front of the model, not on the
-                        // center plane, otherwise closest-approach points
-                        // on the camera side get clamped onto the plane.
+                        vec3f ray_dir = {ortho_state.projection_dir.x,
+                                         ortho_state.projection_dir.y,
+                                         ortho_state.projection_dir.z};
                         float rl = std::sqrt(ray_dir.x * ray_dir.x +
                                              ray_dir.y * ray_dir.y +
                                              ray_dir.z * ray_dir.z);
@@ -4600,9 +4594,9 @@ void RenderVoxelList::render_ortho_edit_window() {
                                 (plane_pt.x - ortho_state._cam_pos.x) * ray_dir.x +
                                 (plane_pt.y - ortho_state._cam_pos.y) * ray_dir.y +
                                 (plane_pt.z - ortho_state._cam_pos.z) * ray_dir.z;
-                            plane_pt.x -= ray_dir.x * cam_off;
-                            plane_pt.y -= ray_dir.y * cam_off;
-                            plane_pt.z -= ray_dir.z * cam_off;
+                            plane_pt.x -= ray_dir.x * (-cam_off);
+                            plane_pt.y -= ray_dir.y * (-cam_off);
+                            plane_pt.z -= ray_dir.z * (-cam_off);
                         }
 
                         vec3f extrapolated_pt;
