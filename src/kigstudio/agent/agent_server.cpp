@@ -77,6 +77,11 @@ struct AgentServer::Impl {
 	float overlay_blend_ = 0.5f;
 
 	std::string ortho_state_json_;
+
+	// ---- Guide curve overlay state ----
+	bool export_guide_curves_ = false;
+	bool export_color_code_ = true;
+	AgentServer::GuideCurveDrawFn guide_curve_draw_fn_;
 };
 
 // ==========================================================================
@@ -265,6 +270,20 @@ void AgentServer::setOrthoState(const std::string& json) {
 	impl_->ortho_state_json_ = json;
 }
 
+void AgentServer::setGuideCurveDrawState(bool export_curves, bool color_code,
+                                          GuideCurveDrawFn draw_fn) {
+	std::lock_guard<std::mutex> lock(impl_->ortho_mtx_);
+	impl_->export_guide_curves_ = export_curves;
+	impl_->export_color_code_ = color_code;
+	impl_->guide_curve_draw_fn_ = std::move(draw_fn);
+}
+
+void AgentServer::setGuideCurveFlags(bool export_curves, bool color_code) {
+	std::lock_guard<std::mutex> lock(impl_->ortho_mtx_);
+	impl_->export_guide_curves_ = export_curves;
+	impl_->export_color_code_ = color_code;
+}
+
 // ==========================================================================
 // Ortho blended PNG helper (CPU-side render + overlay blend)
 // ==========================================================================
@@ -342,6 +361,25 @@ bool AgentServer::sendOrthoBlendedPng(const httplib::Request& req,
 				out[di + 2] = (uint8_t)(out[di + 2] * (1.f - ov_a) + impl.overlay_rgba_[oi + 2] * ov_a);
 			}
 		}
+	}
+
+	// Draw guide curves on top of the blended result if requested
+	bool draw_guides = impl.export_guide_curves_;
+	bool use_color = impl.export_color_code_;
+	if (req.has_param("guides")) {
+		auto v = req.get_param_value("guides");
+		draw_guides = (v == "1" || v == "true");
+		if (req.has_param("color_code"))
+			use_color = (req.get_param_value("color_code") == "1");
+	}
+	int line_width = 1;
+	float font_size = 0.0f;
+	if (req.has_param("line_width"))
+		line_width = std::max(1, std::stoi(req.get_param_value("line_width")));
+	if (req.has_param("font_size"))
+		font_size = std::max(0.0f, std::stof(req.get_param_value("font_size")));
+	if (draw_guides && impl.guide_curve_draw_fn_) {
+		impl.guide_curve_draw_fn_(out, out_w, out_h, use_color, line_width, font_size);
 	}
 
 	// Render PNG to buffer via stb_image_write callback
@@ -1177,7 +1215,7 @@ void AgentServer::register_routes() {
 			    "application/json");
 		});
 
-		svr.Get("/api/v1/ortho/render", [this](const httplib::Request& /*req*/,
+		svr.Get("/api/v1/ortho/render", [this](const httplib::Request& req,
 		                                       httplib::Response& res) {
 			std::lock_guard<std::mutex> lock(impl_->ortho_mtx_);
 			if (!impl_->render_valid_) {
@@ -1186,6 +1224,53 @@ void AgentServer::register_routes() {
 				                "application/json");
 				return;
 			}
+
+			// Allow ?guides=1 query param to force-enable guide curve overlay,
+			// so test scripts can trigger the drawing without the UI checkbox.
+			bool draw_guides = impl_->export_guide_curves_;
+			bool use_color = impl_->export_color_code_;
+				int line_width = 1;
+				float font_size = 0.0f;
+			if (req.has_param("guides")) {
+				auto v = req.get_param_value("guides");
+				draw_guides = (v == "1" || v == "true");
+				if (req.has_param("color_code"))
+					use_color = (req.get_param_value("color_code") == "1");
+			}
+				if (req.has_param("line_width"))
+					line_width = std::max(1, std::stoi(req.get_param_value("line_width")));
+				if (req.has_param("font_size"))
+					font_size = std::max(0.0f, std::stof(req.get_param_value("font_size")));
+
+			std::cout << "[ortho/render] render_valid=1"
+			          << " export_guides=" << (impl_->export_guide_curves_ ? 1 : 0)
+			          << " has_callback=" << (impl_->guide_curve_draw_fn_ ? 1 : 0)
+			          << " draw_guides=" << (draw_guides ? 1 : 0)
+			          << " color_code=" << (use_color ? 1 : 0)
+			          << " res=" << impl_->render_w_ << "x" << impl_->render_h_
+				          << " line_width=" << line_width
+				          << " font_size=" << font_size
+			          << std::endl;
+
+			// If guide curve export is enabled and a draw function is set,
+			// apply the overlay on a copy of the render data.
+			const uint8_t* png_src = impl_->render_rgba_.data();
+			std::vector<uint8_t> guide_overlay_buf;
+			if (draw_guides && impl_->guide_curve_draw_fn_) {
+				guide_overlay_buf = impl_->render_rgba_;  // copy
+				impl_->guide_curve_draw_fn_(guide_overlay_buf,
+				    impl_->render_w_, impl_->render_h_,
+				    use_color, line_width, font_size);
+				png_src = guide_overlay_buf.data();
+				std::cout << "[ortho/render] Guide curves drawn on "
+				          << impl_->render_w_ << "x" << impl_->render_h_
+				          << " buffer" << std::endl;
+			} else if (draw_guides && !impl_->guide_curve_draw_fn_) {
+				std::cerr << "[ortho/render] WARNING: draw_guides=true but "
+				          << "no callback set (ortho editor closed?)"
+				          << std::endl;
+			}
+
 			// Encode to PNG via callback
 			struct Buf { std::vector<uint8_t> d; };
 			Buf buf;
@@ -1194,7 +1279,7 @@ void AgentServer::register_routes() {
 			};
 			int ok = stbi_write_png_to_func(w, &buf,
 			    impl_->render_w_, impl_->render_h_, 4,
-			    impl_->render_rgba_.data(), impl_->render_w_ * 4);
+			    png_src, impl_->render_w_ * 4);
 			if (!ok) {
 				res.status = 500;
 				res.set_content("{\"error\":\"png encode failed\"}", "application/json");

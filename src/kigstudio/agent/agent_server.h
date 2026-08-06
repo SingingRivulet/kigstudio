@@ -95,6 +95,23 @@ public:
 	/// Set the current camera/projection state as JSON string.
 	void setOrthoState(const std::string& json);
 
+	/// Callback to draw guide-curve overlays on an RGBA pixel buffer.
+	/// Called from the HTTP handler thread when serving /ortho/render.
+	/// Parameters: (rgba buffer, width, height, color_code_flag,
+	///               line_thickness, font_size).
+	using GuideCurveDrawFn = std::function<void(
+	    std::vector<uint8_t>& rgba, int w, int h, bool color_code,
+	    int line_thickness, float font_size)>;
+
+	/// Set the guide-curve draw callback and the export flags.
+	/// Called once at startup with the callback; use setGuideCurveFlags()
+	/// afterwards to update just the flags without recreating the callback.
+	void setGuideCurveDrawState(bool export_curves, bool color_code,
+	                            GuideCurveDrawFn draw_fn);
+
+	/// Update only the export flags without touching the draw callback.
+	void setGuideCurveFlags(bool export_curves, bool color_code);
+
 	// ---- accessors ----
 
 	AgentCommandQueue& command_queue() { return queue_; }

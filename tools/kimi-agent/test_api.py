@@ -587,18 +587,34 @@ def test_ortho_export_guide_curves() -> None:
     """
     print("\n── Export Guide Curves ──")
     try:
-        r = get("/ortho/render")
+        # Request with guide curve overlay (query param forces drawing)
+        r = get("/ortho/render?guides=1&color_code=1")
         if r.status_code == 503:
             skip("Export guide curves", "还没有渲染数据")
             return
-        _check(r.status_code == 200, f"GET /ortho/render → {r.status_code}",
+        _check(r.status_code == 200, f"GET /ortho/render?guides=1 → {r.status_code}",
                f"status={r.status_code}")
         ct = r.headers.get("Content-Type", "")
         _check("image/png" in ct, f"  Content-Type = {ct}")
 
         size_kb = len(r.content) / 1024
         _check(len(r.content) > 100,
-               f"  PNG size = {size_kb:.1f} KB (原始渲染)")
+               f"  PNG size = {size_kb:.1f} KB (with guides)")
+
+        # Verify guide curves changed pixel content
+        # (raw render without guides should be different)
+        r_raw = get("/ortho/render")
+        has_guides = False
+        if r_raw.status_code == 200 and len(r_raw.content) == len(r.content):
+            # Compare first 1KB of pixel data (skip PNG header differences)
+            diff_count = sum(1 for a, b in zip(r.content, r_raw.content) if a != b)
+            has_guides = diff_count > 500
+            _check(has_guides,
+                   f"  Guide overlay changes pixels ({diff_count} bytes differ)",
+                   f"  (可能是正交编辑器未打开或callback未设置)")
+        else:
+            _check(False, "  Compare with raw render",
+                   f"raw_status={r_raw.status_code} sizes={len(r_raw.content)} vs {len(r.content)}")
 
         # 验证相机状态包含 3D→2D 投影所需的完整参数
         r2 = get("/ortho/state")
@@ -615,6 +631,29 @@ def test_ortho_export_guide_curves() -> None:
                 print(f"         调色板: 12色 (来自 hair_guides.py PALETTE)")
 
         save_image("ortho_export_guide_curves.png", r.content)
+
+        # Test configurable line thickness
+        r_thick = get("/ortho/render?guides=1&color_code=1&line_width=5")
+        if r_thick.status_code == 200:
+            thick_size = len(r_thick.content) / 1024
+            has_thick = r_thick.content != r.content
+            _check(has_thick,
+                   f"  line_width=5 changes output ({thick_size:.1f} KB)",
+                   "  (same as line_width=1)")
+            save_image("ortho_export_guide_curves_thick.png", r_thick.content)
+        else:
+            _check(False, f"  line_width=5 -> {r_thick.status_code}")
+
+        # Test font size for strand name labels
+        r_font = get("/ortho/render?guides=1&color_code=1&line_width=3&font_size=18")
+        if r_font.status_code == 200:
+            font_size_kb = len(r_font.content) / 1024
+            _check(True,
+                   f"  font_size=18 PNG size = {font_size_kb:.1f} KB")
+            save_image("ortho_export_guide_curves_text.png", r_font.content)
+        else:
+            _check(False, f"  font_size=18 -> {r_font.status_code}")
+
     except Exception as e:
         _check(False, "Export guide curves", str(e))
 
@@ -725,6 +764,22 @@ def test_ortho_blend() -> None:
                        "ratio=0.5 和 ratio=0.9 返回相同内容")
             else:
                 _check(True, "  blend ratio (跳过: 没有参考图可混合)")
+        # Test blend with guide curves overlay
+        r3 = get("/ortho/blend?ratio=0.5&guides=1&color_code=1")
+        if r3.status_code == 200:
+            save_image("ortho_blend_guides.png", r3.content)
+            has_diff = r3.content != r.content
+            _check(has_diff or not has_overlay,
+                   "  blend+guides differs from plain blend",
+                   "" if has_diff else "  (no overlay or same content)")
+        # Test blend with thick guide curves
+        r4 = get("/ortho/blend?ratio=0.5&guides=1&color_code=1&line_width=5&font_size=16")
+        if r4.status_code == 200:
+            save_image("ortho_blend_guides_thick.png", r4.content)
+            has_thick = r4.content != r3.content if r3.status_code == 200 else True
+            _check(has_thick or not has_overlay,
+                   "  blend+guides with thick lines differs",
+                   "" if has_thick else "  (same content)")
     except Exception as e:
         _check(False, "GET /ortho/blend", str(e))
 

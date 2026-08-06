@@ -205,6 +205,28 @@ int ui_main(int argc, const char* const* argv) {
             render_items.agent_server_ptr = &agent_server;
             std::cout << "Agent API: http://127.0.0.1:" << agent_port
                       << "/api/v1" << std::endl;
+
+            // Install the guide-curve draw callback once at startup.
+            // The callback captures &render_items so it always reads live
+            // strand data and camera state, regardless of which UI window
+            // is open.  The export_curves / color_code flags are synced
+            // every frame by update_api_server_caches().
+            agent_server.setGuideCurveDrawState(
+                false, true,
+                [&render_items](std::vector<uint8_t>& rgba, int w, int h,
+                                bool color_code,
+                                int line_thickness, float font_size) {
+                    std::lock_guard<std::mutex> lock(render_items.locker);
+                    auto it = render_items.items.find(
+                        render_items.render_id);
+                    if (it != render_items.items.end() &&
+                        it->second->source_type == 2) {
+                        draw_guide_curves_on_buffer(
+                            rgba, w, h, render_items.ortho_state,
+                            it->second->hair_strands, color_code,
+                            line_thickness, font_size);
+                    }
+                });
         } else {
             std::cerr << "Agent API: failed to start on port " << agent_port
                       << std::endl;

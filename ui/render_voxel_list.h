@@ -446,6 +446,19 @@ sinriv::kigstudio::voxel::vec3f bezier_eval(
 std::vector<sinriv::kigstudio::voxel::vec3f> sample_bezier_guide_curve(
     const std::vector<sinriv::kigstudio::voxel::vec3f>& guide_points,
     int samples_per_segment = 32);
+
+// Draw guide curves on an RGBA pixel buffer using ortho camera projection.
+// Called from the API server to overlay guide curves on exported images.
+// line_thickness: width of guide curve lines in pixels (default 1).
+// font_size: pixel height for strand name labels (0 = no labels).
+void draw_guide_curves_on_buffer(
+    std::vector<uint8_t>& rgba, int w, int h,
+    const OrthoProjectionState& ortho_state,
+    const std::vector<HairStrand>& hair_strands,
+    bool color_code,
+    int line_thickness = 1,
+    float font_size = 0.0f);
+
 const char* geometry_type_name(const GeometryInstance& instance);
 EditResult edit_geometry_shape(GeometryInstance& instance);
 void add_collision_geometry(CollisionGroup& group, int type_index);
