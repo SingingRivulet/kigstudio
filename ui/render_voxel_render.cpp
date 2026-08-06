@@ -2908,12 +2908,12 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
         const uint32_t arrow_color = pack_abgr(0.2f, 0.6f, 1.0f, 1.0f);  // blue
         vec3f dir = manager->ortho_state.projection_dir;
         float vp_half = manager->ortho_state.viewport_size * 0.5f;
-        // Arrow points in the look direction (camera→center, continuing
-        // past center).  projection_dir = camera→center (inward).
+        // Arrow points in the view direction (camera→center = -projection_dir).
+        // projection_dir = center→camera (outward).
         vec3f arrow_end = {
-            addon_center_point.x + dir.x * vp_half,
-            addon_center_point.y + dir.y * vp_half,
-            addon_center_point.z + dir.z * vp_half
+            addon_center_point.x - dir.x * vp_half,
+            addon_center_point.y - dir.y * vp_half,
+            addon_center_point.z - dir.z * vp_half
         };
         std::vector<mesh_detail::ColorLineVertex> vertices;
         // Main direction line

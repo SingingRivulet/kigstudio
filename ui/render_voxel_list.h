@@ -387,14 +387,14 @@ inline vec3f six_view_direction(int index,
                N.x * F.y - N.y * F.x};
     float rl = std::sqrt(R.x*R.x + R.y*R.y + R.z*R.z);
     if (rl > 1e-8f) { R.x /= rl; R.y /= rl; R.z /= rl; }
-    // Direction convention: from camera/viewer toward the center (inward).
-    // All six views use this consistent convention.
-    // Front: camera in front, looking backward → -F
-    // Back:  camera behind, looking forward  → +F
-    // Left:  camera on left, looking right   → +R
-    // Right: camera on right, looking left   → -R
-    // Top:   camera above, looking down      → -N
-    // Bottom:camera below, looking up        → +N
+    // Direction convention: from center toward camera position (outward).
+    // Camera is placed at center + projection_dir * 1000.
+    // Front: camera in front of face → -F
+    // Back:  camera behind head      → +F
+    // Left:  camera on left side     → +R
+    // Right: camera on right side    → -R
+    // Top:   camera above head       → -N
+    // Bottom:camera below head       → +N
     switch (index) {
         case 0: return {-F.x, -F.y, -F.z};  // Front
         case 1: return F;             // Back

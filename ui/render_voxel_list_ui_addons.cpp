@@ -2405,11 +2405,12 @@ static bool ortho_raycast(const OrthoProjectionState& state,
                           state._cam_up.z * v * state.viewport_size
     };
 
-    // Ray direction (from camera position toward the model, same as look_dir)
+    // Ray direction from camera toward model center.
+    // cam_pos = center + look_dir * 1000, so camera→center = -look_dir.
     vec3f ray_dir = {
-        state.projection_dir.x,
-        state.projection_dir.y,
-        state.projection_dir.z
+        -state.projection_dir.x,
+        -state.projection_dir.y,
+        -state.projection_dir.z
     };
     float rl = std::sqrt(ray_dir.x * ray_dir.x + ray_dir.y * ray_dir.y +
                          ray_dir.z * ray_dir.z);
@@ -2571,8 +2572,9 @@ void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
     destroy_ortho_resources();
 
     // Build the orthographic camera matrices (stored for CPU-side raycasting).
-    // projection_dir now means "look direction" (from camera toward center).
-    // We derive a "from-center" direction for constructing the camera basis.
+    // projection_dir = center→camera (outward).
+    // Camera is placed at center + projection_dir * 1000.
+    // from_center = -projection_dir = camera→center direction.
     vec3f look_dir = ortho_state.projection_dir;
     vec3f from_center = {-look_dir.x, -look_dir.y, -look_dir.z};
     vec3f center = item.addon_center_point;
@@ -2587,11 +2589,16 @@ void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
     if (std::abs(from_center.x * world_up.x + from_center.y * world_up.y + from_center.z * world_up.z) > 0.99f)
         world_up = vec3f{0, 0, 1};
 
-    // cam_right = normalize(cross(from_center, world_up))
+    // Match GPU's internal camera basis:
+    //   GPU right = normalize(cross(up_hint, forward))
+    //   GPU up    = cross(forward, right)
+    // where forward = normalize(at - eye).
+    // We must match those, not compute an independent basis.
+    // cam_right = normalize(cross(world_up, from_center))
     vec3f cam_right = {
-        from_center.y * world_up.z - from_center.z * world_up.y,
-        from_center.z * world_up.x - from_center.x * world_up.z,
-        from_center.x * world_up.y - from_center.y * world_up.x
+        world_up.y * from_center.z - world_up.z * from_center.y,
+        world_up.z * from_center.x - world_up.x * from_center.z,
+        world_up.x * from_center.y - world_up.y * from_center.x
     };
     float cr_len = std::sqrt(cam_right.x * cam_right.x +
                              cam_right.y * cam_right.y +
@@ -2602,11 +2609,11 @@ void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
         cam_right = {1, 0, 0};
     }
 
-    // cam_up = normalize(cross(cam_right, from_center))
+    // cam_up = normalize(cross(from_center, cam_right))
     vec3f cam_up = {
-        cam_right.y * from_center.z - cam_right.z * from_center.y,
-        cam_right.z * from_center.x - cam_right.x * from_center.z,
-        cam_right.x * from_center.y - cam_right.y * from_center.x
+        from_center.y * cam_right.z - from_center.z * cam_right.y,
+        from_center.z * cam_right.x - from_center.x * cam_right.z,
+        from_center.x * cam_right.y - from_center.y * cam_right.x
     };
     float cu_len = std::sqrt(cam_up.x * cam_up.x +
                              cam_up.y * cam_up.y +
@@ -2617,12 +2624,10 @@ void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
         cam_up = {0, 1, 0};
     }
 
-    // Camera position: move opposite the look direction from center.
-    // projection_dir = camera→center (inward), so:
-    // cam = center - dir * 1000 puts camera on the face/viewer side.
-    vec3f cam_pos = {center.x - look_dir.x * 1000.0f,
-                     center.y - look_dir.y * 1000.0f,
-                     center.z - look_dir.z * 1000.0f};
+    // Camera position: same direction as look_dir from center.
+    vec3f cam_pos = {center.x + look_dir.x * 1000.0f,
+                     center.y + look_dir.y * 1000.0f,
+                     center.z + look_dir.z * 1000.0f};
 
     // Store ortho camera params for CPU raycasting
     ortho_state._cam_right = cam_right;
@@ -4199,8 +4204,9 @@ void RenderVoxelList::render_ortho_edit_window() {
                         ortho_state._cam_pos.z, ortho_state.viewport_size);
                 }
 
-                // projection_dir = camera→center (inward), so it is already
-                // the direction from viewer toward center — no negation.
+                // projection_dir = center→camera (outward).
+                // Occlusion cam_plane_pt = center - ray_dir_n * kCamDist
+                // must be on the viewer side, so we use +projection_dir.
                 float dlen = std::sqrt(
                     ortho_state.projection_dir.x * ortho_state.projection_dir.x +
                     ortho_state.projection_dir.y * ortho_state.projection_dir.y +
@@ -4578,9 +4584,9 @@ void RenderVoxelList::render_ortho_edit_window() {
                                     ortho_state.viewport_size +
                                 ortho_state._cam_up.z * v *
                                     ortho_state.viewport_size};
-                        vec3f ray_dir = {ortho_state.projection_dir.x,
-                                         ortho_state.projection_dir.y,
-                                         ortho_state.projection_dir.z};
+                        vec3f ray_dir = {-ortho_state.projection_dir.x,
+                                         -ortho_state.projection_dir.y,
+                                         -ortho_state.projection_dir.z};
                         // Same camera-plane offset as ortho_raycast: the
                         // ray must start in front of the model, not on the
                         // center plane, otherwise closest-approach points
