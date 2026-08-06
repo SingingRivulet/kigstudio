@@ -200,10 +200,9 @@ struct HairStrand {
     // Reset on every rebuild; shown as a warning indicator in the UI.
     bool repair_failed = false;
 
-    // Auto-compute root hidden guide point from top-of-head direction
-    bool auto_hair_root = false;
-
-    // Hair root edit mode: enable this strand's root point visualization
+    // Hair root edit mode: enable this strand's root point visualization.
+    // When enabled, the common hair root point is prepended to
+    // hidden_guide_points_start during lofting.
     bool hair_root_enabled = true;
 
     // Dirty flag: set to true when any data affecting the loft mesh changes
@@ -388,17 +387,22 @@ inline vec3f six_view_direction(int index,
                N.x * F.y - N.y * F.x};
     float rl = std::sqrt(R.x*R.x + R.y*R.y + R.z*R.z);
     if (rl > 1e-8f) { R.x /= rl; R.y /= rl; R.z /= rl; }
-    // projection_dir points from center toward the viewer side (outward).
-    // Camera is placed at center - dir * 1000 on the opposite side.
-    // The occlusion raycast negates this direction internally.
+    // Direction convention: from camera/viewer toward the center (inward).
+    // All six views use this consistent convention.
+    // Front: camera in front, looking backward → -F
+    // Back:  camera behind, looking forward  → +F
+    // Left:  camera on left, looking right   → +R
+    // Right: camera on right, looking left   → -R
+    // Top:   camera above, looking down      → -N
+    // Bottom:camera below, looking up        → +N
     switch (index) {
-        case 0: return F;                          // Front  (toward nose)
-        case 1: return {-F.x, -F.y, -F.z};         // Back
-        case 2: return R;                          // Left   (toward model's right)
-        case 3: return {-R.x, -R.y, -R.z};         // Right  (toward model's left)
-        case 4: return N;                          // Top    (toward top of head)
-        case 5: return {-N.x, -N.y, -N.z};         // Bottom
-        default: return N;
+        case 0: return {-F.x, -F.y, -F.z};  // Front
+        case 1: return F;             // Back
+        case 2: return R;             // Left
+        case 3: return {-R.x, -R.y, -R.z};  // Right
+        case 4: return {-N.x, -N.y, -N.z};  // Top
+        case 5: return N;             // Bottom
+        default: return {-N.x, -N.y, -N.z};
     }
 }
 
@@ -524,6 +528,10 @@ struct CollisionEditorSnapshot {
     // 附加件中心点（所有发束共享）
     vec3f addon_center_point = {0.0f, 0.0f, 0.0f};
     bool show_addon_center = false;
+    // 发根编辑共享状态
+    bool auto_hair_root = false;
+    vec3f common_hair_root_point = {0.0f, 0.0f, 0.0f};
+    float hair_root_center_offset = 0.0f;
     // 发际线平面（用于纺锤宽度生成）
     bool hairline_plane_enabled = false;
     bool hairline_plane_use_y = true;
@@ -683,6 +691,9 @@ class RenderVoxelList {
         bool show_addon_center = false;  // 是否显示/启用中心点
         // 发根编辑模式（显示紫色发根圈）
         bool hair_root_edit_active = false;
+        // 自动发根引导点：从头顶方向向底模投射的共享隐藏引导点
+        bool auto_hair_root = false;
+        vec3f common_hair_root_point = {0.0f, 0.0f, 0.0f};
         float hair_root_center_offset = 0.0f;  // 发根点向中心点移动的距离
         // Ortho occlusion cache: avoid recomputing per-strand visibility every frame
         size_t _ortho_occlusion_hash = 0;

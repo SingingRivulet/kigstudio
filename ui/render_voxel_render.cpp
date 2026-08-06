@@ -2834,55 +2834,49 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
         }
     }
 
-    // Hair root point rendering (three purple circles per enabled strand, same style as center)
+    // Hair root point rendering (three purple circles at the common root point)
     if (hair_root_edit_active && source_type == 2) {
         if (mesh_shader.ensureLineProgram()) {
             bgfx::VertexLayout& layout = concave_cone_overlay_layout();
             const uint32_t root_color = pack_abgr(1.0f, 0.3f, 1.0f, 1.0f);  // purple
             const float radius = sphere_r * 0.05f;
             std::vector<mesh_detail::ColorLineVertex> vertices;
-            vertices.reserve(48 * 3 * static_cast<size_t>(std::max(1,
-                static_cast<int>(std::count_if(hair_strands.begin(), hair_strands.end(),
-                    [](const HairStrand& s) { return s.hair_root_enabled && !s.guide_points.empty(); })))));
+            vertices.reserve(48 * 3);  // Single common root point
 
-            for (const auto& strand : hair_strands) {
-                if (!strand.hair_root_enabled || strand.guide_points.empty())
-                    continue;
-
-                // Compute root point: first guide point moved toward center by offset
-                vec3f first_pt = strand.guide_points.front();
+            // Compute effective root point: common_hair_root_point moved toward center by offset
+            vec3f root_pt = common_hair_root_point;
+            {
                 vec3f to_center = {
-                    addon_center_point.x - first_pt.x,
-                    addon_center_point.y - first_pt.y,
-                    addon_center_point.z - first_pt.z
+                    addon_center_point.x - root_pt.x,
+                    addon_center_point.y - root_pt.y,
+                    addon_center_point.z - root_pt.z
                 };
                 float dist = std::sqrt(to_center.x * to_center.x +
                                        to_center.y * to_center.y +
                                        to_center.z * to_center.z);
-                vec3f root_pt = first_pt;
-                if (dist > 0.001f) {
+                if (dist > 0.001f && hair_root_center_offset > 0.0f) {
                     vec3f dir = {to_center.x / dist, to_center.y / dist,
                                  to_center.z / dist};
                     float offset = hair_root_center_offset;
                     if (offset > dist) offset = dist;
                     root_pt = {
-                        first_pt.x + dir.x * offset,
-                        first_pt.y + dir.y * offset,
-                        first_pt.z + dir.z * offset
+                        root_pt.x + dir.x * offset,
+                        root_pt.y + dir.y * offset,
+                        root_pt.z + dir.z * offset
                     };
                 }
-
-                // Three purple circles (XY, XZ, YZ planes) — same style as center point
-                append_marker_circle(vertices, root_pt,
-                                     {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
-                                     radius, root_color);
-                append_marker_circle(vertices, root_pt,
-                                     {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
-                                     radius, root_color);
-                append_marker_circle(vertices, root_pt,
-                                     {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
-                                     radius, root_color);
             }
+
+            // Three purple circles (XY, XZ, YZ planes) — same style as center point
+            append_marker_circle(vertices, root_pt,
+                                 {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
+                                 radius, root_color);
+            append_marker_circle(vertices, root_pt,
+                                 {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                 radius, root_color);
+            append_marker_circle(vertices, root_pt,
+                                 {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                 radius, root_color);
 
             if (!vertices.empty() &&
                 bgfx::getAvailTransientVertexBuffer(
@@ -2914,14 +2908,12 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
         const uint32_t arrow_color = pack_abgr(0.2f, 0.6f, 1.0f, 1.0f);  // blue
         vec3f dir = manager->ortho_state.projection_dir;
         float vp_half = manager->ortho_state.viewport_size * 0.5f;
-        // Arrow points from center toward the camera/viewer (opposite to
-        // projection_dir which points from viewer toward center). The user
-        // clicks on the model surface to place the camera there, so the
-        // arrow should point toward the picked location.
+        // Arrow points in the look direction (camera→center, continuing
+        // past center).  projection_dir = camera→center (inward).
         vec3f arrow_end = {
-            addon_center_point.x - dir.x * vp_half,
-            addon_center_point.y - dir.y * vp_half,
-            addon_center_point.z - dir.z * vp_half
+            addon_center_point.x + dir.x * vp_half,
+            addon_center_point.y + dir.y * vp_half,
+            addon_center_point.z + dir.z * vp_half
         };
         std::vector<mesh_detail::ColorLineVertex> vertices;
         // Main direction line

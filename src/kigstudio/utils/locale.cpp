@@ -1290,6 +1290,11 @@ void init_locale_strings() {
     add_locale_string("tooltip.hair_root_edit",
                       {{"en", "Open the hair root editor to configure root points"},
                        {"zh", "打开发根编辑器，配置发根点"}});
+    add_locale_string("label.common_hair_root_point",
+                      {{"en", "Common Root Point"}, {"zh", "共同发根点"}});
+    add_locale_string("label.need_north_pole_for_hair_root",
+                      {{"en", "Set the \"North Pole\" direction first (Angle Config) to use auto hair root."},
+                       {"zh", "请先在坐标系配置中设置\"头顶方向\"以启用自动发根引导点。"}});
 
     // ---- 正交投影编辑模式 ----
     add_locale_string("action.ortho_projection",

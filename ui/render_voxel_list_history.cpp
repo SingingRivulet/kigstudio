@@ -33,6 +33,9 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.showSilhouetteCenter,
             item.addon_center_point,
             item.show_addon_center,
+            item.auto_hair_root,
+            item.common_hair_root_point,
+            item.hair_root_center_offset,
             item.hairline_plane_enabled,
             item.hairline_plane_use_y,
             item.hairline_plane_y,
@@ -91,6 +94,9 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.showSilhouetteCenter = snapshot.show_silhouette_center;
     item.addon_center_point = snapshot.addon_center_point;
     item.show_addon_center = snapshot.show_addon_center;
+    item.auto_hair_root = snapshot.auto_hair_root;
+    item.common_hair_root_point = snapshot.common_hair_root_point;
+    item.hair_root_center_offset = snapshot.hair_root_center_offset;
     item.hairline_plane_enabled = snapshot.hairline_plane_enabled;
     item.hairline_plane_use_y = snapshot.hairline_plane_use_y;
     item.hairline_plane_y = snapshot.hairline_plane_y;

@@ -207,90 +207,6 @@ void RenderVoxelList::render_guide_curve_window() {
 
     ImGui::Separator();
 
-    // Auto hair root checkbox (only when north_pole direction is configured)
-    {
-        float np_len = std::sqrt(item.hair_north_pole.x * item.hair_north_pole.x +
-                                 item.hair_north_pole.y * item.hair_north_pole.y +
-                                 item.hair_north_pole.z * item.hair_north_pole.z);
-        if (np_len > 0.001f) {
-            bool prev = strand.auto_hair_root;
-            if (ImGui::Checkbox(get_locale_cstr("label.auto_hair_root"),
-                                &strand.auto_hair_root)) {
-                if (strand.auto_hair_root) {
-                    // Compute ray from north-pole direction toward center,
-                    // find first hit on base model triangles
-                    vec3f dir = {item.hair_north_pole.x / np_len,
-                                 item.hair_north_pole.y / np_len,
-                                 item.hair_north_pole.z / np_len};
-                    vec3f origin = {item.addon_center_point.x + dir.x * 500.0f,
-                                    item.addon_center_point.y + dir.y * 500.0f,
-                                    item.addon_center_point.z + dir.z * 500.0f};
-                    vec3f ray_dir = {-dir.x, -dir.y, -dir.z};
-                    vec3f hit = {item.addon_center_point.x,
-                                 item.addon_center_point.y,
-                                 item.addon_center_point.z};
-                    bool found = false;
-                    float best_t = 1e30f;
-
-                    // Try raycast against base model triangles
-                    if (item.addon_base_node_id >= 0) {
-                        auto base_it = items.find(item.addon_base_node_id);
-                        if (base_it != items.end()) {
-                            auto& base = *base_it->second;
-                            // Use cached_mesh if available, else source_triangles
-                            auto test_tri = [&](const vec3f& v0,
-                                                 const vec3f& v1,
-                                                 const vec3f& v2) {
-                                float t;
-                                if (ray_triangle_intersect(origin, ray_dir,
-                                                           v0, v1, v2, t) &&
-                                    t < best_t) {
-                                    best_t = t;
-                                    hit = {origin.x + ray_dir.x * t,
-                                           origin.y + ray_dir.y * t,
-                                           origin.z + ray_dir.z * t};
-                                    found = true;
-                                }
-                            };
-                            if (!base.cached_mesh.empty()) {
-                                for (const auto& entry : base.cached_mesh) {
-                                    const auto& tri = std::get<0>(entry);
-                                    auto tv0 = std::get<0>(tri);
-                                    auto tv1 = std::get<1>(tri);
-                                    auto tv2 = std::get<2>(tri);
-                                    test_tri({tv0.x, tv0.y, tv0.z},
-                                             {tv1.x, tv1.y, tv1.z},
-                                             {tv2.x, tv2.y, tv2.z});
-                                }
-                            } else {
-                                for (const auto& tri : base.source_triangles) {
-                                    auto tv0 = std::get<0>(tri);
-                                    auto tv1 = std::get<1>(tri);
-                                    auto tv2 = std::get<2>(tri);
-                                    test_tri({tv0.x, tv0.y, tv0.z},
-                                             {tv1.x, tv1.y, tv1.z},
-                                             {tv2.x, tv2.y, tv2.z});
-                                }
-                            }
-                        }
-                    }
-                    if (!found) {
-                        // Fallback: project center along north pole direction
-                        hit = {item.addon_center_point.x - dir.x * 10.0f,
-                               item.addon_center_point.y - dir.y * 10.0f,
-                               item.addon_center_point.z - dir.z * 10.0f};
-                    }
-                    strand.hidden_guide_points_start = {hit};
-                } else {
-                    strand.hidden_guide_points_start.clear();
-                }
-                strand.mesh_dirty = true;
-            }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.auto_hair_root"));
-        }
-    }
-
     ImGui::Text(get_locale_cstr("label.guide_curve_points"),
                 static_cast<int>(strand.guide_points.size()));
 
@@ -2701,7 +2617,9 @@ void RenderVoxelList::perform_ortho_render(RenderVoxelItem& item,
         cam_up = {0, 1, 0};
     }
 
-    // Camera position: move opposite the look direction from center
+    // Camera position: move opposite the look direction from center.
+    // projection_dir = camera→center (inward), so:
+    // cam = center - dir * 1000 puts camera on the face/viewer side.
     vec3f cam_pos = {center.x - look_dir.x * 1000.0f,
                      center.y - look_dir.y * 1000.0f,
                      center.z - look_dir.z * 1000.0f};
@@ -3368,7 +3286,7 @@ void RenderVoxelList::render_hair_root_window() {
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Once, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(420, 520), ImGuiCond_Once);
     bool window_open = true;
     if (!ImGui::Begin(get_locale_cstr("window.hair_root_edit"), &window_open)) {
         ImGui::End();
@@ -3397,7 +3315,101 @@ void RenderVoxelList::render_hair_root_window() {
 
     item.hair_root_edit_active = true;
 
-    // Center offset slider
+    // ---- Common Hair Root Point (shared by all strands) ----
+
+    // Auto hair root toggle (only when north_pole direction is configured)
+    {
+        float np_len = std::sqrt(item.hair_north_pole.x * item.hair_north_pole.x +
+                                 item.hair_north_pole.y * item.hair_north_pole.y +
+                                 item.hair_north_pole.z * item.hair_north_pole.z);
+        if (np_len > 0.001f) {
+            bool prev_auto = item.auto_hair_root;
+            if (ImGui::Checkbox(get_locale_cstr("label.auto_hair_root"),
+                                &item.auto_hair_root)) {
+                if (item.auto_hair_root) {
+                    // Compute ray from north-pole direction toward center,
+                    // find first hit on base model triangles
+                    vec3f dir = {item.hair_north_pole.x / np_len,
+                                 item.hair_north_pole.y / np_len,
+                                 item.hair_north_pole.z / np_len};
+                    vec3f origin = {item.addon_center_point.x + dir.x * 500.0f,
+                                    item.addon_center_point.y + dir.y * 500.0f,
+                                    item.addon_center_point.z + dir.z * 500.0f};
+                    vec3f ray_dir = {-dir.x, -dir.y, -dir.z};
+                    vec3f hit = {item.addon_center_point.x,
+                                 item.addon_center_point.y,
+                                 item.addon_center_point.z};
+                    bool found = false;
+                    float best_t = 1e30f;
+
+                    if (item.addon_base_node_id >= 0) {
+                        auto base_it = items.find(item.addon_base_node_id);
+                        if (base_it != items.end()) {
+                            auto& base = *base_it->second;
+                            auto test_tri = [&](const vec3f& v0,
+                                                 const vec3f& v1,
+                                                 const vec3f& v2) {
+                                float t;
+                                if (ray_triangle_intersect(origin, ray_dir,
+                                                           v0, v1, v2, t) &&
+                                    t < best_t) {
+                                    best_t = t;
+                                    hit = {origin.x + ray_dir.x * t,
+                                           origin.y + ray_dir.y * t,
+                                           origin.z + ray_dir.z * t};
+                                    found = true;
+                                }
+                            };
+                            if (!base.cached_mesh.empty()) {
+                                for (const auto& entry : base.cached_mesh) {
+                                    const auto& tri = std::get<0>(entry);
+                                    auto tv0 = std::get<0>(tri);
+                                    auto tv1 = std::get<1>(tri);
+                                    auto tv2 = std::get<2>(tri);
+                                    test_tri({tv0.x, tv0.y, tv0.z},
+                                             {tv1.x, tv1.y, tv1.z},
+                                             {tv2.x, tv2.y, tv2.z});
+                                }
+                            } else {
+                                for (const auto& tri : base.source_triangles) {
+                                    auto tv0 = std::get<0>(tri);
+                                    auto tv1 = std::get<1>(tri);
+                                    auto tv2 = std::get<2>(tri);
+                                    test_tri({tv0.x, tv0.y, tv0.z},
+                                             {tv1.x, tv1.y, tv1.z},
+                                             {tv2.x, tv2.y, tv2.z});
+                                }
+                            }
+                        }
+                    }
+                    if (!found) {
+                        // Fallback: project center along north pole direction
+                        hit = {item.addon_center_point.x - dir.x * 10.0f,
+                               item.addon_center_point.y - dir.y * 10.0f,
+                               item.addon_center_point.z - dir.z * 10.0f};
+                    }
+                    item.common_hair_root_point = hit;
+                    push_undo_now(item.id, std::nullopt, "Auto Hair Root");
+                }
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.auto_hair_root"));
+        } else {
+            ImGui::TextWrapped("%s",
+                get_locale_cstr("label.need_north_pole_for_hair_root"));
+        }
+    }
+
+    // Display common root point position (read-only for now)
+    ImGui::Text("%s: (%.2f, %.2f, %.2f)",
+                get_locale_cstr("label.common_hair_root_point"),
+                static_cast<double>(item.common_hair_root_point.x),
+                static_cast<double>(item.common_hair_root_point.y),
+                static_cast<double>(item.common_hair_root_point.z));
+
+    ImGui::Separator();
+
+    // Center offset slider (moves the root point toward center)
     float prev_offset = item.hair_root_center_offset;
     ImGui::SetNextItemWidth(200);
     ImGui::SliderFloat(get_locale_cstr("label.hair_root_center_offset"),
@@ -3437,37 +3449,43 @@ void RenderVoxelList::render_hair_root_window() {
 
     ImGui::Separator();
 
-    // "Update All Hair Roots" button
+    // "Update All Hair Roots" button — propagate common root point to enabled strands
     if (ImGui::Button(get_locale_cstr("action.update_all_hair_roots"),
                       ImVec2(-1, 0))) {
         push_undo_now(item.id, std::nullopt, "Update All Hair Roots");
-        // Apply root offset to all enabled strands
-        for (auto& strand : item.hair_strands) {
-            if (strand.hair_root_enabled && !strand.guide_points.empty()) {
-                // Compute root point as first guide point moved toward center
-                vec3f first_pt = strand.guide_points.front();
-                vec3f to_center = {
-                    item.addon_center_point.x - first_pt.x,
-                    item.addon_center_point.y - first_pt.y,
-                    item.addon_center_point.z - first_pt.z
+
+        // Compute effective root point: common_hair_root_point moved toward center by offset
+        vec3f effective_root = item.common_hair_root_point;
+        {
+            vec3f to_center = {
+                item.addon_center_point.x - effective_root.x,
+                item.addon_center_point.y - effective_root.y,
+                item.addon_center_point.z - effective_root.z
+            };
+            float dist = std::sqrt(to_center.x * to_center.x +
+                                   to_center.y * to_center.y +
+                                   to_center.z * to_center.z);
+            if (dist > 0.001f && item.hair_root_center_offset > 0.0f) {
+                vec3f dir = {to_center.x / dist, to_center.y / dist,
+                             to_center.z / dist};
+                float offset = item.hair_root_center_offset;
+                if (offset > dist) offset = dist;
+                effective_root = {
+                    effective_root.x + dir.x * offset,
+                    effective_root.y + dir.y * offset,
+                    effective_root.z + dir.z * offset
                 };
-                float dist = std::sqrt(to_center.x * to_center.x +
-                                       to_center.y * to_center.y +
-                                       to_center.z * to_center.z);
-                if (dist > 0.001f) {
-                    vec3f dir = {to_center.x / dist, to_center.y / dist,
-                                 to_center.z / dist};
-                    float offset = item.hair_root_center_offset;
-                    // Clamp to prevent overshooting
-                    if (offset > dist) offset = dist;
-                    vec3f root_pt = {
-                        first_pt.x + dir.x * offset,
-                        first_pt.y + dir.y * offset,
-                        first_pt.z + dir.z * offset
-                    };
-                    // Store as hidden guide point start (root point)
-                    strand.hidden_guide_points_start = {root_pt};
-                }
+            }
+        }
+
+        // Assign the common root point to each enabled strand's hidden_guide_points_start
+        for (auto& strand : item.hair_strands) {
+            if (strand.hair_root_enabled) {
+                strand.hidden_guide_points_start = {effective_root};
+                strand.mesh_dirty = true;
+            } else {
+                // Clear hidden points for disabled strands
+                strand.hidden_guide_points_start.clear();
                 strand.mesh_dirty = true;
             }
         }
@@ -4181,17 +4199,16 @@ void RenderVoxelList::render_ortho_edit_window() {
                         ortho_state._cam_pos.z, ortho_state.viewport_size);
                 }
 
-                // projection_dir points from center toward the viewer side.
-                // For occlusion we cast rays from the viewer toward center,
-                // so we negate the direction.
+                // projection_dir = camera→center (inward), so it is already
+                // the direction from viewer toward center — no negation.
                 float dlen = std::sqrt(
                     ortho_state.projection_dir.x * ortho_state.projection_dir.x +
                     ortho_state.projection_dir.y * ortho_state.projection_dir.y +
                     ortho_state.projection_dir.z * ortho_state.projection_dir.z);
                 vec3f ray_dir_n = {
-                    -ortho_state.projection_dir.x / dlen,
-                    -ortho_state.projection_dir.y / dlen,
-                    -ortho_state.projection_dir.z / dlen
+                    ortho_state.projection_dir.x / dlen,
+                    ortho_state.projection_dir.y / dlen,
+                    ortho_state.projection_dir.z / dlen
                 };
 
                 // Reference plane on the viewer side (opposite to ray_dir_n

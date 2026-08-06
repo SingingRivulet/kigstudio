@@ -1067,7 +1067,7 @@ inline cJSON* h_strand_get(cJSON* params, List& list) {
 		cJSON_AddItemToArray(hgps_end, vec3_to_json(hp));
 	cJSON_AddItemToObject(sd, "hidden_guide_points_end", hgps_end);
 
-	cJSON_AddBoolToObject(sd, "auto_hair_root", strand->auto_hair_root);
+	cJSON_AddBoolToObject(sd, "hair_root_enabled", strand->hair_root_enabled);
 	// Width points
 	cJSON* wps = cJSON_CreateArray();
 	for (const auto& wp : strand->width_points) {
@@ -1329,9 +1329,9 @@ inline cJSON* h_strand_update(cJSON* params, List& list) {
 		}
 	}
 
-	// Feature 5: auto hair root
-	if (cJSON_HasObjectItem(params, "auto_hair_root")) {
-		strand->auto_hair_root = json_bool(params, "auto_hair_root", false);
+	// Hair root enabled per strand
+	if (cJSON_HasObjectItem(params, "hair_root_enabled")) {
+		strand->hair_root_enabled = json_bool(params, "hair_root_enabled", true);
 		strand->mesh_dirty = true;
 	}
 
