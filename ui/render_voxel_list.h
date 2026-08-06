@@ -203,6 +203,9 @@ struct HairStrand {
     // Auto-compute root hidden guide point from top-of-head direction
     bool auto_hair_root = false;
 
+    // Hair root edit mode: enable this strand's root point visualization
+    bool hair_root_enabled = true;
+
     // Dirty flag: set to true when any data affecting the loft mesh changes
     bool mesh_dirty = true;
 
@@ -377,21 +380,23 @@ inline vec3f six_view_direction(int index,
     float nl = std::sqrt(N.x*N.x + N.y*N.y + N.z*N.z);
     if (fl > 1e-8f) { F.x /= fl; F.y /= fl; F.z /= fl; }
     if (nl > 1e-8f) { N.x /= nl; N.y /= nl; N.z /= nl; }
-    // Right = normalize(cross(N, F)) — cross(F, N) gives left in a RH system
+    // Right = normalize(cross(N, F)) — with F toward the nose and N up,
+    // this points toward the model's RIGHT side in a RH system.
+    // (The variable retains the name 'R' from the original code.)
     vec3f R = {N.y * F.z - N.z * F.y,
                N.z * F.x - N.x * F.z,
                N.x * F.y - N.y * F.x};
     float rl = std::sqrt(R.x*R.x + R.y*R.y + R.z*R.z);
     if (rl > 1e-8f) { R.x /= rl; R.y /= rl; R.z /= rl; }
-    // Direction convention: from outside toward the center (look direction).
-    // F points toward nose (front), N points toward top of head (up).
-    // Front = looking from front toward center (along F).
+    // projection_dir points from center toward the viewer side (outward).
+    // Camera is placed at center - dir * 1000 on the opposite side.
+    // The occlusion raycast negates this direction internally.
     switch (index) {
-        case 0: return F;                          // Front
+        case 0: return F;                          // Front  (toward nose)
         case 1: return {-F.x, -F.y, -F.z};         // Back
-        case 2: return R;                          // Left
-        case 3: return {-R.x, -R.y, -R.z};         // Right
-        case 4: return N;                          // Top
+        case 2: return R;                          // Left   (toward model's right)
+        case 3: return {-R.x, -R.y, -R.z};         // Right  (toward model's left)
+        case 4: return N;                          // Top    (toward top of head)
         case 5: return {-N.x, -N.y, -N.z};         // Bottom
         default: return N;
     }
@@ -676,6 +681,13 @@ class RenderVoxelList {
         // 附加件中心点（所有发束共享），用于发根汇聚与反翘控制
         vec3f addon_center_point = {0.0f, 0.0f, 0.0f};
         bool show_addon_center = false;  // 是否显示/启用中心点
+        // 发根编辑模式（显示紫色发根圈）
+        bool hair_root_edit_active = false;
+        float hair_root_center_offset = 0.0f;  // 发根点向中心点移动的距离
+        // Ortho occlusion cache: avoid recomputing per-strand visibility every frame
+        size_t _ortho_occlusion_hash = 0;
+        std::vector<bool> _ortho_strand_occluded;
+        std::vector<std::vector<bool>> _ortho_point_occluded;
         // Per-six-view ortho overlay state (saved to JSON per-node)
         OrthoOverlayState ortho_overlay[6];
         // Ortho editor global settings (persisted per-node)
@@ -738,6 +750,11 @@ class RenderVoxelList {
         bool width_editing_active = false;
         // Width point index highlighted in 3D viewport (hovered in width editor UI)
         int hovered_width_point_index = -1;
+        // Strand UUID highlighted red when hovered in addon editor strand list
+        std::string hovered_strand_uuid;  // empty = none
+        // Guide point highlighted red when hovered in guide curve editor
+        std::string hovered_guide_point_strand_uuid;  // empty = none
+        int hovered_guide_point_index = -1;
         // 当前正在编辑截面的发束 UUID（空=无）
         std::string active_section_edit_strand;  // empty = none
         // Per-point section editor state
@@ -1139,6 +1156,7 @@ class RenderVoxelList {
     bool show_perpoint_section_editor_window = false;
     bool show_hairline_plane_window = false;
     bool show_angle_config_window = false;
+    bool show_hair_root_window = false;
     bool show_ortho_setup_window = false;
     bool show_ortho_edit_window = false;
 
@@ -1163,6 +1181,7 @@ class RenderVoxelList {
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_hairline_plane_window();
     void render_angle_config_window();
+    void render_hair_root_window();
     void render_concave_cone_editor(RenderVoxelItem& item);
     void render_nav_map();
     void render_file_loader();

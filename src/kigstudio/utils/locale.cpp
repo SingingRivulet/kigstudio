@@ -1273,6 +1273,24 @@ void init_locale_strings() {
                       {{"en", "Place a hidden guide point at the scalp collision from top-of-head direction"},
                        {"zh", "从头顶方向向底模投射，自动放置隐藏发根引导点"}});
 
+    // ---- 发根编辑模式 ----
+    add_locale_string("action.hair_root_edit",
+                      {{"en", "Hair Root Edit"}, {"zh", "发根编辑"}});
+    add_locale_string("window.hair_root_edit",
+                      {{"en", "Hair Root Editor"}, {"zh", "发根编辑器"}});
+    add_locale_string("label.hair_root_enable_strand",
+                      {{"en", "Enable hair root for this strand"}, {"zh", "启用到发根"}});
+    add_locale_string("action.update_all_hair_roots",
+                      {{"en", "Update All Hair Roots"}, {"zh", "更新所有发束的发根"}});
+    add_locale_string("label.hair_root_center_offset",
+                      {{"en", "Offset Toward Center"}, {"zh", "向中心偏移"}});
+    add_locale_string("tooltip.hair_root_center_offset",
+                      {{"en", "Move root points toward the center point by this distance"},
+                       {"zh", "将发根点向中心点方向移动此距离"}});
+    add_locale_string("tooltip.hair_root_edit",
+                      {{"en", "Open the hair root editor to configure root points"},
+                       {"zh", "打开发根编辑器，配置发根点"}});
+
     // ---- 正交投影编辑模式 ----
     add_locale_string("action.ortho_projection",
                       {{"en", "Ortho View"}, {"zh", "正交投影编辑"}});

@@ -40,6 +40,43 @@ static bool ray_triangle_intersect(const vec3f& ray_origin,
                                     const vec3f& v0, const vec3f& v1,
                                     const vec3f& v2, float& t);
 
+// Helper: load stb_image from a UTF-8 path on Windows.
+// On Windows, fopen doesn't accept UTF-8 paths by default, so we read the
+// file ourselves via the wide-char API and use stbi_load_from_memory.
+#ifdef _WIN32
+static unsigned char* stbi_load_utf8(const char* utf8_path, int* w, int* h,
+                                     int* comp, int req_comp) {
+    int wlen =
+        MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, nullptr, 0);
+    if (wlen <= 0) return nullptr;
+    std::wstring wpath(static_cast<size_t>(wlen), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, &wpath[0], wlen);
+    // Remove trailing null from std::wstring length calculation
+    if (!wpath.empty() && wpath.back() == L'\0')
+        wpath.pop_back();
+
+    HANDLE hFile =
+        CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) return nullptr;
+
+    DWORD size = GetFileSize(hFile, nullptr);
+    if (size == INVALID_FILE_SIZE || size == 0) {
+        CloseHandle(hFile);
+        return nullptr;
+    }
+
+    std::vector<unsigned char> buffer(size);
+    DWORD read = 0;
+    BOOL ok = ReadFile(hFile, buffer.data(), size, &read, nullptr);
+    CloseHandle(hFile);
+    if (!ok || read != size) return nullptr;
+
+    return stbi_load_from_memory(buffer.data(), static_cast<int>(size), w, h,
+                                 comp, req_comp);
+}
+#endif
+
 void RenderVoxelList::render_guide_curve_window() {
     if (!show_addon_window)
         return;
@@ -274,8 +311,13 @@ void RenderVoxelList::render_guide_curve_window() {
         int swap_up = -1;
         int swap_down = -1;
 
+        // Reset per-point hover highlight each frame
+        item.hovered_guide_point_strand_uuid.clear();
+        item.hovered_guide_point_index = -1;
+
         for (size_t pi = 0; pi < strand.guide_points.size(); ++pi) {
             ImGui::PushID(static_cast<int>(pi));
+            bool point_hovered = false;
 
             char label_buf[64];
             snprintf(label_buf, sizeof(label_buf),
@@ -287,6 +329,8 @@ void RenderVoxelList::render_guide_curve_window() {
             all_edits.activated |= r.activated;
             all_edits.deactivated_after_edit |= r.deactivated_after_edit;
             all_edits.value_changed |= r.value_changed;
+            if (!point_hovered && ImGui::IsItemHovered())
+                point_hovered = true;
 
             // --- 中心点方向移动控件（仅当中心点启用时显示）---
             if (item.show_addon_center) {
@@ -308,10 +352,12 @@ void RenderVoxelList::render_guide_curve_window() {
                             strand.guide_points[pi] + dir * kp_move_step;
                         all_edits.value_changed = true;
                     }
-                    if (ImGui::IsItemHovered())
+                    if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip(
                             "%s",
                             get_locale_cstr("tooltip.move_toward_center"));
+                        point_hovered = true;
+                    }
                     if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
                         ImGui::OpenPopup("kp_center_menu");
                     ImGui::SameLine();
@@ -320,10 +366,12 @@ void RenderVoxelList::render_guide_curve_window() {
                             strand.guide_points[pi] - dir * kp_move_step;
                         all_edits.value_changed = true;
                     }
-                    if (ImGui::IsItemHovered())
+                    if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip(
                             "%s",
                             get_locale_cstr("tooltip.move_away_from_center"));
+                        point_hovered = true;
+                    }
                     if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
                         ImGui::OpenPopup("kp_center_menu");
 
@@ -360,22 +408,31 @@ void RenderVoxelList::render_guide_curve_window() {
                 if (ImGui::SmallButton("^")) {
                     swap_up = static_cast<int>(pi);
                 }
-                if (ImGui::IsItemHovered())
+                if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip(
                         "%s", get_locale_cstr("tooltip.move_point_up"));
+                    point_hovered = true;
+                }
             }
             if (pi < strand.guide_points.size() - 1) {
                 ImGui::SameLine();
                 if (ImGui::SmallButton("v")) {
                     swap_down = static_cast<int>(pi);
                 }
-                if (ImGui::IsItemHovered())
+                if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip(
                         "%s", get_locale_cstr("tooltip.move_point_down"));
+                    point_hovered = true;
+                }
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("X")) {
                 delete_point = static_cast<int>(pi);
+            }
+
+            if (point_hovered) {
+                item.hovered_guide_point_strand_uuid = strand.uuid;
+                item.hovered_guide_point_index = static_cast<int>(pi);
             }
 
             ImGui::PopID();
@@ -895,6 +952,19 @@ void RenderVoxelList::render_object_editor_addons() {
             get_locale_cstr("tooltip.angle_config"));
     }
 
+    ImGui::SameLine();
+
+    // 发根编辑按钮
+    if (ImGui::Button(get_locale_cstr("action.hair_root_edit"))) {
+        show_hair_root_window = true;
+        item.hair_root_edit_active = true;
+        item.show_addon_center = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s",
+            get_locale_cstr("tooltip.hair_root_edit"));
+    }
+
     ImGui::Separator();
 
     // 附加件类型下拉框
@@ -933,9 +1003,11 @@ void RenderVoxelList::render_object_editor_addons() {
 
         // 发束列表
         int delete_idx = -1;
+        item.hovered_strand_uuid.clear();  // reset hover highlight each frame
         for (size_t i = 0; i < item.hair_strands.size(); ++i) {
             auto& strand = item.hair_strands[i];
             ImGui::PushID(static_cast<int>(i));
+            bool strand_hovered = false;
 
             char header_label[64];
             if (!strand.name.empty()) {
@@ -951,6 +1023,7 @@ void RenderVoxelList::render_object_editor_addons() {
                 header_flags |= ImGuiTreeNodeFlags_DefaultOpen;
             bool expanded = ImGui::CollapsingHeader(header_label, header_flags);
             strand.expanded = expanded;
+            if (ImGui::IsItemHovered()) strand_hovered = true;
 
             // Show warning indicator when alpha_wrap repair failed for this strand
             if (strand.repair_failed) {
@@ -1399,6 +1472,7 @@ void RenderVoxelList::render_object_editor_addons() {
                 }
             }
 
+            if (strand_hovered) item.hovered_strand_uuid = strand.uuid;
             ImGui::PopID();
         }
 
@@ -2421,6 +2495,22 @@ static bool ortho_raycast(const OrthoProjectionState& state,
         state.projection_dir.y,
         state.projection_dir.z
     };
+    float rl = std::sqrt(ray_dir.x * ray_dir.x + ray_dir.y * ray_dir.y +
+                         ray_dir.z * ray_dir.z);
+    if (rl < 1e-8f) return false;
+    ray_dir.x /= rl; ray_dir.y /= rl; ray_dir.z /= rl;
+
+    // Move the ray origin from the center plane back onto the camera plane
+    // (through _cam_pos, perpendicular to ray_dir).  Surfaces between the
+    // camera and the center plane (e.g. the face in a front view) must be
+    // hittable too — otherwise the first surface found along the ray is on
+    // the far side of the model (back of the head).
+    float cam_off = (plane_pt.x - state._cam_pos.x) * ray_dir.x +
+                    (plane_pt.y - state._cam_pos.y) * ray_dir.y +
+                    (plane_pt.z - state._cam_pos.z) * ray_dir.z;
+    plane_pt.x -= ray_dir.x * cam_off;
+    plane_pt.y -= ray_dir.y * cam_off;
+    plane_pt.z -= ray_dir.z * cam_off;
 
     float best_t = 1e30f;
     bool hit = false;
@@ -3270,6 +3360,122 @@ void RenderVoxelList::process_ai_export() {
     }
 }
 
+void RenderVoxelList::render_hair_root_window() {
+    if (!show_hair_root_window)
+        return;
+
+    // Do NOT close other windows (non-exclusive per requirement)
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Once, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_Once);
+    bool window_open = true;
+    if (!ImGui::Begin(get_locale_cstr("window.hair_root_edit"), &window_open)) {
+        ImGui::End();
+        return;
+    }
+
+    if (!window_open) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->hair_root_edit_active = false;
+        }
+        show_hair_root_window = false;
+        ImGui::End();
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(locker);
+    auto item_it = items.find(render_id);
+    if (item_it == items.end() || item_it->second->source_type != 2) {
+        ImGui::TextUnformatted(get_locale_cstr("label.no_active_item"));
+        ImGui::End();
+        return;
+    }
+    auto& item = *item_it->second;
+
+    item.hair_root_edit_active = true;
+
+    // Center offset slider
+    float prev_offset = item.hair_root_center_offset;
+    ImGui::SetNextItemWidth(200);
+    ImGui::SliderFloat(get_locale_cstr("label.hair_root_center_offset"),
+                       &item.hair_root_center_offset, 0.0f, 50.0f, "%.1f");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.hair_root_center_offset"));
+    if (prev_offset != item.hair_root_center_offset) {
+        push_undo_now(item.id, std::nullopt, "Hair Root Offset");
+    }
+
+    ImGui::Separator();
+
+    // Strand list with checkboxes
+    ImGui::TextUnformatted(get_locale_cstr("label.hair_strands"));
+    ImGui::Separator();
+
+    for (size_t i = 0; i < item.hair_strands.size(); ++i) {
+        auto& strand = item.hair_strands[i];
+        ImGui::PushID(static_cast<int>(i));
+
+        bool prev_enabled = strand.hair_root_enabled;
+        char label[128];
+        if (!strand.name.empty()) {
+            snprintf(label, sizeof(label), "%s##hr_%zu", strand.name.c_str(), i);
+        } else {
+            snprintf(label, sizeof(label), "%s %zu##hr_%zu",
+                     get_locale_cstr("label.hair_strand"),
+                     i + 1, i);
+        }
+        ImGui::Checkbox(label, &strand.hair_root_enabled);
+        if (prev_enabled != strand.hair_root_enabled) {
+            strand.mesh_dirty = true;
+        }
+
+        ImGui::PopID();
+    }
+
+    ImGui::Separator();
+
+    // "Update All Hair Roots" button
+    if (ImGui::Button(get_locale_cstr("action.update_all_hair_roots"),
+                      ImVec2(-1, 0))) {
+        push_undo_now(item.id, std::nullopt, "Update All Hair Roots");
+        // Apply root offset to all enabled strands
+        for (auto& strand : item.hair_strands) {
+            if (strand.hair_root_enabled && !strand.guide_points.empty()) {
+                // Compute root point as first guide point moved toward center
+                vec3f first_pt = strand.guide_points.front();
+                vec3f to_center = {
+                    item.addon_center_point.x - first_pt.x,
+                    item.addon_center_point.y - first_pt.y,
+                    item.addon_center_point.z - first_pt.z
+                };
+                float dist = std::sqrt(to_center.x * to_center.x +
+                                       to_center.y * to_center.y +
+                                       to_center.z * to_center.z);
+                if (dist > 0.001f) {
+                    vec3f dir = {to_center.x / dist, to_center.y / dist,
+                                 to_center.z / dist};
+                    float offset = item.hair_root_center_offset;
+                    // Clamp to prevent overshooting
+                    if (offset > dist) offset = dist;
+                    vec3f root_pt = {
+                        first_pt.x + dir.x * offset,
+                        first_pt.y + dir.y * offset,
+                        first_pt.z + dir.z * offset
+                    };
+                    // Store as hidden guide point start (root point)
+                    strand.hidden_guide_points_start = {root_pt};
+                }
+                strand.mesh_dirty = true;
+            }
+        }
+    }
+
+    ImGui::End();
+}
+
 void RenderVoxelList::update_api_server_caches() {
     if (!agent_server_ptr || !agent_server_ptr->is_running()) return;
 
@@ -3523,7 +3729,9 @@ void RenderVoxelList::render_ortho_setup_window() {
                 show_ortho_setup_window = false;
                 show_ortho_edit_window = true;
 
-                // If in six-view mode, restore saved overlay state from the item
+                // Overlay: only six-view presets carry a saved reference image.
+                // Picked-vector mode starts without any overlay; manual loads
+                // in that mode are temporary and never persisted.
                 if (ortho_state.vector_mode == 0) {
                     int vi = ortho_state.six_view_index;
                     const auto& saved = item.ortho_overlay[vi];
@@ -3542,7 +3750,11 @@ void RenderVoxelList::render_ortho_setup_window() {
                     if (!saved.image_path.empty()) {
                         int w, h, comp;
                         unsigned char* data =
+#ifdef _WIN32
+                            stbi_load_utf8(saved.image_path.c_str(), &w, &h, &comp, 4);
+#else
                             stbi_load(saved.image_path.c_str(), &w, &h, &comp, 4);
+#endif
                         if (data) {
                             if (bgfx::isValid(ortho_state.overlay_tex))
                                 bgfx::destroy(ortho_state.overlay_tex);
@@ -3567,6 +3779,24 @@ void RenderVoxelList::render_ortho_setup_window() {
                             ortho_state.overlay_img_height = h;
                         }
                     }
+                } else {
+                	// Picked-vector mode: discard any overlay left over from a
+                	// previous six-view session.
+                	if (bgfx::isValid(ortho_state.overlay_tex))
+                		bgfx::destroy(ortho_state.overlay_tex);
+                	ortho_state.overlay_tex = BGFX_INVALID_HANDLE;
+                	ortho_state.overlay_image_path.clear();
+                	ortho_state.overlay_enabled = false;
+                	ortho_state.overlay_img_width = 0;
+                	ortho_state.overlay_img_height = 0;
+                	ortho_state.overlay_offset = ImVec2(0, 0);
+                	ortho_state.overlay_scale_x = 1.0f;
+                	ortho_state.overlay_scale_y = 1.0f;
+                	ortho_state.blend_ratio = 0.5f;
+                	ortho_state.overlay_locked = false;
+                	overlay_cpu_rgba_.clear();
+                	overlay_cpu_w_ = 0;
+                	overlay_cpu_h_ = 0;
                 }
             }
         }
@@ -3628,7 +3858,12 @@ void RenderVoxelList::render_ortho_edit_window() {
         if (path) {
             std::string utf8_path = tinyfd_path_to_utf8(path);
             int w, h, comp;
-            unsigned char* data = stbi_load(utf8_path.c_str(), &w, &h, &comp, 4);
+            unsigned char* data =
+#ifdef _WIN32
+                stbi_load_utf8(utf8_path.c_str(), &w, &h, &comp, 4);
+#else
+                stbi_load(utf8_path.c_str(), &w, &h, &comp, 4);
+#endif
             if (data) {
                 if (bgfx::isValid(ortho_state.overlay_tex))
                     bgfx::destroy(ortho_state.overlay_tex);
@@ -3879,19 +4114,244 @@ void RenderVoxelList::render_ortho_edit_window() {
                        img_cursor.y + (0.5f - ry * 0.5f) * display_size);
     };
 
+    // --- Occlusion cache: avoid recomputing per-strand occlusion every frame ---
+    // Invalidate when camera, model, or guide points change.
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto item_it = items.find(render_id);
+        if (item_it != items.end()) {
+            auto& item = *item_it->second;
+
+            // Build a simple hash of the camera + model state
+            size_t state_hash = 0;
+            auto hash_combine = [&](float v) {
+                state_hash ^= std::hash<float>{}(v) + 0x9e3779b9 +
+                              (state_hash << 6) + (state_hash >> 2);
+            };
+            hash_combine(ortho_state._center.x);
+            hash_combine(ortho_state._center.y);
+            hash_combine(ortho_state._center.z);
+            hash_combine(ortho_state._cam_pos.x);
+            hash_combine(ortho_state._cam_pos.y);
+            hash_combine(ortho_state._cam_pos.z);
+            hash_combine(ortho_state.projection_dir.x);
+            hash_combine(ortho_state.projection_dir.y);
+            hash_combine(ortho_state.projection_dir.z);
+            hash_combine(ortho_state._cam_right.x);
+            hash_combine(ortho_state._cam_right.y);
+            hash_combine(ortho_state._cam_right.z);
+            hash_combine(ortho_state._cam_up.x);
+            hash_combine(ortho_state._cam_up.y);
+            hash_combine(ortho_state._cam_up.z);
+            hash_combine(ortho_state.viewport_size);
+            state_hash ^=
+                std::hash<size_t>{}(ortho_state._base_triangles.size());
+
+            // Also hash guide point positions for all strands
+            for (const auto& s : item.hair_strands) {
+                hash_combine(static_cast<float>(s.guide_points.size()));
+                for (const auto& gp : s.guide_points) {
+                    hash_combine(gp.x);
+                    hash_combine(gp.y);
+                    hash_combine(gp.z);
+                }
+            }
+
+            // Recompute occlusion cache if state changed
+            if (state_hash != item._ortho_occlusion_hash) {
+                item._ortho_occlusion_hash = state_hash;
+                item._ortho_strand_occluded.resize(item.hair_strands.size());
+                item._ortho_point_occluded.clear();
+                item._ortho_point_occluded.resize(item.hair_strands.size());
+
+                // DEBUG: occlusion recompute trigger
+                static int occ_recompute_count = 0;
+                occ_recompute_count++;
+                bool log_this = (occ_recompute_count <= 5);
+                if (log_this) {
+                    fprintf(stderr, "[OCCL] recompute #%d: hash=%zu strands=%zu tris=%zu\n",
+                        occ_recompute_count, state_hash,
+                        item.hair_strands.size(), ortho_state._base_triangles.size());
+                    fprintf(stderr, "[OCCL]   proj_dir=(%.4f,%.4f,%.4f) center=(%.2f,%.2f,%.2f) cam_pos=(%.1f,%.1f,%.1f) vp=%.2f\n",
+                        ortho_state.projection_dir.x, ortho_state.projection_dir.y,
+                        ortho_state.projection_dir.z,
+                        ortho_state._center.x, ortho_state._center.y,
+                        ortho_state._center.z,
+                        ortho_state._cam_pos.x, ortho_state._cam_pos.y,
+                        ortho_state._cam_pos.z, ortho_state.viewport_size);
+                }
+
+                // projection_dir points from center toward the viewer side.
+                // For occlusion we cast rays from the viewer toward center,
+                // so we negate the direction.
+                float dlen = std::sqrt(
+                    ortho_state.projection_dir.x * ortho_state.projection_dir.x +
+                    ortho_state.projection_dir.y * ortho_state.projection_dir.y +
+                    ortho_state.projection_dir.z * ortho_state.projection_dir.z);
+                vec3f ray_dir_n = {
+                    -ortho_state.projection_dir.x / dlen,
+                    -ortho_state.projection_dir.y / dlen,
+                    -ortho_state.projection_dir.z / dlen
+                };
+
+                // Reference plane on the viewer side (opposite to ray_dir_n
+                // from center). This ensures t_wp > 0 for all visible points.
+                const float kCamDist = 1000.0f;
+                vec3f cam_plane_pt = {
+                    ortho_state._center.x - ray_dir_n.x * kCamDist,
+                    ortho_state._center.y - ray_dir_n.y * kCamDist,
+                    ortho_state._center.z - ray_dir_n.z * kCamDist
+                };
+
+                const float kOccTolerance = 0.15f;
+                const float half_vp = ortho_state.viewport_size * 0.5f;
+
+                if (log_this) {
+                    fprintf(stderr, "[OCCL]   ray_dir_n=(%.4f,%.4f,%.4f) cam_plane_pt=(%.1f,%.1f,%.1f)\n",
+                        ray_dir_n.x, ray_dir_n.y, ray_dir_n.z,
+                        cam_plane_pt.x, cam_plane_pt.y, cam_plane_pt.z);
+                }
+
+                for (size_t si = 0; si < item.hair_strands.size(); ++si) {
+                    const auto& strand = item.hair_strands[si];
+                    if (strand.guide_points.size() < 2) {
+                        item._ortho_strand_occluded[si] = false;
+                        continue;
+                    }
+
+                    auto& pt_occ = item._ortho_point_occluded[si];
+                    pt_occ.resize(strand.guide_points.size(), false);
+
+                    bool all_occluded = true;
+                    int behind_cam = 0, outside_vp = 0, no_hit = 0, occluded_cnt = 0, visible_cnt = 0;
+                    for (size_t pi = 0; pi < strand.guide_points.size(); ++pi) {
+                        const auto& wp = strand.guide_points[pi];
+
+                        // Per-point ray origin: project wp onto the camera
+                        // plane. This ensures the ray passes through wp.
+                        float t_wp =
+                            (wp.x - cam_plane_pt.x) * ray_dir_n.x +
+                            (wp.y - cam_plane_pt.y) * ray_dir_n.y +
+                            (wp.z - cam_plane_pt.z) * ray_dir_n.z;
+                        vec3f ray_origin = {
+                            wp.x - t_wp * ray_dir_n.x,
+                            wp.y - t_wp * ray_dir_n.y,
+                            wp.z - t_wp * ray_dir_n.z
+                        };
+
+                        // t_wp is the (positive) distance from cam plane to wp
+                        if (t_wp <= 0.0f) {
+                            all_occluded = false;
+                            behind_cam++;
+                            continue;
+                        }
+
+                        // Viewport check: project wp onto near plane (through
+                        // _center, perpendicular to ray_dir_n) and verify the
+                        // projection lands inside the viewport rectangle.
+                        float t_center = (wp.x - ortho_state._center.x) * ray_dir_n.x +
+                                         (wp.y - ortho_state._center.y) * ray_dir_n.y +
+                                         (wp.z - ortho_state._center.z) * ray_dir_n.z;
+                        vec3f plane_pt = {
+                            wp.x - t_center * ray_dir_n.x,
+                            wp.y - t_center * ray_dir_n.y,
+                            wp.z - t_center * ray_dir_n.z
+                        };
+                        vec3f rel = {plane_pt.x - ortho_state._center.x,
+                                      plane_pt.y - ortho_state._center.y,
+                                      plane_pt.z - ortho_state._center.z};
+                        float rx = (rel.x * ortho_state._cam_right.x +
+                                    rel.y * ortho_state._cam_right.y +
+                                    rel.z * ortho_state._cam_right.z);
+                        float ry = (rel.x * ortho_state._cam_up.x +
+                                    rel.y * ortho_state._cam_up.y +
+                                    rel.z * ortho_state._cam_up.z);
+                        if (std::abs(rx) > half_vp || std::abs(ry) > half_vp) {
+                            all_occluded = false;
+                            outside_vp++;
+                            continue;
+                        }
+
+                        // Raycast from the per-point origin along look dir.
+                        // Find the first model surface hit.
+                        float best_t = 1e30f;
+                        for (const auto& tri : ortho_state._base_triangles) {
+                            float t;
+                            if (ray_triangle_intersect(ray_origin, ray_dir_n,
+                                                        std::get<0>(tri),
+                                                        std::get<1>(tri),
+                                                        std::get<2>(tri), t)) {
+                                if (t < best_t) best_t = t;
+                            }
+                        }
+                        if (best_t >= 1e29f) {
+                            no_hit++;
+                        }
+
+                        // DEBUG: log first few points of first strand
+                        if (log_this && si == 0 && pi < 3) {
+                            fprintf(stderr, "[OCCL]     pt[%zu] wp=(%.2f,%.2f,%.2f) ro=(%.1f,%.1f,%.1f) t_wp=%.4f best_t=%.4f => %s\n",
+                                pi, wp.x, wp.y, wp.z,
+                                ray_origin.x, ray_origin.y, ray_origin.z,
+                                t_wp, best_t,
+                                (best_t < t_wp - kOccTolerance) ? "OCCLUDED" : "visible");
+                        }
+
+                        // Occluded if a model surface lies between camera and wp
+                        bool occluded = (best_t < t_wp - kOccTolerance);
+                        pt_occ[pi] = occluded;
+                        if (!occluded) {
+                            all_occluded = false;
+                            visible_cnt++;
+                        } else {
+                            occluded_cnt++;
+                        }
+                    }
+
+                    if (log_this && si == 0) {
+                        fprintf(stderr, "[OCCL]   strand[0] summary: behind_cam=%d outside_vp=%d "
+                            "no_hit=%d occluded=%d visible=%d => all_occluded=%d\n",
+                            behind_cam, outside_vp, no_hit, occluded_cnt, visible_cnt,
+                            all_occluded ? 1 : 0);
+                    }
+
+                    item._ortho_strand_occluded[si] = all_occluded;
+                }
+
+                // DEBUG: summary of all strands
+                if (log_this) {
+                    int total_occ = 0;
+                    for (size_t si = 0; si < item._ortho_strand_occluded.size(); ++si)
+                        if (item._ortho_strand_occluded[si]) total_occ++;
+                    fprintf(stderr, "[OCCL] TOTAL: %d/%zu strands fully occluded\n",
+                        total_occ, item._ortho_strand_occluded.size());
+                }
+            }
+        }
+    }
+
     if (ortho_state.show_guide_curves) {
         std::lock_guard<std::mutex> lock(locker);
         auto item_it = items.find(render_id);
         if (item_it != items.end()) {
-            for (size_t si = 0; si < item_it->second->hair_strands.size(); ++si) {
-                const auto& strand = item_it->second->hair_strands[si];
+            auto& item = *item_it->second;
+            for (size_t si = 0; si < item.hair_strands.size(); ++si) {
+                const auto& strand = item.hair_strands[si];
                 if (strand.guide_points.size() < 2) continue;
 
+                // Use cached occlusion result
+                if (si < item._ortho_strand_occluded.size() &&
+                    item._ortho_strand_occluded[si])
+                    continue;  // Hide fully occluded strand
+
                 bool is_active =
-                    (item_it->second->guide_curve_drawing_active &&
-                     item_it->second->active_guide_draw_strand == item_it->second->hair_strands[si].uuid);
-                ImU32 color = is_active
-                    ? ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.84f, 0.08f, 1.0f))
+                    (item.guide_curve_drawing_active &&
+                     item.active_guide_draw_strand == strand.uuid);
+                bool is_hovered =
+                    !item.hovered_strand_uuid.empty() &&
+                    item.hovered_strand_uuid == strand.uuid;
+                ImU32 color = (is_active || is_hovered)
+                    ? ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.2f, 0.2f, 1.0f))
                     : ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 0.7f));
 
                 auto sampled = sample_bezier_guide_curve(
@@ -3903,12 +4363,18 @@ void RenderVoxelList::render_ortho_edit_window() {
                     dl->AddLine(a, b, color, 1.5f);
                 }
 
-                ImU32 marker_color = is_active
-                    ? ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.6f, 0.1f, 1.0f))
+                ImU32 marker_color = (is_active || is_hovered)
+                    ? ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.2f, 0.2f, 1.0f))
                     : ImGui::ColorConvertFloat4ToU32(ImVec4(0.8f, 0.8f, 0.8f, 0.5f));
-                for (const auto& p : strand.guide_points) {
-                    ImVec2 pi = project_world_to_image(p);
-                    dl->AddCircleFilled(pi, 3.0f, marker_color);
+                const auto& pt_occ =
+                    (si < item._ortho_point_occluded.size())
+                        ? item._ortho_point_occluded[si]
+                        : std::vector<bool>{};
+                for (size_t pi = 0; pi < strand.guide_points.size(); ++pi) {
+                    // Use cached per-point occlusion
+                    if (pi < pt_occ.size() && pt_occ[pi]) continue;
+                    ImVec2 pimg = project_world_to_image(strand.guide_points[pi]);
+                    dl->AddCircleFilled(pimg, 3.0f, marker_color);
                 }
             }
         }
@@ -4098,6 +4564,23 @@ void RenderVoxelList::render_ortho_edit_window() {
                         vec3f ray_dir = {ortho_state.projection_dir.x,
                                          ortho_state.projection_dir.y,
                                          ortho_state.projection_dir.z};
+                        // Same camera-plane offset as ortho_raycast: the
+                        // ray must start in front of the model, not on the
+                        // center plane, otherwise closest-approach points
+                        // on the camera side get clamped onto the plane.
+                        float rl = std::sqrt(ray_dir.x * ray_dir.x +
+                                             ray_dir.y * ray_dir.y +
+                                             ray_dir.z * ray_dir.z);
+                        if (rl > 1e-8f) {
+                            ray_dir.x /= rl; ray_dir.y /= rl; ray_dir.z /= rl;
+                            float cam_off =
+                                (plane_pt.x - ortho_state._cam_pos.x) * ray_dir.x +
+                                (plane_pt.y - ortho_state._cam_pos.y) * ray_dir.y +
+                                (plane_pt.z - ortho_state._cam_pos.z) * ray_dir.z;
+                            plane_pt.x -= ray_dir.x * cam_off;
+                            plane_pt.y -= ray_dir.y * cam_off;
+                            plane_pt.z -= ray_dir.z * cam_off;
+                        }
 
                         vec3f extrapolated_pt;
                         if (extrapolate_guide_along_ray(

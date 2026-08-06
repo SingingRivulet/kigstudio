@@ -2377,29 +2377,37 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
         if (has_any_guide_points && mesh_shader.ensureLineProgram()) {
             bgfx::VertexLayout& layout = concave_cone_overlay_layout();
             const uint32_t active_line_color =
-                pack_abgr(1.0f, 0.84f, 0.08f, 1.0f);   // yellow
+                pack_abgr(1.0f, 0.2f, 0.2f, 1.0f);   // red
             const uint32_t active_marker_color =
-                pack_abgr(1.0f, 0.6f, 0.1f, 1.0f);     // orange-yellow
+                pack_abgr(1.0f, 0.2f, 0.2f, 1.0f);     // red
             const uint32_t idle_line_color =
                 pack_abgr(1.0f, 1.0f, 1.0f, 0.7f);     // white
             const uint32_t idle_marker_color =
                 pack_abgr(0.8f, 0.8f, 0.8f, 0.5f);     // grey-white
+            const uint32_t hover_line_color =
+                pack_abgr(1.0f, 0.15f, 0.15f, 1.0f);   // red (hover)
+            const uint32_t hover_marker_color =
+                pack_abgr(1.0f, 0.1f, 0.1f, 1.0f);     // red (hover)
             std::vector<mesh_detail::ColorLineVertex> vertices;
             for (size_t si = 0; si < hair_strands.size(); ++si) {
                 const auto& strand = hair_strands[si];
                 if (strand.guide_points.size() < 2)
                     continue;
-                // Active strand (drawing guide or editing width) → yellow;
+                // Active strand (drawing guide or editing width) → red;
+                // hovered strand in addon editor → red;
                 // idle strands → white
                 bool is_active =
                     (guide_curve_drawing_active &&
                      active_guide_draw_strand == hair_strands[si].uuid) ||
                     (width_editing_active &&
                      active_width_edit_strand == hair_strands[si].uuid);
+                bool is_hovered =
+                    !hovered_strand_uuid.empty() &&
+                    hovered_strand_uuid == hair_strands[si].uuid;
                 uint32_t line_color =
-                    is_active ? active_line_color : idle_line_color;
+                    (is_active || is_hovered) ? active_line_color : idle_line_color;
                 uint32_t marker_color =
-                    is_active ? active_marker_color : idle_marker_color;
+                    (is_active || is_hovered) ? active_marker_color : idle_marker_color;
                 // --- Unified guide curve rendering ---
                 // When hidden guide points exist, sample from the same
                 // all_guide_points that build_hair_strand_mesh uses.
@@ -2413,6 +2421,94 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 const int sps =
                     std::max(strand.guide_samples_per_segment, 1);
                 const float marker_size = sphere_r * 0.03f;
+
+                // Lambda: compute tangent at index i from a point list
+                auto compute_tangent =
+                    [](const std::vector<sinriv::kigstudio::voxel::vec3f>& pts,
+                       int i) -> sinriv::kigstudio::voxel::vec3f {
+                    int n = static_cast<int>(pts.size());
+                    if (n < 2) return {1.0f, 0.0f, 0.0f};
+                    sinriv::kigstudio::voxel::vec3f t;
+                    if (i <= 0) {
+                        t = {pts[1].x - pts[0].x, pts[1].y - pts[0].y,
+                             pts[1].z - pts[0].z};
+                    } else if (i >= n - 1) {
+                        t = {pts[n - 1].x - pts[n - 2].x,
+                             pts[n - 1].y - pts[n - 2].y,
+                             pts[n - 1].z - pts[n - 2].z};
+                    } else {
+                        t = {pts[i + 1].x - pts[i - 1].x,
+                             pts[i + 1].y - pts[i - 1].y,
+                             pts[i + 1].z - pts[i - 1].z};
+                    }
+                    float tl = std::sqrt(t.x * t.x + t.y * t.y + t.z * t.z);
+                    if (tl > 1e-8f) { t.x /= tl; t.y /= tl; t.z /= tl; }
+                    else { t = {1.0f, 0.0f, 0.0f}; }
+                    return t;
+                };
+
+                // Lambda: add arrow marker at position p with tangent
+                auto add_arrow_marker =
+                    [&](const sinriv::kigstudio::voxel::vec3f& p,
+                        const sinriv::kigstudio::voxel::vec3f& tangent,
+                        uint32_t color) {
+                    // Four-leaf arrow head: tip at the guide point, four
+                    // fins extending backward along -tangent in a cross
+                    // pattern. No shaft line.
+                    float head_len = marker_size * 0.8f;
+                    float spread = 0.4f;
+
+                    // Build two orthogonal perpendiculars to the tangent
+                    sinriv::kigstudio::voxel::vec3f ref =
+                        (std::abs(tangent.x) < 0.9f)
+                            ? sinriv::kigstudio::voxel::vec3f{1.0f, 0.0f, 0.0f}
+                            : sinriv::kigstudio::voxel::vec3f{0.0f, 1.0f, 0.0f};
+                    sinriv::kigstudio::voxel::vec3f perp1 = {
+                        tangent.y * ref.z - tangent.z * ref.y,
+                        tangent.z * ref.x - tangent.x * ref.z,
+                        tangent.x * ref.y - tangent.y * ref.x};
+                    float pl = std::sqrt(perp1.x * perp1.x + perp1.y * perp1.y +
+                                         perp1.z * perp1.z);
+                    if (pl > 1e-8f) {
+                        perp1.x /= pl; perp1.y /= pl; perp1.z /= pl;
+                    }
+                    sinriv::kigstudio::voxel::vec3f perp2 = {
+                        tangent.y * perp1.z - tangent.z * perp1.y,
+                        tangent.z * perp1.x - tangent.x * perp1.z,
+                        tangent.x * perp1.y - tangent.y * perp1.x};
+
+                    // Four fins pointing backward from the tip at p
+                    sinriv::kigstudio::voxel::vec3f back = {
+                        -tangent.x * head_len,
+                        -tangent.y * head_len,
+                        -tangent.z * head_len};
+                    sinriv::kigstudio::voxel::vec3f f1 = {
+                        back.x + perp1.x * head_len * spread,
+                        back.y + perp1.y * head_len * spread,
+                        back.z + perp1.z * head_len * spread};
+                    sinriv::kigstudio::voxel::vec3f f2 = {
+                        back.x - perp1.x * head_len * spread,
+                        back.y - perp1.y * head_len * spread,
+                        back.z - perp1.z * head_len * spread};
+                    sinriv::kigstudio::voxel::vec3f f3 = {
+                        back.x + perp2.x * head_len * spread,
+                        back.y + perp2.y * head_len * spread,
+                        back.z + perp2.z * head_len * spread};
+                    sinriv::kigstudio::voxel::vec3f f4 = {
+                        back.x - perp2.x * head_len * spread,
+                        back.y - perp2.y * head_len * spread,
+                        back.z - perp2.z * head_len * spread};
+
+                    // Tip at the guide point; each fin from tip to tip+fi
+                    vertices.push_back({p.x, -p.y, p.z, color});
+                    vertices.push_back({p.x + f1.x, -(p.y + f1.y), p.z + f1.z, color});
+                    vertices.push_back({p.x, -p.y, p.z, color});
+                    vertices.push_back({p.x + f2.x, -(p.y + f2.y), p.z + f2.z, color});
+                    vertices.push_back({p.x, -p.y, p.z, color});
+                    vertices.push_back({p.x + f3.x, -(p.y + f3.y), p.z + f3.z, color});
+                    vertices.push_back({p.x, -p.y, p.z, color});
+                    vertices.push_back({p.x + f4.x, -(p.y + f4.y), p.z + f4.z, color});
+                };
 
                 if (has_hidden) {
                     // Build all_guide_points exactly as loft does
@@ -2461,64 +2557,39 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                             {b.x, -b.y, b.z, col});
                     }
 
-                    // Visible guide points → normal markers
-                    for (const auto& p : strand.guide_points) {
-                        vertices.push_back({p.x - marker_size, -p.y, p.z,
-                                            marker_color});
-                        vertices.push_back({p.x + marker_size, -p.y, p.z,
-                                            marker_color});
-                        vertices.push_back({p.x,
-                                            -(p.y - marker_size), p.z,
-                                            marker_color});
-                        vertices.push_back({p.x,
-                                            -(p.y + marker_size), p.z,
-                                            marker_color});
-                        vertices.push_back({p.x, -p.y,
-                                            p.z - marker_size,
-                                            marker_color});
-                        vertices.push_back({p.x, -p.y,
-                                            p.z + marker_size,
-                                            marker_color});
+                    // Visible guide points → arrow markers
+                    for (int vi = 0; vi < static_cast<int>(strand.guide_points.size()); ++vi) {
+                        int ai = H + vi;  // index in all_pts
+                        auto tangent = compute_tangent(all_pts, ai);
+                        // Feature 4: per-point hover highlight in red
+                        bool pt_hovered =
+                            !hovered_guide_point_strand_uuid.empty() &&
+                            hovered_guide_point_strand_uuid ==
+                                hair_strands[si].uuid &&
+                            hovered_guide_point_index == vi;
+                        uint32_t pt_color = pt_hovered
+                            ? pack_abgr(1.0f, 0.1f, 0.1f, 1.0f)
+                            : marker_color;
+                        add_arrow_marker(strand.guide_points[vi], tangent,
+                                         pt_color);
                     }
 
-                    // Hidden guide points → gray cross markers
-                    for (const auto& p :
-                         strand.hidden_guide_points_start) {
-                        vertices.push_back({p.x - marker_size, -p.y, p.z,
-                                            hidden_marker_col});
-                        vertices.push_back({p.x + marker_size, -p.y, p.z,
-                                            hidden_marker_col});
-                        vertices.push_back({p.x,
-                                            -(p.y - marker_size), p.z,
-                                            hidden_marker_col});
-                        vertices.push_back({p.x,
-                                            -(p.y + marker_size), p.z,
-                                            hidden_marker_col});
-                        vertices.push_back({p.x, -p.y,
-                                            p.z - marker_size,
-                                            hidden_marker_col});
-                        vertices.push_back({p.x, -p.y,
-                                            p.z + marker_size,
-                                            hidden_marker_col});
+                    // Hidden guide points → gray arrow markers
+                    for (int hi = 0;
+                         hi < static_cast<int>(strand.hidden_guide_points_start.size());
+                         ++hi) {
+                        auto tangent = compute_tangent(all_pts, hi);
+                        add_arrow_marker(strand.hidden_guide_points_start[hi],
+                                         tangent, hidden_marker_col);
                     }
-                    for (const auto& p :
-                         strand.hidden_guide_points_end) {
-                        vertices.push_back({p.x - marker_size, -p.y, p.z,
-                                            hidden_marker_col});
-                        vertices.push_back({p.x + marker_size, -p.y, p.z,
-                                            hidden_marker_col});
-                        vertices.push_back({p.x,
-                                            -(p.y - marker_size), p.z,
-                                            hidden_marker_col});
-                        vertices.push_back({p.x,
-                                            -(p.y + marker_size), p.z,
-                                            hidden_marker_col});
-                        vertices.push_back({p.x, -p.y,
-                                            p.z - marker_size,
-                                            hidden_marker_col});
-                        vertices.push_back({p.x, -p.y,
-                                            p.z + marker_size,
-                                            hidden_marker_col});
+                    for (int hi = 0;
+                         hi < static_cast<int>(strand.hidden_guide_points_end.size());
+                         ++hi) {
+                        int ai = H + V +
+                                 hi;  // index in all_pts
+                        auto tangent = compute_tangent(all_pts, ai);
+                        add_arrow_marker(strand.hidden_guide_points_end[hi],
+                                         tangent, hidden_marker_col);
                     }
                 } else {
                     // No hidden points — simple path: sample guide_points
@@ -2533,23 +2604,20 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                         vertices.push_back(
                             {b.x, -b.y, b.z, line_color});
                     }
-                    for (const auto& p : strand.guide_points) {
-                        vertices.push_back({p.x - marker_size, -p.y, p.z,
-                                            marker_color});
-                        vertices.push_back({p.x + marker_size, -p.y, p.z,
-                                            marker_color});
-                        vertices.push_back({p.x,
-                                            -(p.y - marker_size), p.z,
-                                            marker_color});
-                        vertices.push_back({p.x,
-                                            -(p.y + marker_size), p.z,
-                                            marker_color});
-                        vertices.push_back({p.x, -p.y,
-                                            p.z - marker_size,
-                                            marker_color});
-                        vertices.push_back({p.x, -p.y,
-                                            p.z + marker_size,
-                                            marker_color});
+                    for (int pi = 0; pi < static_cast<int>(strand.guide_points.size()); ++pi) {
+                        // Compute tangent from guide_points
+                        auto tangent = compute_tangent(strand.guide_points, pi);
+                        // Feature 4: per-point hover highlight in red
+                        bool pt_hovered =
+                            !hovered_guide_point_strand_uuid.empty() &&
+                            hovered_guide_point_strand_uuid ==
+                                hair_strands[si].uuid &&
+                            hovered_guide_point_index == pi;
+                        uint32_t pt_color = pt_hovered
+                            ? pack_abgr(1.0f, 0.1f, 0.1f, 1.0f)
+                            : marker_color;
+                        add_arrow_marker(strand.guide_points[pi], tangent,
+                                         pt_color);
                     }
                 }
             }
@@ -2766,6 +2834,79 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
         }
     }
 
+    // Hair root point rendering (three purple circles per enabled strand, same style as center)
+    if (hair_root_edit_active && source_type == 2) {
+        if (mesh_shader.ensureLineProgram()) {
+            bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+            const uint32_t root_color = pack_abgr(1.0f, 0.3f, 1.0f, 1.0f);  // purple
+            const float radius = sphere_r * 0.05f;
+            std::vector<mesh_detail::ColorLineVertex> vertices;
+            vertices.reserve(48 * 3 * static_cast<size_t>(std::max(1,
+                static_cast<int>(std::count_if(hair_strands.begin(), hair_strands.end(),
+                    [](const HairStrand& s) { return s.hair_root_enabled && !s.guide_points.empty(); })))));
+
+            for (const auto& strand : hair_strands) {
+                if (!strand.hair_root_enabled || strand.guide_points.empty())
+                    continue;
+
+                // Compute root point: first guide point moved toward center by offset
+                vec3f first_pt = strand.guide_points.front();
+                vec3f to_center = {
+                    addon_center_point.x - first_pt.x,
+                    addon_center_point.y - first_pt.y,
+                    addon_center_point.z - first_pt.z
+                };
+                float dist = std::sqrt(to_center.x * to_center.x +
+                                       to_center.y * to_center.y +
+                                       to_center.z * to_center.z);
+                vec3f root_pt = first_pt;
+                if (dist > 0.001f) {
+                    vec3f dir = {to_center.x / dist, to_center.y / dist,
+                                 to_center.z / dist};
+                    float offset = hair_root_center_offset;
+                    if (offset > dist) offset = dist;
+                    root_pt = {
+                        first_pt.x + dir.x * offset,
+                        first_pt.y + dir.y * offset,
+                        first_pt.z + dir.z * offset
+                    };
+                }
+
+                // Three purple circles (XY, XZ, YZ planes) — same style as center point
+                append_marker_circle(vertices, root_pt,
+                                     {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
+                                     radius, root_color);
+                append_marker_circle(vertices, root_pt,
+                                     {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                     radius, root_color);
+                append_marker_circle(vertices, root_pt,
+                                     {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                     radius, root_color);
+            }
+
+            if (!vertices.empty() &&
+                bgfx::getAvailTransientVertexBuffer(
+                    static_cast<uint32_t>(vertices.size()),
+                    layout) >= vertices.size()) {
+                bgfx::TransientVertexBuffer tvb;
+                bgfx::allocTransientVertexBuffer(
+                    &tvb, static_cast<uint32_t>(vertices.size()),
+                    layout);
+                std::memcpy(tvb.data, vertices.data(),
+                            vertices.size() *
+                                sizeof(mesh_detail::ColorLineVertex));
+                bgfx::setTransform(model_transform);
+                bgfx::setVertexBuffer(0, &tvb);
+                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                               BGFX_STATE_WRITE_Z |
+                               BGFX_STATE_DEPTH_TEST_LESS |
+                               BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+                bgfx::submit(mesh_shader.overlay_view_id_,
+                             mesh_shader.line_program_);
+            }
+        }
+    }
+
     // Ortho projection vector preview (shown when setup window is open)
     if (manager && manager->show_ortho_setup_window &&
         show_addon_center && mesh_shader.ensureLineProgram()) {
@@ -2773,10 +2914,14 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
         const uint32_t arrow_color = pack_abgr(0.2f, 0.6f, 1.0f, 1.0f);  // blue
         vec3f dir = manager->ortho_state.projection_dir;
         float vp_half = manager->ortho_state.viewport_size * 0.5f;
+        // Arrow points from center toward the camera/viewer (opposite to
+        // projection_dir which points from viewer toward center). The user
+        // clicks on the model surface to place the camera there, so the
+        // arrow should point toward the picked location.
         vec3f arrow_end = {
-            addon_center_point.x + dir.x * vp_half,
-            addon_center_point.y + dir.y * vp_half,
-            addon_center_point.z + dir.z * vp_half
+            addon_center_point.x - dir.x * vp_half,
+            addon_center_point.y - dir.y * vp_half,
+            addon_center_point.z - dir.z * vp_half
         };
         std::vector<mesh_detail::ColorLineVertex> vertices;
         // Main direction line
