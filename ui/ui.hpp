@@ -678,51 +678,13 @@ int ui_main(int argc, const char* const* argv) {
                     if (render_items.object_editor_tab == 1) {
                         render_items.undo_marked(render_items.render_id);
                     } else {
-                        // 上下文感知撤销：引导曲线/宽度编辑中只撤销相关操作
-                        auto it = render_items.items.find(
-                            render_items.render_id);
-                        if (it != render_items.items.end() &&
-                            !it->second->undo_stack.empty()) {
-                            const auto& desc =
-                                it->second->undo_stack.back().description;
-                            bool is_guide =
-                                it->second->guide_curve_drawing_active;
-                            bool is_width = it->second->width_editing_active;
-                            if (is_guide && desc.find("Guide Point") ==
-                                                std::string::npos) {
-                                // 引导曲线绘制中，忽略非引导曲线撤销
-                            } else if (is_width && desc.find("Width") ==
-                                                       std::string::npos) {
-                                // 宽度编辑中，忽略非宽度撤销
-                            } else {
-                                render_items.undo(render_items.render_id);
-                            }
-                        }
+                        render_items.undo(render_items.render_id);
                     }
                 } else if (e.key.keysym.sym == SDLK_y && ctrl) {
                     if (render_items.object_editor_tab == 1) {
                         render_items.redo_marked(render_items.render_id);
                     } else {
-                        // 上下文感知重做
-                        auto it = render_items.items.find(
-                            render_items.render_id);
-                        if (it != render_items.items.end() &&
-                            !it->second->redo_stack.empty()) {
-                            const auto& desc =
-                                it->second->redo_stack.back().description;
-                            bool is_guide =
-                                it->second->guide_curve_drawing_active;
-                            bool is_width = it->second->width_editing_active;
-                            if (is_guide && desc.find("Guide Point") ==
-                                                std::string::npos) {
-                                // 引导曲线绘制中，忽略非引导曲线重做
-                            } else if (is_width && desc.find("Width") ==
-                                                       std::string::npos) {
-                                // 宽度编辑中，忽略非宽度重做
-                            } else {
-                                render_items.redo(render_items.render_id);
-                            }
-                        }
+                        render_items.redo(render_items.render_id);
                     }
                 }
             }

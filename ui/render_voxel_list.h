@@ -205,6 +205,12 @@ struct HairStrand {
     // hidden_guide_points_start during lofting.
     bool hair_root_enabled = true;
 
+    // When true, WidthPoint::curve_id references the full guide curve
+    // (hidden_guide_points_start + guide_points + hidden_guide_points_end).
+    // When false, curve_id references visible guide_points only (legacy).
+    // Set to true after one-time migration in build_hair_strand_mesh.
+    bool width_curve_id_v2 = false;
+
     // Dirty flag: set to true when any data affecting the loft mesh changes
     bool mesh_dirty = true;
 

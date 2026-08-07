@@ -231,7 +231,6 @@ void RenderVoxelList::render_guide_curve_window() {
                                item.addon_center_point.z - dir.z * 10.0f};
                     }
                     item.common_hair_root_point = hit;
-                    push_undo_now(item.id, std::nullopt, "Auto Hair Root");
                 }
                 // Propagate root point to each enabled strand's hidden_guide_points_start
                 {
@@ -254,10 +253,37 @@ void RenderVoxelList::render_guide_curve_window() {
                                               effective_root.z + dir.z * offset};
                         }
                     }
+                    // ImGui already toggled auto_hair_root; swap back so the
+                    // undo snapshot captures the pre-toggle state.
+                    std::swap(item.auto_hair_root, prev_auto);
+                    push_undo_now(item.id, std::nullopt, "Guide Point / Width Auto Hair Root");
+                    std::swap(item.auto_hair_root, prev_auto);
                     if (item.auto_hair_root) {
                         strand.hidden_guide_points_start = {effective_root};
                         strand.hair_root_enabled = true;
+                        // Migrate width points to full-curve space when
+                        // hidden points are added for the first time.
+                        if (!strand.width_curve_id_v2 && !strand.width_points.empty()) {
+                            for (auto& wp : strand.width_points) wp.curve_id += 1.0f;
+                            strand.width_curve_id_v2 = true;
+                        }
                     } else {
+                        // Before clearing hidden start points, remove width
+                        // vectors placed on them so orphaned curve_ids don't
+                        // cause missing loft sections.
+                        size_t hidden_n = strand.hidden_guide_points_start.size();
+                        if (strand.width_curve_id_v2 && hidden_n > 0 && !strand.width_points.empty()) {
+                            strand.width_points.erase(
+                                std::remove_if(strand.width_points.begin(), strand.width_points.end(),
+                                    [hidden_n](const auto& wp) {
+                                        return wp.curve_id < static_cast<float>(hidden_n) - 0.001f;
+                                    }),
+                                strand.width_points.end());
+                            float offset = static_cast<float>(hidden_n);
+                            for (auto& wp : strand.width_points) wp.curve_id -= offset;
+                            if (strand.hidden_guide_points_end.empty())
+                                strand.width_curve_id_v2 = false;
+                        }
                         strand.hidden_guide_points_start.clear();
                         strand.hair_root_enabled = false;
                     }
@@ -294,8 +320,8 @@ void RenderVoxelList::render_guide_curve_window() {
                               ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                               ImGuiTableFlags_ScrollY,
                               ImVec2(0, -bottom_reserve))) {
-            ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 30.0f);
-            ImGui::TableSetupColumn(get_locale_cstr("label.guide_point"),
+            ImGui::TableSetupColumn("##gp_num", ImGuiTableColumnFlags_WidthFixed, 30.0f);
+            ImGui::TableSetupColumn("##gp_pos",
                                     ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("##ctr_col",
                                     ImGuiTableColumnFlags_WidthFixed, 65.0f);
@@ -645,10 +671,8 @@ void RenderVoxelList::render_width_editor_window() {
         ImGui::TextWrapped("%s",
                            get_locale_cstr("label.no_width_points"));
     } else {
-        // 高度随窗口变化，负高度为底部的分隔线和清空按钮预留空间
         float bottom_reserve = ImGui::GetFrameHeightWithSpacing() +
                                ImGui::GetStyle().ItemSpacing.y;
-        ImGui::BeginChild("WidthPointsList", ImVec2(0, -bottom_reserve), true);
 
         auto before_edit = capture_snapshot(item);
         EditResult all_edits;
@@ -657,220 +681,201 @@ void RenderVoxelList::render_width_editor_window() {
         // Reset hover highlight each frame
         item.hovered_width_point_index = -1;
 
-        for (size_t wi = 0; wi < strand.width_points.size(); ++wi) {
-            auto& wp = strand.width_points[wi];
-            ImGui::PushID(static_cast<int>(wi));
+        if (ImGui::BeginTable("##wp_table", 5,
+                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                              ImGuiTableFlags_ScrollY,
+                              ImVec2(0, -bottom_reserve))) {
+            ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn(get_locale_cstr("label.width_vector_length"),
+                                    ImGuiTableColumnFlags_WidthFixed, 70.0f);
+            ImGui::TableSetupColumn(get_locale_cstr("label.width_direction"),
+                                    ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("##ctr_col",
+                                    ImGuiTableColumnFlags_WidthFixed, 55.0f);
+            ImGui::TableSetupColumn("##act_col",
+                                    ImGuiTableColumnFlags_WidthFixed, 110.0f);
+            ImGui::TableHeadersRow();
 
-            // 点信息：显示到曲线的实际距离（scale 即当前宽度/距离）
-            ImGui::Text(get_locale_cstr("label.width_point_entry"),
-                        static_cast<int>(wi + 1),
-                        static_cast<int>(wp.curve_id));
-            ImGui::SameLine();
-            char dist_buf[64];
-            snprintf(dist_buf, sizeof(dist_buf), "dist=%.2f",
-                     static_cast<double>(wp.scale));
-            ImGui::TextDisabled("%s", dist_buf);
+            for (size_t wi = 0; wi < strand.width_points.size(); ++wi) {
+                auto& wp = strand.width_points[wi];
+                ImGui::PushID(static_cast<int>(wi));
+                ImGui::TableNextRow();
 
-            // Save row top for hover→cyan line in 3D viewport
-            ImVec2 row_min = ImGui::GetItemRectMin();
+                // Column 1: Point info
+                ImGui::TableNextColumn();
+                ImGui::Text(get_locale_cstr("label.width_point_entry"),
+                            static_cast<int>(wi + 1),
+                            static_cast<int>(wp.curve_id));
+                ImGui::TextDisabled("dist=%.2f",
+                                    static_cast<double>(wp.scale));
 
-            // 向量长度（scale = 从引导曲线到表面的距离）
-            float old_scale = wp.scale;
-            ImGui::SetNextItemWidth(140);
-            ImGui::DragFloat(get_locale_cstr("label.width_vector_length"),
-                             &wp.scale, 0.01f, 0.01f, 10.0f, "%.2f");
-            if (ImGui::IsItemActivated())
-                all_edits.activated = true;
-            if (ImGui::IsItemDeactivatedAfterEdit())
-                all_edits.deactivated_after_edit = true;
-            if (old_scale != wp.scale)
-                all_edits.value_changed = true;
+                // Column 2: Scale
+                ImGui::TableNextColumn();
+                float old_scale = wp.scale;
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                ImGui::DragFloat("##wp_scale", &wp.scale, 0.01f, 0.01f, 10.0f, "%.2f");
+                if (ImGui::IsItemActivated()) all_edits.activated = true;
+                if (ImGui::IsItemDeactivatedAfterEdit()) all_edits.deactivated_after_edit = true;
+                if (old_scale != wp.scale) all_edits.value_changed = true;
 
-            // 方向向量编辑器（允许手动调整方向）
-            {
-                auto dir_edit = edit_vec3_stepper(
-                    get_locale_cstr("label.width_direction"),
-                    wp.direction, 0.1f, true);
-                all_edits.activated |= dir_edit.activated;
-                all_edits.deactivated_after_edit |=
-                    dir_edit.deactivated_after_edit;
-                all_edits.value_changed |= dir_edit.value_changed;
-            }
-
-            // --- 自动旋转按钮（仅当中心点启用时显示）---
-            if (item.show_addon_center) {
-                if (ImGui::SmallButton(
-                        get_locale_cstr("action.auto_rotate_section"))) {
-                    int strand_idx_auto = static_cast<int>(&strand - item.hair_strands.data());
-                    auto sample = item.sample_guide_curve_at(strand_idx_auto, wp.curve_id);
-                    float angle_deg = 0.0f;
-                    if (compute_auto_section_rotation(
-                            sample.position, sample.tangent,
-                            item.addon_center_point, angle_deg)) {
-                        push_undo_now(item.id, std::nullopt,
-                                      "Auto-Rotate Section");
-                        strand.section_rotation = angle_deg;
-                        strand.mesh_dirty = true;
-                    }
-                }
-
-                // --- 沿中心点连线移动（端点朝/背中心点方向移动）---
-                // 移动步长（静态变量，所有宽度向量共享，右键菜单中可调）
-                static float wp_move_step = 0.5f;
-
-                auto move_along_center = [&](float sign) {
-                    int strand_idx_mv = static_cast<int>(&strand - item.hair_strands.data());
-                    auto sample =
-                        item.sample_guide_curve_at(strand_idx_mv, wp.curve_id);
-                    vec3f P = sample.position;
-                    vec3f W = P + wp.direction * wp.scale;  // 向量端点
-                    vec3f to_center = item.addon_center_point - W;
-                    float dist = to_center.length();
-                    if (dist < 0.0001f)
-                        return;
-                    vec3f dir = to_center / dist;
-                    vec3f new_W = W + dir * (sign * wp_move_step);
-                    vec3f v = new_W - P;
-                    float len = v.length();
-                    if (len < 0.0001f)
-                        return;
-                    wp.scale = len;
-                    wp.direction = v / len;
-                    all_edits.value_changed = true;
-                };
-                ImGui::TextUnformatted(get_locale_cstr("label.radial_move"));
+                // Column 3: Direction (display + Edit button → popup)
+                ImGui::TableNextColumn();
+                ImGui::AlignTextToFramePadding();
+                ImGui::Text("(%.2f, %.2f, %.2f)",
+                            wp.direction.x, wp.direction.y, wp.direction.z);
                 ImGui::SameLine();
-                if (ImGui::SmallButton("+")) {
-                    move_along_center(1.0f);
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "%s", get_locale_cstr("tooltip.move_toward_center"));
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
-                    ImGui::OpenPopup("wp_center_menu");
-                ImGui::SameLine();
-                if (ImGui::SmallButton("-")) {
-                    move_along_center(-1.0f);
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "%s", get_locale_cstr("tooltip.move_away_from_center"));
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
-                    ImGui::OpenPopup("wp_center_menu");
+                char dir_popup_id[64];
+                snprintf(dir_popup_id, sizeof(dir_popup_id), "Dir##wpe_%zu", wi);
+                if (ImGui::SmallButton(dir_popup_id))
+                    ImGui::OpenPopup(dir_popup_id);
 
-                // 右键菜单：直接编辑端点离中心距离与移动步长
-                if (ImGui::BeginPopup("wp_center_menu")) {
-                    int strand_idx_popup = static_cast<int>(&strand - item.hair_strands.data());
-                    auto sample = item.sample_guide_curve_at(strand_idx_popup, wp.curve_id);
-                    vec3f P = sample.position;
-                    vec3f W = P + wp.direction * wp.scale;  // 向量端点
-                    vec3f to_center = item.addon_center_point - W;
-                    float dist = to_center.length();
-                    if (dist > 0.0001f) {
-                        vec3f dir = to_center / dist;
-                        float new_dist = dist;
-                        ImGui::SetNextItemWidth(120);
-                        ImGui::DragFloat(
-                            get_locale_cstr("label.dist_to_center"),
-                            &new_dist, 0.01f, 0.0001f, 100000.0f, "%.3f");
-                        if (ImGui::IsItemActivated())
-                            all_edits.activated = true;
-                        if (ImGui::IsItemDeactivatedAfterEdit())
-                            all_edits.deactivated_after_edit = true;
-                        if (new_dist != dist) {
-                            vec3f new_W =
-                                item.addon_center_point - dir * new_dist;
-                            vec3f v = new_W - P;
-                            float len = v.length();
-                            if (len > 0.0001f) {
-                                wp.scale = len;
-                                wp.direction = v / len;
-                                // 历史记录由 activated/deactivated 在释放时创建，
-                                // 拖动过程中只更新网格，避免每帧产生历史记录
-                                strand.mesh_dirty = true;
-                            }
-                        }
-                    }
-                    ImGui::SetNextItemWidth(120);
-                    ImGui::DragFloat(get_locale_cstr("label.move_step"),
-                                     &wp_move_step, 0.01f, 0.01f, 10.0f,
-                                     "%.2f");
+                if (ImGui::BeginPopup(dir_popup_id)) {
+                    auto dir_edit = edit_vec3_stepper(
+                        get_locale_cstr("label.width_direction"),
+                        wp.direction, 0.1f, true);
+                    all_edits.activated |= dir_edit.activated;
+                    all_edits.deactivated_after_edit |= dir_edit.deactivated_after_edit;
+                    all_edits.value_changed |= dir_edit.value_changed;
                     ImGui::EndPopup();
                 }
-            }
 
-            // --- Per-point section editor button ---
-            bool is_perpoint_editing =
-                (item.active_perpoint_section_edit_strand == strand_uuid &&
-                 item.active_perpoint_section_edit_width_idx ==
-                     static_cast<int>(wi));
-            if (is_perpoint_editing) {
-                ImGui::PushStyleColor(ImGuiCol_Button,
-                                      ImVec4(0.5f, 0.5f, 0.9f, 1.0f));
-            }
-            if (ImGui::SmallButton(
-                    is_perpoint_editing
-                        ? get_locale_cstr("action.stop_edit_perpoint_section")
-                        : get_locale_cstr("action.edit_perpoint_section"))) {
-                if (is_perpoint_editing) {
-                    item.perpoint_section_editing_active = false;
-                    item.active_perpoint_section_edit_strand.clear();
-                    item.active_perpoint_section_edit_width_idx = -1;
-                    show_perpoint_section_editor_window = false;
-                } else {
-                    // Close global section editor (mutual exclusion)
-                    if (show_cross_section_editor_window) {
-                        item.active_section_edit_strand.clear();
-                        show_cross_section_editor_window = false;
+                // Column 4: Center +/- buttons
+                ImGui::TableNextColumn();
+                if (item.show_addon_center) {
+                    static float wp_move_step = 0.5f;
+                    int strand_idx = static_cast<int>(&strand - item.hair_strands.data());
+                    auto sample = item.sample_guide_curve_at(strand_idx, wp.curve_id);
+                    vec3f P = sample.position;
+                    static int cpopup_wi = -1;
+
+                    auto move_along_center = [&](float sign) {
+                        vec3f W = P + wp.direction * wp.scale;
+                        vec3f to_center = item.addon_center_point - W;
+                        float dist = to_center.length();
+                        if (dist < 0.0001f) return;
+                        vec3f dir = to_center / dist;
+                        vec3f new_W = W + dir * (sign * wp_move_step);
+                        vec3f v = new_W - P;
+                        float len = v.length();
+                        if (len < 0.0001f) return;
+                        wp.scale = len;
+                        wp.direction = v / len;
+                        all_edits.value_changed = true;
+                    };
+
+                    if (ImGui::SmallButton("+##wp_ctr")) move_along_center(1.0f);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_toward_center"));
+                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                        ImGui::OpenPopup("wp_ctr_popup");
+                        cpopup_wi = static_cast<int>(wi);
                     }
-                    item.perpoint_section_editing_active = true;
-                    item.active_perpoint_section_edit_strand = strand_uuid;
-                    item.active_perpoint_section_edit_width_idx =
-                        static_cast<int>(wi);
-                    show_perpoint_section_editor_window = true;
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("-##wp_ctr")) move_along_center(-1.0f);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_away_from_center"));
+                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                        ImGui::OpenPopup("wp_ctr_popup");
+                        cpopup_wi = static_cast<int>(wi);
+                    }
+
+                    if (ImGui::BeginPopup("wp_ctr_popup")) {
+                        if (cpopup_wi == static_cast<int>(wi)) {
+                            vec3f W = P + wp.direction * wp.scale;
+                            vec3f to_center = item.addon_center_point - W;
+                            float dist = to_center.length();
+                            if (dist > 0.0001f) {
+                                vec3f dir = to_center / dist;
+                                float new_dist = dist;
+                                ImGui::SetNextItemWidth(120);
+                                ImGui::DragFloat(get_locale_cstr("label.dist_to_center"),
+                                                 &new_dist, 0.01f, 0.0001f, 100000.0f, "%.3f");
+                                if (ImGui::IsItemActivated()) all_edits.activated = true;
+                                if (ImGui::IsItemDeactivatedAfterEdit()) all_edits.deactivated_after_edit = true;
+                                if (new_dist != dist) {
+                                    vec3f new_W = item.addon_center_point - dir * new_dist;
+                                    vec3f v = new_W - P;
+                                    float len = v.length();
+                                    if (len > 0.0001f) {
+                                        wp.scale = len;
+                                        wp.direction = v / len;
+                                        strand.mesh_dirty = true;
+                                    }
+                                }
+                            }
+                            ImGui::SetNextItemWidth(120);
+                            ImGui::DragFloat(get_locale_cstr("label.move_step"),
+                                             &wp_move_step, 0.01f, 0.01f, 10.0f, "%.2f");
+                        }
+                        ImGui::EndPopup();
+                    }
                 }
-            }
-            
-            if (ImGui::IsItemHovered()) {
-                if (is_perpoint_editing){
-                    ImGui::SetTooltip("%s",
-                        get_locale_cstr("tooltip.stop_edit_perpoint_section"));
-                } else {
-                    ImGui::SetTooltip("%s",
-                        get_locale_cstr("tooltip.edit_perpoint_section"));
+
+                // Column 5: Action buttons
+                ImGui::TableNextColumn();
+                if (item.show_addon_center) {
+                    if (ImGui::SmallButton(get_locale_cstr("action.auto_rotate_section"))) {
+                        int strand_idx_a = static_cast<int>(&strand - item.hair_strands.data());
+                        auto sample = item.sample_guide_curve_at(strand_idx_a, wp.curve_id);
+                        float angle_deg = 0.0f;
+                        if (compute_auto_section_rotation(
+                                sample.position, sample.tangent,
+                                item.addon_center_point, angle_deg)) {
+                            push_undo_now(item.id, std::nullopt, "Auto-Rotate Section");
+                            strand.section_rotation = angle_deg;
+                            strand.mesh_dirty = true;
+                        }
+                    }
+                    ImGui::SameLine();
                 }
-            }
-            if (is_perpoint_editing) {
-                ImGui::PopStyleColor();
-            }
+                // Per-point section editor button
+                {
+                    bool is_pp = (item.active_perpoint_section_edit_strand == strand_uuid &&
+                                  item.active_perpoint_section_edit_width_idx == static_cast<int>(wi));
+                    if (is_pp) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.5f, 0.9f, 1.0f));
+                    if (ImGui::SmallButton("S")) {
+                        if (is_pp) {
+                            item.perpoint_section_editing_active = false;
+                            item.active_perpoint_section_edit_strand.clear();
+                            item.active_perpoint_section_edit_width_idx = -1;
+                            show_perpoint_section_editor_window = false;
+                        } else {
+                            if (show_cross_section_editor_window) {
+                                item.active_section_edit_strand.clear();
+                                show_cross_section_editor_window = false;
+                            }
+                            item.perpoint_section_editing_active = true;
+                            item.active_perpoint_section_edit_strand = strand_uuid;
+                            item.active_perpoint_section_edit_width_idx = static_cast<int>(wi);
+                            show_perpoint_section_editor_window = true;
+                        }
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", is_pp
+                            ? get_locale_cstr("tooltip.stop_edit_perpoint_section")
+                            : get_locale_cstr("tooltip.edit_perpoint_section"));
+                    }
+                    if (is_pp) ImGui::PopStyleColor();
+                    if (wp.section_state.vertices.size() >= 3) {
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "*");
+                    }
+                    ImGui::SameLine();
+                }
+                if (ImGui::SmallButton("X")) delete_wp = static_cast<int>(wi);
 
-            // Show [custom] indicator if this width point has an override
-            if (wp.section_state.vertices.size() >= 3) {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "%s",
-                                   get_locale_cstr(
-                                       "label.perpoint_section_indicator"));
+                // Row hover for 3D viewport highlight
+                if (ImGui::IsItemHovered() ||
+                    ImGui::IsMouseHoveringRect(
+                        ImGui::GetItemRectMin(),
+                        ImVec2(ImGui::GetItemRectMax().x + 500,
+                               ImGui::GetItemRectMax().y))) {
+                    item.hovered_width_point_index = static_cast<int>(wi);
+                }
+
+                ImGui::PopID();
             }
-
-            ImGui::SameLine();
-            if (ImGui::SmallButton(
-                    get_locale_cstr("action.delete_width_point"))) {
-                delete_wp = static_cast<int>(wi);
-            }
-
-            ImGui::Separator();
-
-            // If mouse is over this row, highlight the corresponding
-            // width line in the 3D viewport in cyan (0, 1, 1).
-            ImVec2 row_max = ImGui::GetItemRectMax();
-            row_min.x = ImGui::GetWindowPos().x;
-            row_max.x = ImGui::GetWindowPos().x +
-                        ImGui::GetWindowWidth();
-            if (ImGui::IsMouseHoveringRect(row_min, row_max)) {
-                item.hovered_width_point_index = static_cast<int>(wi);
-            }
-
-            ImGui::PopID();
+            ImGui::EndTable();
         }
 
         // 处理缩放的撤销
@@ -907,7 +912,6 @@ void RenderVoxelList::render_width_editor_window() {
             strand.mesh_dirty = true;
         }
 
-        ImGui::EndChild();
     }
 
     ImGui::Separator();

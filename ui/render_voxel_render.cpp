@@ -1072,7 +1072,7 @@ build_braid_mesh(const HairStrand& strand) {
 // Build loft mesh triangles from a single hair strand.
 // Returns (Triangle, normal) pairs suitable for RenderMesh::loadGeometry().
 std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
-    const HairStrand& strand) {
+    HairStrand& strand) {
 	using namespace sinriv::kigstudio::mesh::loft;
 	std::vector<std::tuple<loft_Triangle, loft_vec3f>> result;
 
@@ -1161,7 +1161,22 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 	}
 
 	const int M = static_cast<int>(guide_curve.size());
-	const int N = static_cast<int>(strand.guide_points.size());
+	const int N_visible = static_cast<int>(strand.guide_points.size());
+	const int N_all = static_cast<int>(all_guide_points.size());
+
+	// Migrate legacy width points (stored against visible guide_points
+	// only) to the full guide curve space when hidden points exist.
+	// After migration, curve_id spans [0, N_all-1] covering
+	// hidden_start + visible + hidden_end.
+	if (N_all > N_visible && !sorted_wp.empty() && !strand.width_curve_id_v2) {
+		float offset = static_cast<float>(strand.hidden_guide_points_start.size());
+		// sorted_wp is our working copy — migrate it for this build
+		for (auto& wp : sorted_wp) wp.curve_id += offset;
+		// Persist migration to the source width_points as well
+		for (auto& wp : strand.width_points) wp.curve_id += offset;
+		strand.width_curve_id_v2 = true;
+	}
+	const int N = N_all;
 
 	// Pre-compute width interpolation for every sample point
 	std::vector<float> scales(M);
@@ -1522,11 +1537,27 @@ void RenderVoxelList::RenderVoxelItem::add_width_point_at(
         strand_idx >= static_cast<int>(hair_strands.size()))
         return;
     auto& strand = hair_strands[strand_idx];
-    if (strand.guide_points.size() < 2)
+
+    // Build full guide curve (hidden + visible + hidden_end) so width
+    // points can be placed on hidden root/end points as well.
+    std::vector<vec3f> all_pts;
+    all_pts.reserve(strand.hidden_guide_points_start.size() +
+                    strand.guide_points.size() +
+                    strand.hidden_guide_points_end.size());
+    all_pts.insert(all_pts.end(),
+                   strand.hidden_guide_points_start.begin(),
+                   strand.hidden_guide_points_start.end());
+    all_pts.insert(all_pts.end(),
+                   strand.guide_points.begin(),
+                   strand.guide_points.end());
+    all_pts.insert(all_pts.end(),
+                   strand.hidden_guide_points_end.begin(),
+                   strand.hidden_guide_points_end.end());
+    if (all_pts.size() < 2)
         return;
 
     auto nearest = find_nearest_on_bezier_guide(
-        strand.guide_points, world_pos, strand.guide_samples_per_segment);
+        all_pts, world_pos, strand.guide_samples_per_segment);
 
     vec3f diff = world_pos - nearest.curve_pos;
     float dist = diff.length();
@@ -1537,6 +1568,9 @@ void RenderVoxelList::RenderVoxelItem::add_width_point_at(
     wp.curve_id = nearest.curve_id;
     wp.direction = diff / dist;  // 单位方向向量
     wp.scale = dist;
+
+    // New width points always use the full-curve coordinate space
+    strand.width_curve_id_v2 = true;
     strand.width_points.push_back(wp);
 
     // 添加第一个宽度向量时，若中心点存在，自动计算截面旋转角度
@@ -1600,13 +1634,29 @@ void RenderVoxelList::RenderVoxelItem::apply_hairline_spindle() {
 
     for (int si = 0; si < static_cast<int>(hair_strands.size()); ++si) {
         const auto& strand = hair_strands[si];
-        if (strand.guide_points.size() < 2) continue;
+
+        // Use full guide curve so intersection curve_ids are consistent
+        // with build_hair_strand_mesh.
+        std::vector<vec3f> all_pts;
+        all_pts.reserve(strand.hidden_guide_points_start.size() +
+                        strand.guide_points.size() +
+                        strand.hidden_guide_points_end.size());
+        all_pts.insert(all_pts.end(),
+                       strand.hidden_guide_points_start.begin(),
+                       strand.hidden_guide_points_start.end());
+        all_pts.insert(all_pts.end(),
+                       strand.guide_points.begin(),
+                       strand.guide_points.end());
+        all_pts.insert(all_pts.end(),
+                       strand.hidden_guide_points_end.begin(),
+                       strand.hidden_guide_points_end.end());
+        if (all_pts.size() < 2) continue;
 
         const int subdiv = std::max(strand.guide_samples_per_segment, 1);
-        auto sampled = sample_bezier_guide_curve(strand.guide_points, subdiv);
+        auto sampled = sample_bezier_guide_curve(all_pts, subdiv);
         if (sampled.size() < 2) continue;
 
-        const int N = static_cast<int>(strand.guide_points.size());
+        const int N = static_cast<int>(all_pts.size());
         const int M = static_cast<int>(sampled.size());
 
         // Count crossings of the guide curve sample polyline with the plane
@@ -1681,7 +1731,21 @@ void RenderVoxelList::RenderVoxelItem::apply_hairline_spindle() {
         }
         if (nearest >= std::numeric_limits<float>::max()) nearest = 0.5f;
 
-        const int N = static_cast<int>(strand.guide_points.size());
+        // Build full guide curve to get N consistent with lofting
+        std::vector<vec3f> spindle_all_pts;
+        spindle_all_pts.reserve(strand.hidden_guide_points_start.size() +
+                                strand.guide_points.size() +
+                                strand.hidden_guide_points_end.size());
+        spindle_all_pts.insert(spindle_all_pts.end(),
+                               strand.hidden_guide_points_start.begin(),
+                               strand.hidden_guide_points_start.end());
+        spindle_all_pts.insert(spindle_all_pts.end(),
+                               strand.guide_points.begin(),
+                               strand.guide_points.end());
+        spindle_all_pts.insert(spindle_all_pts.end(),
+                               strand.hidden_guide_points_end.begin(),
+                               strand.hidden_guide_points_end.end());
+        const int N = static_cast<int>(spindle_all_pts.size());
         if (N < 2) continue;
 
         // Determine width direction:
@@ -1732,6 +1796,8 @@ void RenderVoxelList::RenderVoxelItem::apply_hairline_spindle() {
         strand.width_points.push_back(wp_hairline);
         strand.width_points.push_back(wp_end);
 
+        // Spindle width points are always in full-curve space
+        strand.width_curve_id_v2 = true;
         strand.mesh_dirty = true;
     }
 }
@@ -1744,16 +1810,31 @@ RenderVoxelList::RenderVoxelItem::sample_guide_curve_at(
         strand_idx >= static_cast<int>(hair_strands.size()))
         return result;
     const auto& strand = hair_strands[strand_idx];
-    if (strand.guide_points.size() < 2)
+
+    // Build full guide curve consistent with build_hair_strand_mesh
+    std::vector<vec3f> all_pts;
+    all_pts.reserve(strand.hidden_guide_points_start.size() +
+                    strand.guide_points.size() +
+                    strand.hidden_guide_points_end.size());
+    all_pts.insert(all_pts.end(),
+                   strand.hidden_guide_points_start.begin(),
+                   strand.hidden_guide_points_start.end());
+    all_pts.insert(all_pts.end(),
+                   strand.guide_points.begin(),
+                   strand.guide_points.end());
+    all_pts.insert(all_pts.end(),
+                   strand.hidden_guide_points_end.begin(),
+                   strand.hidden_guide_points_end.end());
+    if (all_pts.size() < 2)
         return result;
 
     const int subdiv = std::max(strand.guide_samples_per_segment, 1);
-    auto sampled = sample_bezier_guide_curve(strand.guide_points, subdiv);
+    auto sampled = sample_bezier_guide_curve(all_pts, subdiv);
     if (sampled.size() < 2)
         return result;
 
     // Convert curve_id to sample index in the sampled curve
-    const int N = static_cast<int>(strand.guide_points.size());
+    const int N = static_cast<int>(all_pts.size());
     const int kSubdiv = subdiv;
     int seg_idx = static_cast<int>(curve_id);
     float t = curve_id - static_cast<float>(seg_idx);
@@ -1890,7 +1971,8 @@ RenderVoxelList::RenderVoxelItem::build_strand_loft_triangles(
 	    strand_idx >= static_cast<int>(hair_strands.size()))
 		return result;
 
-	const auto& strand = hair_strands[strand_idx];
+	auto& strand = const_cast<HairStrand&>(
+	    static_cast<const HairStrand&>(hair_strands[strand_idx]));
 	auto tris_with_normals = build_hair_strand_mesh(strand);
 	if (tris_with_normals.empty()) return result;
 
@@ -2663,14 +2745,30 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                 bool is_active_strand =
                     (hair_strands[si].uuid == active_width_edit_strand);
                 int wi = 0;
+                // Build full guide curve for width-line rendering
+                // (must match build_hair_strand_mesh: hidden + visible + hidden_end)
+                std::vector<vec3f> all_gpts;
+                all_gpts.reserve(strand.hidden_guide_points_start.size() +
+                                 strand.guide_points.size() +
+                                 strand.hidden_guide_points_end.size());
+                all_gpts.insert(all_gpts.end(),
+                                strand.hidden_guide_points_start.begin(),
+                                strand.hidden_guide_points_start.end());
+                all_gpts.insert(all_gpts.end(),
+                                strand.guide_points.begin(),
+                                strand.guide_points.end());
+                all_gpts.insert(all_gpts.end(),
+                                strand.hidden_guide_points_end.begin(),
+                                strand.hidden_guide_points_end.end());
+
                 for (const auto& wp : strand.width_points) {
                     // 越界检查：curve_id 超出有效范围则不显示
-                    if (strand.guide_points.size() < 2)
+                    if (all_gpts.size() < 2)
                         continue;
                     if (wp.curve_id < 0.0f)
                         continue;
                     float max_id =
-                        static_cast<float>(strand.guide_points.size() - 1);
+                        static_cast<float>(all_gpts.size() - 1);
                     if (wp.curve_id > max_id)
                         continue;
 
@@ -2684,12 +2782,12 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
                     // 从 curve_id 重建贝塞尔曲线上的点
                     size_t seg_idx =
                         static_cast<size_t>(wp.curve_id);
-                    if (seg_idx >= strand.guide_points.size() - 1)
-                        seg_idx = strand.guide_points.size() - 2;
+                    if (seg_idx >= all_gpts.size() - 1)
+                        seg_idx = all_gpts.size() - 2;
                     float t =
                         wp.curve_id - static_cast<float>(seg_idx);
 
-                    const auto& gpts = strand.guide_points;
+                    const auto& gpts = all_gpts;
                     size_t n = gpts.size();
                     vec3f p0 = gpts[seg_idx];
                     vec3f p3 = gpts[seg_idx + 1];

@@ -478,7 +478,6 @@ void RenderVoxelList::render_hair_root_window() {
                                item.addon_center_point.z - dir.z * 10.0f};
                     }
                     item.common_hair_root_point = hit;
-                    push_undo_now(item.id, std::nullopt, "Auto Hair Root");
                 }
                 // Propagate to all enabled strands immediately
                 {
@@ -501,11 +500,38 @@ void RenderVoxelList::render_hair_root_window() {
                                               effective_root.z + dir.z * offset};
                         }
                     }
+                    // ImGui already toggled auto_hair_root; swap back so the
+                    // undo snapshot captures the pre-toggle state.
+                    std::swap(item.auto_hair_root, prev_auto);
+                    push_undo_now(item.id, std::nullopt, "Guide Point / Width Auto Hair Root");
+                    std::swap(item.auto_hair_root, prev_auto);
                     for (auto& s : item.hair_strands) {
                         if (item.auto_hair_root) {
                             s.hidden_guide_points_start = {effective_root};
                             s.hair_root_enabled = true;
+                            // Migrate width points to full-curve space when
+                            // hidden points are added for the first time.
+                            if (!s.width_curve_id_v2 && !s.width_points.empty()) {
+                                for (auto& wp : s.width_points) wp.curve_id += 1.0f;
+                                s.width_curve_id_v2 = true;
+                            }
                         } else {
+                            // Before clearing hidden start points, remove width
+                            // vectors placed on them so orphaned curve_ids don't
+                            // cause missing loft sections.
+                            size_t hidden_n = s.hidden_guide_points_start.size();
+                            if (s.width_curve_id_v2 && hidden_n > 0 && !s.width_points.empty()) {
+                                s.width_points.erase(
+                                    std::remove_if(s.width_points.begin(), s.width_points.end(),
+                                        [hidden_n](const auto& wp) {
+                                            return wp.curve_id < static_cast<float>(hidden_n) - 0.001f;
+                                        }),
+                                    s.width_points.end());
+                                float offset = static_cast<float>(hidden_n);
+                                for (auto& wp : s.width_points) wp.curve_id -= offset;
+                                if (s.hidden_guide_points_end.empty())
+                                    s.width_curve_id_v2 = false;
+                            }
                             s.hidden_guide_points_start.clear();
                             s.hair_root_enabled = false;
                         }
