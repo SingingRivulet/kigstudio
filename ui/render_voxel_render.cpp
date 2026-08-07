@@ -1882,7 +1882,10 @@ void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
 		if (!strand.visible || !strand.mesh_dirty) continue;
 		try {
 			auto tris = build_hair_strand_mesh(strand);
-			if (tris.empty()) continue;
+			if (tris.empty()) {
+				addon_renderers.erase(strand.uuid);
+				continue;
+			}
 
 			// 提交显示前检测网格是否需要修复（不封闭 或 自相交），
 			// 需要时用 alpha_wrap 修复（参数为每根发束独立调节）

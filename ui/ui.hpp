@@ -455,8 +455,16 @@ int ui_main(int argc, const char* const* argv) {
                                     render_items.push_undo_now(
                                         render_items.render_id, std::nullopt,
                                         "Add Guide Point");
-                                    strand_ptr->guide_points.push_back(
-                                        render_items.mouse_world_pos);
+                                    bool alt =
+                                        (SDL_GetModState() & KMOD_ALT) != 0;
+                                    if (alt) {
+                                        strand_ptr->guide_points.insert(
+                                            strand_ptr->guide_points.begin(),
+                                            render_items.mouse_world_pos);
+                                    } else {
+                                        strand_ptr->guide_points.push_back(
+                                            render_items.mouse_world_pos);
+                                    }
                                     strand_ptr->mesh_dirty = true;
                                 }
                             }
