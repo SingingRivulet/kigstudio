@@ -366,6 +366,69 @@ static const char* get_anchor_name_cn(int x, int y) {
     return a ? a->name_zh : nullptr;
 }
 
+// Compute the effective hair root point: common_hair_root_point moved toward
+// the addon center by hair_root_center_offset.
+static vec3f compute_effective_hair_root(const RenderVoxelList::RenderVoxelItem& item) {
+    vec3f effective_root = item.common_hair_root_point;
+    vec3f to_center = {item.addon_center_point.x - effective_root.x,
+                       item.addon_center_point.y - effective_root.y,
+                       item.addon_center_point.z - effective_root.z};
+    float dist = std::sqrt(to_center.x * to_center.x +
+                           to_center.y * to_center.y +
+                           to_center.z * to_center.z);
+    if (dist > 0.001f && item.hair_root_center_offset > 0.0f) {
+        vec3f dir = {to_center.x / dist, to_center.y / dist,
+                     to_center.z / dist};
+        float offset = item.hair_root_center_offset;
+        if (offset > dist)
+            offset = dist;
+        effective_root = {effective_root.x + dir.x * offset,
+                          effective_root.y + dir.y * offset,
+                          effective_root.z + dir.z * offset};
+    }
+    return effective_root;
+}
+
+// Enable or disable the auto hair root guide point for a single strand.
+// Mirrors the "Auto Hair Root" checkbox logic in the guide curve editor.
+static void set_strand_hair_root(HairStrand& strand, bool enable,
+                                 const vec3f& effective_root) {
+    if (enable) {
+        strand.hidden_guide_points_start = {effective_root};
+        strand.hair_root_enabled = true;
+        // Migrate width points to full-curve space when hidden points are
+        // added for the first time.
+        if (!strand.width_curve_id_v2 && !strand.width_points.empty()) {
+            for (auto& wp : strand.width_points)
+                wp.curve_id += 1.0f;
+            strand.width_curve_id_v2 = true;
+        }
+    } else {
+        // Before clearing hidden start points, remove width vectors placed
+        // on them so orphaned curve_ids don't cause missing loft sections.
+        size_t hidden_n = strand.hidden_guide_points_start.size();
+        if (strand.width_curve_id_v2 && hidden_n > 0 &&
+            !strand.width_points.empty()) {
+            strand.width_points.erase(
+                std::remove_if(strand.width_points.begin(),
+                               strand.width_points.end(),
+                               [hidden_n](const auto& wp) {
+                                   return wp.curve_id <
+                                          static_cast<float>(hidden_n) - 0.001f;
+                               }),
+                strand.width_points.end());
+            float offset = static_cast<float>(hidden_n);
+            for (auto& wp : strand.width_points)
+                wp.curve_id -= offset;
+            if (strand.hidden_guide_points_end.empty())
+                strand.width_curve_id_v2 = false;
+        }
+        strand.hidden_guide_points_start.clear();
+        strand.hair_root_enabled = false;
+    }
+    strand.mesh_dirty = true;
+}
+
 void RenderVoxelList::render_hair_root_window() {
     if (!show_hair_root_window)
         return;
@@ -405,13 +468,15 @@ void RenderVoxelList::render_hair_root_window() {
 
     // ---- Common Hair Root Point (shared by all strands) ----
 
+    // North-pole direction must be configured for auto hair root
+    float np_len = std::sqrt(item.hair_north_pole.x * item.hair_north_pole.x +
+                             item.hair_north_pole.y * item.hair_north_pole.y +
+                             item.hair_north_pole.z * item.hair_north_pole.z);
+    bool can_auto_root = np_len > 0.001f;
+
     // Auto hair root toggle (only when north_pole direction is configured)
     {
-        float np_len =
-            std::sqrt(item.hair_north_pole.x * item.hair_north_pole.x +
-                      item.hair_north_pole.y * item.hair_north_pole.y +
-                      item.hair_north_pole.z * item.hair_north_pole.z);
-        if (np_len > 0.001f) {
+        if (can_auto_root) {
             bool prev_auto = item.auto_hair_root;
             if (ImGui::Checkbox(get_locale_cstr("label.auto_hair_root"),
                                 &item.auto_hair_root)) {
@@ -479,63 +544,17 @@ void RenderVoxelList::render_hair_root_window() {
                     }
                     item.common_hair_root_point = hit;
                 }
-                // Propagate to all enabled strands immediately
+                // Propagate to all strands immediately
                 {
-                    vec3f effective_root = item.common_hair_root_point;
-                    {
-                        vec3f to_center = {
-                            item.addon_center_point.x - effective_root.x,
-                            item.addon_center_point.y - effective_root.y,
-                            item.addon_center_point.z - effective_root.z};
-                        float dist = std::sqrt(to_center.x * to_center.x +
-                                               to_center.y * to_center.y +
-                                               to_center.z * to_center.z);
-                        if (dist > 0.001f && item.hair_root_center_offset > 0.0f) {
-                            vec3f dir = {to_center.x / dist, to_center.y / dist,
-                                         to_center.z / dist};
-                            float offset = item.hair_root_center_offset;
-                            if (offset > dist) offset = dist;
-                            effective_root = {effective_root.x + dir.x * offset,
-                                              effective_root.y + dir.y * offset,
-                                              effective_root.z + dir.z * offset};
-                        }
-                    }
+                    vec3f effective_root = compute_effective_hair_root(item);
                     // ImGui already toggled auto_hair_root; swap back so the
                     // undo snapshot captures the pre-toggle state.
                     std::swap(item.auto_hair_root, prev_auto);
                     push_undo_now(item.id, std::nullopt, "Guide Point / Width Auto Hair Root");
                     std::swap(item.auto_hair_root, prev_auto);
                     for (auto& s : item.hair_strands) {
-                        if (item.auto_hair_root) {
-                            s.hidden_guide_points_start = {effective_root};
-                            s.hair_root_enabled = true;
-                            // Migrate width points to full-curve space when
-                            // hidden points are added for the first time.
-                            if (!s.width_curve_id_v2 && !s.width_points.empty()) {
-                                for (auto& wp : s.width_points) wp.curve_id += 1.0f;
-                                s.width_curve_id_v2 = true;
-                            }
-                        } else {
-                            // Before clearing hidden start points, remove width
-                            // vectors placed on them so orphaned curve_ids don't
-                            // cause missing loft sections.
-                            size_t hidden_n = s.hidden_guide_points_start.size();
-                            if (s.width_curve_id_v2 && hidden_n > 0 && !s.width_points.empty()) {
-                                s.width_points.erase(
-                                    std::remove_if(s.width_points.begin(), s.width_points.end(),
-                                        [hidden_n](const auto& wp) {
-                                            return wp.curve_id < static_cast<float>(hidden_n) - 0.001f;
-                                        }),
-                                    s.width_points.end());
-                                float offset = static_cast<float>(hidden_n);
-                                for (auto& wp : s.width_points) wp.curve_id -= offset;
-                                if (s.hidden_guide_points_end.empty())
-                                    s.width_curve_id_v2 = false;
-                            }
-                            s.hidden_guide_points_start.clear();
-                            s.hair_root_enabled = false;
-                        }
-                        s.mesh_dirty = true;
+                        set_strand_hair_root(s, item.auto_hair_root,
+                                             effective_root);
                     }
                 }
             }
@@ -557,87 +576,115 @@ void RenderVoxelList::render_hair_root_window() {
 
     ImGui::Separator();
 
-    // Center offset slider (moves the root point toward center)
-    float prev_offset = item.hair_root_center_offset;
-    ImGui::SetNextItemWidth(200);
-    ImGui::SliderFloat(get_locale_cstr("label.hair_root_center_offset"),
-                       &item.hair_root_center_offset, 0.0f, 50.0f, "%.1f");
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s",
-                          get_locale_cstr("tooltip.hair_root_center_offset"));
-    if (prev_offset != item.hair_root_center_offset) {
-        push_undo_now(item.id, std::nullopt, "Hair Root Offset");
+    // Center offset slider (moves the root point toward center).
+    // Changes propagate to enabled strands in real time; one undo entry is
+    // recorded per drag gesture.
+    {
+        float prev_offset = item.hair_root_center_offset;
+        ImGui::SetNextItemWidth(200);
+        ImGui::SliderFloat(get_locale_cstr("label.hair_root_center_offset"),
+                           &item.hair_root_center_offset, 0.0f, 50.0f, "%.1f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "%s", get_locale_cstr("tooltip.hair_root_center_offset"));
+        if (ImGui::IsItemActivated())
+            begin_edit(item.id);
+        if (ImGui::IsItemDeactivatedAfterEdit())
+            end_edit(item.id, "Hair Root Offset");
+        if (prev_offset != item.hair_root_center_offset) {
+            vec3f effective_root = compute_effective_hair_root(item);
+            for (auto& s : item.hair_strands) {
+                if (s.hair_root_enabled &&
+                    !s.hidden_guide_points_start.empty()) {
+                    s.hidden_guide_points_start[0] = effective_root;
+                    s.mesh_dirty = true;
+                }
+            }
+        }
     }
 
     ImGui::Separator();
 
-    // Strand list with checkboxes
+    // Strand status table. The per-strand checkbox is equivalent to the
+    // "Auto Hair Root" checkbox in the guide curve editor and applies
+    // immediately — no separate update button is needed.
     ImGui::TextUnformatted(get_locale_cstr("label.hair_strands"));
-    ImGui::Separator();
 
-    for (size_t i = 0; i < item.hair_strands.size(); ++i) {
-        auto& strand = item.hair_strands[i];
-        ImGui::PushID(static_cast<int>(i));
+    vec3f effective_root = compute_effective_hair_root(item);
 
-        bool prev_enabled = strand.hair_root_enabled;
-        char label[128];
-        if (!strand.name.empty()) {
-            snprintf(label, sizeof(label), "%s##hr_%zu", strand.name.c_str(),
-                     i);
-        } else {
-            snprintf(label, sizeof(label), "%s %zu##hr_%zu",
-                     get_locale_cstr("label.hair_strand"), i + 1, i);
-        }
-        ImGui::Checkbox(label, &strand.hair_root_enabled);
-        if (prev_enabled != strand.hair_root_enabled) {
-            strand.mesh_dirty = true;
-        }
+    float table_h = ImGui::GetContentRegionAvail().y;
+    if (ImGui::BeginTable("##hr_table", 5,
+                          ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                              ImGuiTableFlags_ScrollY,
+                          ImVec2(0, table_h))) {
+        ImGui::TableSetupColumn(get_locale_cstr("label.hair_root_col_enable"),
+                                ImGuiTableColumnFlags_WidthFixed, 40.0f);
+        ImGui::TableSetupColumn(get_locale_cstr("label.hair_root_col_strand"),
+                                ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn(
+            get_locale_cstr("label.hair_root_col_root_point"),
+            ImGuiTableColumnFlags_WidthFixed, 130.0f);
+        ImGui::TableSetupColumn(
+            get_locale_cstr("label.hair_root_col_guide_count"),
+            ImGuiTableColumnFlags_WidthFixed, 55.0f);
+        ImGui::TableSetupColumn(
+            get_locale_cstr("label.hair_root_col_width_count"),
+            ImGuiTableColumnFlags_WidthFixed, 55.0f);
+        ImGui::TableHeadersRow();
 
-        ImGui::PopID();
-    }
+        for (size_t i = 0; i < item.hair_strands.size(); ++i) {
+            auto& strand = item.hair_strands[i];
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::TableNextRow();
 
-    ImGui::Separator();
-
-    // "Update All Hair Roots" button — propagate common root point to enabled
-    // strands
-    if (ImGui::Button(get_locale_cstr("action.update_all_hair_roots"),
-                      ImVec2(-1, 0))) {
-        push_undo_now(item.id, std::nullopt, "Update All Hair Roots");
-
-        // Compute effective root point: common_hair_root_point moved toward
-        // center by offset
-        vec3f effective_root = item.common_hair_root_point;
-        {
-            vec3f to_center = {item.addon_center_point.x - effective_root.x,
-                               item.addon_center_point.y - effective_root.y,
-                               item.addon_center_point.z - effective_root.z};
-            float dist = std::sqrt(to_center.x * to_center.x +
-                                   to_center.y * to_center.y +
-                                   to_center.z * to_center.z);
-            if (dist > 0.001f && item.hair_root_center_offset > 0.0f) {
-                vec3f dir = {to_center.x / dist, to_center.y / dist,
-                             to_center.z / dist};
-                float offset = item.hair_root_center_offset;
-                if (offset > dist)
-                    offset = dist;
-                effective_root = {effective_root.x + dir.x * offset,
-                                  effective_root.y + dir.y * offset,
-                                  effective_root.z + dir.z * offset};
+            // Column 1: per-strand auto hair root checkbox
+            ImGui::TableNextColumn();
+            bool enabled = strand.hair_root_enabled;
+            if (!can_auto_root)
+                ImGui::BeginDisabled();
+            if (ImGui::Checkbox("##hr_enable", &enabled)) {
+                push_undo_now(item.id, std::nullopt, "Toggle Hair Root");
+                set_strand_hair_root(strand, enabled, effective_root);
             }
-        }
+            if (!can_auto_root)
+                ImGui::EndDisabled();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "%s",
+                    get_locale_cstr("tooltip.hair_root_strand_enable"));
 
-        // Assign the common root point to each enabled strand's
-        // hidden_guide_points_start
-        for (auto& strand : item.hair_strands) {
-            if (strand.hair_root_enabled) {
-                strand.hidden_guide_points_start = {effective_root};
-                strand.mesh_dirty = true;
+            // Column 2: strand name
+            ImGui::TableNextColumn();
+            if (!strand.name.empty()) {
+                ImGui::TextUnformatted(strand.name.c_str());
             } else {
-                // Clear hidden points for disabled strands
-                strand.hidden_guide_points_start.clear();
-                strand.mesh_dirty = true;
+                ImGui::Text(get_locale_cstr("label.hair_strand"),
+                            static_cast<int>(i + 1));
             }
+
+            // Column 3: root point position (real-time)
+            ImGui::TableNextColumn();
+            if (strand.hair_root_enabled &&
+                !strand.hidden_guide_points_start.empty()) {
+                const auto& rp = strand.hidden_guide_points_start[0];
+                ImGui::Text("(%.2f, %.2f, %.2f)", static_cast<double>(rp.x),
+                            static_cast<double>(rp.y),
+                            static_cast<double>(rp.z));
+            } else {
+                ImGui::TextDisabled("-");
+            }
+
+            // Column 4: guide point count
+            ImGui::TableNextColumn();
+            ImGui::Text("%d", static_cast<int>(strand.guide_points.size()));
+
+            // Column 5: width point count
+            ImGui::TableNextColumn();
+            ImGui::Text("%d", static_cast<int>(strand.width_points.size()));
+
+            ImGui::PopID();
         }
+        ImGui::EndTable();
     }
 
     ImGui::End();

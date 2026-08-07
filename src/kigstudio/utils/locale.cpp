@@ -1282,8 +1282,20 @@ void init_locale_strings() {
                       {{"en", "Hair Root Editor"}, {"zh", "发根编辑器"}});
     add_locale_string("label.hair_root_enable_strand",
                       {{"en", "Enable hair root for this strand"}, {"zh", "启用到发根"}});
-    add_locale_string("action.update_all_hair_roots",
-                      {{"en", "Update All Hair Roots"}, {"zh", "更新所有发束的发根"}});
+    add_locale_string("label.hair_root_col_enable",
+                      {{"en", "Root"}, {"zh", "发根"}});
+    add_locale_string("label.hair_root_col_strand",
+                      {{"en", "Strand"}, {"zh", "发束"}});
+    add_locale_string("label.hair_root_col_root_point",
+                      {{"en", "Root Point"}, {"zh", "发根点"}});
+    add_locale_string("label.hair_root_col_guide_count",
+                      {{"en", "Guides"}, {"zh", "引导点"}});
+    add_locale_string("label.hair_root_col_width_count",
+                      {{"en", "Widths"}, {"zh", "宽度点"}});
+    add_locale_string("tooltip.hair_root_strand_enable",
+                      {{"en", "Enable/disable the auto hair root guide point for this strand "
+                              "(same as the checkbox in the Guide Curve Editor)"},
+                       {"zh", "为该发束启用/禁用自动发根引导点（与引导曲线编辑器中的勾选框等价）"}});
     add_locale_string("label.hair_root_center_offset",
                       {{"en", "Offset Toward Center"}, {"zh", "向中心偏移"}});
     add_locale_string("tooltip.hair_root_center_offset",

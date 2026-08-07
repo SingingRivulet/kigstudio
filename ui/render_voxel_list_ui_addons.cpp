@@ -587,7 +587,7 @@ void RenderVoxelList::render_width_editor_window() {
         show_hairline_plane_window = false;
     }
 
-    ImGui::SetNextWindowSize(ImVec2(380, 400), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_Once);
     bool window_open = true;
     if (!ImGui::Begin(get_locale_cstr("window.width_editor"), &window_open)) {
         ImGui::End();
