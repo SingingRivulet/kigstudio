@@ -442,7 +442,8 @@ int ui_main(int argc, const char* const* argv) {
                             render_items.render_id,
                             shift ? "Erase" : "Brush");
                     } else if (guide_curve_click_valid &&
-                               render_items.mouse_world_pos_valid) {
+                               render_items.mouse_world_pos_valid &&
+                               !io.WantCaptureMouse) {
                         // 引导曲线绘制：点击添加点
                         auto it = render_items.items.find(render_items.render_id);
                         if (it != render_items.items.end()) {
@@ -461,7 +462,8 @@ int ui_main(int argc, const char* const* argv) {
                             }
                         }
                     } else if (width_edit_click_valid &&
-                               render_items.mouse_world_pos_valid) {
+                               render_items.mouse_world_pos_valid &&
+                               !io.WantCaptureMouse) {
                         // 宽度编辑：点击添加宽度参考点
                         auto it = render_items.items.find(render_items.render_id);
                         if (it != render_items.items.end()) {
@@ -482,7 +484,8 @@ int ui_main(int argc, const char* const* argv) {
                             }
                         }
                     } else if (hairline_point_pick_valid &&
-                               render_items.mouse_world_pos_valid) {
+                               render_items.mouse_world_pos_valid &&
+                               !io.WantCaptureMouse) {
                         // 发际线三点拾取
                         auto it = render_items.items.find(render_items.render_id);
                         if (it != render_items.items.end()) {

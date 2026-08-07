@@ -480,6 +480,38 @@ void RenderVoxelList::render_hair_root_window() {
                     item.common_hair_root_point = hit;
                     push_undo_now(item.id, std::nullopt, "Auto Hair Root");
                 }
+                // Propagate to all enabled strands immediately
+                {
+                    vec3f effective_root = item.common_hair_root_point;
+                    {
+                        vec3f to_center = {
+                            item.addon_center_point.x - effective_root.x,
+                            item.addon_center_point.y - effective_root.y,
+                            item.addon_center_point.z - effective_root.z};
+                        float dist = std::sqrt(to_center.x * to_center.x +
+                                               to_center.y * to_center.y +
+                                               to_center.z * to_center.z);
+                        if (dist > 0.001f && item.hair_root_center_offset > 0.0f) {
+                            vec3f dir = {to_center.x / dist, to_center.y / dist,
+                                         to_center.z / dist};
+                            float offset = item.hair_root_center_offset;
+                            if (offset > dist) offset = dist;
+                            effective_root = {effective_root.x + dir.x * offset,
+                                              effective_root.y + dir.y * offset,
+                                              effective_root.z + dir.z * offset};
+                        }
+                    }
+                    for (auto& s : item.hair_strands) {
+                        if (item.auto_hair_root) {
+                            s.hidden_guide_points_start = {effective_root};
+                            s.hair_root_enabled = true;
+                        } else {
+                            s.hidden_guide_points_start.clear();
+                            s.hair_root_enabled = false;
+                        }
+                        s.mesh_dirty = true;
+                    }
+                }
             }
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s",

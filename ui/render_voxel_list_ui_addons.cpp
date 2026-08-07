@@ -165,6 +165,110 @@ void RenderVoxelList::render_guide_curve_window() {
 
     ImGui::Separator();
 
+    // ---- Auto hair root checkbox (only when north_pole is configured) ----
+    {
+        float np_len =
+            std::sqrt(item.hair_north_pole.x * item.hair_north_pole.x +
+                      item.hair_north_pole.y * item.hair_north_pole.y +
+                      item.hair_north_pole.z * item.hair_north_pole.z);
+        if (np_len > 0.001f) {
+            bool prev_auto = item.auto_hair_root;
+            if (ImGui::Checkbox(get_locale_cstr("label.auto_hair_root"),
+                                &item.auto_hair_root)) {
+                if (item.auto_hair_root) {
+                    // Compute ray from north-pole direction toward center,
+                    // find first hit on base model triangles
+                    vec3f dir = {item.hair_north_pole.x / np_len,
+                                 item.hair_north_pole.y / np_len,
+                                 item.hair_north_pole.z / np_len};
+                    vec3f origin = {item.addon_center_point.x + dir.x * 500.0f,
+                                    item.addon_center_point.y + dir.y * 500.0f,
+                                    item.addon_center_point.z + dir.z * 500.0f};
+                    vec3f ray_dir = {-dir.x, -dir.y, -dir.z};
+                    vec3f hit = {item.addon_center_point.x,
+                                 item.addon_center_point.y,
+                                 item.addon_center_point.z};
+                    bool found = false;
+                    float best_t = 1e30f;
+
+                    if (item.addon_base_node_id >= 0) {
+                        auto base_it = items.find(item.addon_base_node_id);
+                        if (base_it != items.end()) {
+                            auto& base = *base_it->second;
+                            auto test_tri = [&](const vec3f& v0,
+                                                const vec3f& v1,
+                                                const vec3f& v2) {
+                                float t;
+                                if (ray_triangle_intersect(origin, ray_dir, v0,
+                                                           v1, v2, t) &&
+                                    t < best_t) {
+                                    best_t = t;
+                                    hit = {origin.x + ray_dir.x * t,
+                                           origin.y + ray_dir.y * t,
+                                           origin.z + ray_dir.z * t};
+                                    found = true;
+                                }
+                            };
+                            if (!base.cached_mesh.empty()) {
+                                for (const auto& entry : base.cached_mesh) {
+                                    const auto& tri = std::get<0>(entry);
+                                    test_tri({std::get<0>(tri).x, std::get<0>(tri).y, std::get<0>(tri).z},
+                                             {std::get<1>(tri).x, std::get<1>(tri).y, std::get<1>(tri).z},
+                                             {std::get<2>(tri).x, std::get<2>(tri).y, std::get<2>(tri).z});
+                                }
+                            } else {
+                                for (const auto& tri : base.source_triangles) {
+                                    test_tri({std::get<0>(tri).x, std::get<0>(tri).y, std::get<0>(tri).z},
+                                             {std::get<1>(tri).x, std::get<1>(tri).y, std::get<1>(tri).z},
+                                             {std::get<2>(tri).x, std::get<2>(tri).y, std::get<2>(tri).z});
+                                }
+                            }
+                        }
+                    }
+                    if (!found) {
+                        hit = {item.addon_center_point.x - dir.x * 10.0f,
+                               item.addon_center_point.y - dir.y * 10.0f,
+                               item.addon_center_point.z - dir.z * 10.0f};
+                    }
+                    item.common_hair_root_point = hit;
+                    push_undo_now(item.id, std::nullopt, "Auto Hair Root");
+                }
+                // Propagate root point to each enabled strand's hidden_guide_points_start
+                {
+                    vec3f effective_root = item.common_hair_root_point;
+                    {
+                        vec3f to_center = {
+                            item.addon_center_point.x - effective_root.x,
+                            item.addon_center_point.y - effective_root.y,
+                            item.addon_center_point.z - effective_root.z};
+                        float dist = std::sqrt(to_center.x * to_center.x +
+                                               to_center.y * to_center.y +
+                                               to_center.z * to_center.z);
+                        if (dist > 0.001f && item.hair_root_center_offset > 0.0f) {
+                            vec3f dir = {to_center.x / dist, to_center.y / dist,
+                                         to_center.z / dist};
+                            float offset = item.hair_root_center_offset;
+                            if (offset > dist) offset = dist;
+                            effective_root = {effective_root.x + dir.x * offset,
+                                              effective_root.y + dir.y * offset,
+                                              effective_root.z + dir.z * offset};
+                        }
+                    }
+                    if (item.auto_hair_root) {
+                        strand.hidden_guide_points_start = {effective_root};
+                        strand.hair_root_enabled = true;
+                    } else {
+                        strand.hidden_guide_points_start.clear();
+                        strand.hair_root_enabled = false;
+                    }
+                    strand.mesh_dirty = true;
+                }
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.auto_hair_root"));
+        }
+    }
+
     ImGui::Text(get_locale_cstr("label.guide_curve_points"),
                 static_cast<int>(strand.guide_points.size()));
 
@@ -172,13 +276,10 @@ void RenderVoxelList::render_guide_curve_window() {
         ImGui::TextWrapped("%s",
                            get_locale_cstr("label.no_guide_points"));
     } else {
-        // 可滚动的点列表（可编辑坐标），高度随窗口变化，
-        // 负高度为底部的分隔线和清空按钮预留空间
+        // Reserve space at bottom for the separator and clear button
         float bottom_reserve = ImGui::GetFrameHeightWithSpacing() +
                                ImGui::GetStyle().ItemSpacing.y;
-        ImGui::BeginChild("GuidePointsList", ImVec2(0, -bottom_reserve), true);
 
-        // 在循环前保存快照，用于撤销按钮+/-等即时修改
         auto before_edit = capture_snapshot(item);
         EditResult all_edits;
         int delete_point = -1;
@@ -189,127 +290,206 @@ void RenderVoxelList::render_guide_curve_window() {
         item.hovered_guide_point_strand_uuid.clear();
         item.hovered_guide_point_index = -1;
 
-        for (size_t pi = 0; pi < strand.guide_points.size(); ++pi) {
-            ImGui::PushID(static_cast<int>(pi));
-            bool point_hovered = false;
+        if (ImGui::BeginTable("##gp_table", 5,
+                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                              ImGuiTableFlags_ScrollY,
+                              ImVec2(0, -bottom_reserve))) {
+            ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 30.0f);
+            ImGui::TableSetupColumn(get_locale_cstr("label.guide_point"),
+                                    ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("##ctr_col",
+                                    ImGuiTableColumnFlags_WidthFixed, 65.0f);
+            ImGui::TableSetupColumn("##ord_col",
+                                    ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            ImGui::TableSetupColumn("##act_col",
+                                    ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableHeadersRow();
 
-            char label_buf[64];
-            snprintf(label_buf, sizeof(label_buf),
-                     get_locale_cstr("label.guide_point"),
-                     static_cast<int>(pi + 1));
+            for (size_t pi = 0; pi < strand.guide_points.size(); ++pi) {
+                ImGui::PushID(static_cast<int>(pi));
+                ImGui::TableNextRow();
+                bool point_hovered = false;
 
-            auto r = edit_vec3_stepper(label_buf, strand.guide_points[pi],
-                                       0.5f, false, true);
-            all_edits.activated |= r.activated;
-            all_edits.deactivated_after_edit |= r.deactivated_after_edit;
-            all_edits.value_changed |= r.value_changed;
-            if (!point_hovered && ImGui::IsItemHovered())
-                point_hovered = true;
+                char label_buf[64];
+                snprintf(label_buf, sizeof(label_buf),
+                         get_locale_cstr("label.guide_point"),
+                         static_cast<int>(pi + 1));
 
-            // --- 中心点方向移动控件（仅当中心点启用时显示）---
-            if (item.show_addon_center) {
-                vec3f to_center =
-                    item.addon_center_point - strand.guide_points[pi];
-                float dist = to_center.length();
+                // Column 1: Point number
+                ImGui::TableNextColumn();
+                ImGui::AlignTextToFramePadding();
+                ImGui::Text("%d", static_cast<int>(pi + 1));
+
+                // Column 2: Coordinates + Edit button
+                ImGui::TableNextColumn();
+                ImGui::AlignTextToFramePadding();
+                ImGui::Text("(%.1f, %.1f, %.1f)",
+                            strand.guide_points[pi].x,
+                            strand.guide_points[pi].y,
+                            strand.guide_points[pi].z);
+                if (!point_hovered && ImGui::IsItemHovered())
+                    point_hovered = true;
                 ImGui::SameLine();
-                ImGui::TextDisabled("dist=%.2f", dist);
+                char edit_popup_id[64];
+                snprintf(edit_popup_id, sizeof(edit_popup_id), "Edit##gpe_%zu", pi);
+                if (ImGui::SmallButton(edit_popup_id))
+                    ImGui::OpenPopup(edit_popup_id);
+                if (!point_hovered && ImGui::IsItemHovered())
+                    point_hovered = true;
 
-                if (dist > 0.0001f) {
-                    vec3f dir = to_center / dist;
+                // Edit popup (same as before)
+                if (ImGui::BeginPopup(edit_popup_id)) {
+                    ImGui::Text("%s", label_buf);
+                    ImGui::Separator();
+                    auto r = edit_vec3_stepper("", strand.guide_points[pi],
+                                               0.5f, false, true);
+                    all_edits.activated |= r.activated;
+                    all_edits.deactivated_after_edit |= r.deactivated_after_edit;
+                    all_edits.value_changed |= r.value_changed;
 
-                    // 移动步长（静态变量，所有关键点共享，右键菜单中可调）
-                    static float kp_move_step = 0.5f;
+                    if (item.show_addon_center) {
+                        vec3f to_center =
+                            item.addon_center_point - strand.guide_points[pi];
+                        float dist = to_center.length();
+                        ImGui::TextDisabled("dist=%.2f", dist);
 
-                    ImGui::SameLine();
-                    if (ImGui::SmallButton("+")) {
-                        strand.guide_points[pi] =
-                            strand.guide_points[pi] + dir * kp_move_step;
-                        all_edits.value_changed = true;
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip(
-                            "%s",
-                            get_locale_cstr("tooltip.move_toward_center"));
-                        point_hovered = true;
-                    }
-                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
-                        ImGui::OpenPopup("kp_center_menu");
-                    ImGui::SameLine();
-                    if (ImGui::SmallButton("-")) {
-                        strand.guide_points[pi] =
-                            strand.guide_points[pi] - dir * kp_move_step;
-                        all_edits.value_changed = true;
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip(
-                            "%s",
-                            get_locale_cstr("tooltip.move_away_from_center"));
-                        point_hovered = true;
-                    }
-                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
-                        ImGui::OpenPopup("kp_center_menu");
+                        if (dist > 0.0001f) {
+                            vec3f dir = to_center / dist;
+                            static float kp_move_step = 0.5f;
 
-                    // 右键菜单：直接编辑离中心距离与移动步长
-                    if (ImGui::BeginPopup("kp_center_menu")) {
-                        float new_dist = dist;
-                        ImGui::SetNextItemWidth(120);
-                        ImGui::DragFloat(
-                            get_locale_cstr("label.dist_to_center"),
-                            &new_dist, 0.01f, 0.0001f, 100000.0f, "%.3f");
-                        if (ImGui::IsItemActivated())
-                            all_edits.activated = true;
-                        if (ImGui::IsItemDeactivatedAfterEdit())
-                            all_edits.deactivated_after_edit = true;
-                        if (new_dist != dist) {
-                            strand.guide_points[pi] =
-                                item.addon_center_point - dir * new_dist;
-                            // 历史记录由 activated/deactivated 在释放时创建，
-                            // 拖动过程中只更新网格，避免每帧产生历史记录
-                            strand.mesh_dirty = true;
+                            if (ImGui::SmallButton("+##gpe_ctr")) {
+                                strand.guide_points[pi] =
+                                    strand.guide_points[pi] + dir * kp_move_step;
+                                all_edits.value_changed = true;
+                            }
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_toward_center"));
+                            if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                                ImGui::OpenPopup("kp_cmenu##gpe");
+                            ImGui::SameLine();
+                            if (ImGui::SmallButton("-##gpe_ctr")) {
+                                strand.guide_points[pi] =
+                                    strand.guide_points[pi] - dir * kp_move_step;
+                                all_edits.value_changed = true;
+                            }
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_away_from_center"));
+                            if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                                ImGui::OpenPopup("kp_cmenu##gpe");
+
+                            if (ImGui::BeginPopup("kp_cmenu##gpe")) {
+                                float new_dist = dist;
+                                ImGui::SetNextItemWidth(120);
+                                ImGui::DragFloat(get_locale_cstr("label.dist_to_center"),
+                                                 &new_dist, 0.01f, 0.0001f, 100000.0f, "%.3f");
+                                if (ImGui::IsItemActivated())
+                                    all_edits.activated = true;
+                                if (ImGui::IsItemDeactivatedAfterEdit())
+                                    all_edits.deactivated_after_edit = true;
+                                if (new_dist != dist) {
+                                    strand.guide_points[pi] =
+                                        item.addon_center_point - dir * new_dist;
+                                    strand.mesh_dirty = true;
+                                }
+                                ImGui::SetNextItemWidth(120);
+                                ImGui::DragFloat(get_locale_cstr("label.move_step"),
+                                                 &kp_move_step, 0.01f, 0.01f, 10.0f, "%.2f");
+                                ImGui::EndPopup();
+                            }
                         }
-                        ImGui::SetNextItemWidth(120);
-                        ImGui::DragFloat(get_locale_cstr("label.move_step"),
-                                         &kp_move_step, 0.01f, 0.01f, 10.0f,
-                                         "%.2f");
-                        ImGui::EndPopup();
+                    }
+                    ImGui::EndPopup();
+                }
+
+                // Column 3: Center +/- buttons (inline, compact)
+                ImGui::TableNextColumn();
+                if (item.show_addon_center) {
+                    vec3f to_center =
+                        item.addon_center_point - strand.guide_points[pi];
+                    float dist = to_center.length();
+                    ImGui::TextDisabled("dist=%.2f", dist);
+                    if (dist > 0.0001f) {
+                        static float kp_move_step = 0.5f;
+                        vec3f dir = to_center / dist;
+
+                        if (ImGui::SmallButton("+##gpi")) {
+                            strand.guide_points[pi] =
+                                strand.guide_points[pi] + dir * kp_move_step;
+                            all_edits.value_changed = true;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_toward_center"));
+                            point_hovered = true;
+                        }
+                        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                            ImGui::OpenPopup("kp_cmenu_inline");
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("-##gpi")) {
+                            strand.guide_points[pi] =
+                                strand.guide_points[pi] - dir * kp_move_step;
+                            all_edits.value_changed = true;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_away_from_center"));
+                            point_hovered = true;
+                        }
+                        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                            ImGui::OpenPopup("kp_cmenu_inline");
+
+                        if (ImGui::BeginPopup("kp_cmenu_inline")) {
+                            float new_dist = dist;
+                            ImGui::SetNextItemWidth(120);
+                            ImGui::DragFloat(get_locale_cstr("label.dist_to_center"),
+                                             &new_dist, 0.01f, 0.0001f, 100000.0f, "%.3f");
+                            if (ImGui::IsItemActivated())
+                                all_edits.activated = true;
+                            if (ImGui::IsItemDeactivatedAfterEdit())
+                                all_edits.deactivated_after_edit = true;
+                            if (new_dist != dist) {
+                                strand.guide_points[pi] =
+                                    item.addon_center_point - dir * new_dist;
+                                strand.mesh_dirty = true;
+                            }
+                            ImGui::SetNextItemWidth(120);
+                            ImGui::DragFloat(get_locale_cstr("label.move_step"),
+                                             &kp_move_step, 0.01f, 0.01f, 10.0f, "%.2f");
+                            ImGui::EndPopup();
+                        }
+                    } else {
+                        ImGui::TextDisabled("-");
                     }
                 }
-            }
 
-            // 操作按钮放在同一行
-            if (pi > 0) {
-                ImGui::SameLine();
-                if (ImGui::SmallButton("^")) {
-                    swap_up = static_cast<int>(pi);
+                // Column 4: Reorder buttons (up/down)
+                ImGui::TableNextColumn();
+                if (pi > 0) {
+                    if (ImGui::SmallButton("^")) swap_up = static_cast<int>(pi);
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_point_up"));
+                        point_hovered = true;
+                    }
                 }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(
-                        "%s", get_locale_cstr("tooltip.move_point_up"));
-                    point_hovered = true;
+                if (pi < strand.guide_points.size() - 1) {
+                    if (pi > 0) ImGui::SameLine();
+                    if (ImGui::SmallButton("v")) swap_down = static_cast<int>(pi);
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_point_down"));
+                        point_hovered = true;
+                    }
                 }
-            }
-            if (pi < strand.guide_points.size() - 1) {
-                ImGui::SameLine();
-                if (ImGui::SmallButton("v")) {
-                    swap_down = static_cast<int>(pi);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(
-                        "%s", get_locale_cstr("tooltip.move_point_down"));
-                    point_hovered = true;
-                }
-            }
-            ImGui::SameLine();
-            if (ImGui::SmallButton("X")) {
-                delete_point = static_cast<int>(pi);
-            }
 
-            if (point_hovered) {
-                item.hovered_guide_point_strand_uuid = strand.uuid;
-                item.hovered_guide_point_index = static_cast<int>(pi);
-            }
+                // Column 5: Delete button
+                ImGui::TableNextColumn();
+                if (ImGui::SmallButton("X")) delete_point = static_cast<int>(pi);
 
-            ImGui::PopID();
+                if (point_hovered) {
+                    item.hovered_guide_point_strand_uuid = strand.uuid;
+                    item.hovered_guide_point_index = static_cast<int>(pi);
+                }
+
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
         }
 
         // 处理坐标编辑的撤销
@@ -320,7 +500,6 @@ void RenderVoxelList::render_guide_curve_window() {
             end_edit(item.id, "Guide Point Edit");
             strand.mesh_dirty = true;
         } else if (all_edits.value_changed && !item.collision_edit_active) {
-            // Discrete change (keyboard input, +/- buttons) — no drag session
             push_undo_now(item.id, before_edit, "Guide Point Edit");
             strand.mesh_dirty = true;
         }
@@ -346,8 +525,6 @@ void RenderVoxelList::render_guide_curve_window() {
                 strand.guide_points.begin() + delete_point);
             strand.mesh_dirty = true;
         }
-
-        ImGui::EndChild();
     }
 
     ImGui::Separator();

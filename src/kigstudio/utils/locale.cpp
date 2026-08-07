@@ -1272,6 +1272,8 @@ void init_locale_strings() {
     add_locale_string("tooltip.auto_hair_root",
                       {{"en", "Place a hidden guide point at the scalp collision from top-of-head direction"},
                        {"zh", "从头顶方向向底模投射，自动放置隐藏发根引导点"}});
+    add_locale_string("label.hair_strands",
+                      {{"en", "Hair Strands"}, {"zh", "发束列表"}});
 
     // ---- 发根编辑模式 ----
     add_locale_string("action.hair_root_edit",
