@@ -353,6 +353,7 @@ struct OrthoProjectionState {
     float resize_start_scale_x = 1.0f;
     float resize_start_scale_y = 1.0f;
     bool is_hovering_model = false;     // mouse over valid mesh area
+    bool mouse_in_image = false;       // mouse currently inside the render canvas
     vec3f hovered_world_pos = {0, 0, 0};
     int hovered_px = 0, hovered_py = 0; // API 2D render-pixel coords
 

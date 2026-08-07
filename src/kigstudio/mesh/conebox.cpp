@@ -880,34 +880,6 @@ std::vector<Triangle> IcosphereSilhouetteBuilder::build() {
 	return result_;
 	}
 
-	bool ray_triangle_intersect(const vec3f& origin,
-                            const vec3f& direction,
-                            const vec3f& v0,
-                            const vec3f& v1,
-                            const vec3f& v2,
-                            vec3f& out_point) {
-    const float EPSILON = 1e-6f;
-    const vec3f edge1 = v1 - v0;
-    const vec3f edge2 = v2 - v0;
-    const vec3f pvec = direction.cross(edge2);
-    const float det = edge1.dot(pvec);
-    if (std::abs(det) < EPSILON)
-        return false;
-    const float inv_det = 1.0f / det;
-    const vec3f tvec = origin - v0;
-    const float u = tvec.dot(pvec) * inv_det;
-    if (u < 0.0f || u > 1.0f)
-        return false;
-    const vec3f qvec = tvec.cross(edge1);
-    const float v = direction.dot(qvec) * inv_det;
-    if (v < 0.0f || u + v > 1.0f)
-        return false;
-    const float t = edge2.dot(qvec) * inv_det;
-    if (t < 0.0f)
-        return false;
-    out_point = origin + direction * t;
-    return true;
-}
 
 // =====================================================================
 // Icosphere silhouette algorithm (new implementation).

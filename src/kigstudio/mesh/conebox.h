@@ -21,6 +21,7 @@
 #include <vector>
 #include "kigstudio/utils/vec2.h"
 #include "kigstudio/utils/vec3.h"
+#include "kigstudio/utils/triangle.h"
 #include "kigstudio/voxel/voxel2mesh.h"
 
 namespace sinriv::kigstudio::mesh::conebox {
@@ -48,13 +49,6 @@ struct Triangle_status {
 };
 // 透视逆变换
 vec3f perspective_inverse(const vec3f& pos, const vec3f& c, int face_index);
-
-bool ray_triangle_intersect(const vec3f& origin,
-                            const vec3f& direction,
-                            const vec3f& v0,
-                            const vec3f& v1,
-                            const vec3f& v2,
-                            vec3f& out_point);
 
 struct Triangle_group {
     std::vector<Triangle_status> triangles;
