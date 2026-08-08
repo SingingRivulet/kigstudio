@@ -601,6 +601,29 @@ void RenderVoxelList::render_hair_root_window() {
                 }
             }
         }
+
+        // Root vector length: length of the synthetic short width vector
+        // injected at the strand start when "generate hair root" is on.
+        // Changes rebuild affected strand meshes in real time.
+        ImGui::SameLine();
+        float prev_vlen = item.hair_root_vector_length;
+        ImGui::SetNextItemWidth(100);
+        ImGui::DragFloat(get_locale_cstr("label.hair_root_vector_length"),
+                         &item.hair_root_vector_length, 0.01f, 0.0f, 10.0f,
+                         "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "%s", get_locale_cstr("tooltip.hair_root_vector_length"));
+        if (ImGui::IsItemActivated())
+            begin_edit(item.id);
+        if (ImGui::IsItemDeactivatedAfterEdit())
+            end_edit(item.id, "Hair Root Vector Length");
+        if (prev_vlen != item.hair_root_vector_length) {
+            for (auto& s : item.hair_strands) {
+                if (s.hair_root_generate)
+                    s.mesh_dirty = true;
+            }
+        }
     }
 
     ImGui::Separator();
@@ -613,7 +636,7 @@ void RenderVoxelList::render_hair_root_window() {
     vec3f effective_root = compute_effective_hair_root(item);
 
     float table_h = ImGui::GetContentRegionAvail().y;
-    if (ImGui::BeginTable("##hr_table", 5,
+    if (ImGui::BeginTable("##hr_table", 6,
                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                               ImGuiTableFlags_ScrollY,
                           ImVec2(0, table_h))) {
@@ -630,6 +653,9 @@ void RenderVoxelList::render_hair_root_window() {
         ImGui::TableSetupColumn(
             get_locale_cstr("label.hair_root_col_width_count"),
             ImGuiTableColumnFlags_WidthFixed, 55.0f);
+        ImGui::TableSetupColumn(
+            get_locale_cstr("label.hair_root_col_generate"),
+            ImGuiTableColumnFlags_WidthFixed, 60.0f);
         ImGui::TableHeadersRow();
 
         for (size_t i = 0; i < item.hair_strands.size(); ++i) {
@@ -681,6 +707,19 @@ void RenderVoxelList::render_hair_root_window() {
             // Column 5: width point count
             ImGui::TableNextColumn();
             ImGui::Text("%d", static_cast<int>(strand.width_points.size()));
+
+            // Column 6: generate hair root checkbox (real-time mesh update)
+            ImGui::TableNextColumn();
+            bool gen_root = strand.hair_root_generate;
+            if (ImGui::Checkbox("##hr_generate", &gen_root)) {
+                push_undo_now(item.id, std::nullopt,
+                              "Toggle Hair Root Generate");
+                strand.hair_root_generate = gen_root;
+                strand.mesh_dirty = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr(
+                                            "tooltip.hair_root_generate"));
 
             ImGui::PopID();
         }

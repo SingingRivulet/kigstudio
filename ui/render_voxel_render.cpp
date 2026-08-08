@@ -878,16 +878,15 @@ build_candied_hawthorn_mesh(const HairStrand& strand) {
             primitives.push_back(std::move(p));
     }
 
-    // Concatenate all primitives (skip CGAL boolean union — the
-    // overlapping cylinders/ellipsoids cause cascading union failures
-    // that degrade the mesh; concatenation renders correctly for both
-    // braid and candied hawthorn visual styles).
-    MeshData merged;
-    size_t total_faces = 0;
-    for (auto& p : primitives) total_faces += p.size();
-    merged.reserve(total_faces);
-    for (auto& p : primitives)
-        merged.insert(merged.end(), p.begin(), p.end());
+    // Boolean-union all primitives via CGAL corefinement (incremental).
+    // The output is used for 3D printing, which is sensitive to
+    // non-manifold edges — plain concatenation of overlapping primitives
+    // leaves intersecting interior surfaces, so a real union is required.
+    // mesh_union internally retries with repaired / alpha-wrapped inputs
+    // before giving up; if a primitive still fails, it is concatenated
+    // as a last resort and the post-build alpha_wrap check in
+    // update_addon_meshes() guarantees a manifold result.
+    MeshData merged = union_all_primitives(primitives);
     if (merged.empty()) return empty_result;
 
     // Convert MeshData to return type (they are the same underlying types)
@@ -1053,13 +1052,9 @@ build_braid_mesh(const HairStrand& strand) {
             primitives.push_back(std::move(p));
     }
 
-    // Concatenate all primitives (same rationale as candied hawthorn)
-    MeshData merged;
-    size_t total_faces = 0;
-    for (auto& p : primitives) total_faces += p.size();
-    merged.reserve(total_faces);
-    for (auto& p : primitives)
-        merged.insert(merged.end(), p.begin(), p.end());
+    // Boolean-union all primitives via CGAL corefinement (same rationale
+    // as candied hawthorn — manifold output required for 3D printing).
+    MeshData merged = union_all_primitives(primitives);
     if (merged.empty()) return empty_result;
 
     std::vector<std::tuple<loft_Triangle, loft_vec3f>> result;
@@ -1072,7 +1067,7 @@ build_braid_mesh(const HairStrand& strand) {
 // Build loft mesh triangles from a single hair strand.
 // Returns (Triangle, normal) pairs suitable for RenderMesh::loadGeometry().
 std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
-    HairStrand& strand) {
+    HairStrand& strand, float hair_root_vector_length = 0.0f) {
 	using namespace sinriv::kigstudio::mesh::loft;
 	std::vector<std::tuple<loft_Triangle, loft_vec3f>> result;
 
@@ -1177,6 +1172,19 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 		strand.width_curve_id_v2 = true;
 	}
 	const int N = N_all;
+
+	// Synthetic hair-root width vector: when "generate hair root" is
+	// enabled, treat the strand start (curve_id 0, covering the hidden
+	// gray root region) as having a short width vector whose direction
+	// matches the first user width vector.
+	if (strand.hair_root_generate && !sorted_wp.empty() &&
+	    hair_root_vector_length > 0.0f) {
+		HairStrand::WidthPoint root_wp;
+		root_wp.curve_id = 0.0f;
+		root_wp.scale = hair_root_vector_length;
+		root_wp.direction = sorted_wp.front().direction;
+		sorted_wp.insert(sorted_wp.begin(), root_wp);
+	}
 
 	// Pre-compute width interpolation for every sample point
 	std::vector<float> scales(M);
@@ -1881,7 +1889,7 @@ void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
 	for (auto& strand : hair_strands) {
 		if (!strand.visible || !strand.mesh_dirty) continue;
 		try {
-			auto tris = build_hair_strand_mesh(strand);
+			auto tris = build_hair_strand_mesh(strand, hair_root_vector_length);
 			if (tris.empty()) {
 				addon_renderers.erase(strand.uuid);
 				continue;
@@ -1976,7 +1984,7 @@ RenderVoxelList::RenderVoxelItem::build_strand_loft_triangles(
 
 	auto& strand = const_cast<HairStrand&>(
 	    static_cast<const HairStrand&>(hair_strands[strand_idx]));
-	auto tris_with_normals = build_hair_strand_mesh(strand);
+	auto tris_with_normals = build_hair_strand_mesh(strand, hair_root_vector_length);
 	if (tris_with_normals.empty()) return result;
 
 	// 提取纯三角形用于水密性和自相交检测

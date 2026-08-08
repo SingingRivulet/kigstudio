@@ -156,11 +156,17 @@ bool hair_root_enabled;                           // 单根发束级别开关
 1. 合并 all_guide_points = hidden_start + guide_points + hidden_end
 2. 若点数 < 2 → 返回空
 3. 特殊类型（CANDIED_HAWTHORN / BRAID）→ 分发到专用 builder
+   （各图元——芯柱/椭球/辫股/关节环/尖端——通过 `union_all_primitives`
+   做 CGAL 增量布尔并集，保证流形输出以用于 3D 打印；单个图元并集失败时
+   回退拼接，由构建后的 alpha_wrap 检查兜底流形性）
 4. 普通类型：若 width_points 为空 → 返回空
 5. 采样引导曲线 (Bezier/Catmull-Rom) → guide_curve 多段线
-6. 宽度插值：对每个采样点，找到包围的宽度向量，Catmull-Rom 插值 scale + direction
-7. 计算截面范围：从第一个宽度向量到最后一个宽度向量
-8. 构建 LoftSection → 生成三角形 → alpha_wrap 修复 → 提交到 addon_renderers
+6. 若 strand.hair_root_generate 且宽度向量非空：在 sorted_wp 开头注入合成发根宽度向量
+   （curve_id=0，scale=RenderVoxelItem::hair_root_vector_length，direction=第一个宽度向量的方向），
+   放样截面范围因此延伸到起始位置（含隐藏灰色发根区段）
+7. 宽度插值：对每个采样点，找到包围的宽度向量，Catmull-Rom 插值 scale + direction
+8. 计算截面范围：从第一个宽度向量到最后一个宽度向量
+9. 构建 LoftSection → 生成三角形 → alpha_wrap 修复 → 提交到 addon_renderers
 ```
 
 ### mesh_dirty 生命周期

@@ -205,6 +205,13 @@ struct HairStrand {
     // hidden_guide_points_start during lofting.
     bool hair_root_enabled = true;
 
+    // When true, lofting injects a synthetic short width vector at the
+    // strand start (curve_id 0, covering the hidden gray root region),
+    // with length = RenderVoxelItem::hair_root_vector_length and the same
+    // direction as the first user width vector. No-op when width_points
+    // is empty (empty mesh).
+    bool hair_root_generate = false;
+
     // When true, WidthPoint::curve_id references the full guide curve
     // (hidden_guide_points_start + guide_points + hidden_guide_points_end).
     // When false, curve_id references visible guide_points only (legacy).
@@ -539,6 +546,8 @@ struct CollisionEditorSnapshot {
     bool auto_hair_root = false;
     vec3f common_hair_root_point = {0.0f, 0.0f, 0.0f};
     float hair_root_center_offset = 0.0f;
+    // 发根处生成的短宽度向量长度（用于"生成发根"放样）
+    float hair_root_vector_length = 0.1f;
     // 发际线平面（用于纺锤宽度生成）
     bool hairline_plane_enabled = false;
     bool hairline_plane_use_y = true;
@@ -702,6 +711,8 @@ class RenderVoxelList {
         bool auto_hair_root = false;
         vec3f common_hair_root_point = {0.0f, 0.0f, 0.0f};
         float hair_root_center_offset = 0.0f;  // 发根点向中心点移动的距离
+        // 发根处生成的短宽度向量长度（"生成发根"放样用）
+        float hair_root_vector_length = 0.1f;
         // Ortho occlusion cache: avoid recomputing per-strand visibility every frame
         size_t _ortho_occlusion_hash = 0;
         std::vector<bool> _ortho_strand_occluded;

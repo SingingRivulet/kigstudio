@@ -1296,6 +1296,17 @@ void init_locale_strings() {
                       {{"en", "Enable/disable the auto hair root guide point for this strand "
                               "(same as the checkbox in the Guide Curve Editor)"},
                        {"zh", "为该发束启用/禁用自动发根引导点（与引导曲线编辑器中的勾选框等价）"}});
+    add_locale_string("label.hair_root_vector_length",
+                      {{"en", "Root Vector"}, {"zh", "发根向量"}});
+    add_locale_string("tooltip.hair_root_vector_length",
+                      {{"en", "Length of the short width vector generated at the hair root"},
+                       {"zh", "在发根处生成的短宽度向量长度"}});
+    add_locale_string("label.hair_root_col_generate",
+                      {{"en", "Gen Root"}, {"zh", "生成发根"}});
+    add_locale_string("tooltip.hair_root_generate",
+                      {{"en", "Loft from the strand start (including the gray root region) "
+                              "with a short vector at the same angle as the first width vector"},
+                       {"zh", "放样时在起始位置（含灰色发根区）以与第一个宽度向量同角度的短向量作为宽度进行放样"}});
     add_locale_string("label.hair_root_center_offset",
                       {{"en", "Offset Toward Center"}, {"zh", "向中心偏移"}});
     add_locale_string("tooltip.hair_root_center_offset",

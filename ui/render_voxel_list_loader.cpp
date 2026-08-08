@@ -83,6 +83,7 @@ cJSON* hair_strand_to_json(const HairStrand& strand) {
     cJSON_AddBoolToObject(s_obj, "expanded", strand.expanded);
     cJSON_AddBoolToObject(s_obj, "visible", strand.visible);
     cJSON_AddBoolToObject(s_obj, "hair_root_enabled", strand.hair_root_enabled);
+    cJSON_AddBoolToObject(s_obj, "hair_root_generate", strand.hair_root_generate);
     cJSON_AddNumberToObject(s_obj, "section_rotation",
                             static_cast<double>(strand.section_rotation));
     cJSON_AddNumberToObject(s_obj, "guide_samples_per_segment",
@@ -172,6 +173,9 @@ HairStrand hair_strand_from_json(const cJSON* s_obj) {
     cJSON* hre_obj = cJSON_GetObjectItem(s_obj, "hair_root_enabled");
     if (hre_obj && cJSON_IsBool(hre_obj))
         strand.hair_root_enabled = cJSON_IsTrue(hre_obj);
+    cJSON* hrg_obj = cJSON_GetObjectItem(s_obj, "hair_root_generate");
+    if (hrg_obj && cJSON_IsBool(hrg_obj))
+        strand.hair_root_generate = cJSON_IsTrue(hrg_obj);
     cJSON* rot_obj = cJSON_GetObjectItem(s_obj, "section_rotation");
     if (rot_obj && cJSON_IsNumber(rot_obj))
         strand.section_rotation = static_cast<float>(rot_obj->valuedouble);
@@ -562,6 +566,8 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
                           sinriv::kigstudio::to_json(item.common_hair_root_point));
     cJSON_AddNumberToObject(obj, "hair_root_center_offset",
                             static_cast<double>(item.hair_root_center_offset));
+    cJSON_AddNumberToObject(obj, "hair_root_vector_length",
+                            static_cast<double>(item.hair_root_vector_length));
     cJSON_AddBoolToObject(obj, "hairline_plane_enabled",
                           item.hairline_plane_enabled);
     cJSON_AddBoolToObject(obj, "hairline_plane_use_y",
@@ -949,6 +955,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->auto_hair_root = cJSON_IsTrue(child);
             } else if (strcmp(key, "hair_root_center_offset") == 0) {
                 item->hair_root_center_offset = static_cast<float>(child->valuedouble);
+            } else if (strcmp(key, "hair_root_vector_length") == 0) {
+                item->hair_root_vector_length = static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "hairline_plane_enabled") == 0) {
                 item->hairline_plane_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_use_y") == 0) {
@@ -1255,6 +1263,8 @@ cJSON* RenderVoxelList::snapshot_to_json(
                           sinriv::kigstudio::to_json(snapshot.common_hair_root_point));
     cJSON_AddNumberToObject(obj, "hair_root_center_offset",
                             static_cast<double>(snapshot.hair_root_center_offset));
+    cJSON_AddNumberToObject(obj, "hair_root_vector_length",
+                            static_cast<double>(snapshot.hair_root_vector_length));
     cJSON_AddBoolToObject(obj, "hairline_plane_enabled",
                           snapshot.hairline_plane_enabled);
     cJSON_AddBoolToObject(obj, "hairline_plane_use_y",
@@ -1564,6 +1574,8 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.auto_hair_root = cJSON_IsTrue(child);
             } else if (strcmp(key, "hair_root_center_offset") == 0) {
                 snapshot.hair_root_center_offset = static_cast<float>(child->valuedouble);
+            } else if (strcmp(key, "hair_root_vector_length") == 0) {
+                snapshot.hair_root_vector_length = static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "hairline_plane_enabled") == 0) {
                 snapshot.hairline_plane_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_use_y") == 0) {
