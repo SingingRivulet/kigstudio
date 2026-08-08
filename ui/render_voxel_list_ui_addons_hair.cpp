@@ -1312,4 +1312,331 @@ void RenderVoxelList::render_angle_config_window() {
 
     ImGui::End();
 }
+
+// ============================================================
+// Drill path editor window
+// ============================================================
+void RenderVoxelList::render_drill_window() {
+    if (!show_drill_window)
+        return;
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Once, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(560, 480), ImGuiCond_Once);
+    bool window_open = true;
+    if (!ImGui::Begin(get_locale_cstr("window.drill_edit"), &window_open)) {
+        ImGui::End();
+        return;
+    }
+
+    if (!window_open) {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            it->second->drill_picking_active = false;
+            it->second->active_drill_path_uuid.clear();
+        }
+        show_drill_window = false;
+        ImGui::End();
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(locker);
+    auto item_it = items.find(render_id);
+    if (item_it == items.end() || item_it->second->source_type != 2) {
+        ImGui::TextUnformatted(get_locale_cstr("label.no_active_item"));
+        ImGui::End();
+        return;
+    }
+    auto& item = *item_it->second;
+
+    // ---- Connection faces toggle (split addon only) ----
+    {
+        bool can_show_conn = item.addon_split && item.hair_strands.size() >= 2;
+        if (!can_show_conn)
+            ImGui::BeginDisabled();
+        bool show_conn = item.show_connection_faces;
+        if (ImGui::Checkbox(get_locale_cstr("label.connection_faces"),
+                            &show_conn)) {
+            push_undo_now(item.id, std::nullopt, "Toggle Connection Faces");
+            item.show_connection_faces = show_conn;
+        }
+        if (!can_show_conn)
+            ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", can_show_conn
+                                        ? get_locale_cstr("tooltip.connection_faces")
+                                        : get_locale_cstr("label.drill_need_split"));
+    }
+
+    ImGui::Separator();
+
+    // ---- Add drill path ----
+    if (ImGui::Button(get_locale_cstr("action.add_drill_path"))) {
+        push_undo_now(item.id, std::nullopt, "Add Drill Path");
+        DrillPath path;
+        path.uuid = generate_uuid();
+        char name_buf[64];
+        std::snprintf(name_buf, sizeof(name_buf),
+                      get_locale_cstr("label.drill_path"),
+                      static_cast<int>(item.drill_paths.size()) + 1);
+        path.name = name_buf;
+        item.drill_paths.push_back(path);
+    }
+
+    // ---- Drill path table ----
+    static float drill_move_step = 0.5f;
+    std::string delete_uuid;
+    std::string activate_uuid;  // path whose points table is shown this frame
+    if (ImGui::BeginTable("##drill_paths", 6,
+                          ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                              ImGuiTableFlags_ScrollY,
+                          ImVec2(0, 140))) {
+        ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_visible"),
+                                ImGuiTableColumnFlags_WidthFixed, 40.0f);
+        ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_name"),
+                                ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_points"),
+                                ImGuiTableColumnFlags_WidthFixed, 40.0f);
+        ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_radius"),
+                                ImGuiTableColumnFlags_WidthFixed, 70.0f);
+        ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_pick"),
+                                ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_delete"),
+                                ImGuiTableColumnFlags_WidthFixed, 50.0f);
+        ImGui::TableHeadersRow();
+
+        for (size_t i = 0; i < item.drill_paths.size(); ++i) {
+            auto& path = item.drill_paths[i];
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::TableNextRow();
+
+            // Column 1: visible checkbox
+            ImGui::TableNextColumn();
+            bool vis = path.visible;
+            if (ImGui::Checkbox("##vis", &vis)) {
+                push_undo_now(item.id, std::nullopt, "Toggle Drill Visible");
+                path.visible = vis;
+                path.mesh_dirty = true;
+            }
+
+            // Column 2: name (editable)
+            ImGui::TableNextColumn();
+            {
+                char name_buf[128];
+                std::snprintf(name_buf, sizeof(name_buf), "%s",
+                              path.name.c_str());
+                ImGui::SetNextItemWidth(-1);
+                if (ImGui::InputText("##name", name_buf, sizeof(name_buf),
+                                     ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    push_undo_now(item.id, std::nullopt, "Rename Drill Path");
+                    path.name = name_buf;
+                }
+            }
+
+            // Column 3: point count (click to select as active path)
+            ImGui::TableNextColumn();
+            {
+                bool is_active = item.active_drill_path_uuid == path.uuid;
+                char cnt_buf[32];
+                std::snprintf(cnt_buf, sizeof(cnt_buf), "%d",
+                              static_cast<int>(path.points.size()));
+                if (is_active) {
+                    activate_uuid = path.uuid;
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                                          ImVec4(0.4f, 0.9f, 0.4f, 1.0f));
+                }
+                if (ImGui::Selectable("##cnt", is_active,
+                                      ImGuiSelectableFlags_None,
+                                      ImVec2(0, 0))) {
+                    item.active_drill_path_uuid = path.uuid;
+                }
+                ImGui::SameLine(0, 0);
+                ImGui::TextUnformatted(cnt_buf);
+                if (is_active)
+                    ImGui::PopStyleColor();
+            }
+
+            // Column 4: radius
+            ImGui::TableNextColumn();
+            {
+                float prev_r = path.radius;
+                ImGui::SetNextItemWidth(-1);
+                ImGui::DragFloat("##radius", &path.radius, 0.02f, 0.05f,
+                                 20.0f, "%.2f");
+                if (ImGui::IsItemActivated())
+                    begin_edit(item.id);
+                if (ImGui::IsItemDeactivatedAfterEdit())
+                    end_edit(item.id, "Drill Radius");
+                if (prev_r != path.radius)
+                    path.mesh_dirty = true;
+            }
+
+            // Column 5: pick toggle button
+            ImGui::TableNextColumn();
+            {
+                bool picking = item.drill_picking_active &&
+                               item.active_drill_path_uuid == path.uuid;
+                if (ImGui::SmallButton(
+                        picking
+                            ? get_locale_cstr("action.stop_pick_drill_points")
+                            : get_locale_cstr("action.pick_drill_points"))) {
+                    if (picking) {
+                        item.drill_picking_active = false;
+                        // Keep active_drill_path_uuid so the point list
+                        // stays editable after picking stops.
+                    } else {
+                        // Mutually exclusive with other picking modes
+                        item.guide_curve_drawing_active = false;
+                        item.active_guide_draw_strand.clear();
+                        item.width_editing_active = false;
+                        item.active_width_edit_strand.clear();
+                        item.hairline_point_picking_active = false;
+                        item.drill_picking_active = true;
+                        item.active_drill_path_uuid = path.uuid;
+                    }
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip(
+                        "%s", get_locale_cstr("tooltip.pick_drill_points"));
+            }
+
+            // Column 6: delete
+            ImGui::TableNextColumn();
+            if (ImGui::SmallButton("X")) {
+                push_undo_now(item.id, std::nullopt, "Delete Drill Path");
+                delete_uuid = path.uuid;
+                if (item.active_drill_path_uuid == path.uuid) {
+                    item.drill_picking_active = false;
+                    item.active_drill_path_uuid.clear();
+                }
+            }
+
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    if (!delete_uuid.empty()) {
+        item.drill_paths.erase(
+            std::remove_if(item.drill_paths.begin(), item.drill_paths.end(),
+                           [&](const DrillPath& p) {
+                               return p.uuid == delete_uuid;
+                           }),
+            item.drill_paths.end());
+    }
+
+    // ---- Active path point list ----
+    DrillPath* active_path =
+        item.find_drill_path_by_uuid(item.active_drill_path_uuid);
+    // Fall back to last-touched path shown via activate_uuid
+    if (!active_path && !activate_uuid.empty())
+        active_path = item.find_drill_path_by_uuid(activate_uuid);
+
+    if (active_path && !active_path->points.empty()) {
+        ImGui::Separator();
+        ImGui::Text("%s: %s", get_locale_cstr("label.drill_col_points"),
+                    active_path->name.c_str());
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80);
+        ImGui::DragFloat(get_locale_cstr("label.drill_move_step"),
+                         &drill_move_step, 0.05f, 0.05f, 50.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.drill_move_step"));
+
+        auto move_point = [&](int idx, float delta) {
+            if (idx < 0 || idx >= static_cast<int>(active_path->points.size()))
+                return;
+            push_undo_now(item.id, std::nullopt, "Move Drill Point");
+            auto& pt = active_path->points[idx];
+            vec3f dir = {item.addon_center_point.x - pt.x,
+                         item.addon_center_point.y - pt.y,
+                         item.addon_center_point.z - pt.z};
+            float len = std::sqrt(dir.x * dir.x + dir.y * dir.y +
+                                  dir.z * dir.z);
+            if (len > 1e-6f) {
+                pt.x += dir.x / len * delta;
+                pt.y += dir.y / len * delta;
+                pt.z += dir.z / len * delta;
+            }
+            active_path->mesh_dirty = true;
+        };
+
+        // Keyboard +/- moves the last picked point
+        if (!ImGui::GetIO().WantTextInput && item.drill_last_picked_index >= 0) {
+            if (ImGui::IsKeyPressed(ImGuiKey_Equal, true) ||
+                ImGui::IsKeyPressed(ImGuiKey_KeypadAdd, true)) {
+                move_point(item.drill_last_picked_index, drill_move_step);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_Minus, true) ||
+                ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract, true)) {
+                move_point(item.drill_last_picked_index, -drill_move_step);
+            }
+        }
+
+        int delete_idx = -1;
+        float pt_table_h = ImGui::GetContentRegionAvail().y;
+        if (ImGui::BeginTable("##drill_pts", 4,
+                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                                  ImGuiTableFlags_ScrollY,
+                              ImVec2(0, pt_table_h))) {
+            ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_index"),
+                                    ImGuiTableColumnFlags_WidthFixed, 30.0f);
+            ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_position"),
+                                    ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_ops"),
+                                    ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_delete"),
+                                    ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            ImGui::TableHeadersRow();
+
+            for (size_t pi = 0; pi < active_path->points.size(); ++pi) {
+                const auto& pt = active_path->points[pi];
+                ImGui::PushID(static_cast<int>(pi));
+                ImGui::TableNextRow();
+
+                ImGui::TableNextColumn();
+                if (item.drill_last_picked_index == static_cast<int>(pi))
+                    ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "%d",
+                                       static_cast<int>(pi + 1));
+                else
+                    ImGui::Text("%d", static_cast<int>(pi + 1));
+
+                ImGui::TableNextColumn();
+                ImGui::Text("(%.2f, %.2f, %.2f)", static_cast<double>(pt.x),
+                            static_cast<double>(pt.y),
+                            static_cast<double>(pt.z));
+
+                ImGui::TableNextColumn();
+                if (ImGui::SmallButton("+")) {
+                    item.drill_last_picked_index = static_cast<int>(pi);
+                    move_point(static_cast<int>(pi), drill_move_step);
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("-")) {
+                    item.drill_last_picked_index = static_cast<int>(pi);
+                    move_point(static_cast<int>(pi), -drill_move_step);
+                }
+
+                ImGui::TableNextColumn();
+                if (ImGui::SmallButton("X"))
+                    delete_idx = static_cast<int>(pi);
+
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        if (delete_idx >= 0) {
+            push_undo_now(item.id, std::nullopt, "Delete Drill Point");
+            active_path->points.erase(active_path->points.begin() + delete_idx);
+            active_path->mesh_dirty = true;
+            if (item.drill_last_picked_index >= delete_idx)
+                item.drill_last_picked_index =
+                    static_cast<int>(active_path->points.size()) - 1;
+        }
+    } else if (active_path) {
+        ImGui::TextDisabled("%s", get_locale_cstr("label.drill_no_points"));
+    }
+
+    ImGui::End();
+}
 }  // namespace sinriv::ui::render

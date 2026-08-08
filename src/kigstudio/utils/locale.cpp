@@ -1321,6 +1321,61 @@ void init_locale_strings() {
                       {{"en", "Set the \"North Pole\" direction first (Angle Config) to use auto hair root."},
                        {"zh", "请先在坐标系配置中设置\"头顶方向\"以启用自动发根引导点。"}});
 
+    // ---- 钻孔编辑器 ----
+    add_locale_string("action.drill_edit",
+                      {{"en", "Drill Edit"}, {"zh", "钻孔编辑"}});
+    add_locale_string("tooltip.drill_edit",
+                      {{"en", "Open the drill editor to punch holes through strands"},
+                       {"zh", "打开钻孔编辑器，在发束上钻孔"}});
+    add_locale_string("window.drill_edit",
+                      {{"en", "Drill Editor"}, {"zh", "钻孔编辑器"}});
+    add_locale_string("label.connection_faces",
+                      {{"en", "Show Connection Faces"}, {"zh", "显示连接面"}});
+    add_locale_string("tooltip.connection_faces",
+                      {{"en", "Show the split connection faces as a highlight overlay"},
+                       {"zh", "高亮显示拆分产生的连接面"}});
+    add_locale_string("label.drill_need_split",
+                      {{"en", "Requires Split enabled and at least 2 strands"},
+                       {"zh", "需开启拆分且至少 2 根发束"}});
+    add_locale_string("action.add_drill_path",
+                      {{"en", "Add Drill Path"}, {"zh", "添加钻孔路径"}});
+    add_locale_string("label.drill_path",
+                      {{"en", "Drill %d"}, {"zh", "钻孔 %d"}});
+    add_locale_string("label.drill_col_visible",
+                      {{"en", "Show"}, {"zh", "显示"}});
+    add_locale_string("label.drill_col_name",
+                      {{"en", "Name"}, {"zh", "名称"}});
+    add_locale_string("label.drill_col_points",
+                      {{"en", "Points"}, {"zh", "点数"}});
+    add_locale_string("label.drill_col_radius",
+                      {{"en", "Radius"}, {"zh", "半径"}});
+    add_locale_string("label.drill_col_pick",
+                      {{"en", "Pick"}, {"zh", "拾取"}});
+    add_locale_string("label.drill_col_delete",
+                      {{"en", "Del"}, {"zh", "删除"}});
+    add_locale_string("label.drill_col_index",
+                      {{"en", "#"}, {"zh", "#"}});
+    add_locale_string("label.drill_col_position",
+                      {{"en", "Position"}, {"zh", "坐标"}});
+    add_locale_string("label.drill_col_ops",
+                      {{"en", "Move"}, {"zh", "移动"}});
+    add_locale_string("label.drill_move_step",
+                      {{"en", "Step"}, {"zh", "步长"}});
+    add_locale_string("tooltip.drill_move_step",
+                      {{"en", "Move distance for +/- keys and buttons on drill points"},
+                       {"zh", "+/- 键及按钮移动钻孔点的距离"}});
+    add_locale_string("action.pick_drill_points",
+                      {{"en", "Pick"}, {"zh", "拾取点"}});
+    add_locale_string("action.stop_pick_drill_points",
+                      {{"en", "Stop"}, {"zh", "停止拾取"}});
+    add_locale_string("tooltip.pick_drill_points",
+                      {{"en", "Click on connection faces / base model / strands to add points; "
+                              "+/- keys move the last picked point"},
+                       {"zh", "点击连接面/底模/发束添加点，+/- 键移动最后拾取的点"}});
+    add_locale_string("label.drill_no_points",
+                      {{"en", "No points yet. Use \"Pick\" and click on the model."},
+                       {"zh", "尚无拾取点。点击\"拾取点\"后在模型上点击添加。"}});
+
     // ---- 正交投影编辑模式 ----
     add_locale_string("action.ortho_projection",
                       {{"en", "Ortho View"}, {"zh", "正交投影编辑"}});

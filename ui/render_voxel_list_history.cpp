@@ -60,7 +60,9 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.hair_angle_config,
             item.hair_north_pole,
             item.hair_front_reference,
-            item.addon_base_node_id};
+            item.addon_base_node_id,
+            item.drill_paths,
+            item.show_connection_faces};
 }
 
 void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
@@ -125,6 +127,9 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.hair_north_pole = snapshot.hair_north_pole;
     item.hair_front_reference = snapshot.hair_front_reference;
     item.addon_base_node_id = snapshot.addon_base_node_id;
+    item.drill_paths = snapshot.drill_paths;
+    item.show_connection_faces = snapshot.show_connection_faces;
+    item.connection_faces_dirty = true;
     item.sdf_precision_cache = snapshot.sdf_precision_cache;
     item.joint_wireframe_dirty = true;
 
@@ -137,6 +142,13 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     validate_strand_uuid(item.active_width_edit_strand);
     validate_strand_uuid(item.active_section_edit_strand);
     validate_strand_uuid(item.active_perpoint_section_edit_strand);
+    // Validate active drill path UUID after snapshot restore
+    if (!item.active_drill_path_uuid.empty() &&
+        !item.find_drill_path_by_uuid(item.active_drill_path_uuid)) {
+        item.active_drill_path_uuid.clear();
+        item.drill_picking_active = false;
+    }
+    item.drill_last_picked_index = -1;
 }
 
 void RenderVoxelList::begin_edit(int item_id) {

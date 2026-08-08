@@ -423,6 +423,7 @@ void RenderVoxelList::render_ui() {
     render_hairline_plane_window();
     render_angle_config_window();
     render_hair_root_window();
+    render_drill_window();
     render_ortho_setup_window();
     render_ortho_edit_window();
     render_file_loader();

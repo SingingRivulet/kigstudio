@@ -2047,6 +2047,163 @@ RenderVoxelList::RenderVoxelItem::build_hair_sdf() const {
 	return sdf_group(strand_sdfs);
 }
 
+std::vector<sinriv::kigstudio::cgal::MeshData>
+RenderVoxelList::RenderVoxelItem::build_drill_tool_meshes() const {
+	std::vector<MeshData> result;
+	for (const auto& p : drill_paths) {
+		if (!p.visible || p.points.size() < 2) continue;
+		std::vector<loft_vec3f> curve;
+		curve.reserve(p.points.size());
+		for (const auto& pt : p.points)
+			curve.push_back(loft_vec3f{pt.x, pt.y, pt.z});
+		MeshData tube = build_cylinder_mesh(curve, p.radius, 16);
+		if (!tube.empty()) result.push_back(std::move(tube));
+	}
+	return result;
+}
+
+void RenderVoxelList::RenderVoxelItem::compute_connection_faces() {
+	using namespace sinriv::kigstudio::sdf;
+	namespace kcgal = sinriv::kigstudio::cgal;
+
+	connection_faces_cache.clear();
+	connection_faces_dirty = false;
+	if (!addon_split || hair_strands.size() < 2) return;
+
+	auto to_mesh_data = [](const std::vector<loft_Triangle>& tris) {
+		MeshData md;
+		md.reserve(tris.size());
+		for (const auto& t : tris)
+			md.emplace_back(t, cgal_vec3f{});
+		return md;
+	};
+
+	// Mirror the split boolean order: strand i subtracts strands 0..i-1.
+	// Faces created by a subtraction step lie on the subtracted strand's
+	// surface — classify them with an SDF of that strand.
+	for (size_t i = 0; i < hair_strands.size(); ++i) {
+		auto tris_i = build_strand_loft_triangles(static_cast<int>(i));
+		if (tris_i.empty()) continue;
+		MeshData m = to_mesh_data(tris_i);
+		for (size_t j = 0; j < i; ++j) {
+			auto tris_j = build_strand_loft_triangles(static_cast<int>(j));
+			if (tris_j.empty()) continue;
+			MeshData diffed =
+			    kcgal::mesh_difference(m, to_mesh_data(tris_j));
+			if (diffed.empty()) continue;  // boolean failed; keep m
+
+			auto sdf_j = std::make_shared<SDF_Mesh>();
+			sdf_j->precision_mode = SDFPrecision::Precise;
+			if (!sdf_j->loadTriangles(tris_j)) {
+				m = std::move(diffed);
+				continue;
+			}
+
+			// eps from strand j's bounding-box diagonal
+			loft_vec3f bmin{0, 0, 0}, bmax{0, 0, 0};
+			bool first = true;
+			for (const auto& tri : tris_j) {
+				for (const auto& v :
+				     {std::get<0>(tri), std::get<1>(tri),
+				      std::get<2>(tri)}) {
+					loft_vec3f p{v.x, v.y, v.z};
+					if (first) {
+						bmin = p;
+						bmax = p;
+						first = false;
+					} else {
+						if (p.x < bmin.x) bmin.x = p.x;
+						if (p.y < bmin.y) bmin.y = p.y;
+						if (p.z < bmin.z) bmin.z = p.z;
+						if (p.x > bmax.x) bmax.x = p.x;
+						if (p.y > bmax.y) bmax.y = p.y;
+						if (p.z > bmax.z) bmax.z = p.z;
+					}
+				}
+			}
+			float diag = (bmax - bmin).length();
+			float eps = std::max(1e-3f, diag * 2e-4f);
+
+			for (const auto& [tri, n] : diffed) {
+				(void)n;
+				bool on_cut = true;
+				for (const auto& v :
+				     {std::get<0>(tri), std::get<1>(tri),
+				      std::get<2>(tri)}) {
+					if (std::abs(sdf_j->get(v)) >= eps) {
+						on_cut = false;
+						break;
+					}
+				}
+				if (on_cut) connection_faces_cache.push_back(tri);
+			}
+			m = std::move(diffed);
+		}
+	}
+}
+
+void RenderVoxelList::RenderVoxelItem::update_drill_tool_meshes() {
+	// ---- Connection faces (display only, never in collision) ----
+	if (!show_connection_faces) {
+		addon_tool_renderers.erase("conn");
+		connection_faces_dirty = true;  // recompute when re-enabled
+	} else if (connection_faces_dirty) {
+		compute_connection_faces();
+		if (connection_faces_cache.empty()) {
+			addon_tool_renderers.erase("conn");
+		} else {
+			std::vector<std::tuple<loft_Triangle, loft_vec3f>> out;
+			out.reserve(connection_faces_cache.size());
+			for (const auto& tri : connection_faces_cache)
+				out.emplace_back(tri, compute_triangle_normal(tri));
+			auto renderer =
+			    std::make_unique<sinriv::ui::render::RenderMesh>();
+			renderer->setBaseColor(0.95f, 0.55f, 0.15f, 1.0f);
+			renderer->loadGeometry(out);
+			addon_tool_renderers["conn"] = std::move(renderer);
+		}
+	}
+
+	// ---- Drill path tubes ----
+	// Remove renderers for deleted paths or paths that became invisible
+	for (auto it = addon_tool_renderers.begin();
+	     it != addon_tool_renderers.end();) {
+		const std::string& key = it->first;
+		if (key.rfind("drill_", 0) == 0) {
+			const DrillPath* p = find_drill_path_by_uuid(key.substr(6));
+			if (!p || !p->visible) {
+				it = addon_tool_renderers.erase(it);
+				continue;
+			}
+		}
+		++it;
+	}
+
+	for (auto& p : drill_paths) {
+		if (!p.visible) continue;
+		std::string key = "drill_" + p.uuid;
+		if (!p.mesh_dirty) continue;
+		p.mesh_dirty = false;
+		if (p.points.size() < 2) {
+			addon_tool_renderers.erase(key);
+			continue;
+		}
+		std::vector<loft_vec3f> curve;
+		curve.reserve(p.points.size());
+		for (const auto& pt : p.points)
+			curve.push_back(loft_vec3f{pt.x, pt.y, pt.z});
+		MeshData tube = build_cylinder_mesh(curve, p.radius, 16);
+		if (tube.empty()) {
+			addon_tool_renderers.erase(key);
+			continue;
+		}
+		auto renderer = std::make_unique<sinriv::ui::render::RenderMesh>();
+		renderer->setBaseColor(0.75f, 0.2f, 0.25f, 1.0f);
+		renderer->loadGeometry(tube);
+		addon_tool_renderers[key] = std::move(renderer);
+	}
+}
+
 std::pair<sinriv::kigstudio::voxel::vec3f, sinriv::kigstudio::voxel::vec3f>
 RenderVoxelList::RenderVoxelItem::compute_hair_bounds() const {
 	using vec3f = sinriv::kigstudio::voxel::vec3f;
@@ -2104,17 +2261,40 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     // Rebuild addon meshes if any strand is dirty, or clear when
     // Rebuild addon meshes selectively (only dirty strands are rebuilt)
     if (!hair_strands.empty() || !addon_renderers.empty()) {
+        // Strand geometry changed → connection faces are stale
+        for (auto& strand : hair_strands) {
+            if (strand.mesh_dirty) {
+                connection_faces_dirty = true;
+                break;
+            }
+        }
         update_addon_meshes();
         for (auto& strand : hair_strands)
             strand.mesh_dirty = false;
     }
 
+    // Rebuild connection-face / drill-path renderers when dirty
+    if (source_type == 2) {
+        update_drill_tool_meshes();
+    }
+
     // 附加件渲染器（如毛发预览）：写入 albedo/normal/depth，与主模型正确
-    // 互相遮挡，但不写 world_pos 通道，鼠标拾取可穿透它拾取下层模型
+    // 互相遮挡；钻孔拾取激活时改用普通 GBuffer 路径（写 world_pos），
+    // 使发束/连接面可被鼠标拾取；平时用 Addon 路径（拾取穿透）。
     if (!manager || showAddonMesh) {
         for (auto& [uuid, addon] : addon_renderers) {
             addon->cull_backface = false;
-            addon->renderGBufferAddon(transform, mesh_shader);
+            if (drill_picking_active)
+                addon->renderGBuffer(transform, mesh_shader);
+            else
+                addon->renderGBufferAddon(transform, mesh_shader);
+        }
+        for (auto& [key, tool] : addon_tool_renderers) {
+            tool->cull_backface = false;
+            if (drill_picking_active)
+                tool->renderGBuffer(transform, mesh_shader);
+            else
+                tool->renderGBufferAddon(transform, mesh_shader);
         }
     }
 

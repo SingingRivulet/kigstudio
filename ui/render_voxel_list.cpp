@@ -454,12 +454,28 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
         // 几何拆分：关闭“SDF拆分”时启用
         const bool geo_split = addon_split && !addon_sdf_split;
 
+        // 钻孔圆管（拆分/非拆分、几何/SDF 模式都先减去）
+        const auto drill_meshes = build_drill_tool_meshes();
+
         if (addon_split) {
             // Each strand becomes an independent child node
             ResultT result;
             for (int i = 0; i < static_cast<int>(hair_strands.size()); ++i) {
                 auto strand_tris = build_strand_loft_triangles(i);
                 if (strand_tris.empty()) continue;
+
+                // 钻孔：先减去钻孔圆管
+                for (const auto& dm : drill_meshes) {
+                    auto diffed = kcgal::mesh_difference(
+                        to_mesh_data(strand_tris), dm);
+                    if (!diffed.empty()) {
+                        strand_tris = strip_tris(diffed);
+                    } else {
+                        std::cerr << "[do_segment] drill subtraction failed"
+                                  << " for strand " << i
+                                  << ", keeping original mesh.\n";
+                    }
+                }
 
                 sinriv::kigstudio::voxel::VoxelGrid dummy_grid;
                 dummy_grid.global_position = voxel_grid_data.global_position;
@@ -564,6 +580,16 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
                 }
                 auto diffed = kcgal::mesh_difference(merged, base_mesh);
                 if (!diffed.empty()) merged = std::move(diffed);
+                // 钻孔：合并网格减去钻孔圆管
+                for (const auto& dm : drill_meshes) {
+                    auto drilled = kcgal::mesh_difference(merged, dm);
+                    if (!drilled.empty()) {
+                        merged = std::move(drilled);
+                    } else {
+                        std::cerr << "[do_segment] drill subtraction failed"
+                                  << " on merged mesh, keeping it.\n";
+                    }
+                }
                 return {{voxel_grid_data, nullptr, strip_tris(merged)}};
             }
 
@@ -576,6 +602,14 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
             // Subtract base model if reveal is on
             if (addon_reveal && base_sdf) {
                 hair_sdf = sdf_subtraction(hair_sdf, base_sdf);
+            }
+
+            // 钻孔：SDF 模式下减去钻孔圆管
+            for (const auto& dm : drill_meshes) {
+                auto drill_sdf = std::make_shared<SDF_Mesh>();
+                drill_sdf->precision_mode = SDFPrecision::Precise;
+                if (!drill_sdf->loadTriangles(strip_tris(dm))) continue;
+                hair_sdf = sdf_subtraction(hair_sdf, drill_sdf);
             }
 
             return {{voxel_grid_data, std::move(hair_sdf), {}}};

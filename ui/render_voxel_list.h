@@ -26,6 +26,7 @@
 #endif
 
 #include "kigstudio/sdf/sdf_mesh.h"
+#include "kigstudio/cgal/mesh_repair.h"
 #include "kigstudio/sdf/sdf_shape.h"
 #include "kigstudio/ui/render_collision.h"
 #include "kigstudio/ui/render_mesh.h"
@@ -246,6 +247,20 @@ struct HairStrand {
     // ---- Tessellation quality (shared by both special types) ----
     int special_quality = 16;                 // Polygon segments (4-64), controls
                                               // cylinder/ellipsoid/cone/joint smoothness
+};
+
+// 钻孔路径：用户拾取的点序列按 radius 直接圆管放样（不插值），
+// 切割时每根发束先减去该 mesh。渲染器键名用 "drill_" 前缀避免与
+// 发束 UUID 冲突。
+struct DrillPath {
+    std::string uuid;
+    std::string name;
+    float radius = 0.5f;
+    bool visible = true;
+    // 拾取点（世界坐标），≥2 个才会生成圆管
+    std::vector<sinriv::kigstudio::voxel::vec3f> points;
+    // 脏标记：points/radius/visible 变化时置 true，触发圆管重建
+    bool mesh_dirty = true;
 };
 
 /// Generate a random 12-char hex string for strand UUIDs.
@@ -578,6 +593,10 @@ struct CollisionEditorSnapshot {
     sinriv::kigstudio::voxel::vec3f hair_north_pole = {0.0f, 1.0f, 0.0f};
     sinriv::kigstudio::voxel::vec3f hair_front_reference = {0.0f, 0.0f, 1.0f};
     int addon_base_node_id = -1;
+
+    // 钻孔路径与连接面显示开关（追加在末尾，保持聚合初始化位置对应）
+    std::vector<DrillPath> drill_paths;
+    bool show_connection_faces = false;
 };
 
 struct MarkedVoxelsSnapshot {
@@ -713,6 +732,41 @@ class RenderVoxelList {
         float hair_root_center_offset = 0.0f;  // 发根点向中心点移动的距离
         // 发根处生成的短宽度向量长度（"生成发根"放样用）
         float hair_root_vector_length = 0.1f;
+
+        // ---- 钻孔（Drill）----
+        // 钻孔路径列表（持久化）。切割时每根发束先减去可见路径的圆管。
+        std::vector<DrillPath> drill_paths;
+        // 是否显示发束拆分的连接面（持久化；仅显示，不参与碰撞）
+        bool show_connection_faces = false;
+        // 钻孔拾取模式（运行时）：开启后点击连接面/底模/发束添加点
+        bool drill_picking_active = false;
+        // 当前拾取目标路径 UUID（空=无）
+        std::string active_drill_path_uuid;
+        // 最后一次拾取/编辑的点索引（+/- 键作用对象）
+        int drill_last_picked_index = -1;
+        // 连接面缓存（仅 addon_split 时有意义）与脏标记
+        std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
+            connection_faces_cache;
+        bool connection_faces_dirty = true;
+        // 钻孔/连接面渲染器：键名 "conn"（连接面）与 "drill_<uuid>"（前缀
+        // 避免与发束 UUID 冲突）
+        std::unordered_map<std::string,
+                           std::unique_ptr<sinriv::ui::render::RenderMesh>>
+            addon_tool_renderers;
+
+        /// Find a drill path by UUID. Returns nullptr if not found.
+        DrillPath* find_drill_path_by_uuid(const std::string& id) {
+            for (auto& p : drill_paths)
+                if (p.uuid == id) return &p;
+            return nullptr;
+        }
+        /// Build tube meshes for all visible drill paths with >=2 points.
+        std::vector<sinriv::kigstudio::cgal::MeshData>
+        build_drill_tool_meshes() const;
+        /// Recompute split connection faces into connection_faces_cache.
+        void compute_connection_faces();
+        /// Rebuild connection-face / drill-path renderers when dirty.
+        void update_drill_tool_meshes();
         // Ortho occlusion cache: avoid recomputing per-strand visibility every frame
         size_t _ortho_occlusion_hash = 0;
         std::vector<bool> _ortho_strand_occluded;
@@ -1186,6 +1240,7 @@ class RenderVoxelList {
     bool show_hairline_plane_window = false;
     bool show_angle_config_window = false;
     bool show_hair_root_window = false;
+    bool show_drill_window = false;
     bool show_ortho_setup_window = false;
     bool show_ortho_edit_window = false;
 
@@ -1211,6 +1266,7 @@ class RenderVoxelList {
     void render_hairline_plane_window();
     void render_angle_config_window();
     void render_hair_root_window();
+    void render_drill_window();
     void render_concave_cone_editor(RenderVoxelItem& item);
     void render_nav_map();
     void render_file_loader();

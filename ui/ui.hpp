@@ -61,6 +61,7 @@ int ui_main(int argc, const char* const* argv) {
     bool guide_curve_click_valid = false;
     bool width_edit_click_valid = false;
     bool hairline_point_pick_valid = false;
+    bool drill_click_valid = false;
     SDL_SetMainReady();
     // 显示系统 IME 候选窗口（中文/日文输入法需要）
     SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
@@ -412,6 +413,9 @@ int ui_main(int argc, const char* const* argv) {
                             if (it->second->hairline_point_picking_active) {
                                 hairline_point_pick_valid = true;
                             }
+                            if (it->second->drill_picking_active) {
+                                drill_click_valid = true;
+                            }
                         }
                     }
                     io.MouseDown[0] = true;
@@ -507,6 +511,27 @@ int ui_main(int argc, const char* const* argv) {
                                 item.hairline_point_picking_active = false;
                             }
                         }
+                    } else if (drill_click_valid &&
+                               render_items.mouse_world_pos_valid &&
+                               !io.WantCaptureMouse) {
+                        // 钻孔路径：点击添加钻孔点
+                        auto it = render_items.items.find(render_items.render_id);
+                        if (it != render_items.items.end()) {
+                            auto& item = *it->second;
+                            if (item.drill_picking_active &&
+                                !item.active_drill_path_uuid.empty()) {
+                                auto* path = item.find_drill_path_by_uuid(item.active_drill_path_uuid);
+                                if (path) {
+                                    render_items.push_undo_now(
+                                        render_items.render_id, std::nullopt,
+                                        "Add Drill Point");
+                                    path->points.push_back(render_items.mouse_world_pos);
+                                    path->mesh_dirty = true;
+                                    item.drill_last_picked_index =
+                                        static_cast<int>(path->points.size()) - 1;
+                                }
+                            }
+                        }
                     } else if (render_items.ortho_state.is_picking_point &&
                                render_items.mouse_world_pos_valid) {
                         // Ortho projection: click on model sets look direction
@@ -553,6 +578,7 @@ int ui_main(int argc, const char* const* argv) {
                     guide_curve_click_valid = false;
                     width_edit_click_valid = false;
                     hairline_point_pick_valid = false;
+                    drill_click_valid = false;
                     io.MouseDown[0] = false;
                 } else if (e.button.button == SDL_BUTTON_MIDDLE) {
                     if (nav_map_panning) {

@@ -179,6 +179,22 @@ bool hair_root_enabled;                           // 单根发束级别开关
 
 `std::unordered_map<std::string, std::unique_ptr<RenderMesh>>`，以 `strand.uuid` 为 key。在渲染循环中遍历并提交 GBuffer。
 
+### addon_tool_renderers（钻孔/连接面）
+
+与 `addon_renderers` 并行的工具渲染器表，键名规范：
+- `"conn"` — 拆分连接面（橙色），由 `compute_connection_faces()` 生成
+- `"drill_<uuid>"` — 钻孔圆管（红色），由 `build_cylinder_mesh(points, radius, 16)` 直接放样（不插值）
+
+前缀 `drill_` 用于避免与发束 UUID 键冲突。正常模式走 `renderGBufferAddon`（穿透显示），钻孔拾取激活（`drill_picking_active`）时走 `renderGBuffer`，此时连接面/发束可被鼠标拾取。
+
+### 钻孔（DrillPath）
+
+- 数据：`RenderVoxelItem::drill_paths`（`uuid/name/radius/visible/points/mesh_dirty`），随快照与项目文件持久化。
+- 拾取：`ui.hpp` 中 `drill_click_valid` 分支，走 GPU world_pos 通道（同引导点），仅在 `drill_picking_active` 时生效；与其它拾取模式互斥。
+- 点编辑：钻孔编辑器窗口（`render_drill_window()`）内 +/- 按钮与 +/- 键沿"指向 `addon_center_point`"方向移动 `drill_last_picked_index` 指向的点。
+- 切割：`do_segment()` 中拆分与非拆分、几何与 SDF 模式都会在发束网格/SDF 上先减去所有可见钻孔圆管（`build_drill_tool_meshes()`），再执行后续布尔。
+- 连接面：`compute_connection_faces()` 复现拆分布尔顺序（strand i 依次减 0..i-1），用被减 strand 的 SDF 筛选 `|sdf(v)| < eps` 的新生面；结果仅作显示，不参与碰撞。
+
 ---
 
 ## 快捷键

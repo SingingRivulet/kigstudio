@@ -318,6 +318,53 @@ HairStrand hair_strand_from_json(const cJSON* s_obj) {
     return strand;
 }
 
+// ---- DrillPath JSON helpers ----
+
+cJSON* drill_path_to_json(const DrillPath& path) {
+    cJSON* p_obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(p_obj, "uuid", path.uuid.c_str());
+    cJSON_AddStringToObject(p_obj, "name", path.name.c_str());
+    cJSON_AddNumberToObject(p_obj, "radius",
+                            static_cast<double>(path.radius));
+    cJSON_AddBoolToObject(p_obj, "visible", path.visible);
+    cJSON* pts_arr = cJSON_CreateArray();
+    for (const auto& pt : path.points) {
+        cJSON_AddItemToArray(pts_arr, sinriv::kigstudio::to_json(pt));
+    }
+    cJSON_AddItemToObject(p_obj, "points", pts_arr);
+    return p_obj;
+}
+
+DrillPath drill_path_from_json(const cJSON* p_obj) {
+    DrillPath path;
+    if (!p_obj || !cJSON_IsObject(p_obj)) return path;
+    cJSON* uuid_obj = cJSON_GetObjectItem(p_obj, "uuid");
+    if (uuid_obj && cJSON_IsString(uuid_obj) && uuid_obj->valuestring[0])
+        path.uuid = uuid_obj->valuestring;
+    else
+        path.uuid = generate_uuid();
+    cJSON* name_obj = cJSON_GetObjectItem(p_obj, "name");
+    if (name_obj && cJSON_IsString(name_obj))
+        path.name = name_obj->valuestring;
+    cJSON* radius_obj = cJSON_GetObjectItem(p_obj, "radius");
+    if (radius_obj && cJSON_IsNumber(radius_obj))
+        path.radius = static_cast<float>(radius_obj->valuedouble);
+    cJSON* vis_obj = cJSON_GetObjectItem(p_obj, "visible");
+    if (vis_obj)
+        path.visible = vis_obj->valueint != 0;
+    cJSON* pts_arr = cJSON_GetObjectItem(p_obj, "points");
+    if (pts_arr && cJSON_IsArray(pts_arr)) {
+        int pt_count = cJSON_GetArraySize(pts_arr);
+        for (int pi = 0; pi < pt_count; ++pi) {
+            path.points.push_back(
+                sinriv::kigstudio::vec3_from_json<vec3f>(
+                    cJSON_GetArrayItem(pts_arr, pi)));
+        }
+    }
+    path.mesh_dirty = true;
+    return path;
+}
+
 // ---- mesh binary I/O helpers ----
 
 using MeshTriangle = sinriv::kigstudio::voxel::Triangle;
@@ -568,6 +615,14 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
                             static_cast<double>(item.hair_root_center_offset));
     cJSON_AddNumberToObject(obj, "hair_root_vector_length",
                             static_cast<double>(item.hair_root_vector_length));
+    cJSON_AddBoolToObject(obj, "show_connection_faces",
+                          item.show_connection_faces);
+    if (!item.drill_paths.empty()) {
+        cJSON* drill_arr = cJSON_CreateArray();
+        for (const auto& path : item.drill_paths)
+            cJSON_AddItemToArray(drill_arr, drill_path_to_json(path));
+        cJSON_AddItemToObject(obj, "drill_paths", drill_arr);
+    }
     cJSON_AddBoolToObject(obj, "hairline_plane_enabled",
                           item.hairline_plane_enabled);
     cJSON_AddBoolToObject(obj, "hairline_plane_use_y",
@@ -957,6 +1012,14 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->hair_root_center_offset = static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "hair_root_vector_length") == 0) {
                 item->hair_root_vector_length = static_cast<float>(child->valuedouble);
+            } else if (strcmp(key, "show_connection_faces") == 0) {
+                item->show_connection_faces = cJSON_IsTrue(child);
+            } else if (strcmp(key, "drill_paths") == 0 && cJSON_IsArray(child)) {
+                int dp_count = cJSON_GetArraySize(child);
+                for (int di = 0; di < dp_count; ++di) {
+                    item->drill_paths.push_back(drill_path_from_json(
+                        cJSON_GetArrayItem(child, di)));
+                }
             } else if (strcmp(key, "hairline_plane_enabled") == 0) {
                 item->hairline_plane_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_use_y") == 0) {
@@ -1265,6 +1328,14 @@ cJSON* RenderVoxelList::snapshot_to_json(
                             static_cast<double>(snapshot.hair_root_center_offset));
     cJSON_AddNumberToObject(obj, "hair_root_vector_length",
                             static_cast<double>(snapshot.hair_root_vector_length));
+    cJSON_AddBoolToObject(obj, "show_connection_faces",
+                          snapshot.show_connection_faces);
+    if (!snapshot.drill_paths.empty()) {
+        cJSON* drill_arr = cJSON_CreateArray();
+        for (const auto& path : snapshot.drill_paths)
+            cJSON_AddItemToArray(drill_arr, drill_path_to_json(path));
+        cJSON_AddItemToObject(obj, "drill_paths", drill_arr);
+    }
     cJSON_AddBoolToObject(obj, "hairline_plane_enabled",
                           snapshot.hairline_plane_enabled);
     cJSON_AddBoolToObject(obj, "hairline_plane_use_y",
@@ -1576,6 +1647,14 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.hair_root_center_offset = static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "hair_root_vector_length") == 0) {
                 snapshot.hair_root_vector_length = static_cast<float>(child->valuedouble);
+            } else if (strcmp(key, "show_connection_faces") == 0) {
+                snapshot.show_connection_faces = cJSON_IsTrue(child);
+            } else if (strcmp(key, "drill_paths") == 0 && cJSON_IsArray(child)) {
+                int dp_count = cJSON_GetArraySize(child);
+                for (int di = 0; di < dp_count; ++di) {
+                    snapshot.drill_paths.push_back(drill_path_from_json(
+                        cJSON_GetArrayItem(child, di)));
+                }
             } else if (strcmp(key, "hairline_plane_enabled") == 0) {
                 snapshot.hairline_plane_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_use_y") == 0) {

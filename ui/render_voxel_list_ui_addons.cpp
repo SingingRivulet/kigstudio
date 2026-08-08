@@ -1020,6 +1020,18 @@ void RenderVoxelList::render_object_editor_addons() {
             get_locale_cstr("tooltip.hair_root_edit"));
     }
 
+    ImGui::SameLine();
+
+    // 钻孔编辑按钮
+    if (ImGui::Button(get_locale_cstr("action.drill_edit"))) {
+        show_drill_window = true;
+        item.show_addon_center = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s",
+            get_locale_cstr("tooltip.drill_edit"));
+    }
+
     ImGui::Separator();
 
     // 附加件类型下拉框
