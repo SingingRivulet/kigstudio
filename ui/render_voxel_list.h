@@ -838,6 +838,12 @@ class RenderVoxelList {
         // Guide point highlighted red when hovered in guide curve editor
         std::string hovered_guide_point_strand_uuid;  // empty = none
         int hovered_guide_point_index = -1;
+        // Last modified/added guide point index (for keyboard +/- shortcuts)
+        // Only valid when guide_curve_drawing_active && active_guide_draw_strand matches
+        int last_modified_guide_point_index = -1;
+        // Guide point model-surface picking mode (set by Pick button in Edit popup)
+        bool guide_point_pick_active = false;
+        int guide_point_pick_index = -1;  // which point is being picked
         // 当前正在编辑截面的发束 UUID（空=无）
         std::string active_section_edit_strand;  // empty = none
         // Per-point section editor state

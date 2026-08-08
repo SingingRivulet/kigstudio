@@ -1265,6 +1265,13 @@ void init_locale_strings() {
                       {{"en", "Clear Points"}, {"zh", "清空点"}});
     add_locale_string("action.reverse_guide_points",
                       {{"en", "Reverse"}, {"zh", "反转顺序"}});
+    add_locale_string("action.edit_guide_point",
+                      {{"en", "Edit"}, {"zh", "编辑"}});
+    add_locale_string("action.pick_guide_point",
+                      {{"en", "Pick"}, {"zh", "拾取"}});
+    add_locale_string("tooltip.pick_guide_point",
+                      {{"en", "Click on the model surface to set this guide point"},
+                       {"zh", "点击模型表面设置引导点坐标"}});
     add_locale_string("action.clear_width_points",
                       {{"en", "Clear Points"}, {"zh", "清空点"}});
     add_locale_string("label.auto_hair_root",

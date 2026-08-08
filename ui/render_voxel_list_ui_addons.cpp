@@ -357,13 +357,15 @@ void RenderVoxelList::render_guide_curve_window() {
                     point_hovered = true;
                 ImGui::SameLine();
                 char edit_popup_id[64];
-                snprintf(edit_popup_id, sizeof(edit_popup_id), "Edit##gpe_%zu", pi);
+                snprintf(edit_popup_id, sizeof(edit_popup_id), "%s##gpe_%zu",
+                         get_locale_cstr("action.edit_guide_point"),
+                         pi);
                 if (ImGui::SmallButton(edit_popup_id))
                     ImGui::OpenPopup(edit_popup_id);
                 if (!point_hovered && ImGui::IsItemHovered())
                     point_hovered = true;
 
-                // Edit popup (same as before)
+                // Edit popup
                 if (ImGui::BeginPopup(edit_popup_id)) {
                     ImGui::Text("%s", label_buf);
                     ImGui::Separator();
@@ -372,6 +374,26 @@ void RenderVoxelList::render_guide_curve_window() {
                     all_edits.activated |= r.activated;
                     all_edits.deactivated_after_edit |= r.deactivated_after_edit;
                     all_edits.value_changed |= r.value_changed;
+
+                    // Track this point as last modified for +/- hotkeys
+                    if (r.activated || r.value_changed) {
+                        item.last_modified_guide_point_index =
+                            static_cast<int>(pi);
+                    }
+
+                    // Pick button — enter model-surface pick mode
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton(
+                            get_locale_cstr("action.pick_guide_point"))) {
+                        item.guide_point_pick_active = true;
+                        item.guide_point_pick_index = static_cast<int>(pi);
+                        item.last_modified_guide_point_index =
+                            static_cast<int>(pi);
+                        ImGui::CloseCurrentPopup();
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s",
+                            get_locale_cstr("tooltip.pick_guide_point"));
 
                     if (item.show_addon_center) {
                         vec3f to_center =
@@ -442,6 +464,8 @@ void RenderVoxelList::render_guide_curve_window() {
                             strand.guide_points[pi] =
                                 strand.guide_points[pi] + dir * kp_move_step;
                             all_edits.value_changed = true;
+                            item.last_modified_guide_point_index =
+                                static_cast<int>(pi);
                         }
                         if (ImGui::IsItemHovered()) {
                             ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_toward_center"));
@@ -454,6 +478,8 @@ void RenderVoxelList::render_guide_curve_window() {
                             strand.guide_points[pi] =
                                 strand.guide_points[pi] - dir * kp_move_step;
                             all_edits.value_changed = true;
+                            item.last_modified_guide_point_index =
+                                static_cast<int>(pi);
                         }
                         if (ImGui::IsItemHovered()) {
                             ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_away_from_center"));

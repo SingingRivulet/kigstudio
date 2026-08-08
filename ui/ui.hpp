@@ -465,12 +465,40 @@ int ui_main(int argc, const char* const* argv) {
                                         strand_ptr->guide_points.insert(
                                             strand_ptr->guide_points.begin(),
                                             render_items.mouse_world_pos);
+                                        item.last_modified_guide_point_index = 0;
                                     } else {
                                         strand_ptr->guide_points.push_back(
                                             render_items.mouse_world_pos);
+                                        item.last_modified_guide_point_index =
+                                            static_cast<int>(
+                                                strand_ptr->guide_points.size()) -
+                                            1;
                                     }
                                     strand_ptr->mesh_dirty = true;
                                 }
+                            }
+                            // Guide point pick mode: clicking model surface
+                            // sets the target point to the clicked position
+                            if (item.guide_point_pick_active &&
+                                item.guide_point_pick_index >= 0 &&
+                                !item.active_guide_draw_strand.empty()) {
+                                auto* strand_ptr = item.find_strand_by_uuid(
+                                    item.active_guide_draw_strand);
+                                if (strand_ptr &&
+                                    item.guide_point_pick_index <
+                                        static_cast<int>(
+                                            strand_ptr->guide_points.size())) {
+                                    render_items.push_undo_now(
+                                        render_items.render_id, std::nullopt,
+                                        "Guide Point Edit");
+                                    strand_ptr->guide_points
+                                        [item.guide_point_pick_index] =
+                                        render_items.mouse_world_pos;
+                                    item.last_modified_guide_point_index =
+                                        item.guide_point_pick_index;
+                                    strand_ptr->mesh_dirty = true;
+                                }
+                                item.guide_point_pick_active = false;
                             }
                         }
                     } else if (width_edit_click_valid &&
@@ -719,6 +747,66 @@ int ui_main(int argc, const char* const* argv) {
                         render_items.redo_marked(render_items.render_id);
                     } else {
                         render_items.redo(render_items.render_id);
+                    }
+                } else if (e.key.keysym.sym == SDLK_EQUALS ||
+                           e.key.keysym.sym == SDLK_KP_PLUS ||
+                           e.key.keysym.sym == SDLK_MINUS ||
+                           e.key.keysym.sym == SDLK_KP_MINUS) {
+                    // +/- keys: move last modified guide point along
+                    // centerline (only when guide curve editor is active)
+                    auto it = render_items.items.find(
+                        render_items.render_id);
+                    if (it != render_items.items.end()) {
+                        auto& item = *it->second;
+                        if (item.guide_curve_drawing_active &&
+                            !item.active_guide_draw_strand.empty() &&
+                            item.last_modified_guide_point_index >= 0 &&
+                            item.show_addon_center) {
+                            auto* strand_ptr =
+                                item.find_strand_by_uuid(
+                                    item.active_guide_draw_strand);
+                            if (strand_ptr &&
+                                item.last_modified_guide_point_index <
+                                    static_cast<int>(
+                                        strand_ptr->guide_points.size())) {
+                                int idx =
+                                    item.last_modified_guide_point_index;
+                                auto& pt = strand_ptr->guide_points[idx];
+                                auto to_center_x =
+                                    item.addon_center_point.x - pt.x;
+                                auto to_center_y =
+                                    item.addon_center_point.y - pt.y;
+                                auto to_center_z =
+                                    item.addon_center_point.z - pt.z;
+                                float dist = std::sqrt(
+                                    to_center_x * to_center_x +
+                                    to_center_y * to_center_y +
+                                    to_center_z * to_center_z);
+                                if (dist > 0.0001f) {
+                                    static float kp_key_step = 0.5f;
+                                    auto dir_x = to_center_x / dist;
+                                    auto dir_y = to_center_y / dist;
+                                    auto dir_z = to_center_z / dist;
+                                    bool is_plus =
+                                        (e.key.keysym.sym == SDLK_EQUALS ||
+                                         e.key.keysym.sym == SDLK_KP_PLUS);
+                                    render_items.push_undo_now(
+                                        render_items.render_id,
+                                        std::nullopt,
+                                        "Guide Point Edit");
+                                    if (is_plus) {
+                                        pt = {pt.x + dir_x * kp_key_step,
+                                              pt.y + dir_y * kp_key_step,
+                                              pt.z + dir_z * kp_key_step};
+                                    } else {
+                                        pt = {pt.x - dir_x * kp_key_step,
+                                              pt.y - dir_y * kp_key_step,
+                                              pt.z - dir_z * kp_key_step};
+                                    }
+                                    strand_ptr->mesh_dirty = true;
+                                }
+                            }
+                        }
                     }
                 }
             }
