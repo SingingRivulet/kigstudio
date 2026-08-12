@@ -213,6 +213,12 @@ struct HairStrand {
     // is empty (empty mesh).
     bool hair_root_generate = false;
 
+    // When true, lofting injects a synthetic short width vector at the
+    // strand end (tip), with length = hair_root_vector_length and the same
+    // direction as the last user width vector. No-op when width_points
+    // is empty.
+    bool hair_tip_generate = false;
+
     // When true, WidthPoint::curve_id references the full guide curve
     // (hidden_guide_points_start + guide_points + hidden_guide_points_end).
     // When false, curve_id references visible guide_points only (legacy).

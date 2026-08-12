@@ -1432,10 +1432,29 @@ void RenderVoxelList::render_ortho_edit_window() {
                 if (item_it != items.end()) {
                     auto& item = *item_it->second;
 
-                    if (item.guide_curve_drawing_active &&
-                        !item.active_guide_draw_strand.empty() &&
-                        item.find_strand_by_uuid(
-                            item.active_guide_draw_strand)) {
+                    // Guide point pick: update existing point position
+                    if (item.guide_point_pick_active &&
+                        item.guide_point_pick_index >= 0 &&
+                        !item.active_guide_draw_strand.empty()) {
+                        auto* strand_ptr = item.find_strand_by_uuid(
+                            item.active_guide_draw_strand);
+                        if (strand_ptr &&
+                            item.guide_point_pick_index <
+                                static_cast<int>(
+                                    strand_ptr->guide_points.size())) {
+                            push_undo_now(render_id, std::nullopt,
+                                          "Guide Point Edit");
+                            strand_ptr->guide_points
+                                [item.guide_point_pick_index] = hit_pos;
+                            item.last_modified_guide_point_index =
+                                item.guide_point_pick_index;
+                            strand_ptr->mesh_dirty = true;
+                        }
+                        item.guide_point_pick_active = false;
+                    } else if (item.guide_curve_drawing_active &&
+                               !item.active_guide_draw_strand.empty() &&
+                               item.find_strand_by_uuid(
+                                   item.active_guide_draw_strand)) {
                         push_undo_now(render_id, std::nullopt,
                                       "Add Guide Point");
                         auto& strand = *item.find_strand_by_uuid(
@@ -1614,6 +1633,11 @@ void RenderVoxelList::render_ortho_edit_window() {
             ortho_state.render_dirty = true;
         }
     }
+
+    // Persist overlay state every frame so that project save (Ctrl+S)
+    // always captures the latest drag/resize position — not just the
+    // last slider/checkbox change.
+    sync_overlay_to_item();
 
     ImGui::End();
 }

@@ -295,6 +295,28 @@ void RenderVoxelList::render_guide_curve_window() {
         }
     }
 
+    // ---- Hair root / tip generate checkboxes (shared with hair root editor) ----
+    {
+        bool gen_root = strand.hair_root_generate;
+        if (ImGui::Checkbox(get_locale_cstr("label.hair_root_col_generate"), &gen_root)) {
+            push_undo_now(item.id, std::nullopt, "Toggle Hair Root Generate");
+            strand.hair_root_generate = gen_root;
+            strand.mesh_dirty = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.hair_root_generate"));
+    }
+    {
+        bool gen_tip = strand.hair_tip_generate;
+        if (ImGui::Checkbox(get_locale_cstr("label.hair_tip_col_generate"), &gen_tip)) {
+            push_undo_now(item.id, std::nullopt, "Toggle Hair Tip Generate");
+            strand.hair_tip_generate = gen_tip;
+            strand.mesh_dirty = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.hair_tip_generate"));
+    }
+
     ImGui::Text(get_locale_cstr("label.guide_curve_points"),
                 static_cast<int>(strand.guide_points.size()));
 
@@ -462,20 +484,6 @@ void RenderVoxelList::render_guide_curve_window() {
 
                         if (ImGui::SmallButton("+##gpi")) {
                             strand.guide_points[pi] =
-                                strand.guide_points[pi] + dir * kp_move_step;
-                            all_edits.value_changed = true;
-                            item.last_modified_guide_point_index =
-                                static_cast<int>(pi);
-                        }
-                        if (ImGui::IsItemHovered()) {
-                            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_toward_center"));
-                            point_hovered = true;
-                        }
-                        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
-                            ImGui::OpenPopup("kp_cmenu_inline");
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("-##gpi")) {
-                            strand.guide_points[pi] =
                                 strand.guide_points[pi] - dir * kp_move_step;
                             all_edits.value_changed = true;
                             item.last_modified_guide_point_index =
@@ -483,6 +491,20 @@ void RenderVoxelList::render_guide_curve_window() {
                         }
                         if (ImGui::IsItemHovered()) {
                             ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_away_from_center"));
+                            point_hovered = true;
+                        }
+                        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                            ImGui::OpenPopup("kp_cmenu_inline");
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("-##gpi")) {
+                            strand.guide_points[pi] =
+                                strand.guide_points[pi] + dir * kp_move_step;
+                            all_edits.value_changed = true;
+                            item.last_modified_guide_point_index =
+                                static_cast<int>(pi);
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.move_toward_center"));
                             point_hovered = true;
                         }
                         if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
@@ -1082,6 +1104,12 @@ void RenderVoxelList::render_object_editor_addons() {
             strand.name = "Strand " + std::to_string(item.hair_strands.size() + 1);
             strand.expanded = true;
             item.hair_strands.push_back(strand);
+            // Auto-enter guide curve drawing mode for the new strand
+            item.width_editing_active = false;
+            item.active_width_edit_strand.clear();
+            item.guide_curve_drawing_active = true;
+            item.active_guide_draw_strand = strand.uuid;
+            show_guide_curve_window = true;
         }
 
         ImGui::SameLine();

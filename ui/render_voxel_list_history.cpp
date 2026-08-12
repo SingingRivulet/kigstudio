@@ -128,6 +128,9 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.hair_front_reference = snapshot.hair_front_reference;
     item.addon_base_node_id = snapshot.addon_base_node_id;
     item.drill_paths = snapshot.drill_paths;
+    // Force rebuild of drill meshes after snapshot restore
+    for (auto& dp : item.drill_paths)
+        dp.mesh_dirty = true;
     item.show_connection_faces = snapshot.show_connection_faces;
     item.connection_faces_dirty = true;
     item.sdf_precision_cache = snapshot.sdf_precision_cache;

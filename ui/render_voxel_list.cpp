@@ -460,8 +460,22 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
         if (addon_split) {
             // Each strand becomes an independent child node
             ResultT result;
-            for (int i = 0; i < static_cast<int>(hair_strands.size()); ++i) {
-                auto strand_tris = build_strand_loft_triangles(i);
+
+            // Pre-build all strand loft triangles once so each strand mesh
+            // is only constructed one time, not O(n) times in the inner
+            // geo_split / sdf_split loops.
+            const int n_strands = static_cast<int>(hair_strands.size());
+            std::vector<decltype(build_strand_loft_triangles(0))>
+                cached_strand_tris(n_strands);
+            for (int k = 0; k < n_strands; ++k) {
+                std::cerr << "[do_segment] pre-building strand " << (k + 1)
+                          << "/" << n_strands << " \""
+                          << hair_strands[k].name << "\"...\n";
+                cached_strand_tris[k] = build_strand_loft_triangles(k);
+            }
+
+            for (int i = 0; i < n_strands; ++i) {
+                auto strand_tris = cached_strand_tris[i];
                 if (strand_tris.empty()) continue;
 
                 // 钻孔：先减去钻孔圆管
@@ -498,13 +512,29 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
                 // 几何拆分：发束之间用几何布尔相减
                 if (geo_split) {
                     auto m = to_mesh_data(strand_tris);
+                    const int total_ops = n_strands * (n_strands - 1) / 2;
+                    static int op_count = 0;
                     for (int j = 0; j < i; ++j) {
-                        auto prev_tris = build_strand_loft_triangles(j);
+                        const auto& prev_tris = cached_strand_tris[j];
                         if (prev_tris.empty()) continue;
-                        auto diffed = kcgal::mesh_difference(
-                            m, to_mesh_data(prev_tris));
-                        // 布尔失败时保留当前网格（尽可能渲染）
-                        if (!diffed.empty()) m = std::move(diffed);
+                        ++op_count;
+                        std::cerr << "[do_segment] boolean " << op_count
+                                  << "/" << total_ops << " (strand "
+                                  << (i + 1) << " - " << (j + 1) << ")\n";
+                        try {
+                            auto diffed = kcgal::mesh_difference(
+                                m, to_mesh_data(prev_tris));
+                            // 布尔失败时保留当前网格（尽可能渲染）
+                            if (!diffed.empty()) m = std::move(diffed);
+                        } catch (const std::exception& e) {
+                            std::cerr << "[do_segment] boolean failed ("
+                                      << i << "," << j << "): "
+                                      << e.what() << "\n";
+                        } catch (...) {
+                            std::cerr << "[do_segment] boolean failed ("
+                                      << i << "," << j
+                                      << "): unknown error\n";
+                        }
                     }
                     strand_tris = strip_tris(m);
                 }
@@ -530,7 +560,7 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
                 if (sdf_split_needed) {
                     // Subtract all preceding strands (0..i-1)
                     for (int j = 0; j < i; ++j) {
-                        auto prev_tris = build_strand_loft_triangles(j);
+                        const auto& prev_tris = cached_strand_tris[j];
                         if (prev_tris.empty()) continue;
                         auto prev_sdf = std::make_shared<SDF_Mesh>();
                         prev_sdf->precision_mode = SDFPrecision::Precise;

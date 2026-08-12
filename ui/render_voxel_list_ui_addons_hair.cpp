@@ -620,7 +620,7 @@ void RenderVoxelList::render_hair_root_window() {
             end_edit(item.id, "Hair Root Vector Length");
         if (prev_vlen != item.hair_root_vector_length) {
             for (auto& s : item.hair_strands) {
-                if (s.hair_root_generate)
+                if (s.hair_root_generate || s.hair_tip_generate)
                     s.mesh_dirty = true;
             }
         }
@@ -636,7 +636,7 @@ void RenderVoxelList::render_hair_root_window() {
     vec3f effective_root = compute_effective_hair_root(item);
 
     float table_h = ImGui::GetContentRegionAvail().y;
-    if (ImGui::BeginTable("##hr_table", 6,
+    if (ImGui::BeginTable("##hr_table", 7,
                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                               ImGuiTableFlags_ScrollY,
                           ImVec2(0, table_h))) {
@@ -655,6 +655,9 @@ void RenderVoxelList::render_hair_root_window() {
             ImGuiTableColumnFlags_WidthFixed, 55.0f);
         ImGui::TableSetupColumn(
             get_locale_cstr("label.hair_root_col_generate"),
+            ImGuiTableColumnFlags_WidthFixed, 60.0f);
+        ImGui::TableSetupColumn(
+            get_locale_cstr("label.hair_tip_col_generate"),
             ImGuiTableColumnFlags_WidthFixed, 60.0f);
         ImGui::TableHeadersRow();
 
@@ -720,6 +723,19 @@ void RenderVoxelList::render_hair_root_window() {
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", get_locale_cstr(
                                             "tooltip.hair_root_generate"));
+
+            // Column 7: generate hair tip checkbox (real-time mesh update)
+            ImGui::TableNextColumn();
+            bool gen_tip = strand.hair_tip_generate;
+            if (ImGui::Checkbox("##hr_tip_generate", &gen_tip)) {
+                push_undo_now(item.id, std::nullopt,
+                              "Toggle Hair Tip Generate");
+                strand.hair_tip_generate = gen_tip;
+                strand.mesh_dirty = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr(
+                                            "tooltip.hair_tip_generate"));
 
             ImGui::PopID();
         }

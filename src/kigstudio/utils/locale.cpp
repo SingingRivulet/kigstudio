@@ -281,6 +281,9 @@ void init_locale_strings() {
     add_locale_string("toast.project_not_found",
                       {{"en", "Project not found:"},
                        {"zh", "工程不存在:"}});
+    add_locale_string("toast.project_saved",
+                      {{"en", "Project saved successfully"},
+                       {"zh", "工程保存成功"}});
     add_locale_string("log.extract_skeleton.result",
                       {{"en", "[Extract Skeleton] Result: %d vertices"},
                        {"zh", "[骨架提取]处理成功，共%d个顶点"}});
@@ -1314,6 +1317,12 @@ void init_locale_strings() {
                       {{"en", "Loft from the strand start (including the gray root region) "
                               "with a short vector at the same angle as the first width vector"},
                        {"zh", "放样时在起始位置（含灰色发根区）以与第一个宽度向量同角度的短向量作为宽度进行放样"}});
+    add_locale_string("label.hair_tip_col_generate",
+                      {{"en", "Gen Tip"}, {"zh", "生成发梢"}});
+    add_locale_string("tooltip.hair_tip_generate",
+                      {{"en", "Loft from the strand end with a short vector "
+                              "at the same angle as the last width vector"},
+                       {"zh", "在引导曲线末端以与最后一个宽度向量同角度的短向量进行放样"}});
     add_locale_string("label.hair_root_center_offset",
                       {{"en", "Offset Toward Center"}, {"zh", "向中心偏移"}});
     add_locale_string("tooltip.hair_root_center_offset",

@@ -453,7 +453,8 @@ int ui_main(int argc, const char* const* argv) {
                         if (it != render_items.items.end()) {
                             auto& item = *it->second;
                             if (item.guide_curve_drawing_active &&
-                                !item.active_guide_draw_strand.empty()) {
+                                !item.active_guide_draw_strand.empty() &&
+                                !item.guide_point_pick_active) {
                                 auto* strand_ptr = item.find_strand_by_uuid(item.active_guide_draw_strand);
                                 if (strand_ptr) {
                                     render_items.push_undo_now(
@@ -795,13 +796,13 @@ int ui_main(int argc, const char* const* argv) {
                                         std::nullopt,
                                         "Guide Point Edit");
                                     if (is_plus) {
-                                        pt = {pt.x + dir_x * kp_key_step,
-                                              pt.y + dir_y * kp_key_step,
-                                              pt.z + dir_z * kp_key_step};
-                                    } else {
                                         pt = {pt.x - dir_x * kp_key_step,
                                               pt.y - dir_y * kp_key_step,
                                               pt.z - dir_z * kp_key_step};
+                                    } else {
+                                        pt = {pt.x + dir_x * kp_key_step,
+                                              pt.y + dir_y * kp_key_step,
+                                              pt.z + dir_z * kp_key_step};
                                     }
                                     strand_ptr->mesh_dirty = true;
                                 }

@@ -1186,6 +1186,18 @@ std::vector<std::tuple<loft_Triangle, loft_vec3f>> build_hair_strand_mesh(
 		sorted_wp.insert(sorted_wp.begin(), root_wp);
 	}
 
+	// Synthetic hair-tip width vector: when "generate hair tip" is
+	// enabled, append a short width vector at the strand end (tip)
+	// with the same direction as the last user width vector.
+	if (strand.hair_tip_generate && !sorted_wp.empty() &&
+	    hair_root_vector_length > 0.0f) {
+		HairStrand::WidthPoint tip_wp;
+		tip_wp.curve_id = static_cast<float>(N - 1);
+		tip_wp.scale = hair_root_vector_length;
+		tip_wp.direction = sorted_wp.back().direction;
+		sorted_wp.push_back(tip_wp);
+	}
+
 	// Pre-compute width interpolation for every sample point
 	std::vector<float> scales(M);
 	std::vector<loft_vec3f> directions(M);
@@ -1886,8 +1898,16 @@ void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
 	}
 
 	// Build or rebuild only dirty strands
-	for (auto& strand : hair_strands) {
-		if (!strand.visible || !strand.mesh_dirty) continue;
+	{
+		int total_dirty = 0;
+		for (auto& strand : hair_strands)
+			if (strand.visible && strand.mesh_dirty) ++total_dirty;
+		int done = 0;
+		for (auto& strand : hair_strands) {
+			if (!strand.visible || !strand.mesh_dirty) continue;
+			++done;
+			std::cerr << "[addon_mesh] (" << done << "/" << total_dirty
+			          << ") building strand \"" << strand.name << "\"...\n";
 		try {
 			auto tris = build_hair_strand_mesh(strand, hair_root_vector_length);
 			if (tris.empty()) {
@@ -1971,6 +1991,7 @@ void RenderVoxelList::RenderVoxelItem::update_addon_meshes() {
 			std::cerr << "[addon_mesh] build failed for strand: " << e.what()
 			          << std::endl;
 		}
+	}
 }
 }
 
@@ -2081,28 +2102,72 @@ void RenderVoxelList::RenderVoxelItem::compute_connection_faces() {
 	// Mirror the split boolean order: strand i subtracts strands 0..i-1.
 	// Faces created by a subtraction step lie on the subtracted strand's
 	// surface — classify them with an SDF of that strand.
-	for (size_t i = 0; i < hair_strands.size(); ++i) {
-		auto tris_i = build_strand_loft_triangles(static_cast<int>(i));
-		if (tris_i.empty()) continue;
-		MeshData m = to_mesh_data(tris_i);
-		for (size_t j = 0; j < i; ++j) {
-			auto tris_j = build_strand_loft_triangles(static_cast<int>(j));
-			if (tris_j.empty()) continue;
-			MeshData diffed =
-			    kcgal::mesh_difference(m, to_mesh_data(tris_j));
-			if (diffed.empty()) continue;  // boolean failed; keep m
 
-			auto sdf_j = std::make_shared<SDF_Mesh>();
-			sdf_j->precision_mode = SDFPrecision::Precise;
-			if (!sdf_j->loadTriangles(tris_j)) {
-				m = std::move(diffed);
+	// Pre-build all strand loft triangles and mesh data so each strand is
+	// only built once, not O(n) times in the inner loop.
+	// Use PAIRWISE boolean (orig_i - orig_j) instead of chain boolean
+	// (accumulated_m - orig_j) to keep both operands simple. Chain booleans
+	// explode in complexity after ~10 subtractions and cause CGAL to hang.
+	const size_t n = hair_strands.size();
+	std::vector<std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>>
+	    cached_tris(n);
+	std::vector<MeshData> cached_mesh(n);
+	std::vector<std::shared_ptr<SDF_Mesh>> cached_sdf(n);
+	for (size_t k = 0; k < n; ++k) {
+		std::cerr << "[connection_faces] pre-building strand " << (k + 1)
+		          << "/" << n << " \"" << hair_strands[k].name << "\"...\n";
+		cached_tris[k] = build_strand_loft_triangles(static_cast<int>(k));
+		if (!cached_tris[k].empty()) {
+			cached_mesh[k] = to_mesh_data(cached_tris[k]);
+			auto sdf = std::make_shared<SDF_Mesh>();
+			sdf->precision_mode = SDFPrecision::Precise;
+			if (sdf->loadTriangles(cached_tris[k]))
+				cached_sdf[k] = std::move(sdf);
+		}
+	}
+
+	const int total_ops = static_cast<int>(n * (n - 1) / 2);
+	int op_count = 0;
+	for (size_t i = 0; i < n; ++i) {
+		const auto& mesh_i = cached_mesh[i];
+		if (mesh_i.empty()) continue;
+		for (size_t j = 0; j < i; ++j) {
+			const auto& mesh_j = cached_mesh[j];
+			if (mesh_j.empty()) continue;
+			++op_count;
+			std::cerr << "[connection_faces] boolean " << op_count
+			          << "/" << total_ops << " (strand "
+			          << (i + 1) << " - " << (j + 1) << ")\n";
+
+			// Pairwise subtraction: orig_i - orig_j.
+			// Both operands are original (simple) meshes — no
+			// accumulation. This avoids the exponential blowup of
+			// chain subtractions.
+			MeshData diffed;
+			try {
+				diffed = kcgal::mesh_difference(mesh_i, mesh_j);
+			} catch (const std::exception& e) {
+				std::cerr
+				    << "[connection_faces] boolean failed ("
+				    << i << "," << j << "): " << e.what()
+				    << "\n";
+				continue;
+			} catch (...) {
+				std::cerr
+				    << "[connection_faces] boolean failed ("
+				    << i << "," << j << "): unknown error\n";
 				continue;
 			}
+			if (diffed.empty()) continue;
+
+			// Use cached SDF if available, otherwise skip classification
+			const auto& sdf_j = cached_sdf[j];
+			if (!sdf_j) continue;
 
 			// eps from strand j's bounding-box diagonal
 			loft_vec3f bmin{0, 0, 0}, bmax{0, 0, 0};
 			bool first = true;
-			for (const auto& tri : tris_j) {
+			for (const auto& tri : cached_tris[j]) {
 				for (const auto& v :
 				     {std::get<0>(tri), std::get<1>(tri),
 				      std::get<2>(tri)}) {
@@ -2137,7 +2202,6 @@ void RenderVoxelList::RenderVoxelItem::compute_connection_faces() {
 				}
 				if (on_cut) connection_faces_cache.push_back(tri);
 			}
-			m = std::move(diffed);
 		}
 	}
 }

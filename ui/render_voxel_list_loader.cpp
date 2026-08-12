@@ -84,6 +84,8 @@ cJSON* hair_strand_to_json(const HairStrand& strand) {
     cJSON_AddBoolToObject(s_obj, "visible", strand.visible);
     cJSON_AddBoolToObject(s_obj, "hair_root_enabled", strand.hair_root_enabled);
     cJSON_AddBoolToObject(s_obj, "hair_root_generate", strand.hair_root_generate);
+    cJSON_AddBoolToObject(s_obj, "hair_tip_generate", strand.hair_tip_generate);
+    cJSON_AddBoolToObject(s_obj, "width_curve_id_v2", strand.width_curve_id_v2);
     cJSON_AddNumberToObject(s_obj, "section_rotation",
                             static_cast<double>(strand.section_rotation));
     cJSON_AddNumberToObject(s_obj, "guide_samples_per_segment",
@@ -176,6 +178,21 @@ HairStrand hair_strand_from_json(const cJSON* s_obj) {
     cJSON* hrg_obj = cJSON_GetObjectItem(s_obj, "hair_root_generate");
     if (hrg_obj && cJSON_IsBool(hrg_obj))
         strand.hair_root_generate = cJSON_IsTrue(hrg_obj);
+    cJSON* htg_obj = cJSON_GetObjectItem(s_obj, "hair_tip_generate");
+    if (htg_obj && cJSON_IsBool(htg_obj))
+        strand.hair_tip_generate = cJSON_IsTrue(htg_obj);
+    // width_curve_id_v2 was not serialized before 2026-08-12.
+    // Projects saved before that date have v2-migrated curve_ids in the
+    // JSON but no marker flag. If the key is absent, treat it as already
+    // migrated (v2 = true) to prevent the migration from being applied a
+    // second (or third…) time.
+    cJSON* wciv2_obj = cJSON_GetObjectItem(s_obj, "width_curve_id_v2");
+    if (wciv2_obj && cJSON_IsBool(wciv2_obj)) {
+        strand.width_curve_id_v2 = cJSON_IsTrue(wciv2_obj);
+    } else {
+        // Old project: assume curve_ids are already in full-curve space
+        strand.width_curve_id_v2 = true;
+    }
     cJSON* rot_obj = cJSON_GetObjectItem(s_obj, "section_rotation");
     if (rot_obj && cJSON_IsNumber(rot_obj))
         strand.section_rotation = static_cast<float>(rot_obj->valuedouble);
@@ -1947,8 +1964,10 @@ bool RenderVoxelList::save_project(const std::string& folder) {
     }
     cJSON_free(json_str);
     cJSON_Delete(root);
-    if (ok)
+    if (ok) {
         clear_all_dirty();
+        show_toast(get_locale_string("toast.project_saved"), 2000.0f);
+    }
     return ok;
 }
 
@@ -2328,6 +2347,38 @@ bool RenderVoxelList::load_project(const std::string& folder) {
             }
             if (!has_valid_children)
                 continue;
+
+            // Skip re-segmentation if children already have mesh/SDF data
+            // loaded from the project file. Re-running do_segment() would
+            // redundantly re-execute all geometric booleans (very expensive
+            // for many strands with geo_split).
+            {
+                bool children_have_data = true;
+                for (int child_id : item.children) {
+                    if (child_id < 0) continue;
+                    auto child_it = items.find(child_id);
+                    if (child_it == items.end()) { children_have_data = false; break; }
+                    const auto& c = *child_it->second;
+                    if (c.source_triangles.empty() && !c.sdf_data &&
+                        c.cached_mesh.empty()) {
+                        children_have_data = false;
+                        break;
+                    }
+                }
+                if (children_have_data) {
+                    std::cerr << "[load_project] skipping re-segment for node "
+                              << id << " (children already have mesh data)\n";
+                    continue;
+                }
+                // Children lack cached mesh data — fall back to SDF mode
+                // for the load-time re-segment to avoid the O(n²) geometric
+                // boolean explosion.
+                if (!item.addon_sdf_split) {
+                    std::cerr << "[load_project] forcing SDF mode for node "
+                              << id << " to skip geometric booleans\n";
+                    item.addon_sdf_split = true;
+                }
+            }
 
             try {
                 auto results = item.do_segment();
