@@ -128,7 +128,8 @@ void RenderVoxelList::render_guide_curve_window() {
             ImGui::BeginDisabled();
         if (ImGui::SmallButton(get_locale_cstr("action.undo"))) {
             undo(item.id);
-            for (auto& s : item.hair_strands) s.mesh_dirty = true;
+            auto* s = item.find_strand_by_uuid(strand_uuid);
+            if (s) s->mesh_dirty = true;
         }
         if (undo_disabled)
             ImGui::EndDisabled();
@@ -137,7 +138,8 @@ void RenderVoxelList::render_guide_curve_window() {
             ImGui::BeginDisabled();
         if (ImGui::SmallButton(get_locale_cstr("action.redo"))) {
             redo(item.id);
-            for (auto& s : item.hair_strands) s.mesh_dirty = true;
+            auto* s = item.find_strand_by_uuid(strand_uuid);
+            if (s) s->mesh_dirty = true;
         }
         if (redo_disabled)
             ImGui::EndDisabled();
@@ -693,7 +695,8 @@ void RenderVoxelList::render_width_editor_window() {
             ImGui::BeginDisabled();
         if (ImGui::SmallButton(get_locale_cstr("action.undo"))) {
             undo(item.id);
-            for (auto& s : item.hair_strands) s.mesh_dirty = true;
+            auto* s = item.find_strand_by_uuid(strand_uuid);
+            if (s) s->mesh_dirty = true;
         }
         if (undo_disabled)
             ImGui::EndDisabled();
@@ -702,7 +705,8 @@ void RenderVoxelList::render_width_editor_window() {
             ImGui::BeginDisabled();
         if (ImGui::SmallButton(get_locale_cstr("action.redo"))) {
             redo(item.id);
-            for (auto& s : item.hair_strands) s.mesh_dirty = true;
+            auto* s = item.find_strand_by_uuid(strand_uuid);
+            if (s) s->mesh_dirty = true;
         }
         if (redo_disabled)
             ImGui::EndDisabled();

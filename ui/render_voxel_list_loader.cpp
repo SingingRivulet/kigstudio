@@ -1031,12 +1031,6 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->hair_root_vector_length = static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "show_connection_faces") == 0) {
                 item->show_connection_faces = cJSON_IsTrue(child);
-            } else if (strcmp(key, "drill_paths") == 0 && cJSON_IsArray(child)) {
-                int dp_count = cJSON_GetArraySize(child);
-                for (int di = 0; di < dp_count; ++di) {
-                    item->drill_paths.push_back(drill_path_from_json(
-                        cJSON_GetArrayItem(child, di)));
-                }
             } else if (strcmp(key, "hairline_plane_enabled") == 0) {
                 item->hairline_plane_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_use_y") == 0) {
@@ -1132,7 +1126,13 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                     sinriv::kigstudio::voxel::concave::from_json_cone(child);
             }
         } else if (cJSON_IsArray(child)) {
-            if (strcmp(key, "concave_cone_expanded_vertices") == 0) {
+            if (strcmp(key, "drill_paths") == 0) {
+                int dp_count = cJSON_GetArraySize(child);
+                for (int di = 0; di < dp_count; ++di) {
+                    item->drill_paths.push_back(drill_path_from_json(
+                        cJSON_GetArrayItem(child, di)));
+                }
+            } else if (strcmp(key, "concave_cone_expanded_vertices") == 0) {
                 int expanded_count = cJSON_GetArraySize(child);
                 for (int i = 0; i < expanded_count; ++i) {
                     const cJSON* v = cJSON_GetArrayItem(child, i);
@@ -1666,12 +1666,6 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.hair_root_vector_length = static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "show_connection_faces") == 0) {
                 snapshot.show_connection_faces = cJSON_IsTrue(child);
-            } else if (strcmp(key, "drill_paths") == 0 && cJSON_IsArray(child)) {
-                int dp_count = cJSON_GetArraySize(child);
-                for (int di = 0; di < dp_count; ++di) {
-                    snapshot.drill_paths.push_back(drill_path_from_json(
-                        cJSON_GetArrayItem(child, di)));
-                }
             } else if (strcmp(key, "hairline_plane_enabled") == 0) {
                 snapshot.hairline_plane_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_use_y") == 0) {
@@ -1771,7 +1765,13 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                         sinriv::kigstudio::vec3<float>>(child);
             }
         } else if (cJSON_IsArray(child)) {
-            if (strcmp(key, "concave_cone_expanded_vertices") == 0) {
+            if (strcmp(key, "drill_paths") == 0) {
+                int dp_count = cJSON_GetArraySize(child);
+                for (int di = 0; di < dp_count; ++di) {
+                    snapshot.drill_paths.push_back(drill_path_from_json(
+                        cJSON_GetArrayItem(child, di)));
+                }
+            } else if (strcmp(key, "concave_cone_expanded_vertices") == 0) {
                 int expanded_count = cJSON_GetArraySize(child);
                 for (int i = 0; i < expanded_count; ++i) {
                     const cJSON* v = cJSON_GetArrayItem(child, i);

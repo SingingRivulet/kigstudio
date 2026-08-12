@@ -742,12 +742,58 @@ int ui_main(int argc, const char* const* argv) {
                         render_items.undo_marked(render_items.render_id);
                     } else {
                         render_items.undo(render_items.render_id);
+                        // Compare pre-undo snapshot (now on redo stack) with
+                        // current strands to mark only the ones that actually
+                        // changed.
+                        auto uit = render_items.items.find(render_items.render_id);
+                        if (uit != render_items.items.end() &&
+                            !uit->second->redo_stack.empty()) {
+                            const auto& snap = uit->second->redo_stack.back();
+                            for (auto& s : uit->second->hair_strands) {
+                                bool in_snap = false;
+                                for (const auto& ss : snap.hair_strands) {
+                                    if (ss.uuid != s.uuid) continue;
+                                    in_snap = true;
+                                    if (ss.guide_points != s.guide_points ||
+                                        ss.width_points != s.width_points ||
+                                        ss.hair_root_generate != s.hair_root_generate ||
+                                        ss.hair_tip_generate != s.hair_tip_generate) {
+                                        s.mesh_dirty = true;
+                                    }
+                                    break;
+                                }
+                                if (!in_snap) s.mesh_dirty = true;
+                            }
+                        }
                     }
                 } else if (e.key.keysym.sym == SDLK_y && ctrl) {
                     if (render_items.object_editor_tab == 1) {
                         render_items.redo_marked(render_items.render_id);
                     } else {
                         render_items.redo(render_items.render_id);
+                        // Compare pre-redo snapshot (now on undo stack) with
+                        // current strands to mark only the ones that actually
+                        // changed.
+                        auto rit = render_items.items.find(render_items.render_id);
+                        if (rit != render_items.items.end() &&
+                            !rit->second->undo_stack.empty()) {
+                            const auto& snap = rit->second->undo_stack.back();
+                            for (auto& s : rit->second->hair_strands) {
+                                bool in_snap = false;
+                                for (const auto& ss : snap.hair_strands) {
+                                    if (ss.uuid != s.uuid) continue;
+                                    in_snap = true;
+                                    if (ss.guide_points != s.guide_points ||
+                                        ss.width_points != s.width_points ||
+                                        ss.hair_root_generate != s.hair_root_generate ||
+                                        ss.hair_tip_generate != s.hair_tip_generate) {
+                                        s.mesh_dirty = true;
+                                    }
+                                    break;
+                                }
+                                if (!in_snap) s.mesh_dirty = true;
+                            }
+                        }
                     }
                 } else if (e.key.keysym.sym == SDLK_EQUALS ||
                            e.key.keysym.sym == SDLK_KP_PLUS ||

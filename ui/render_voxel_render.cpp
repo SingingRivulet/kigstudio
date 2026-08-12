@@ -2103,22 +2103,64 @@ void RenderVoxelList::RenderVoxelItem::compute_connection_faces() {
 	// Faces created by a subtraction step lie on the subtracted strand's
 	// surface — classify them with an SDF of that strand.
 
-	// Pre-build all strand loft triangles and mesh data so each strand is
-	// only built once, not O(n) times in the inner loop.
-	// Use PAIRWISE boolean (orig_i - orig_j) instead of chain boolean
-	// (accumulated_m - orig_j) to keep both operands simple. Chain booleans
-	// explode in complexity after ~10 subtractions and cause CGAL to hang.
+	// Pre-build all strand loft triangles, mesh data, and AABBs so each
+	// strand is only processed once. Use PAIRWISE boolean (orig_i - orig_j)
+	// instead of chain boolean to keep operands simple. AABB pre-filtering
+	// skips pairs whose bounding boxes barely touch — all strands share a
+	// common root point, so a small epsilon is needed to avoid all pairs
+	// passing the filter.
 	const size_t n = hair_strands.size();
 	std::vector<std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>>
 	    cached_tris(n);
 	std::vector<MeshData> cached_mesh(n);
 	std::vector<std::shared_ptr<SDF_Mesh>> cached_sdf(n);
+	// Per-strand AABB for collision pre-filtering
+	struct AABB { loft_vec3f bmin, bmax; };
+	std::vector<AABB> cached_bbox(n);
+
+	// Epsilon for bbox overlap: strands that only touch at the shared root
+	// point should be filtered.  Use a small absolute value (~half the
+	// typical strand cross-section radius).  hair_root_vector_length is the
+	// radius of the root width vector — halve it to get the cross-section
+	// radius in the loft extrusion directions, then halve again under the
+	// assumption that the bbox extrusion thickness is sub-millimeter.
+	float bbox_epsilon = std::max(0.05f, hair_root_vector_length * 0.25f);
+
 	for (size_t k = 0; k < n; ++k) {
 		std::cerr << "[connection_faces] pre-building strand " << (k + 1)
 		          << "/" << n << " \"" << hair_strands[k].name << "\"...\n";
 		cached_tris[k] = build_strand_loft_triangles(static_cast<int>(k));
 		if (!cached_tris[k].empty()) {
 			cached_mesh[k] = to_mesh_data(cached_tris[k]);
+			// Compute AABB for this strand
+			{
+				bool first = true;
+				for (const auto& tri : cached_tris[k]) {
+					for (const auto& v :
+					     {std::get<0>(tri), std::get<1>(tri),
+					      std::get<2>(tri)}) {
+						loft_vec3f p{v.x, v.y, v.z};
+						if (first) {
+							cached_bbox[k].bmin = p;
+							cached_bbox[k].bmax = p;
+							first = false;
+						} else {
+							if (p.x < cached_bbox[k].bmin.x)
+								cached_bbox[k].bmin.x = p.x;
+							if (p.y < cached_bbox[k].bmin.y)
+								cached_bbox[k].bmin.y = p.y;
+							if (p.z < cached_bbox[k].bmin.z)
+								cached_bbox[k].bmin.z = p.z;
+							if (p.x > cached_bbox[k].bmax.x)
+								cached_bbox[k].bmax.x = p.x;
+							if (p.y > cached_bbox[k].bmax.y)
+								cached_bbox[k].bmax.y = p.y;
+							if (p.z > cached_bbox[k].bmax.z)
+								cached_bbox[k].bmax.z = p.z;
+						}
+					}
+				}
+			}
 			auto sdf = std::make_shared<SDF_Mesh>();
 			sdf->precision_mode = SDFPrecision::Precise;
 			if (sdf->loadTriangles(cached_tris[k]))
@@ -2128,12 +2170,32 @@ void RenderVoxelList::RenderVoxelItem::compute_connection_faces() {
 
 	const int total_ops = static_cast<int>(n * (n - 1) / 2);
 	int op_count = 0;
+	int skipped_count = 0;
 	for (size_t i = 0; i < n; ++i) {
 		const auto& mesh_i = cached_mesh[i];
 		if (mesh_i.empty()) continue;
+		const auto& bb_i = cached_bbox[i];
 		for (size_t j = 0; j < i; ++j) {
 			const auto& mesh_j = cached_mesh[j];
 			if (mesh_j.empty()) continue;
+			const auto& bb_j = cached_bbox[j];
+
+			// ---- Bounding-box pre-filter ----
+			// Skip pair if AABB overlap is below epsilon on any axis.
+			// All strands share the root point → bboxes always touch.
+			// Only pairs whose bboxes meaningfully interpenetrate pass.
+			float ox = std::min(bb_i.bmax.x, bb_j.bmax.x) -
+			           std::max(bb_i.bmin.x, bb_j.bmin.x);
+			float oy = std::min(bb_i.bmax.y, bb_j.bmax.y) -
+			           std::max(bb_i.bmin.y, bb_j.bmin.y);
+			float oz = std::min(bb_i.bmax.z, bb_j.bmax.z) -
+			           std::max(bb_i.bmin.z, bb_j.bmin.z);
+			if (ox < bbox_epsilon || oy < bbox_epsilon ||
+			    oz < bbox_epsilon) {
+				++skipped_count;
+				continue;
+			}
+
 			++op_count;
 			std::cerr << "[connection_faces] boolean " << op_count
 			          << "/" << total_ops << " (strand "
@@ -2165,28 +2227,7 @@ void RenderVoxelList::RenderVoxelItem::compute_connection_faces() {
 			if (!sdf_j) continue;
 
 			// eps from strand j's bounding-box diagonal
-			loft_vec3f bmin{0, 0, 0}, bmax{0, 0, 0};
-			bool first = true;
-			for (const auto& tri : cached_tris[j]) {
-				for (const auto& v :
-				     {std::get<0>(tri), std::get<1>(tri),
-				      std::get<2>(tri)}) {
-					loft_vec3f p{v.x, v.y, v.z};
-					if (first) {
-						bmin = p;
-						bmax = p;
-						first = false;
-					} else {
-						if (p.x < bmin.x) bmin.x = p.x;
-						if (p.y < bmin.y) bmin.y = p.y;
-						if (p.z < bmin.z) bmin.z = p.z;
-						if (p.x > bmax.x) bmax.x = p.x;
-						if (p.y > bmax.y) bmax.y = p.y;
-						if (p.z > bmax.z) bmax.z = p.z;
-					}
-				}
-			}
-			float diag = (bmax - bmin).length();
+			float diag = (bb_j.bmax - bb_j.bmin).length();
 			float eps = std::max(1e-3f, diag * 2e-4f);
 
 			for (const auto& [tri, n] : diffed) {
@@ -2204,18 +2245,31 @@ void RenderVoxelList::RenderVoxelItem::compute_connection_faces() {
 			}
 		}
 	}
+	if (skipped_count > 0)
+		std::cerr << "[connection_faces] bbox filter skipped "
+		          << skipped_count << " non-colliding pairs (epsilon="
+		          << bbox_epsilon << ")\n";
 }
 
 void RenderVoxelList::RenderVoxelItem::update_drill_tool_meshes() {
 	// ---- Connection faces (display only, never in collision) ----
 	if (!show_connection_faces) {
 		addon_tool_renderers.erase("conn");
-		connection_faces_dirty = true;  // recompute when re-enabled
-	} else if (connection_faces_dirty) {
-		compute_connection_faces();
+		// Keep connection_faces_cache alive — next enable reuses it
+		// without recomputing.  Strand updates (including undo) already
+		// set connection_faces_dirty = true, which triggers a fresh
+		// compute when needed.
+	} else {
+		if (connection_faces_dirty) {
+			compute_connection_faces();
+		}
+		// Build renderer from cache when missing (freshly computed or
+		// re-enabled after toggle): cache is non-empty and the "conn"
+		// renderer slot was erased while show_connection_faces was off.
 		if (connection_faces_cache.empty()) {
 			addon_tool_renderers.erase("conn");
-		} else {
+		} else if (addon_tool_renderers.find("conn") ==
+		           addon_tool_renderers.end()) {
 			std::vector<std::tuple<loft_Triangle, loft_vec3f>> out;
 			out.reserve(connection_faces_cache.size());
 			for (const auto& tri : connection_faces_cache)
@@ -2326,11 +2380,19 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     // Rebuild addon meshes selectively (only dirty strands are rebuilt)
     if (!hair_strands.empty() || !addon_renderers.empty()) {
         // Strand geometry changed → connection faces are stale
+        bool strand_edit_dirtied = false;
         for (auto& strand : hair_strands) {
             if (strand.mesh_dirty) {
                 connection_faces_dirty = true;
+                strand_edit_dirtied = true;
                 break;
             }
+        }
+        // Auto-exit connection-faces display when the user edits a strand,
+        // to avoid an immediate expensive recompute. Only triggers for
+        // live edits (mesh_dirty), not for stale flags from project load.
+        if (strand_edit_dirtied && show_connection_faces) {
+            show_connection_faces = false;
         }
         update_addon_meshes();
         for (auto& strand : hair_strands)
@@ -2346,12 +2408,16 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     // 互相遮挡；钻孔拾取激活时改用普通 GBuffer 路径（写 world_pos），
     // 使发束/连接面可被鼠标拾取；平时用 Addon 路径（拾取穿透）。
     if (!manager || showAddonMesh) {
-        for (auto& [uuid, addon] : addon_renderers) {
-            addon->cull_backface = false;
-            if (drill_picking_active)
-                addon->renderGBuffer(transform, mesh_shader);
-            else
-                addon->renderGBufferAddon(transform, mesh_shader);
+        // Hide strands when showing connection faces so only the
+        // cut interfaces are visible.
+        if (!show_connection_faces) {
+            for (auto& [uuid, addon] : addon_renderers) {
+                addon->cull_backface = false;
+                if (drill_picking_active)
+                    addon->renderGBuffer(transform, mesh_shader);
+                else
+                    addon->renderGBufferAddon(transform, mesh_shader);
+            }
         }
         for (auto& [key, tool] : addon_tool_renderers) {
             tool->cull_backface = false;

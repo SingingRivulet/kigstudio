@@ -176,6 +176,12 @@ struct HairStrand {
         sinriv::kigstudio::voxel::vec3f direction{};  // 从曲线指向底模的方向（单位向量）
         // Per-point independent section override (non-empty vertices = custom section)
         SectionEditorState section_state;
+
+        bool operator==(const WidthPoint& o) const {
+            return curve_id == o.curve_id && scale == o.scale &&
+                   direction == o.direction;
+        }
+        bool operator!=(const WidthPoint& o) const { return !(*this == o); }
     };
     std::vector<WidthPoint> width_points;
     bool width_editing_active = false;
