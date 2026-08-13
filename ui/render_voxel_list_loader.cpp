@@ -986,6 +986,14 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
             } else if (strcmp(key, "node_source_sdf_simplify_ratio") == 0) {
                 item->node_source_sdf_simplify_ratio =
                     static_cast<float>(value);
+            } else if (strcmp(key, "hair_root_center_offset") == 0) {
+                item->hair_root_center_offset = static_cast<float>(value);
+            } else if (strcmp(key, "hair_root_vector_length") == 0) {
+                item->hair_root_vector_length = static_cast<float>(value);
+            } else if (strcmp(key, "hairline_plane_y") == 0) {
+                item->hairline_plane_y = static_cast<float>(value);
+            } else if (strcmp(key, "hairline_spindle_scale") == 0) {
+                item->hairline_spindle_scale = static_cast<float>(value);
             }
         } else if (cJSON_IsBool(child)) {
             if (strcmp(key, "show_origin_mesh") == 0) {
@@ -1025,22 +1033,12 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->show_addon_center = cJSON_IsTrue(child);
             } else if (strcmp(key, "auto_hair_root") == 0) {
                 item->auto_hair_root = cJSON_IsTrue(child);
-            } else if (strcmp(key, "hair_root_center_offset") == 0) {
-                item->hair_root_center_offset = static_cast<float>(child->valuedouble);
-            } else if (strcmp(key, "hair_root_vector_length") == 0) {
-                item->hair_root_vector_length = static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "show_connection_faces") == 0) {
                 item->show_connection_faces = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_enabled") == 0) {
                 item->hairline_plane_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_use_y") == 0) {
                 item->hairline_plane_use_y = cJSON_IsTrue(child);
-            } else if (strcmp(key, "hairline_plane_y") == 0) {
-                item->hairline_plane_y =
-                    static_cast<float>(child->valuedouble);
-            } else if (strcmp(key, "hairline_spindle_scale") == 0) {
-                item->hairline_spindle_scale =
-                    static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "voxel_picking_enabled") == 0) {
                 item->voxel_picking_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "use_cgal_skeleton") == 0) {
@@ -1633,6 +1631,14 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.alpha_wrap_offset = static_cast<float>(value);
             } else if (strcmp(key, "subdivide_level") == 0) {
                 snapshot.subdivide_level = child->valueint;
+            } else if (strcmp(key, "hair_root_center_offset") == 0) {
+                snapshot.hair_root_center_offset = static_cast<float>(value);
+            } else if (strcmp(key, "hair_root_vector_length") == 0) {
+                snapshot.hair_root_vector_length = static_cast<float>(value);
+            } else if (strcmp(key, "hairline_plane_y") == 0) {
+                snapshot.hairline_plane_y = static_cast<float>(value);
+            } else if (strcmp(key, "hairline_spindle_scale") == 0) {
+                snapshot.hairline_spindle_scale = static_cast<float>(value);
             }
         } else if (cJSON_IsBool(child)) {
             if (strcmp(key, "use_cgal_skeleton") == 0) {
@@ -1660,22 +1666,12 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.show_addon_center = cJSON_IsTrue(child);
             } else if (strcmp(key, "auto_hair_root") == 0) {
                 snapshot.auto_hair_root = cJSON_IsTrue(child);
-            } else if (strcmp(key, "hair_root_center_offset") == 0) {
-                snapshot.hair_root_center_offset = static_cast<float>(child->valuedouble);
-            } else if (strcmp(key, "hair_root_vector_length") == 0) {
-                snapshot.hair_root_vector_length = static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "show_connection_faces") == 0) {
                 snapshot.show_connection_faces = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_enabled") == 0) {
                 snapshot.hairline_plane_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_use_y") == 0) {
                 snapshot.hairline_plane_use_y = cJSON_IsTrue(child);
-            } else if (strcmp(key, "hairline_plane_y") == 0) {
-                snapshot.hairline_plane_y =
-                    static_cast<float>(child->valuedouble);
-            } else if (strcmp(key, "hairline_spindle_scale") == 0) {
-                snapshot.hairline_spindle_scale =
-                    static_cast<float>(child->valuedouble);
             } else if (strcmp(key, "hairline_plane_p0") == 0) {
                 snapshot.hairline_plane_points[0] =
                     sinriv::kigstudio::vec3_from_json<

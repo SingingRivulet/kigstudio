@@ -1,6 +1,76 @@
 #include "render_voxel_list.h"
 namespace sinriv::ui::render {
 
+namespace {
+
+// Compare only the fields that influence the loft mesh (and therefore the
+// split connection faces). Per-frame UI state (hover/drag/edit_active) and
+// the independent undo/redo stacks inside SectionEditorState are excluded, so
+// an undo/redo that only changes drill paths — leaving strand geometry intact
+// — does not trigger an expensive connection-faces recompute.
+bool vec2_list_equal(const std::vector<sinriv::kigstudio::vec2<float>>& a,
+                     const std::vector<sinriv::kigstudio::vec2<float>>& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (a[i].x != b[i].x || a[i].y != b[i].y) return false;
+    return true;
+}
+
+bool section_geometry_equal(const SectionEditorState& a,
+                            const SectionEditorState& b) {
+    return vec2_list_equal(a.committed, b.committed) &&
+           vec2_list_equal(a.vertices, b.vertices) &&
+           a.use_bezier_section == b.use_bezier_section;
+}
+
+bool width_point_geometry_equal(const HairStrand::WidthPoint& a,
+                                const HairStrand::WidthPoint& b) {
+    return a.curve_id == b.curve_id && a.scale == b.scale &&
+           a.direction == b.direction &&
+           section_geometry_equal(a.section_state, b.section_state);
+}
+
+bool strand_geometry_equal(const HairStrand& a, const HairStrand& b) {
+    if (a.gen_type != b.gen_type) return false;
+    if (a.guide_points != b.guide_points) return false;
+    if (a.hidden_guide_points_start != b.hidden_guide_points_start)
+        return false;
+    if (a.hidden_guide_points_end != b.hidden_guide_points_end) return false;
+    if (a.width_points.size() != b.width_points.size()) return false;
+    for (size_t i = 0; i < a.width_points.size(); ++i)
+        if (!width_point_geometry_equal(a.width_points[i], b.width_points[i]))
+            return false;
+    if (!section_geometry_equal(a.section_state, b.section_state))
+        return false;
+    if (a.section_rotation != b.section_rotation) return false;
+    if (a.guide_samples_per_segment != b.guide_samples_per_segment)
+        return false;
+    if (a.section_subdiv != b.section_subdiv) return false;
+    if (a.hair_root_enabled != b.hair_root_enabled) return false;
+    if (a.hair_root_generate != b.hair_root_generate) return false;
+    if (a.hair_tip_generate != b.hair_tip_generate) return false;
+    if (a.width_curve_id_v2 != b.width_curve_id_v2) return false;
+    if (a.candy_cylinder_radius != b.candy_cylinder_radius) return false;
+    if (a.candy_ellipsoid_spacing != b.candy_ellipsoid_spacing) return false;
+    if (a.candy_ellipsoid_radius_a != b.candy_ellipsoid_radius_a) return false;
+    if (a.candy_ellipsoid_radius_b != b.candy_ellipsoid_radius_b) return false;
+    if (a.candy_use_joints != b.candy_use_joints) return false;
+    if (a.braid_core_radius != b.braid_core_radius) return false;
+    if (a.braid_strand_radius != b.braid_strand_radius) return false;
+    if (a.braid_braid_radius != b.braid_braid_radius) return false;
+    if (a.braid_twist_pitch != b.braid_twist_pitch) return false;
+    if (a.braid_strand_count != b.braid_strand_count) return false;
+    if (a.braid_use_joints != b.braid_use_joints) return false;
+    if (a.special_tip_length != b.special_tip_length) return false;
+    if (a.special_tip_radius != b.special_tip_radius) return false;
+    if (a.special_quality != b.special_quality) return false;
+    if (a.repair_alpha != b.repair_alpha) return false;
+    if (a.repair_offset != b.repair_offset) return false;
+    return true;
+}
+
+}  // namespace
+
 CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
     const RenderVoxelItem& item) const {
     return {item.collision_group,
@@ -67,6 +137,25 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
 
 void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
                                      const CollisionEditorSnapshot& snapshot) {
+    // Determine whether the split-connection-face inputs changed before the
+    // snapshot overwrites them. Connection faces are computed from strand
+    // loft geometry, hair_root_vector_length, and addon_split; undoing or
+    // redoing a drill-path-only edit (add/move/delete a drill point) leaves
+    // these untouched, so skip the expensive O(n²) boolean recompute.
+    bool conn_inputs_changed =
+        item.addon_split != snapshot.addon_split ||
+        item.hair_root_vector_length != snapshot.hair_root_vector_length ||
+        item.hair_strands.size() != snapshot.hair_strands.size();
+    if (!conn_inputs_changed) {
+        for (size_t i = 0; i < item.hair_strands.size(); ++i) {
+            if (!strand_geometry_equal(item.hair_strands[i],
+                                       snapshot.hair_strands[i])) {
+                conn_inputs_changed = true;
+                break;
+            }
+        }
+    }
+
     item.collision_group = snapshot.collision_group;
     item.plane = snapshot.plane;
     item.concave_cone = snapshot.concave_cone;
@@ -132,7 +221,8 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     for (auto& dp : item.drill_paths)
         dp.mesh_dirty = true;
     item.show_connection_faces = snapshot.show_connection_faces;
-    item.connection_faces_dirty = true;
+    if (conn_inputs_changed)
+        item.connection_faces_dirty = true;
     item.sdf_precision_cache = snapshot.sdf_precision_cache;
     item.joint_wireframe_dirty = true;
 
