@@ -534,6 +534,18 @@ void RenderVoxelList::queue_thread() {
                             mesh.push_back(triangles);
                         }
                     }
+                    // 更新碰撞产生的几何布尔子节点只有三角形数据
+                    // （无体素/SDF），直接导出显示网格
+                    if (mesh.empty() && !item_ptr->source_triangles.empty()) {
+                        mesh.reserve(item_ptr->source_triangles.size());
+                        for (const auto& t : item_ptr->source_triangles) {
+                            const auto& a = std::get<0>(t);
+                            const auto& b = std::get<1>(t);
+                            const auto& c = std::get<2>(t);
+                            auto n = (b - a).cross(c - a).normalize();
+                            mesh.emplace_back(t, n);
+                        }
+                    }
                     queue_progress = 0.4f;
                     if (!mesh.empty()) {
                         setQueueStatus(
@@ -612,6 +624,8 @@ void RenderVoxelList::queue_thread() {
                     } else {
                         append_queue_logf("log.queue.error_export_stl_empty",
                                           task.index);
+                        show_toastf(2500.0f, "log.queue.error_export_stl_empty",
+                                    task.index);
                     }
 
                     // 解锁
@@ -736,6 +750,21 @@ void RenderVoxelList::queue_thread() {
                                                     queue_running.load();
                                          })) {
                                     mesh.push_back(triangles);
+                                }
+                            }
+
+                            if (mesh.empty() &&
+                                !item_ptr->source_triangles.empty()) {
+                                // Nodes produced by collision update carry only
+                                // source_triangles (no voxels / SDF); export
+                                // them directly.
+                                mesh.reserve(item_ptr->source_triangles.size());
+                                for (const auto& t : item_ptr->source_triangles) {
+                                    const auto& a = std::get<0>(t);
+                                    const auto& b = std::get<1>(t);
+                                    const auto& c = std::get<2>(t);
+                                    auto n = (b - a).cross(c - a).normalize();
+                                    mesh.emplace_back(t, n);
                                 }
                             }
 

@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include "kigstudio/cgal/mesh_repair.h"
 #include "kigstudio/sdf/sdf_chain_joint.h"
+#include "kigstudio/voxel/voxel2mesh.h"
 namespace sinriv::ui::render {
 
 void RenderVoxelList::setViewportSize(int width, int height) {
@@ -584,41 +585,46 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
             return result;
         } else {
             if (geo_reveal) {
-                // 纯几何路径：合并所有发束后用几何布尔减底模
+                // 纯几何路径：每根发束独立减底模、减钻孔后拼接。
+                // 不做发束间并集：发束在根部汇聚且互相穿插，corefine
+                // 会报 "Unauthorized intersections of constraints"，
+                // 并集失败回退拼接后累积网格自相交，后续布尔连锁失败。
+                // 发束间的重叠面对 3D 打印无害（切片器会自动并集）。
                 kcgal::MeshData merged;
                 for (int i = 0; i < static_cast<int>(hair_strands.size());
                      ++i) {
                     auto tris = build_strand_loft_triangles(i);
                     if (tris.empty()) continue;
-                    if (merged.empty()) {
-                        merged = to_mesh_data(tris);
-                        continue;
-                    }
-                    auto united =
-                        kcgal::mesh_union(merged, to_mesh_data(tris));
-                    if (!united.empty()) {
-                        merged = std::move(united);
+                    auto m = to_mesh_data(tris);
+                    // 显露：从发束网格中减去底模
+                    auto diffed = kcgal::mesh_difference(
+                        m, base_mesh, /*allow_alpha_wrap=*/false);
+                    if (!diffed.empty()) {
+                        m = std::move(diffed);
                     } else {
-                        // 并集失败时直接拼接（尽可能保留几何）
-                        auto extra = to_mesh_data(tris);
-                        merged.insert(merged.end(), extra.begin(),
-                                      extra.end());
+                        std::cerr << "[do_segment] geometry reveal failed for"
+                                  << " strand " << i
+                                  << ", keeping original mesh.\n";
                     }
+                    // 钻孔：发束网格减去钻孔圆管
+                    for (const auto& dm : drill_meshes) {
+                        auto drilled = kcgal::mesh_difference(
+                            m, dm, /*allow_alpha_wrap=*/false);
+                        if (!drilled.empty()) {
+                            m = std::move(drilled);
+                        } else {
+                            std::cerr
+                                << "[do_segment] drill subtraction failed"
+                                << " for strand " << i
+                                << ", keeping original mesh.\n";
+                        }
+                    }
+                    merged.insert(merged.end(),
+                                  std::make_move_iterator(m.begin()),
+                                  std::make_move_iterator(m.end()));
                 }
                 if (merged.empty()) {
                     return {{voxel_grid_data, nullptr, {}}};
-                }
-                auto diffed = kcgal::mesh_difference(merged, base_mesh);
-                if (!diffed.empty()) merged = std::move(diffed);
-                // 钻孔：合并网格减去钻孔圆管
-                for (const auto& dm : drill_meshes) {
-                    auto drilled = kcgal::mesh_difference(merged, dm);
-                    if (!drilled.empty()) {
-                        merged = std::move(drilled);
-                    } else {
-                        std::cerr << "[do_segment] drill subtraction failed"
-                                  << " on merged mesh, keeping it.\n";
-                    }
                 }
                 return {{voxel_grid_data, nullptr, strip_tris(merged)}};
             }
@@ -642,7 +648,78 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
                 hair_sdf = sdf_subtraction(hair_sdf, drill_sdf);
             }
 
-            return {{voxel_grid_data, std::move(hair_sdf), {}}};
+            // SDF 路径的子节点没有体素/三角形数据，视口中不可见；
+            // 从最终 SDF 重建一份显示网格（与导出 STL 的 SDF 网格一致），
+            // 失败时保持原行为（仅 SDF 数据）。
+            std::vector<Tri> display_tris;
+            {
+                auto grid_copy = voxel_grid_data;
+                // 网格化以 chunk 覆盖范围为界：没有覆盖 chunk 时
+                // （未点过“更新毛发SDF”）按发束包围盒现场生成，
+                // 逻辑与文件 Tab 的“更新毛发SDF”按钮一致
+                if (grid_copy.chunks.empty()) {
+                    auto [bmin, bmax] = compute_hair_bounds();
+                    float vs = stl_voxel_size;
+                    if (bmin.x < bmax.x && bmin.y < bmax.y &&
+                        bmin.z < bmax.z && vs > 0.0f) {
+                        grid_copy.global_position = bmin;
+                        grid_copy.voxel_size = {vs, vs, vs};
+                        auto worldToVoxel =
+                            [&](float wx, float wy,
+                                float wz) -> sinriv::kigstudio::Vec3i {
+                            return {
+                                static_cast<int32_t>(std::floor((wx - bmin.x) / vs)),
+                                static_cast<int32_t>(std::floor((wy - bmin.y) / vs)),
+                                static_cast<int32_t>(std::floor((wz - bmin.z) / vs))};
+                        };
+                        auto min_voxel = worldToVoxel(bmin.x, bmin.y, bmin.z);
+                        auto max_voxel = worldToVoxel(bmax.x, bmax.y, bmax.z);
+                        min_voxel.x -= 1;
+                        min_voxel.y -= 1;
+                        min_voxel.z -= 1;
+                        max_voxel.x += 1;
+                        max_voxel.y += 1;
+                        max_voxel.z += 1;
+                        int min_cx = min_voxel.x >> 5;
+                        int min_cy = min_voxel.y >> 5;
+                        int min_cz = min_voxel.z >> 5;
+                        int max_cx = max_voxel.x >> 5;
+                        int max_cy = max_voxel.y >> 5;
+                        int max_cz = max_voxel.z >> 5;
+                        int total_c = (max_cx - min_cx + 1) *
+                                      (max_cy - min_cy + 1) *
+                                      (max_cz - min_cz + 1);
+                        if (total_c <= 4096) {
+                            for (int cx = min_cx; cx <= max_cx; ++cx)
+                                for (int cy = min_cy; cy <= max_cy; ++cy)
+                                    for (int cz = min_cz; cz <= max_cz; ++cz) {
+                                        uint64_t key = sinriv::kigstudio::
+                                            voxel::packChunkKey(cx, cy, cz);
+                                        grid_copy.chunks.try_emplace(key);
+                                    }
+                        }
+                    }
+                }
+                if (!grid_copy.chunks.empty()) {
+                    int num_display_tris = 0;
+                    for (auto [tri, n] : sinriv::kigstudio::voxel::
+                             generateSmoothMeshFromSDF(grid_copy,
+                                                       num_display_tris,
+                                                       [](const std::string&) {
+                                                           return true;
+                                                       },
+                                                       false, 3,
+                                                       hair_sdf.get())) {
+                        (void)n;
+                        display_tris.push_back(tri);
+                    }
+                    std::cerr << "[do_segment] display mesh: "
+                              << display_tris.size() << " faces.\n";
+                }
+            }
+
+            return {{voxel_grid_data, std::move(hair_sdf),
+                     std::move(display_tris)}};
         }
     }
 

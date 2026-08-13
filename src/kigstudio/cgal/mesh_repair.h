@@ -19,8 +19,10 @@ MeshData alpha_wrap(const MeshData& mesh, double alpha = 10.0, double offset = 0
 MeshData fill_holes(const MeshData& mesh);
 MeshData stitch_borders(const MeshData& mesh, double max_dist = 0.001);
 MeshData merge_duplicate_vertices(const MeshData& mesh, double tol = 1e-6);
-MeshData mesh_union(const MeshData& mesh_a, const MeshData& mesh_b);
-MeshData mesh_difference(const MeshData& mesh_a, const MeshData& mesh_b);
+MeshData mesh_union(const MeshData& mesh_a, const MeshData& mesh_b,
+                    bool allow_alpha_wrap = true);
+MeshData mesh_difference(const MeshData& mesh_a, const MeshData& mesh_b,
+                         bool allow_alpha_wrap = true);
 MeshData orient_volume(const MeshData& mesh);
 
 /// Check whether \p mesh is closed, consistently oriented, and free of

@@ -449,6 +449,9 @@ MeshData build_cylinder_mesh(
     }
 
     // Tube surface: connect adjacent rings with quads (2 triangles each)
+    // 注意：local_frame_at_sample 给出的 (axis_u, axis_v, tangent) 是左手系
+    // （axis_u = tangent × axis_v），所以这里用翻转的绕序 {a,c,b}/{c,d,b}
+    // 才能保证三角形朝外（CGAL 布尔运算依赖朝外的封闭网格）。
     for (int i = 0; i < M - 1; ++i) {
         for (int j = 0; j < C; ++j) {
             int j2 = (j + 1) % C;
@@ -456,10 +459,10 @@ MeshData build_cylinder_mesh(
             const auto& b = rings[i][j2];
             const auto& c = rings[i + 1][j];
             const auto& d = rings[i + 1][j2];
-            cgal_Triangle t1{a, b, c};
-            cgal_Triangle t2{c, b, d};
-            loft_vec3f n1 = (b - a).cross(c - a); n1 = n1 * (1.0f / (n1.length() + 1e-12f));
-            loft_vec3f n2 = (b - d).cross(c - d); n2 = n2 * (1.0f / (n2.length() + 1e-12f));
+            cgal_Triangle t1{a, c, b};
+            cgal_Triangle t2{c, d, b};
+            loft_vec3f n1 = (c - a).cross(b - a); n1 = n1 * (1.0f / (n1.length() + 1e-12f));
+            loft_vec3f n2 = (d - c).cross(b - c); n2 = n2 * (1.0f / (n2.length() + 1e-12f));
             result.emplace_back(t1, cgal_vec3f{n1.x, n1.y, n1.z});
             result.emplace_back(t2, cgal_vec3f{n2.x, n2.y, n2.z});
         }
@@ -473,7 +476,7 @@ MeshData build_cylinder_mesh(
         loft_vec3f normal = tangent * -1.0f;  // outward normal points backward
         for (int j = 0; j < C; ++j) {
             int j2 = (j + 1) % C;
-            cgal_Triangle tri{center, rings[0][j2], rings[0][j]};
+            cgal_Triangle tri{center, rings[0][j], rings[0][j2]};
             result.emplace_back(tri, cgal_vec3f{normal.x, normal.y, normal.z});
         }
     }
@@ -484,7 +487,7 @@ MeshData build_cylinder_mesh(
         local_frame_at_sample(sampled_curve, M - 1, tangent, axis_u, axis_v);
         for (int j = 0; j < C; ++j) {
             int j2 = (j + 1) % C;
-            cgal_Triangle tri{center, rings[M - 1][j], rings[M - 1][j2]};
+            cgal_Triangle tri{center, rings[M - 1][j2], rings[M - 1][j]};
             result.emplace_back(tri, cgal_vec3f{tangent.x, tangent.y, tangent.z});
         }
     }

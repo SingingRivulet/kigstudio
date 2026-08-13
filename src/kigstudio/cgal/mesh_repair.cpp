@@ -303,9 +303,12 @@ bool is_mesh_closed(const MeshData& md) {
 /// Try to repair a mesh so it becomes closed (watertight).
 /// Pipeline: merge vertices → fill holes → orient volume.
 /// If the result is still not closed, falls back to alpha_wrap which
-/// guarantees a watertight (but approximate) output.
+/// guarantees a watertight (but approximate) output — unless
+/// \p allow_alpha_wrap is false (e.g. for multi-component meshes where
+/// alpha_wrap would bridge nearby components).
 /// Returns empty on total failure.
-MeshData repair_for_boolean(const MeshData& mesh) {
+MeshData repair_for_boolean(const MeshData& mesh,
+                            bool allow_alpha_wrap = true) {
     // Step 0: merge near-duplicate vertices with a relaxed tolerance
     MeshData current = merge_duplicate_vertices(mesh, 1e-4);
     if (current.empty()) current = mesh;
@@ -325,6 +328,11 @@ MeshData repair_for_boolean(const MeshData& mesh) {
     }
 
     // Step 4: alpha_wrap as last resort — guarantees watertight output
+    if (!allow_alpha_wrap) {
+        std::cerr << "[repair] Mesh still not closed, "
+                  << "alpha_wrap disabled by caller.\n";
+        return {};
+    }
     std::cerr << "[repair] Mesh still not closed, "
               << "trying alpha_wrap as fallback...\n";
     MeshData wrapped = alpha_wrap(mesh, 10.0, 0.1);
@@ -393,13 +401,14 @@ MeshData mesh_union_impl(Surface_mesh sm_a, Surface_mesh sm_b) {
 MeshData mesh_difference_robust(const MeshData& mesh_a,
                                 const MeshData& mesh_b,
                                 bool a_closed,
-                                bool b_closed) {
+                                bool b_closed,
+                                bool allow_alpha_wrap = true) {
     // --- Level 1: fill_holes + orient_volume for non-closed meshes ---
     {
         MeshData repaired_a_data =
-            !a_closed ? repair_for_boolean(mesh_a) : mesh_a;
+            !a_closed ? repair_for_boolean(mesh_a, allow_alpha_wrap) : mesh_a;
         MeshData repaired_b_data =
-            !b_closed ? repair_for_boolean(mesh_b) : mesh_b;
+            !b_closed ? repair_for_boolean(mesh_b, allow_alpha_wrap) : mesh_b;
 
         if (!repaired_a_data.empty() && !repaired_b_data.empty()) {
             Surface_mesh sm_a2 = to_surface_mesh(repaired_a_data);
@@ -423,6 +432,11 @@ MeshData mesh_difference_robust(const MeshData& mesh_a,
     }
 
     // --- Level 2: alpha_wrap fallback (guarantees closed, non-self-intersecting) ---
+    if (!allow_alpha_wrap) {
+        std::cerr << "[mesh_difference] alpha_wrap fallback disabled by "
+                  << "caller, giving up.\n";
+        return {};
+    }
     std::cerr << "[mesh_difference] Trying alpha_wrap fallback...\n";
     {
         MeshData wrapped_a = alpha_wrap(mesh_a, 10.0, 0.1);
@@ -455,13 +469,14 @@ MeshData mesh_difference_robust(const MeshData& mesh_a,
 MeshData mesh_union_robust(const MeshData& mesh_a,
                            const MeshData& mesh_b,
                            bool a_closed,
-                           bool b_closed) {
+                           bool b_closed,
+                           bool allow_alpha_wrap = true) {
     // --- Level 1: fill_holes + orient_volume ---
     {
         MeshData repaired_a_data =
-            !a_closed ? repair_for_boolean(mesh_a) : mesh_a;
+            !a_closed ? repair_for_boolean(mesh_a, allow_alpha_wrap) : mesh_a;
         MeshData repaired_b_data =
-            !b_closed ? repair_for_boolean(mesh_b) : mesh_b;
+            !b_closed ? repair_for_boolean(mesh_b, allow_alpha_wrap) : mesh_b;
 
         if (!repaired_a_data.empty() && !repaired_b_data.empty()) {
             Surface_mesh sm_a2 = to_surface_mesh(repaired_a_data);
@@ -484,6 +499,11 @@ MeshData mesh_union_robust(const MeshData& mesh_a,
     }
 
     // --- Level 2: alpha_wrap fallback ---
+    if (!allow_alpha_wrap) {
+        std::cerr << "[mesh_union] alpha_wrap fallback disabled by "
+                  << "caller, giving up.\n";
+        return {};
+    }
     std::cerr << "[mesh_union] Trying alpha_wrap fallback...\n";
     {
         MeshData wrapped_a = alpha_wrap(mesh_a, 10.0, 0.1);
@@ -518,7 +538,8 @@ MeshData mesh_union_robust(const MeshData& mesh_a,
 // 5. Boolean Union
 // ===========================================================================
 
-MeshData mesh_union(const MeshData& mesh_a, const MeshData& mesh_b) {
+MeshData mesh_union(const MeshData& mesh_a, const MeshData& mesh_b,
+                    bool allow_alpha_wrap) {
     if (mesh_a.empty() || mesh_b.empty()) return {};
 
     Surface_mesh sm_a = to_surface_mesh(mesh_a);
@@ -550,14 +571,16 @@ MeshData mesh_union(const MeshData& mesh_a, const MeshData& mesh_b) {
     // (non-closed meshes, self-intersections, etc.)
     std::cerr << "[mesh_union] Direct boolean failed, "
               << "attempting repair + retry...\n";
-    return mesh_union_robust(mesh_a, mesh_b, a_closed, b_closed);
+    return mesh_union_robust(mesh_a, mesh_b, a_closed, b_closed,
+                             allow_alpha_wrap);
 }
 
 // ===========================================================================
 // 5b. Boolean Difference (A - B)
 // ===========================================================================
 
-MeshData mesh_difference(const MeshData& mesh_a, const MeshData& mesh_b) {
+MeshData mesh_difference(const MeshData& mesh_a, const MeshData& mesh_b,
+                         bool allow_alpha_wrap) {
     if (mesh_a.empty() || mesh_b.empty()) return {};
 
     Surface_mesh sm_a = to_surface_mesh(mesh_a);
@@ -590,7 +613,8 @@ MeshData mesh_difference(const MeshData& mesh_a, const MeshData& mesh_b) {
     // (non-closed meshes, self-intersections, etc.)
     std::cerr << "[mesh_difference] Direct boolean failed, "
               << "attempting repair + retry...\n";
-    return mesh_difference_robust(mesh_a, mesh_b, a_closed, b_closed);
+    return mesh_difference_robust(mesh_a, mesh_b, a_closed, b_closed,
+                                  allow_alpha_wrap);
 }
 
 // ===========================================================================
