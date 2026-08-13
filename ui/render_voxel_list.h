@@ -654,6 +654,8 @@ class RenderVoxelList {
         0.1f;  // 速度低于此值直接归零，防止微幅抖动
     int nav_layout_velocity_threshold_start_frame = 120;
     int nav_layout_velocity_threshold_frame = 0;
+    // 折叠节点的父节点 id；>= 0 时显示折叠节点列表弹窗
+    int nav_fold_popup_parent = -1;
 
    public:
     std::mutex locker;

@@ -585,17 +585,23 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
             return result;
         } else {
             if (geo_reveal) {
-                // 纯几何路径：每根发束独立减底模、减钻孔后拼接。
-                // 不做发束间并集：发束在根部汇聚且互相穿插，corefine
-                // 会报 "Unauthorized intersections of constraints"，
-                // 并集失败回退拼接后累积网格自相交，后续布尔连锁失败。
-                // 发束间的重叠面对 3D 打印无害（切片器会自动并集）。
+                // 纯几何路径：复用拆分流程（减底模→发束间互减→减钻孔→补洞），
+                // 最后把所有发束的三角形直接拼接为一个节点。
+                // 互减产生的切削面与被切发束表面重合（零厚度双面墙），
+                // 切片器可能仍报非流形边，但发束体积不再互相穿插。
+                const int n_strands = static_cast<int>(hair_strands.size());
+                std::vector<decltype(build_strand_loft_triangles(0))>
+                    cached_strand_tris(n_strands);
+                for (int k = 0; k < n_strands; ++k) {
+                    cached_strand_tris[k] = build_strand_loft_triangles(k);
+                }
+
                 kcgal::MeshData merged;
-                for (int i = 0; i < static_cast<int>(hair_strands.size());
-                     ++i) {
-                    auto tris = build_strand_loft_triangles(i);
-                    if (tris.empty()) continue;
-                    auto m = to_mesh_data(tris);
+                const int total_ops = n_strands * (n_strands - 1) / 2;
+                int op_count = 0;
+                for (int i = 0; i < n_strands; ++i) {
+                    if (cached_strand_tris[i].empty()) continue;
+                    auto m = to_mesh_data(cached_strand_tris[i]);
                     // 显露：从发束网格中减去底模
                     auto diffed = kcgal::mesh_difference(
                         m, base_mesh, /*allow_alpha_wrap=*/false);
@@ -606,7 +612,33 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
                                   << " strand " << i
                                   << ", keeping original mesh.\n";
                     }
-                    // 钻孔：发束网格减去钻孔圆管
+                    // 发束间互减：第 i 根减去 0..i-1 根（与拆分路径一致，
+                    // 切削体用缓存的原始发束网格）
+                    for (int j = 0; j < i; ++j) {
+                        const auto& prev_tris = cached_strand_tris[j];
+                        if (prev_tris.empty()) continue;
+                        ++op_count;
+                        std::cerr << "[do_segment] boolean " << op_count
+                                  << "/" << total_ops << " (strand "
+                                  << (i + 1) << " - " << (j + 1) << ")\n";
+                        try {
+                            auto cut = kcgal::mesh_difference(
+                                m, to_mesh_data(prev_tris),
+                                /*allow_alpha_wrap=*/false);
+                            // 布尔失败时保留当前网格（尽可能渲染）
+                            if (!cut.empty()) m = std::move(cut);
+                        } catch (const std::exception& e) {
+                            std::cerr << "[do_segment] boolean failed ("
+                                      << i << "," << j << "): "
+                                      << e.what() << "\n";
+                        } catch (...) {
+                            std::cerr << "[do_segment] boolean failed ("
+                                      << i << "," << j
+                                      << "): unknown error\n";
+                        }
+                    }
+                    // 钻孔：放在减底模/互减之后，避免钻孔切口在后续布尔中
+                    // 成为约束边导致 corefine 失败
                     for (const auto& dm : drill_meshes) {
                         auto drilled = kcgal::mesh_difference(
                             m, dm, /*allow_alpha_wrap=*/false);
@@ -618,6 +650,11 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
                                 << " for strand " << i
                                 << ", keeping original mesh.\n";
                         }
+                    }
+                    // 补洞：修补布尔留下的开放边界，失败保留当前网格
+                    {
+                        auto filled = kcgal::fill_holes(m);
+                        if (!filled.empty()) m = std::move(filled);
                     }
                     merged.insert(merged.end(),
                                   std::make_move_iterator(m.begin()),

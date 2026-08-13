@@ -94,6 +94,10 @@ void init_locale_strings() {
                       {{"en", "Reset Layout"}, {"zh", "重置布局"}});
     add_locale_string("label.force_layout",
                       {{"en", "Force Layout"}, {"zh", "力导向布局"}});
+    add_locale_string("label.nodes_folded",
+                      {{"en", "%d nodes folded"}, {"zh", "%d 个节点已折叠"}});
+    add_locale_string("window.folded_nodes",
+                      {{"en", "Folded Nodes"}, {"zh", "折叠节点"}});
 
     add_locale_string("menu.file", {{"en", "File"}, {"zh", "文件"}});
     add_locale_string("menu.new_node", {{"en", "New Node"}, {"zh", "新建节点"}});

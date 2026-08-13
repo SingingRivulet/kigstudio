@@ -7,12 +7,49 @@
 #include <imnodes.h>
 
 #include <cmath>
+#include <cstdio>
 #include <unordered_set>
 
 #include "kigstudio/utils/locale.h"
 
 namespace sinriv::ui::render {
 inline void compute_layout(RenderVoxelList& mgr);
+
+namespace {
+
+// 折叠节点 id 取一个足够大的负值（真实节点 id >= 0）。这样折叠节点的所有
+// 引脚 id（fold_id * 10 + k）始终为负，永远不会与真实节点的正数引脚 id
+// 冲突——若用 -1 - parent_id，当父节点子节点很多时，引脚 id 会溢出为正数，
+// 与真实引脚撞车，导致连线错乱。
+constexpr int kFoldNodeBase = 1000000;
+inline int fold_node_id(int parent_id) { return -kFoldNodeBase - parent_id; }
+inline int fold_node_parent(int fold_id) { return -kFoldNodeBase - fold_id; }
+
+// 收集需要隐藏的节点：某个节点子节点数 > 4 时，其整个子树
+// （子节点及所有后代）都被折叠隐藏。
+void collect_hidden_nodes(RenderVoxelList& mgr,
+                          std::unordered_set<int>& hidden) {
+    for (auto& [id, item] : mgr.items) {
+        if (item->children.size() <= 4)
+            continue;
+        for (int child_id : item->children) {
+            std::vector<int> stack{child_id};
+            while (!stack.empty()) {
+                int cur = stack.back();
+                stack.pop_back();
+                if (!hidden.insert(cur).second)
+                    continue;
+                auto it = mgr.items.find(cur);
+                if (it == mgr.items.end())
+                    continue;
+                for (int gc : it->second->children)
+                    stack.push_back(gc);
+            }
+        }
+    }
+}
+
+}  // namespace
 
 void RenderVoxelList::render_nav_map() {
     std::lock_guard<std::mutex> lock(locker);
@@ -48,6 +85,10 @@ void RenderVoxelList::render_nav_map() {
         }
     }
 
+    // 计算折叠隐藏节点集合（子节点数 > 4 的节点折叠其整个子树）
+    std::unordered_set<int> hidden_nodes;
+    collect_hidden_nodes(*this, hidden_nodes);
+
     // 初始化力导向位置：只给新节点（还没有位置）分配树形布局位置，
     // 已有节点保持当前位置，避免新增/删除节点时整个图被重置。
     if (nav_layout_force_directed && !nav_layout_initialized) {
@@ -70,28 +111,40 @@ void RenderVoxelList::render_nav_map() {
     // 收集所有边（父子 + SDF 依赖 + Source Node 依赖）
     if (nav_layout_force_directed) {
         for (auto& [id, item] : this->items) {
+            if (hidden_nodes.count(id))
+                continue;
             for (int child_id : item->children) {
-                if (this->items.find(child_id) != this->items.end()) {
+                if (!hidden_nodes.count(child_id) &&
+                    this->items.find(child_id) != this->items.end()) {
                     layout_edges.push_back({id, child_id});
                 }
             }
         }
         for (auto& [id, item] : this->items) {
+            if (hidden_nodes.count(id))
+                continue;
             if (item->segment_mode == RenderVoxelItem::SDF_NODE_SPLIT &&
                 item->sdf_split_target_id >= 0 &&
+                !hidden_nodes.count(item->sdf_split_target_id) &&
                 this->items.find(item->sdf_split_target_id) !=
                     this->items.end()) {
                 layout_edges.push_back({item->sdf_split_target_id, id});
             }
         }
         for (auto& [id, item] : this->items) {
+            if (hidden_nodes.count(id))
+                continue;
             if (item->source_type == 1 && item->source_node_id >= 0 &&
+                !hidden_nodes.count(item->source_node_id) &&
                 this->items.find(item->source_node_id) != this->items.end()) {
                 layout_edges.push_back({item->source_node_id, id});
             }
         }
         for (auto& [id, item] : this->items) {
+            if (hidden_nodes.count(id))
+                continue;
             if (item->source_type == 2 && item->addon_base_node_id >= 0 &&
+                !hidden_nodes.count(item->addon_base_node_id) &&
                 this->items.find(item->addon_base_node_id) !=
                     this->items.end()) {
                 layout_edges.push_back({item->addon_base_node_id, id});
@@ -116,6 +169,9 @@ void RenderVoxelList::render_nav_map() {
         // 节点间斥力
         for (auto it1 = this->items.begin(); it1 != this->items.end(); ++it1) {
             for (auto it2 = std::next(it1); it2 != this->items.end(); ++it2) {
+                if (hidden_nodes.count(it1->first) ||
+                    hidden_nodes.count(it2->first))
+                    continue;
                 auto& a = it1->second;
                 auto& b = it2->second;
                 float dx = b->nav_layout_pos[0] - a->nav_layout_pos[0];
@@ -189,7 +245,7 @@ void RenderVoxelList::render_nav_map() {
 
         // 积分更新速度与位置（被拖动的节点固定）
         for (auto& [id, item] : this->items) {
-            if (item->nav_layout_pinned)
+            if (item->nav_layout_pinned || hidden_nodes.count(id))
                 continue;
             auto& f = forces[id];
             // 微小向心力，把图拉向原点 (0,0)，让整体更紧凑
@@ -232,6 +288,8 @@ void RenderVoxelList::render_nav_map() {
 
     int link_id = 0;
     for (auto& [id, item] : this->items) {
+        if (hidden_nodes.count(id))
+            continue;
         // 计算目标位置
         ImVec2 target_pos;
         if (nav_layout_force_directed && nav_layout_initialized) {
@@ -397,13 +455,58 @@ void RenderVoxelList::render_nav_map() {
         }
     }
 
-    // 绘制连线：父节点的统一 output 连向所有子节点的 input
+    // 渲染折叠节点：子节点数 > 4 的父节点，用一个折叠节点代表其整个子树。
+    // 与普通节点一致：一个入口（来自父节点 output）、一个出口（连向所有子节点），
+    // 子节点本身被隐藏，故出口为悬空占位。
+    for (auto& [id, item] : this->items) {
+        if (hidden_nodes.count(id))
+            continue;
+        if (item->children.size() <= 4)
+            continue;
+        int fold_id = fold_node_id(id);
+        ImVec2 parent_pos;
+        if (nav_layout_force_directed && nav_layout_initialized) {
+            parent_pos = ImVec2(item->nav_layout_pos[1] * 1.5f,
+                                item->nav_layout_pos[0] * 1.5f);
+        } else {
+            parent_pos = ImVec2((float)item->nav_node_position[1] * 1.5f,
+                                (float)item->nav_node_position[0] * 1.5f);
+        }
+        ImVec2 fold_pos = ImVec2(parent_pos.x + 180.0f, parent_pos.y);
+        ImNodes::SetNodeGridSpacePos(fold_id, fold_pos);
+        ImNodes::SetNodeDraggable(fold_id, false);
+
+        ImNodes::BeginNode(fold_id);
+        ImNodes::BeginNodeTitleBar();
+        ImGui::Text(get_locale_cstr("label.nodes_folded"),
+                    static_cast<int>(item->children.size()));
+        ImNodes::EndNodeTitleBar();
+        ImNodes::BeginInputAttribute(fold_id * 10 + 1,
+                                     ImNodesPinShape_CircleFilled);
+        ImGui::Text("");
+        ImNodes::EndInputAttribute();
+        ImGui::SameLine(0.0f, 4.0f);
+        ImNodes::BeginOutputAttribute(fold_id * 10 + 2,
+                                      ImNodesPinShape_CircleFilled);
+        ImGui::Text("");
+        ImNodes::EndOutputAttribute();
+        ImNodes::EndNode();
+    }
+
+    // 绘制连线：父节点的统一 output 连向所有子节点的 input；
+    // 折叠时连向折叠节点 input，被隐藏子树内的连线不再绘制。
     for (auto& [id, item] : this->items) {
         if (item->children.empty())
             continue;
         int parent_attr_id = id * 10 + 2;
+        if (item->children.size() > 4) {
+            int fold_in = fold_node_id(id) * 10 + 1;
+            ImNodes::Link(link_id++, parent_attr_id, fold_in);
+            continue;
+        }
         for (int child_id : item->children) {
-            if (this->items.find(child_id) != this->items.end()) {
+            if (!hidden_nodes.count(child_id) &&
+                this->items.find(child_id) != this->items.end()) {
                 int child_attr_id = child_id * 10 + 1;
                 ImNodes::Link(link_id++, parent_attr_id, child_attr_id);
             }
@@ -420,6 +523,8 @@ void RenderVoxelList::render_nav_map() {
     for (auto& [id, item] : this->items) {
         if (item->segment_mode == RenderVoxelItem::SDF_NODE_SPLIT &&
             item->sdf_split_target_id >= 0 &&
+            !hidden_nodes.count(id) &&
+            !hidden_nodes.count(item->sdf_split_target_id) &&
             this->items.find(item->sdf_split_target_id) != this->items.end()) {
             int source_attr = item->sdf_split_target_id * 1000 + 2;
             int target_attr = id * 1000 + 1;
@@ -430,6 +535,8 @@ void RenderVoxelList::render_nav_map() {
     // 绘制 Source Node 依赖线
     for (auto& [id, item] : this->items) {
         if (item->source_type == 1 && item->source_node_id >= 0 &&
+            !hidden_nodes.count(id) &&
+            !hidden_nodes.count(item->source_node_id) &&
             this->items.find(item->source_node_id) != this->items.end()) {
             int source_attr = item->source_node_id * 1000 + 3;
             int target_attr = id * 1000 + 3;
@@ -450,6 +557,8 @@ void RenderVoxelList::render_nav_map() {
 
     for (auto& [id, item] : this->items) {
         if (item->source_type == 2 && item->addon_base_node_id >= 0 &&
+            !hidden_nodes.count(id) &&
+            !hidden_nodes.count(item->addon_base_node_id) &&
             this->items.find(item->addon_base_node_id) != this->items.end()) {
             int source_attr = item->addon_base_node_id * 1000 + 4;
             int target_attr = id * 1000 + 4;
@@ -468,7 +577,7 @@ void RenderVoxelList::render_nav_map() {
     // 检测用户拖动：实际位置与 intended 不一致时固定该节点
     if (nav_layout_force_directed && nav_layout_initialized) {
         for (auto& [id, item] : this->items) {
-            if (item->nav_layout_pinned)
+            if (item->nav_layout_pinned || hidden_nodes.count(id))
                 continue;
             ImVec2 actual = ImNodes::GetNodeGridSpacePos(id);
             ImVec2 intended = intended_positions[id];
@@ -503,16 +612,72 @@ void RenderVoxelList::render_nav_map() {
         }
     }
 
-    // 点击节点切换 render_id
+    // 点击节点切换 render_id；点击折叠节点弹出折叠节点列表
     int num_selected = ImNodes::NumSelectedNodes();
     if (num_selected > 0) {
         static std::vector<int> selected_nodes;
         selected_nodes.resize(num_selected);
         ImNodes::GetSelectedNodes(selected_nodes.data());
-        if (!selected_nodes.empty()) {
-            this->setRenderId_unsafe(selected_nodes[0]);
+        for (int sel : selected_nodes) {
+            if (sel < 0) {
+                int parent_id = fold_node_parent(sel);
+                if (this->items.find(parent_id) != this->items.end()) {
+                    nav_fold_popup_parent = parent_id;
+                    ImGui::OpenPopup("folded_nodes");
+                }
+            } else {
+                this->setRenderId_unsafe(sel);
+            }
         }
         ImNodes::ClearNodeSelection();
+    }
+
+    // 折叠节点弹窗：列出被折叠子树内的所有节点，点击即可跳转（与点击原节点行为一致）。
+    // 使用 BeginPopup：鼠标点击弹窗外部会自动关闭；列表区域限制高度 300 并带滚动条。
+    if (ImGui::BeginPopup("folded_nodes")) {
+        ImGui::TextUnformatted(get_locale_cstr("window.folded_nodes"));
+        ImGui::Separator();
+        if (nav_fold_popup_parent >= 0) {
+            auto fold_it = this->items.find(nav_fold_popup_parent);
+            if (fold_it != this->items.end()) {
+                std::vector<int> folded;
+                for (int child_id : fold_it->second->children) {
+                    std::vector<int> stack{child_id};
+                    while (!stack.empty()) {
+                        int cur = stack.back();
+                        stack.pop_back();
+                        folded.push_back(cur);
+                        auto cur_it = this->items.find(cur);
+                        if (cur_it == this->items.end())
+                            continue;
+                        for (int gc : cur_it->second->children)
+                            stack.push_back(gc);
+                    }
+                }
+                ImGui::BeginChild("folded_list", ImVec2(0.0f, 300.0f), false,
+                                  ImGuiWindowFlags_AlwaysVerticalScrollbar);
+                for (int nid : folded) {
+                    auto nit = this->items.find(nid);
+                    if (nit == this->items.end())
+                        continue;
+                    char label_buf[256];
+                    if (nit->second->title.empty()) {
+                        snprintf(label_buf, sizeof(label_buf),
+                                 get_locale_cstr("label.node"), nid);
+                    } else {
+                        snprintf(label_buf, sizeof(label_buf), "%s",
+                                 nit->second->title.c_str());
+                    }
+                    if (ImGui::Selectable(label_buf, nid == render_id)) {
+                        this->setRenderId_unsafe(nid);
+                    }
+                }
+                ImGui::EndChild();
+            }
+        }
+        ImGui::EndPopup();
+    } else {
+        nav_fold_popup_parent = -1;
     }
 
     ImGui::End();
