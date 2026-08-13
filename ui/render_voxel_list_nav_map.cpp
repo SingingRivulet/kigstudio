@@ -654,22 +654,67 @@ void RenderVoxelList::render_nav_map() {
                             stack.push_back(gc);
                     }
                 }
-                ImGui::BeginChild("folded_list", ImVec2(0.0f, 300.0f), false,
+                ImGui::BeginChild("folded_list", ImVec2(320.0f, 300.0f), false,
                                   ImGuiWindowFlags_AlwaysVerticalScrollbar);
+                const float icon_size = 20.0f;
+                const float icon_spacing = 4.0f;
                 for (int nid : folded) {
                     auto nit = this->items.find(nid);
                     if (nit == this->items.end())
                         continue;
+                    auto* node = nit->second.get();
+
+                    bool has_sdf = node->sdf_data && bgfx::isValid(icons.circles);
+                    bool has_mesh =
+                        !node->stl_path.empty() && bgfx::isValid(icons.hexagon);
+                    int icon_count = (has_sdf ? 1 : 0) + (has_mesh ? 1 : 0);
+                    float icons_width =
+                        icon_count > 0
+                            ? icon_count * icon_size +
+                                  (icon_count - 1) * icon_spacing
+                            : 0.0f;
+
                     char label_buf[256];
-                    if (nit->second->title.empty()) {
+                    if (node->title.empty()) {
                         snprintf(label_buf, sizeof(label_buf),
                                  get_locale_cstr("label.node"), nid);
                     } else {
                         snprintf(label_buf, sizeof(label_buf), "%s",
-                                 nit->second->title.c_str());
+                                 node->title.c_str());
                     }
-                    if (ImGui::Selectable(label_buf, nid == render_id)) {
+
+                    float label_width = ImGui::GetContentRegionAvail().x -
+                                        icons_width -
+                                        ImGui::GetStyle().ItemSpacing.x;
+                    if (label_width < 40.0f)
+                        label_width = 40.0f;
+
+                    if (ImGui::Selectable(label_buf, nid == render_id, 0,
+                                          ImVec2(label_width, 0.0f))) {
                         this->setRenderId_unsafe(nid);
+                    }
+
+                    // 右侧显示 mesh / sdf 图标，鼠标悬停显示状态（与普通节点一致）
+                    if (has_sdf) {
+                        ImGui::SameLine();
+                        bool has_sdf_cache = !node->cached_mesh.empty();
+                        ImGui::Image(has_sdf_cache ? icons.circles_white
+                                                   : icons.circles,
+                                     ImVec2(icon_size, icon_size));
+                        if (ImGui::BeginItemTooltip()) {
+                            ImGui::Text(get_locale_cstr("tooltip.sdf_resolution"),
+                                        node->sdf_data->getInfo().c_str());
+                            ImGui::EndTooltip();
+                        }
+                    }
+                    if (has_mesh) {
+                        ImGui::SameLine();
+                        ImGui::Image(icons.hexagon, ImVec2(icon_size, icon_size));
+                        if (ImGui::BeginItemTooltip()) {
+                            ImGui::Text(get_locale_cstr("tooltip.triangle_count"),
+                                        node->source_triangles.size());
+                            ImGui::EndTooltip();
+                        }
                     }
                 }
                 ImGui::EndChild();

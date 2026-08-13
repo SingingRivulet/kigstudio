@@ -479,19 +479,6 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
                 auto strand_tris = cached_strand_tris[i];
                 if (strand_tris.empty()) continue;
 
-                // 钻孔：先减去钻孔圆管
-                for (const auto& dm : drill_meshes) {
-                    auto diffed = kcgal::mesh_difference(
-                        to_mesh_data(strand_tris), dm);
-                    if (!diffed.empty()) {
-                        strand_tris = strip_tris(diffed);
-                    } else {
-                        std::cerr << "[do_segment] drill subtraction failed"
-                                  << " for strand " << i
-                                  << ", keeping original mesh.\n";
-                    }
-                }
-
                 sinriv::kigstudio::voxel::VoxelGrid dummy_grid;
                 dummy_grid.global_position = voxel_grid_data.global_position;
                 dummy_grid.voxel_size = voxel_grid_data.voxel_size;
@@ -538,6 +525,26 @@ RenderVoxelList::RenderVoxelItem::do_segment() {
                         }
                     }
                     strand_tris = strip_tris(m);
+                }
+
+                // 钻孔：放在减底模/互减之后，避免钻孔切口在后续布尔中
+                // 成为约束边导致 corefine 失败
+                for (const auto& dm : drill_meshes) {
+                    auto diffed = kcgal::mesh_difference(
+                        to_mesh_data(strand_tris), dm);
+                    if (!diffed.empty()) {
+                        strand_tris = strip_tris(diffed);
+                    } else {
+                        std::cerr << "[do_segment] drill subtraction failed"
+                                  << " for strand " << i
+                                  << ", keeping original mesh.\n";
+                    }
+                }
+
+                // 补洞：修补布尔留下的开放边界，失败保留当前网格
+                {
+                    auto filled = kcgal::fill_holes(to_mesh_data(strand_tris));
+                    if (!filled.empty()) strand_tris = strip_tris(filled);
                 }
 
                 const bool sdf_split_needed = !geo_split;
