@@ -557,6 +557,11 @@ void init_locale_strings() {
                        {"zh", "将折叠子树内的叶子节点导出到所选目录。有标题时文件名用标题，否则用节点编号。"}});
     add_locale_string("dialog.export_stl_set",
                       {{"en", "Select export directory"}, {"zh", "选择导出目录"}});
+    add_locale_string("action.batch_delete",
+                      {{"en", "Batch Delete"}, {"zh", "删除"}});
+    add_locale_string("tooltip.batch_delete",
+                      {{"en", "Delete this folded node and all its descendants"},
+                       {"zh", "删除该折叠节点及其所有子节点"}});
     add_locale_string("action.render_sdf",
                       {{"en", "Render SDF"}, {"zh", "渲染 SDF"}});
     add_locale_string("label.export_mode_standard",
@@ -1141,6 +1146,13 @@ void init_locale_strings() {
     add_locale_string("dialog.confirm_delete",
                       {{"en", "Are you sure you want to delete this node?"},
                        {"zh", "确定要删除此节点吗？"}});
+    add_locale_string("dialog.confirm_batch_delete_title",
+                      {{"en", "Confirm Batch Delete"}, {"zh", "确认批量删除"}});
+    add_locale_string(
+        "dialog.confirm_batch_delete",
+        {{"en", "Delete all child nodes of this folded node? (the folded node "
+                "itself will be kept)"},
+         {"zh", "删除该折叠节点的所有子节点？（折叠节点本身保留）"}});
     add_locale_string("dialog.confirm_manual_update_title",
                       {{"en", "Confirm Update"}, {"zh", "确认更新"}});
     add_locale_string(

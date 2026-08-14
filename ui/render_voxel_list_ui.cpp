@@ -465,6 +465,47 @@ void RenderVoxelList::render_ui() {
         ImGui::EndPopup();
     }
 
+    // Batch delete confirm modal (folded subtree, keep parent)
+    if (show_batch_delete_confirm) {
+        ImGui::OpenPopup(get_locale_cstr("dialog.confirm_batch_delete_title"));
+        show_batch_delete_confirm = false;
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(
+            get_locale_cstr("dialog.confirm_batch_delete_title"), nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted(
+            get_locale_cstr("dialog.confirm_batch_delete"));
+        ImGui::Separator();
+        if (ImGui::Button(get_locale_cstr("action.delete"))) {
+            {
+                std::lock_guard<std::mutex> lock(locker);
+                for (int nid : pending_batch_delete_ids) {
+                    auto it = items.find(nid);
+                    if (it != items.end()) {
+                        it->second->queue_release = true;
+                    }
+                }
+                // 保留折叠节点本身：清空其子节点列表，使其成为叶子节点
+                auto pit = items.find(pending_batch_delete_parent_id);
+                if (pit != items.end()) {
+                    pit->second->children.clear();
+                }
+            }
+            pending_batch_delete_parent_id = -1;
+            pending_batch_delete_ids.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(get_locale_cstr("action.cancel"))) {
+            pending_batch_delete_parent_id = -1;
+            pending_batch_delete_ids.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
     // Manual update confirm modal
     if (show_manual_update_confirm) {
         ImGui::OpenPopup(get_locale_cstr("dialog.confirm_manual_update_title"));

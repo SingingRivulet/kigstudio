@@ -758,6 +758,22 @@ void RenderVoxelList::render_nav_map() {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip(
                         "%s", get_locale_cstr("tooltip.export_stl_set"));
+                
+                ImGui::SameLine();
+
+                // ---- 批量删除（折叠子树，保留父节点）----
+                if (ImGui::Button(get_locale_cstr("action.batch_delete"))) {
+                    pending_batch_delete_parent_id = nav_fold_popup_parent;
+                    pending_batch_delete_ids.clear();
+                    for (int nid : folded) {
+                        pending_batch_delete_ids.push_back(nid);
+                    }
+                    show_batch_delete_confirm = true;
+                    ImGui::CloseCurrentPopup();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip(
+                        "%s", get_locale_cstr("tooltip.batch_delete"));
             }
         }
         ImGui::EndPopup();

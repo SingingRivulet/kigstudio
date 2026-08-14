@@ -1336,6 +1336,10 @@ class RenderVoxelList {
 
     bool show_delete_confirm = false;
     int pending_delete_item_id = -1;
+    // 批量删除折叠子树：只删子节点，保留折叠节点本身
+    bool show_batch_delete_confirm = false;
+    int pending_batch_delete_parent_id = -1;
+    std::vector<int> pending_batch_delete_ids;
     bool show_manual_update_confirm = false;
 
     std::string project_path;
