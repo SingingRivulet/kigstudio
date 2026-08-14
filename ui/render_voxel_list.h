@@ -609,6 +609,8 @@ struct CollisionEditorSnapshot {
     // 钻孔路径与连接面显示开关（追加在末尾，保持聚合初始化位置对应）
     std::vector<DrillPath> drill_paths;
     bool show_connection_faces = false;
+    // 显示背面：剔除发束正面，仅显示内侧，便于透过发束观察连接面
+    bool show_back_face = false;
 };
 
 struct MarkedVoxelsSnapshot {
@@ -752,6 +754,8 @@ class RenderVoxelList {
         std::vector<DrillPath> drill_paths;
         // 是否显示发束拆分的连接面（持久化；仅显示，不参与碰撞）
         bool show_connection_faces = false;
+        // 显示背面：剔除发束正面（仅显示内侧），便于钻孔时透过发束观察连接面
+        bool show_back_face = false;
         // 钻孔拾取模式（运行时）：开启后点击连接面/底模/发束添加点
         bool drill_picking_active = false;
         // 当前拾取目标路径 UUID（空=无）
@@ -1017,6 +1021,14 @@ class RenderVoxelList {
                                std::vector<sinriv::kigstudio::voxel::
                                                triangle_bvh<float>::triangle>>>
         do_segment();
+
+        // 附加件（毛发）分段：拆分/显露/钻孔逻辑，独立成函数以便复用。
+        // 实现位于 render_voxel_list_ui_addons_hair.cpp。
+        std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
+                               sinriv::kigstudio::sdf::SDFBasePtr,
+                               std::vector<sinriv::kigstudio::voxel::
+                                               triangle_bvh<float>::triangle>>>
+        do_segment_addon();
 
         std::atomic<int> ref_count = 1;
         std::atomic<int> write_count = 0;
@@ -1681,6 +1693,9 @@ class RenderVoxelList {
     std::string getQueueStatus();
     void setQueueStatus(const std::string& status);
     float getQueueProgress();
+    // 供后台任务（分段/导出等）在循环内更新进度条数值与检查用户取消
+    void setQueueProgress(float progress) { queue_progress = progress; }
+    bool queueShouldContinue() const { return queue_should_continue.load(); }
     void release();
 
     void processThumbnails();

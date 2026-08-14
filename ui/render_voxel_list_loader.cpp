@@ -634,6 +634,7 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
                             static_cast<double>(item.hair_root_vector_length));
     cJSON_AddBoolToObject(obj, "show_connection_faces",
                           item.show_connection_faces);
+    cJSON_AddBoolToObject(obj, "show_back_face", item.show_back_face);
     if (!item.drill_paths.empty()) {
         cJSON* drill_arr = cJSON_CreateArray();
         for (const auto& path : item.drill_paths)
@@ -1035,6 +1036,8 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->auto_hair_root = cJSON_IsTrue(child);
             } else if (strcmp(key, "show_connection_faces") == 0) {
                 item->show_connection_faces = cJSON_IsTrue(child);
+            } else if (strcmp(key, "show_back_face") == 0) {
+                item->show_back_face = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_enabled") == 0) {
                 item->hairline_plane_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_use_y") == 0) {
@@ -1345,6 +1348,7 @@ cJSON* RenderVoxelList::snapshot_to_json(
                             static_cast<double>(snapshot.hair_root_vector_length));
     cJSON_AddBoolToObject(obj, "show_connection_faces",
                           snapshot.show_connection_faces);
+    cJSON_AddBoolToObject(obj, "show_back_face", snapshot.show_back_face);
     if (!snapshot.drill_paths.empty()) {
         cJSON* drill_arr = cJSON_CreateArray();
         for (const auto& path : snapshot.drill_paths)
@@ -1668,6 +1672,8 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.auto_hair_root = cJSON_IsTrue(child);
             } else if (strcmp(key, "show_connection_faces") == 0) {
                 snapshot.show_connection_faces = cJSON_IsTrue(child);
+            } else if (strcmp(key, "show_back_face") == 0) {
+                snapshot.show_back_face = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_enabled") == 0) {
                 snapshot.hairline_plane_enabled = cJSON_IsTrue(child);
             } else if (strcmp(key, "hairline_plane_use_y") == 0) {

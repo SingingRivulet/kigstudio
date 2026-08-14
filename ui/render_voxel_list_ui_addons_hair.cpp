@@ -20,6 +20,7 @@
 #include <windows.h>
 #endif
 #include "kigstudio/agent/agent_handlers.h"
+#include "kigstudio/cgal/mesh_repair.h"
 #include "kigstudio/cgal/mesh_simplification.h"
 #include "kigstudio/sdf/sdf_chain_joint.h"
 #include "kigstudio/utils/locale.h"
@@ -1385,6 +1386,18 @@ void RenderVoxelList::render_drill_window() {
                                         : get_locale_cstr("label.drill_need_split"));
     }
 
+    // ---- Back-face display toggle (cull front faces of strands) ----
+    {
+        bool show_back = item.show_back_face;
+        if (ImGui::Checkbox(get_locale_cstr("label.show_back_face"),
+                            &show_back)) {
+            push_undo_now(item.id, std::nullopt, "Toggle Show Back Face");
+            item.show_back_face = show_back;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.show_back_face"));
+    }
+
     ImGui::Separator();
 
     // ---- Add drill path ----
@@ -1655,4 +1668,426 @@ void RenderVoxelList::render_drill_window() {
 
     ImGui::End();
 }
+
+std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
+                       sinriv::kigstudio::sdf::SDFBasePtr,
+                       std::vector<sinriv::kigstudio::voxel::
+                                       triangle_bvh<float>::triangle>>>
+RenderVoxelList::RenderVoxelItem::do_segment_addon() {
+    using namespace sinriv::kigstudio::sdf;
+    namespace kcgal = sinriv::kigstudio::cgal;
+    using Tri = sinriv::kigstudio::voxel::triangle_bvh<float>::triangle;
+    using ResultT =
+        std::vector<std::tuple<sinriv::kigstudio::voxel::VoxelGrid,
+                               SDFBasePtr, std::vector<Tri>>>;
+
+    // 三角形列表 <-> CGAL MeshData 转换（法线仅为占位，布尔不使用）
+    auto to_mesh_data = [](const std::vector<Tri>& tris) {
+        kcgal::MeshData md;
+        md.reserve(tris.size());
+        for (const auto& t : tris) {
+            md.emplace_back(t, kcgal::vec3f{});
+        }
+        return md;
+    };
+    auto strip_tris = [](const kcgal::MeshData& md) {
+        std::vector<Tri> tris;
+        tris.reserve(md.size());
+        for (const auto& [t, n] : md) {
+            tris.push_back(t);
+        }
+        return tris;
+    };
+
+    // 用户取消检查（manager 为空时视为未取消，便于独立调用/测试）
+    auto stop_requested = [&]() -> bool {
+        return manager && !manager->queueShouldContinue();
+    };
+    // 进度上报：更新右下角进度条框的状态文本与进度值
+    auto report_progress = [&](float progress, const std::string& status) {
+        if (manager) {
+            manager->setQueueProgress(progress);
+            manager->setQueueStatus(status);
+        }
+    };
+    // 已取消：写入状态并返回空结果（调用方检测到取消后保留原状）
+    auto cancelled_result = [&]() -> ResultT {
+        if (manager)
+            manager->setQueueStatus(get_locale_string("status.cancelled"));
+        return ResultT{};
+    };
+    // 格式化带两个整数的状态文本（占位符 %d）
+    auto fmt2 = [](const std::string& fmt, int a, int b) {
+        char buf[128];
+        std::snprintf(buf, sizeof(buf), fmt.c_str(), a, b);
+        return std::string(buf);
+    };
+
+    // Get base model SDF / triangles for reveal mode
+    SDFBasePtr base_sdf = nullptr;
+    kcgal::MeshData base_mesh;
+    if (addon_reveal && addon_base_node_id >= 0 && manager) {
+        std::lock_guard<std::mutex> lock(manager->locker);
+        auto base_it = manager->items.find(addon_base_node_id);
+        if (base_it != manager->items.end()) {
+            base_sdf = base_it->second->sdf_data;
+            if (!base_it->second->source_triangles.empty()) {
+                base_mesh =
+                    to_mesh_data(base_it->second->source_triangles);
+            }
+        }
+    }
+    // 几何显露：关闭“SDF布尔”且底模有几何数据时启用
+    const bool geo_reveal =
+        addon_reveal && !addon_sdf_boolean && !base_mesh.empty();
+    // 几何拆分：关闭“SDF拆分”时启用
+    const bool geo_split = addon_split && !addon_sdf_split;
+
+    // 钻孔圆管（拆分/非拆分、几何/SDF 模式都先减去）
+    const auto drill_meshes = build_drill_tool_meshes();
+
+    if (addon_split) {
+        // Each strand becomes an independent child node
+        ResultT result;
+
+        // Pre-build all strand loft triangles once so each strand mesh
+        // is only constructed one time, not O(n) times in the inner
+        // geo_split / sdf_split loops.
+        const int n_strands = static_cast<int>(hair_strands.size());
+        std::vector<decltype(build_strand_loft_triangles(0))>
+            cached_strand_tris(n_strands);
+        for (int k = 0; k < n_strands; ++k) {
+            if (stop_requested()) return cancelled_result();
+            report_progress(0.1f * (static_cast<float>(k + 1) / n_strands),
+                            fmt2(get_locale_string(
+                                     "status.segmenting.pre_build"),
+                                 k + 1, n_strands));
+            std::cerr << "[do_segment] pre-building strand " << (k + 1)
+                      << "/" << n_strands << " \""
+                      << hair_strands[k].name << "\"...\n";
+            cached_strand_tris[k] = build_strand_loft_triangles(k);
+        }
+
+        for (int i = 0; i < n_strands; ++i) {
+            if (stop_requested()) return cancelled_result();
+            report_progress(0.1f + 0.6f * (static_cast<float>(i) / n_strands),
+                            fmt2(get_locale_string("status.segmenting.strand"),
+                                 i + 1, n_strands));
+            auto strand_tris = cached_strand_tris[i];
+            if (strand_tris.empty()) continue;
+
+            sinriv::kigstudio::voxel::VoxelGrid dummy_grid;
+            dummy_grid.global_position = voxel_grid_data.global_position;
+            dummy_grid.voxel_size = voxel_grid_data.voxel_size;
+
+            // 集合差可交换：先做几何域减法，再按需转 SDF
+            // 几何显露：从发束网格中减去底模
+            if (geo_reveal) {
+                auto diffed = kcgal::mesh_difference(
+                    to_mesh_data(strand_tris), base_mesh);
+                if (!diffed.empty()) {
+                    strand_tris = strip_tris(diffed);
+                } else {
+                    std::cerr << "[do_segment] geometry reveal failed for"
+                              << " strand " << i
+                              << ", keeping original mesh.\n";
+                }
+            }
+
+            // 几何拆分：发束之间用几何布尔相减
+            if (geo_split) {
+                auto m = to_mesh_data(strand_tris);
+                const int total_ops = n_strands * (n_strands - 1) / 2;
+                static int op_count = 0;
+                for (int j = 0; j < i; ++j) {
+                    const auto& prev_tris = cached_strand_tris[j];
+                    if (prev_tris.empty()) continue;
+                    if (stop_requested()) return cancelled_result();
+                    report_progress(
+                        0.1f + 0.6f * (static_cast<float>(i) / n_strands) +
+                            0.6f / n_strands *
+                                (static_cast<float>(j + 1) / (i + 1)),
+                        fmt2(get_locale_string("status.segmenting.subtract"),
+                             i + 1, j + 1));
+                    ++op_count;
+                    std::cerr << "[do_segment] boolean " << op_count
+                              << "/" << total_ops << " (strand "
+                              << (i + 1) << " - " << (j + 1) << ")\n";
+                    try {
+                        auto diffed = kcgal::mesh_difference(
+                            m, to_mesh_data(prev_tris));
+                        // 布尔失败时保留当前网格（尽可能渲染）
+                        if (!diffed.empty()) m = std::move(diffed);
+                    } catch (const std::exception& e) {
+                        std::cerr << "[do_segment] boolean failed ("
+                                  << i << "," << j << "): "
+                                  << e.what() << "\n";
+                    } catch (...) {
+                        std::cerr << "[do_segment] boolean failed ("
+                                  << i << "," << j
+                                  << "): unknown error\n";
+                    }
+                }
+                strand_tris = strip_tris(m);
+            }
+
+            // 钻孔：放在减底模/互减之后，避免钻孔切口在后续布尔中
+            // 成为约束边导致 corefine 失败
+            for (const auto& dm : drill_meshes) {
+                auto diffed = kcgal::mesh_difference(
+                    to_mesh_data(strand_tris), dm);
+                if (!diffed.empty()) {
+                    strand_tris = strip_tris(diffed);
+                } else {
+                    std::cerr << "[do_segment] drill subtraction failed"
+                              << " for strand " << i
+                              << ", keeping original mesh.\n";
+                }
+            }
+
+            // 补洞：修补布尔留下的开放边界，失败保留当前网格
+            {
+                auto filled = kcgal::fill_holes(to_mesh_data(strand_tris));
+                if (!filled.empty()) strand_tris = strip_tris(filled);
+            }
+
+            const bool sdf_split_needed = !geo_split;
+            const bool sdf_reveal_needed =
+                addon_reveal && !geo_reveal && base_sdf != nullptr;
+
+            if (!sdf_split_needed && !sdf_reveal_needed) {
+                // 纯几何路径：子节点直接渲染三角形网格
+                result.emplace_back(std::move(dummy_grid), nullptr,
+                                    std::move(strand_tris));
+                continue;
+            }
+
+            // SDF 路径（输入可能已被几何布尔削减过）
+            auto strand_sdf = std::make_shared<SDF_Mesh>();
+            strand_sdf->precision_mode = SDFPrecision::Precise;
+            if (!strand_sdf->loadTriangles(strand_tris)) continue;
+
+            SDFBasePtr final_sdf = strand_sdf;
+
+            if (sdf_split_needed) {
+                // Subtract all preceding strands (0..i-1)
+                for (int j = 0; j < i; ++j) {
+                    const auto& prev_tris = cached_strand_tris[j];
+                    if (prev_tris.empty()) continue;
+                    if (stop_requested()) return cancelled_result();
+                    report_progress(
+                        0.1f + 0.6f * (static_cast<float>(i) / n_strands) +
+                            0.6f / n_strands *
+                                (static_cast<float>(j + 1) / (i + 1)),
+                        fmt2(get_locale_string("status.segmenting.subtract"),
+                             i + 1, j + 1));
+                    auto prev_sdf = std::make_shared<SDF_Mesh>();
+                    prev_sdf->precision_mode = SDFPrecision::Precise;
+                    if (!prev_sdf->loadTriangles(prev_tris)) continue;
+                    final_sdf = sdf_subtraction(final_sdf, prev_sdf);
+                }
+            }
+
+            // Subtract base model if reveal is on (SDF 显露)
+            if (sdf_reveal_needed) {
+                final_sdf = sdf_subtraction(final_sdf, base_sdf);
+            }
+
+            result.emplace_back(std::move(dummy_grid),
+                                std::move(final_sdf),
+                                std::vector<Tri>{});
+        }
+        if (result.empty()) {
+            return {{voxel_grid_data, nullptr, {}}};
+        }
+        return result;
+    } else {
+        if (geo_reveal) {
+            // 纯几何路径：复用拆分流程（减底模→发束间互减→减钻孔→补洞），
+            // 最后把所有发束的三角形直接拼接为一个节点。
+            // 互减产生的切削面与被切发束表面重合（零厚度双面墙），
+            // 切片器可能仍报非流形边，但发束体积不再互相穿插。
+            const int n_strands = static_cast<int>(hair_strands.size());
+            std::vector<decltype(build_strand_loft_triangles(0))>
+                cached_strand_tris(n_strands);
+            for (int k = 0; k < n_strands; ++k) {
+                cached_strand_tris[k] = build_strand_loft_triangles(k);
+            }
+
+            kcgal::MeshData merged;
+            const int total_ops = n_strands * (n_strands - 1) / 2;
+            int op_count = 0;
+            for (int i = 0; i < n_strands; ++i) {
+                if (stop_requested()) return cancelled_result();
+                report_progress(0.1f + 0.6f * (static_cast<float>(i) / n_strands),
+                                fmt2(get_locale_string("status.segmenting.strand"),
+                                     i + 1, n_strands));
+                if (cached_strand_tris[i].empty()) continue;
+                auto m = to_mesh_data(cached_strand_tris[i]);
+                // 显露：从发束网格中减去底模
+                auto diffed = kcgal::mesh_difference(
+                    m, base_mesh, /*allow_alpha_wrap=*/false);
+                if (!diffed.empty()) {
+                    m = std::move(diffed);
+                } else {
+                    std::cerr << "[do_segment] geometry reveal failed for"
+                              << " strand " << i
+                              << ", keeping original mesh.\n";
+                }
+                // 发束间互减：第 i 根减去 0..i-1 根（与拆分路径一致，
+                // 切削体用缓存的原始发束网格）
+                for (int j = 0; j < i; ++j) {
+                    const auto& prev_tris = cached_strand_tris[j];
+                    if (prev_tris.empty()) continue;
+                    if (stop_requested()) return cancelled_result();
+                    report_progress(
+                        0.1f + 0.6f * (static_cast<float>(i) / n_strands) +
+                            0.6f / n_strands *
+                                (static_cast<float>(j + 1) / (i + 1)),
+                        fmt2(get_locale_string("status.segmenting.subtract"),
+                             i + 1, j + 1));
+                    ++op_count;
+                    std::cerr << "[do_segment] boolean " << op_count
+                              << "/" << total_ops << " (strand "
+                              << (i + 1) << " - " << (j + 1) << ")\n";
+                    try {
+                        auto cut = kcgal::mesh_difference(
+                            m, to_mesh_data(prev_tris),
+                            /*allow_alpha_wrap=*/false);
+                        // 布尔失败时保留当前网格（尽可能渲染）
+                        if (!cut.empty()) m = std::move(cut);
+                    } catch (const std::exception& e) {
+                        std::cerr << "[do_segment] boolean failed ("
+                                  << i << "," << j << "): "
+                                  << e.what() << "\n";
+                    } catch (...) {
+                        std::cerr << "[do_segment] boolean failed ("
+                                  << i << "," << j
+                                  << "): unknown error\n";
+                    }
+                }
+                // 钻孔：放在减底模/互减之后，避免钻孔切口在后续布尔中
+                // 成为约束边导致 corefine 失败
+                for (const auto& dm : drill_meshes) {
+                    auto drilled = kcgal::mesh_difference(
+                        m, dm, /*allow_alpha_wrap=*/false);
+                    if (!drilled.empty()) {
+                        m = std::move(drilled);
+                    } else {
+                        std::cerr
+                            << "[do_segment] drill subtraction failed"
+                            << " for strand " << i
+                            << ", keeping original mesh.\n";
+                    }
+                }
+                // 补洞：修补布尔留下的开放边界，失败保留当前网格
+                {
+                    auto filled = kcgal::fill_holes(m);
+                    if (!filled.empty()) m = std::move(filled);
+                }
+                merged.insert(merged.end(),
+                              std::make_move_iterator(m.begin()),
+                              std::make_move_iterator(m.end()));
+            }
+            if (merged.empty()) {
+                return {{voxel_grid_data, nullptr, {}}};
+            }
+            return {{voxel_grid_data, nullptr, strip_tris(merged)}};
+        }
+
+        // Combined SDF from all strands
+        auto hair_sdf = build_hair_sdf();
+        if (!hair_sdf) {
+            return {{voxel_grid_data, nullptr, {}}};
+        }
+
+        // Subtract base model if reveal is on
+        if (addon_reveal && base_sdf) {
+            hair_sdf = sdf_subtraction(hair_sdf, base_sdf);
+        }
+
+        // 钻孔：SDF 模式下减去钻孔圆管
+        for (const auto& dm : drill_meshes) {
+            if (stop_requested()) return cancelled_result();
+            auto drill_sdf = std::make_shared<SDF_Mesh>();
+            drill_sdf->precision_mode = SDFPrecision::Precise;
+            if (!drill_sdf->loadTriangles(strip_tris(dm))) continue;
+            hair_sdf = sdf_subtraction(hair_sdf, drill_sdf);
+        }
+
+        // SDF 路径的子节点没有体素/三角形数据，视口中不可见；
+        // 从最终 SDF 重建一份显示网格（与导出 STL 的 SDF 网格一致），
+        // 失败时保持原行为（仅 SDF 数据）。
+        std::vector<Tri> display_tris;
+        {
+            auto grid_copy = voxel_grid_data;
+            // 网格化以 chunk 覆盖范围为界：没有覆盖 chunk 时
+            // （未点过“更新毛发SDF”）按发束包围盒现场生成，
+            // 逻辑与文件 Tab 的“更新毛发SDF”按钮一致
+            if (grid_copy.chunks.empty()) {
+                auto [bmin, bmax] = compute_hair_bounds();
+                float vs = stl_voxel_size;
+                if (bmin.x < bmax.x && bmin.y < bmax.y &&
+                    bmin.z < bmax.z && vs > 0.0f) {
+                    grid_copy.global_position = bmin;
+                    grid_copy.voxel_size = {vs, vs, vs};
+                    auto worldToVoxel =
+                        [&](float wx, float wy,
+                            float wz) -> sinriv::kigstudio::Vec3i {
+                        return {
+                            static_cast<int32_t>(std::floor((wx - bmin.x) / vs)),
+                            static_cast<int32_t>(std::floor((wy - bmin.y) / vs)),
+                            static_cast<int32_t>(std::floor((wz - bmin.z) / vs))};
+                    };
+                    auto min_voxel = worldToVoxel(bmin.x, bmin.y, bmin.z);
+                    auto max_voxel = worldToVoxel(bmax.x, bmax.y, bmax.z);
+                    min_voxel.x -= 1;
+                    min_voxel.y -= 1;
+                    min_voxel.z -= 1;
+                    max_voxel.x += 1;
+                    max_voxel.y += 1;
+                    max_voxel.z += 1;
+                    int min_cx = min_voxel.x >> 5;
+                    int min_cy = min_voxel.y >> 5;
+                    int min_cz = min_voxel.z >> 5;
+                    int max_cx = max_voxel.x >> 5;
+                    int max_cy = max_voxel.y >> 5;
+                    int max_cz = max_voxel.z >> 5;
+                    int total_c = (max_cx - min_cx + 1) *
+                                  (max_cy - min_cy + 1) *
+                                  (max_cz - min_cz + 1);
+                    if (total_c <= 4096) {
+                        for (int cx = min_cx; cx <= max_cx; ++cx)
+                            for (int cy = min_cy; cy <= max_cy; ++cy)
+                                for (int cz = min_cz; cz <= max_cz; ++cz) {
+                                    uint64_t key = sinriv::kigstudio::
+                                        voxel::packChunkKey(cx, cy, cz);
+                                    grid_copy.chunks.try_emplace(key);
+                                }
+                    }
+                }
+            }
+            if (!grid_copy.chunks.empty()) {
+                int num_display_tris = 0;
+                for (auto [tri, n] : sinriv::kigstudio::voxel::
+                         generateSmoothMeshFromSDF(grid_copy,
+                                                   num_display_tris,
+                                                   [](const std::string&) {
+                                                       return true;
+                                                   },
+                                                   false, 3,
+                                                   hair_sdf.get())) {
+                    (void)n;
+                    display_tris.push_back(tri);
+                }
+                std::cerr << "[do_segment] display mesh: "
+                          << display_tris.size() << " faces.\n";
+            }
+        }
+
+        return {{voxel_grid_data, std::move(hair_sdf),
+                 std::move(display_tris)}};
+    }
+}
+
 }  // namespace sinriv::ui::render

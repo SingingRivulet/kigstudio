@@ -528,6 +528,9 @@ namespace sinriv::ui::render {
         }
 
         bool cull_backface = true;
+        // 剔除正面（仅显示背面/内侧）：用于钻孔编辑器"显示背面"模式，
+        // 让发束正面被剔除，从而能透过发束看到内部的连接面。
+        bool cull_frontface = false;
         void renderGBuffer(const float* transform, RenderMeshShader & shader, bool exclude_from_tint = false) {
             if (!layout_initialized_) {
                 mesh_detail::PosNormalVertex_bgfx::init(layout_);
@@ -552,6 +555,9 @@ namespace sinriv::ui::render {
                              BGFX_STATE_MSAA;
             if (cull_backface) {
                 state |= BGFX_STATE_CULL_CCW;
+            }
+            if (cull_frontface) {
+                state |= BGFX_STATE_CULL_CW;
             }
             bgfx::setState(state);
             bgfx::submit(shader.view_id_, shader.gbuffer_program_);
@@ -581,6 +587,9 @@ namespace sinriv::ui::render {
                              BGFX_STATE_MSAA;
             if (cull_backface) {
                 state |= BGFX_STATE_CULL_CCW;
+            }
+            if (cull_frontface) {
+                state |= BGFX_STATE_CULL_CW;
             }
             bgfx::setState(state);
             bgfx::submit(shader.view_id_, shader.gbuffer_addon_program_);

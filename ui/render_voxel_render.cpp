@@ -2411,11 +2411,16 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     // 互相遮挡；钻孔拾取激活时改用普通 GBuffer 路径（写 world_pos），
     // 使发束/连接面可被鼠标拾取；平时用 Addon 路径（拾取穿透）。
     if (!manager || showAddonMesh) {
-        // Hide strands when showing connection faces so only the
-        // cut interfaces are visible.
-        if (!show_connection_faces) {
+        // 发束渲染：
+        // - 未显示连接面：正常渲染发束（双面）。
+        // - 显示连接面时：
+        //     * "显示背面"开启：仍渲染发束，但剔除正面（只显示内侧），
+        //       从而能透过发束看到连接面。
+        //     * "显示背面"关闭：隐藏发束，仅显示连接面（原有行为）。
+        if (!show_connection_faces || show_back_face) {
             for (auto& [uuid, addon] : addon_renderers) {
                 addon->cull_backface = false;
+                addon->cull_frontface = show_back_face;
                 if (drill_picking_active)
                     addon->renderGBuffer(transform, mesh_shader);
                 else

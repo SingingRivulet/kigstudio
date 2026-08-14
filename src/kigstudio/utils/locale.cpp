@@ -359,6 +359,17 @@ void init_locale_strings() {
                        {"zh", "生成侧面..."}});
     add_locale_string("status.segmenting",
                       {{"en", "Segmenting..."}, {"zh", "正在分割..."}});
+    add_locale_string("status.segmenting.pre_build",
+                      {{"en", "Pre-building strand %d/%d"},
+                       {"zh", "预构建发束 %d/%d"}});
+    add_locale_string("status.segmenting.strand",
+                      {{"en", "Processing strand %d/%d"},
+                       {"zh", "正在处理发束 %d/%d"}});
+    add_locale_string("status.segmenting.subtract",
+                      {{"en", "Subtracting strand %d - %d"},
+                       {"zh", "发束 %d - %d 相减"}});
+    add_locale_string("status.cancelled",
+                      {{"en", "Cancelled"}, {"zh", "已取消"}});
     add_locale_string(
         "status.extracting_skeleton_cgal",
         {{"en", "CGAL skeleton extraction..."}, {"zh", "CGAL 骨架提取..."}});
@@ -1354,6 +1365,11 @@ void init_locale_strings() {
     add_locale_string("tooltip.connection_faces",
                       {{"en", "Show the split connection faces as a highlight overlay"},
                        {"zh", "高亮显示拆分产生的连接面"}});
+    add_locale_string("label.show_back_face",
+                      {{"en", "Show Back Face"}, {"zh", "显示背面"}});
+    add_locale_string("tooltip.show_back_face",
+                      {{"en", "Cull the front faces of strands to show their interior, so connection faces remain visible through the hair"},
+                       {"zh", "剔除发束正面、仅显示内侧，从而能透过发束看到连接面"}});
     add_locale_string("label.drill_need_split",
                       {{"en", "Requires Split enabled and at least 2 strands"},
                        {"zh", "需开启拆分且至少 2 根发束"}});

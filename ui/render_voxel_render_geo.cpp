@@ -765,6 +765,16 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
         } else {
             results = it->second->do_segment();
         }
+        if (!queue_should_continue.load()) {
+            // 用户取消：不创建/删除子节点，保留原状
+            {
+                std::lock_guard<std::mutex> lock(locker);
+                it->second->ref_count--;
+                it->second->write_count--;
+            }
+            setQueueStatus(get_locale_string("status.cancelled"));
+            return {};
+        }
         queue_progress = 0.7f;
     } catch (const std::exception& e) {
         std::cerr << "[do_segment] exception: " << e.what() << std::endl;
