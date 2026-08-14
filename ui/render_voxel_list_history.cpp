@@ -245,6 +245,8 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     }
     item.drill_last_picked_index = -1;
     item.drill_repick_index = -1;
+    item.hovered_drill_path_uuid.clear();
+    item.hovered_drill_point_index = -1;
 }
 
 void RenderVoxelList::begin_edit(int item_id) {

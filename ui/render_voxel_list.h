@@ -764,6 +764,9 @@ class RenderVoxelList {
         int drill_last_picked_index = -1;
         // 重新拾取模式（运行时）：非负时表示下一次模型点击将覆盖该索引的坐标点
         int drill_repick_index = -1;
+        // 鼠标悬停的钻孔点（运行时）：用于在 3D 视图中圈出该坐标
+        std::string hovered_drill_path_uuid;  // empty = none
+        int hovered_drill_point_index = -1;
         // 连接面缓存（仅 addon_split 时有意义）与脏标记
         std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
             connection_faces_cache;

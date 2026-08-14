@@ -1353,6 +1353,8 @@ void RenderVoxelList::render_drill_window() {
             it->second->drill_picking_active = false;
             it->second->drill_repick_index = -1;
             it->second->active_drill_path_uuid.clear();
+            it->second->hovered_drill_path_uuid.clear();
+            it->second->hovered_drill_point_index = -1;
         }
         show_drill_window = false;
         ImGui::End();
@@ -1565,6 +1567,10 @@ void RenderVoxelList::render_drill_window() {
     if (!active_path && !activate_uuid.empty())
         active_path = item.find_drill_path_by_uuid(activate_uuid);
 
+    // Reset per-point hover highlight each frame
+    item.hovered_drill_path_uuid.clear();
+    item.hovered_drill_point_index = -1;
+
     if (active_path && !active_path->points.empty()) {
         ImGui::Separator();
         ImGui::Text("%s: %s", get_locale_cstr("label.drill_col_points"),
@@ -1628,6 +1634,7 @@ void RenderVoxelList::render_drill_window() {
                 const auto& pt = active_path->points[pi];
                 ImGui::PushID(static_cast<int>(pi));
                 ImGui::TableNextRow();
+                bool row_hovered = false;
 
                 ImGui::TableNextColumn();
                 if (item.drill_last_picked_index == static_cast<int>(pi))
@@ -1635,11 +1642,15 @@ void RenderVoxelList::render_drill_window() {
                                        static_cast<int>(pi + 1));
                 else
                     ImGui::Text("%d", static_cast<int>(pi + 1));
+                if (!row_hovered && ImGui::IsItemHovered())
+                    row_hovered = true;
 
                 ImGui::TableNextColumn();
                 ImGui::Text("(%.2f, %.2f, %.2f)", static_cast<double>(pt.x),
                             static_cast<double>(pt.y),
                             static_cast<double>(pt.z));
+                if (!row_hovered && ImGui::IsItemHovered())
+                    row_hovered = true;
 
                 ImGui::TableNextColumn();
                 if (ImGui::SmallButton("+")) {
@@ -1651,6 +1662,8 @@ void RenderVoxelList::render_drill_window() {
                     item.drill_last_picked_index = static_cast<int>(pi);
                     move_point(static_cast<int>(pi), -drill_move_step);
                 }
+                if (!row_hovered && ImGui::IsItemHovered())
+                    row_hovered = true;
 
                 ImGui::TableNextColumn();
                 {
@@ -1673,15 +1686,25 @@ void RenderVoxelList::render_drill_window() {
                     }
                     if (repicking)
                         ImGui::PopStyleColor();
-                    if (ImGui::IsItemHovered())
+                    if (ImGui::IsItemHovered()) {
+                        if (!row_hovered)
+                            row_hovered = true;
                         ImGui::SetTooltip(
                             "%s",
                             get_locale_cstr("tooltip.repick_drill_point"));
+                    }
                 }
 
                 ImGui::TableNextColumn();
                 if (ImGui::SmallButton("X"))
                     delete_idx = static_cast<int>(pi);
+                if (!row_hovered && ImGui::IsItemHovered())
+                    row_hovered = true;
+
+                if (row_hovered) {
+                    item.hovered_drill_path_uuid = active_path->uuid;
+                    item.hovered_drill_point_index = static_cast<int>(pi);
+                }
 
                 ImGui::PopID();
             }

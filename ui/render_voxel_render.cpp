@@ -3261,6 +3261,52 @@ void RenderVoxelList::RenderVoxelItem::render_overlay(
         }
     }
 
+    // 钻孔点悬停：三个 XYZ 轴光圈圈出坐标（半径为孔径的 1.5 倍）
+    if (!hovered_drill_path_uuid.empty() && hovered_drill_point_index >= 0 &&
+        source_type == 2) {
+        const DrillPath* hp = find_drill_path_by_uuid(hovered_drill_path_uuid);
+        if (hp && hovered_drill_point_index <
+                      static_cast<int>(hp->points.size())) {
+            if (mesh_shader.ensureLineProgram()) {
+                bgfx::VertexLayout& layout = concave_cone_overlay_layout();
+                const uint32_t ring_color =
+                    pack_abgr(0.1f, 1.0f, 0.6f, 1.0f);
+                const float radius = hp->radius * 1.5f;
+                std::vector<mesh_detail::ColorLineVertex> vertices;
+                vertices.reserve(48 * 3);
+                const auto& c = hp->points[hovered_drill_point_index];
+                append_marker_circle(vertices, c,
+                                     {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
+                                     radius, ring_color);
+                append_marker_circle(vertices, c,
+                                     {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                     radius, ring_color);
+                append_marker_circle(vertices, c,
+                                     {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
+                                     radius, ring_color);
+                if (!vertices.empty() &&
+                    bgfx::getAvailTransientVertexBuffer(
+                        static_cast<uint32_t>(vertices.size()),
+                        layout) >= vertices.size()) {
+                    bgfx::TransientVertexBuffer tvb;
+                    bgfx::allocTransientVertexBuffer(
+                        &tvb, static_cast<uint32_t>(vertices.size()), layout);
+                    std::memcpy(tvb.data, vertices.data(),
+                                vertices.size() *
+                                    sizeof(mesh_detail::ColorLineVertex));
+                    bgfx::setTransform(model_transform);
+                    bgfx::setVertexBuffer(0, &tvb);
+                    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                                   BGFX_STATE_WRITE_Z |
+                                   BGFX_STATE_DEPTH_TEST_LESS |
+                                   BGFX_STATE_PT_LINES | BGFX_STATE_MSAA);
+                    bgfx::submit(mesh_shader.overlay_view_id_,
+                                 mesh_shader.line_program_);
+                }
+            }
+        }
+    }
+
     // Hair root point rendering (three purple circles at the common root point)
     if (hair_root_edit_active && source_type == 2) {
         if (mesh_shader.ensureLineProgram()) {
