@@ -1351,6 +1351,7 @@ void RenderVoxelList::render_drill_window() {
         auto it = items.find(render_id);
         if (it != items.end()) {
             it->second->drill_picking_active = false;
+            it->second->drill_repick_index = -1;
             it->second->active_drill_path_uuid.clear();
         }
         show_drill_window = false;
@@ -1512,6 +1513,7 @@ void RenderVoxelList::render_drill_window() {
                             : get_locale_cstr("action.pick_drill_points"))) {
                     if (picking) {
                         item.drill_picking_active = false;
+                        item.drill_repick_index = -1;
                         // Keep active_drill_path_uuid so the point list
                         // stays editable after picking stops.
                     } else {
@@ -1522,6 +1524,7 @@ void RenderVoxelList::render_drill_window() {
                         item.active_width_edit_strand.clear();
                         item.hairline_point_picking_active = false;
                         item.drill_picking_active = true;
+                        item.drill_repick_index = -1;
                         item.active_drill_path_uuid = path.uuid;
                     }
                 }
@@ -1537,6 +1540,7 @@ void RenderVoxelList::render_drill_window() {
                 delete_uuid = path.uuid;
                 if (item.active_drill_path_uuid == path.uuid) {
                     item.drill_picking_active = false;
+                    item.drill_repick_index = -1;
                     item.active_drill_path_uuid.clear();
                 }
             }
@@ -1604,7 +1608,7 @@ void RenderVoxelList::render_drill_window() {
 
         int delete_idx = -1;
         float pt_table_h = ImGui::GetContentRegionAvail().y;
-        if (ImGui::BeginTable("##drill_pts", 4,
+        if (ImGui::BeginTable("##drill_pts", 5,
                               ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                                   ImGuiTableFlags_ScrollY,
                               ImVec2(0, pt_table_h))) {
@@ -1614,6 +1618,8 @@ void RenderVoxelList::render_drill_window() {
                                     ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_ops"),
                                     ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_repick"),
+                                    ImGuiTableColumnFlags_WidthFixed, 70.0f);
             ImGui::TableSetupColumn(get_locale_cstr("label.drill_col_delete"),
                                     ImGuiTableColumnFlags_WidthFixed, 40.0f);
             ImGui::TableHeadersRow();
@@ -1644,6 +1650,33 @@ void RenderVoxelList::render_drill_window() {
                 if (ImGui::SmallButton("-")) {
                     item.drill_last_picked_index = static_cast<int>(pi);
                     move_point(static_cast<int>(pi), -drill_move_step);
+                }
+
+                ImGui::TableNextColumn();
+                {
+                    bool repicking =
+                        item.drill_repick_index == static_cast<int>(pi);
+                    if (repicking)
+                        ImGui::PushStyleColor(ImGuiCol_Button,
+                                              ImVec4(0.3f, 0.6f, 0.3f, 1.0f));
+                    if (ImGui::SmallButton(
+                            get_locale_cstr("action.repick_drill_point"))) {
+                        item.drill_repick_index = static_cast<int>(pi);
+                        item.active_drill_path_uuid = active_path->uuid;
+                        // Mutually exclusive with other picking modes
+                        item.guide_curve_drawing_active = false;
+                        item.active_guide_draw_strand.clear();
+                        item.width_editing_active = false;
+                        item.active_width_edit_strand.clear();
+                        item.hairline_point_picking_active = false;
+                        item.drill_picking_active = true;
+                    }
+                    if (repicking)
+                        ImGui::PopStyleColor();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "%s",
+                            get_locale_cstr("tooltip.repick_drill_point"));
                 }
 
                 ImGui::TableNextColumn();
@@ -1749,6 +1782,8 @@ RenderVoxelList::RenderVoxelItem::do_segment_addon() {
     if (addon_split) {
         // Each strand becomes an independent child node
         ResultT result;
+        // 记录每个结果对应的发束索引，供调用方生成子节点标题
+        split_strand_indices.clear();
 
         // Pre-build all strand loft triangles once so each strand mesh
         // is only constructed one time, not O(n) times in the inner
@@ -1859,6 +1894,7 @@ RenderVoxelList::RenderVoxelItem::do_segment_addon() {
                 // 纯几何路径：子节点直接渲染三角形网格
                 result.emplace_back(std::move(dummy_grid), nullptr,
                                     std::move(strand_tris));
+                split_strand_indices.push_back(i);
                 continue;
             }
 
@@ -1896,6 +1932,7 @@ RenderVoxelList::RenderVoxelItem::do_segment_addon() {
             result.emplace_back(std::move(dummy_grid),
                                 std::move(final_sdf),
                                 std::vector<Tri>{});
+            split_strand_indices.push_back(i);
         }
         if (result.empty()) {
             return {{voxel_grid_data, nullptr, {}}};

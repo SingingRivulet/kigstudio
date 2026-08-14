@@ -11,6 +11,7 @@
 #include <unordered_set>
 
 #include "kigstudio/utils/locale.h"
+#include "tinyfiledialogs.h"
 
 namespace sinriv::ui::render {
 inline void compute_layout(RenderVoxelList& mgr);
@@ -718,6 +719,45 @@ void RenderVoxelList::render_nav_map() {
                     }
                 }
                 ImGui::EndChild();
+
+                // ---- 批量导出 STL（折叠子树）----
+                ImGui::Separator();
+                if (ImGui::Button(get_locale_cstr("action.export_stl_set"))) {
+                    // 只导出折叠子树中的叶子节点
+                    std::vector<int> export_ids;
+                    for (int nid : folded) {
+                        auto nit = this->items.find(nid);
+                        if (nit == this->items.end())
+                            continue;
+                        bool is_leaf = true;
+                        for (int cid : nit->second->children) {
+                            if (cid >= 0) {
+                                is_leaf = false;
+                                break;
+                            }
+                        }
+                        if (is_leaf)
+                            export_ids.push_back(nid);
+                    }
+                    if (!export_ids.empty()) {
+                        const char* folder = tinyfd_selectFolderDialog(
+                            utf8_to_ansi(
+                                get_locale_cstr("dialog.export_stl_set"))
+                                .c_str(),
+                            "");
+                        if (folder) {
+                            std::string dir = tinyfd_path_to_utf8(folder);
+                            queue_export_stl_set(export_ids, dir,
+                                                 export_stl_mode,
+                                                 export_stl_simplify,
+                                                 export_stl_simplify_ratio,
+                                                 export_stl_subdivisions);
+                        }
+                    }
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip(
+                        "%s", get_locale_cstr("tooltip.export_stl_set"));
             }
         }
         ImGui::EndPopup();

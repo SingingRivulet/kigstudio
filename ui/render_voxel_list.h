@@ -762,6 +762,8 @@ class RenderVoxelList {
         std::string active_drill_path_uuid;
         // 最后一次拾取/编辑的点索引（+/- 键作用对象）
         int drill_last_picked_index = -1;
+        // 重新拾取模式（运行时）：非负时表示下一次模型点击将覆盖该索引的坐标点
+        int drill_repick_index = -1;
         // 连接面缓存（仅 addon_split 时有意义）与脏标记
         std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
             connection_faces_cache;
@@ -807,6 +809,9 @@ class RenderVoxelList {
         void apply_hairline_spindle();
         // 毛发数据
         std::vector<HairStrand> hair_strands;
+        // 拆分时每个结果子节点对应的发束索引（与 do_segment_addon 结果顺序一致，
+        // 供 do_segment 生成子节点标题）。仅 addon_split 时有意义，运行时临时数据。
+        std::vector<int> split_strand_indices;
 
         /// Find a strand by UUID (O(n) linear search). Returns nullptr if not found.
         HairStrand* find_strand_by_uuid(const std::string& id) {
@@ -1614,6 +1619,7 @@ class RenderVoxelList {
         TASK_EXPORT_STL = 9,
         TASK_EXPORT_STL_ALL = 10,
         TASK_EXECUTE_FLOW = 11,
+        TASK_EXPORT_STL_SET = 12,
     };
     struct QueueTask {
         QueueTaskType type;
@@ -1628,6 +1634,9 @@ class RenderVoxelList {
         sinriv::kigstudio::sdf::SDFPrecision voxel_precision = sinriv::kigstudio::sdf::SDFPrecision::Fast;
         int subdivisions = 3;
         bool save_to_file = true;
+        // 批量导出指定节点集合（TASK_EXPORT_STL_SET）；为空时 TASK_EXPORT_STL_ALL
+        // 退化为导出全部叶子节点。
+        std::vector<int> export_ids;
         int source_node_id = -1;
         int node_source_data_type = 0;
         int node_source_sdf_subdivisions = 2;
@@ -1684,6 +1693,13 @@ class RenderVoxelList {
                           int subdivisions,
                           bool save_to_file = true);
     void queue_export_stl_all(const std::string& export_dir,
+                              int mode,
+                              bool simplify,
+                              float ratio,
+                              int subdivisions,
+                              bool save_to_file = true);
+    void queue_export_stl_set(const std::vector<int>& export_ids,
+                              const std::string& export_dir,
                               int mode,
                               bool simplify,
                               float ratio,

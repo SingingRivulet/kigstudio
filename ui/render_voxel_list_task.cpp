@@ -649,13 +649,17 @@ void RenderVoxelList::queue_thread() {
                 queue_running = false;
                 break;
             }
-            case TASK_EXPORT_STL_ALL: {
+            case TASK_EXPORT_STL_ALL:
+            case TASK_EXPORT_STL_SET: {
                 queue_running = true;
                 setQueueStatus(get_locale_string("status.exporting_stl_all"));
                 queue_progress = 0.0f;
                 try {
                     std::vector<int> target_ids;
-                    {
+                    if (!task.export_ids.empty()) {
+                        // 指定节点集合（折叠节点子树等）
+                        target_ids = task.export_ids;
+                    } else {
                         std::lock_guard<std::mutex> lock(locker);
                         for (auto& [id, item] : items) {
                             bool is_leaf = true;
@@ -821,8 +825,46 @@ void RenderVoxelList::queue_thread() {
                                         status_prefix + " " +
                                         get_locale_string(
                                             "status.exporting_stl.saveing_mesh"));
-                                    std::string filename =
-                                        "node_" + std::to_string(id) + ".stl";
+                                    // 文件名：优先使用节点标题（若有），否则节点编号
+                                    std::string filename;
+                                    {
+                                        std::string title;
+                                        {
+                                            std::lock_guard<std::mutex> lock(
+                                                locker);
+                                            auto itt = items.find(id);
+                                            if (itt != items.end())
+                                                title = itt->second->title;
+                                        }
+                                        if (!title.empty()) {
+                                            std::string safe;
+                                            safe.reserve(title.size());
+                                            for (unsigned char c : title) {
+                                                // 剔除路径非法字符
+                                                if (c == '/' || c == '\\' ||
+                                                    c == ':' || c == '*' ||
+                                                    c == '?' || c == '"' ||
+                                                    c == '<' || c == '>' ||
+                                                    c == '|' || c < 0x20) {
+                                                    safe.push_back('_');
+                                                } else {
+                                                    safe.push_back(
+                                                        static_cast<char>(c));
+                                                }
+                                            }
+                                            // 去掉首尾空白，避免无效文件名
+                                            while (!safe.empty() &&
+                                                   (safe.back() == ' ' ||
+                                                    safe.back() == '.'))
+                                                safe.pop_back();
+                                            if (!safe.empty())
+                                                filename = safe + ".stl";
+                                        }
+                                        if (filename.empty())
+                                            filename = "node_" +
+                                                        std::to_string(id) +
+                                                        ".stl";
+                                    }
                                     std::filesystem::path filepath =
                                         export_dir / filename;
                                     sinriv::kigstudio::voxel::saveMeshToASCIISTL(
@@ -1183,6 +1225,28 @@ void RenderVoxelList::queue_export_stl_all(const std::string& export_dir,
     QueueTask task;
     task.type = TASK_EXPORT_STL_ALL;
     task.file_path = export_dir;
+    task.export_mode = mode;
+    task.export_simplify = simplify;
+    task.export_simplify_ratio = ratio;
+    task.subdivisions = subdivisions;
+    task.save_to_file = save_to_file;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
+}
+
+void RenderVoxelList::queue_export_stl_set(
+    const std::vector<int>& export_ids,
+    const std::string& export_dir,
+    int mode,
+    bool simplify,
+    float ratio,
+    int subdivisions,
+    bool save_to_file) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_EXPORT_STL_SET;
+    task.file_path = export_dir;
+    task.export_ids = export_ids;
     task.export_mode = mode;
     task.export_simplify = simplify;
     task.export_simplify_ratio = ratio;

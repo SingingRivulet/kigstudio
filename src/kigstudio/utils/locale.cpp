@@ -549,6 +549,14 @@ void init_locale_strings() {
                       {{"en", "Save as STL"}, {"zh", "另存为 STL"}});
     add_locale_string("action.export_stl_all",
                       {{"en", "Export All"}, {"zh", "全部导出"}});
+    add_locale_string("action.export_stl_set",
+                      {{"en", "Batch Export STL"}, {"zh", "批量导出STL"}});
+    add_locale_string("tooltip.export_stl_set",
+                      {{"en", "Export this folded subtree's leaf nodes to a chosen directory. "
+                              "Filenames use the node title when set, otherwise the node number."},
+                       {"zh", "将折叠子树内的叶子节点导出到所选目录。有标题时文件名用标题，否则用节点编号。"}});
+    add_locale_string("dialog.export_stl_set",
+                      {{"en", "Select export directory"}, {"zh", "选择导出目录"}});
     add_locale_string("action.render_sdf",
                       {{"en", "Render SDF"}, {"zh", "渲染 SDF"}});
     add_locale_string("label.export_mode_standard",
@@ -1395,6 +1403,13 @@ void init_locale_strings() {
                       {{"en", "Position"}, {"zh", "坐标"}});
     add_locale_string("label.drill_col_ops",
                       {{"en", "Move"}, {"zh", "移动"}});
+    add_locale_string("label.drill_col_repick",
+                      {{"en", "Re-pick"}, {"zh", "重拾"}});
+    add_locale_string("action.repick_drill_point",
+                      {{"en", "Re-pick"}, {"zh", "重拾"}});
+    add_locale_string("tooltip.repick_drill_point",
+                      {{"en", "Re-pick this point: click the button, then click a new position on the model to replace the coordinate"},
+                       {"zh", "重新拾取该坐标点：点击按钮后在模型上点击新位置以替换该坐标"}});
     add_locale_string("label.drill_move_step",
                       {{"en", "Step"}, {"zh", "步长"}});
     add_locale_string("tooltip.drill_move_step",

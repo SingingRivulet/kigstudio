@@ -551,13 +551,46 @@ int ui_main(int argc, const char* const* argv) {
                                 !item.active_drill_path_uuid.empty()) {
                                 auto* path = item.find_drill_path_by_uuid(item.active_drill_path_uuid);
                                 if (path) {
-                                    render_items.push_undo_now(
-                                        render_items.render_id, std::nullopt,
-                                        "Add Drill Point");
-                                    path->points.push_back(render_items.mouse_world_pos);
+                                    if (item.drill_repick_index >= 0 &&
+                                        item.drill_repick_index <
+                                            static_cast<int>(
+                                                path->points.size())) {
+                                        // Re-pick: overwrite the selected
+                                        // coordinate, then stop picking.
+                                        render_items.push_undo_now(
+                                            render_items.render_id,
+                                            std::nullopt,
+                                            "Re-pick Drill Point");
+                                        path->points[item.drill_repick_index] =
+                                            render_items.mouse_world_pos;
+                                        item.drill_last_picked_index =
+                                            item.drill_repick_index;
+                                        item.drill_repick_index = -1;
+                                        item.drill_picking_active = false;
+                                    } else {
+                                        render_items.push_undo_now(
+                                            render_items.render_id,
+                                            std::nullopt, "Add Drill Point");
+                                        bool alt =
+                                            (SDL_GetModState() & KMOD_ALT) !=
+                                            0;
+                                        if (alt) {
+                                            // Alt+click: insert at the head
+                                            // of the coordinate sequence.
+                                            path->points.insert(
+                                                path->points.begin(),
+                                                render_items.mouse_world_pos);
+                                            item.drill_last_picked_index = 0;
+                                        } else {
+                                            path->points.push_back(
+                                                render_items.mouse_world_pos);
+                                            item.drill_last_picked_index =
+                                                static_cast<int>(
+                                                    path->points.size()) -
+                                                1;
+                                        }
+                                    }
                                     path->mesh_dirty = true;
-                                    item.drill_last_picked_index =
-                                        static_cast<int>(path->points.size()) - 1;
                                 }
                             }
                         }

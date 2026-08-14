@@ -244,6 +244,7 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
         item.drill_picking_active = false;
     }
     item.drill_last_picked_index = -1;
+    item.drill_repick_index = -1;
 }
 
 void RenderVoxelList::begin_edit(int item_id) {
