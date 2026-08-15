@@ -899,6 +899,74 @@ void RenderVoxelList::queue_thread() {
                 queue_running = false;
                 break;
             }
+            case TASK_ANALYZE_DRILL_STRANDS: {
+                append_queue_logf("log.queue.start_analyze_drill_strands",
+                                  task.index);
+                queue_running = true;
+                setQueueStatus(
+                    get_locale_string("status.analyzing_drill_strands"));
+                queue_progress = 0.0f;
+
+                bool success = false;
+                try {
+                    // 锁定节点：计算期间防止被删除/修改
+                    locker.lock();
+                    auto it = items.find(task.index);
+                    if (it == items.end() || it->second->write_count != 0) {
+                        locker.unlock();
+                        append_queue_logf("log.queue.skip_item_busy",
+                                          task.index);
+                        break;
+                    }
+                    it->second->ref_count++;
+                    it->second->write_count++;
+                    auto* item_ptr = it->second.get();
+                    locker.unlock();
+
+                    auto results = item_ptr->compute_drill_strand_hits(
+                        [&]() { return queue_should_continue.load(); },
+                        [&](float v) { queue_progress = v; });
+                    const bool cancelled = !queue_should_continue.load();
+
+                    // 结果写回（加锁）
+                    locker.lock();
+                    auto it2 = items.find(task.index);
+                    if (it2 != items.end()) {
+                        it2->second->ref_count--;
+                        it2->second->write_count--;
+                        if (!cancelled) {
+                            it2->second->drill_strand_hits =
+                                std::move(results);
+                            it2->second->drill_strand_hits_text =
+                                it2->second->format_drill_strand_hits_text();
+                            it2->second->drill_strand_hits_show_popup = true;
+                            success = true;
+                        }
+                    }
+                    locker.unlock();
+                } catch (std::exception& e) {
+                    append_queue_logf("log.queue.error_analyze_drill_strands",
+                                      task.index, e.what());
+                    locker.lock();
+                    auto it = items.find(task.index);
+                    if (it != items.end()) {
+                        it->second->ref_count--;
+                        it->second->write_count--;
+                    }
+                    locker.unlock();
+                }
+
+                queue_progress = 1.0f;
+                if (success) {
+                    setQueueStatus(get_locale_string("status.done"));
+                    append_queue_logf("log.queue.done_analyze_drill_strands",
+                                      task.index);
+                } else if (!queue_should_continue.load()) {
+                    setQueueStatus(get_locale_string("status.cancelled"));
+                }
+                queue_running = false;
+                break;
+            }
             case TASK_EXECUTE_FLOW: {
                 const auto& inputs = task.flow_input_entries;
                 const auto& outputs = task.flow_output_entries;
@@ -1159,6 +1227,15 @@ void RenderVoxelList::queue_extract_skeleton(int index) {
     this->queue_num = static_cast<int>(queue.size());
 }
 
+void RenderVoxelList::queue_analyze_drill_strands(int index) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_ANALYZE_DRILL_STRANDS;
+    task.index = index;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
+}
+
 void RenderVoxelList::queue_remove_item(int index) {
     std::lock_guard<std::mutex> lock(locker);
     auto it = items.find(index);
@@ -1169,6 +1246,12 @@ void RenderVoxelList::queue_remove_item(int index) {
 
 bool RenderVoxelList::isQueueRunning() {
     return queue_running.load();
+}
+
+bool RenderVoxelList::is_current_item_updating() {
+    std::lock_guard<std::mutex> lock(locker);
+    auto it = items.find(render_id);
+    return it != items.end() && it->second->write_count != 0;
 }
 
 std::string RenderVoxelList::getQueueStatus() {

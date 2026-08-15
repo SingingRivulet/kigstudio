@@ -415,17 +415,20 @@ void RenderVoxelList::render_ui() {
 
     render_nav_map();
     render_object_editor();
-    render_object_editor_addons();
-    render_guide_curve_window();
-    render_width_editor_window();
-    render_cross_section_editor();
-    render_perpoint_section_editor();
-    render_hairline_plane_window();
-    render_angle_config_window();
-    render_hair_root_window();
-    render_drill_window();
-    render_ortho_setup_window();
-    render_ortho_edit_window();
+    // 物体编辑器更新中时，隐藏附加件编辑器及其相关的所有窗口
+    if (!is_current_item_updating()) {
+        render_object_editor_addons();
+        render_guide_curve_window();
+        render_width_editor_window();
+        render_cross_section_editor();
+        render_perpoint_section_editor();
+        render_hairline_plane_window();
+        render_angle_config_window();
+        render_hair_root_window();
+        render_drill_window();
+        render_ortho_setup_window();
+        render_ortho_edit_window();
+    }
     render_file_loader();
     render_save_dialog();
     render_load_dialog();

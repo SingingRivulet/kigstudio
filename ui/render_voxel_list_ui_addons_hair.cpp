@@ -1416,6 +1416,20 @@ void RenderVoxelList::render_drill_window() {
         item.drill_paths.push_back(path);
     }
 
+    // ---- 分析钻孔路径穿过的发束（后台队列执行，处理期间锁定当前节点） ----
+    ImGui::SameLine();
+    const bool node_busy = item.write_count != 0;
+    if (node_busy)
+        ImGui::BeginDisabled();
+    if (ImGui::Button(get_locale_cstr("action.analyze_drill_strands"))) {
+        queue_analyze_drill_strands(item.id);
+    }
+    if (node_busy)
+        ImGui::EndDisabled();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s",
+                          get_locale_cstr("tooltip.analyze_drill_strands"));
+
     // ---- Drill path table ----
     static float drill_move_step = 0.5f;
     std::string delete_uuid;
@@ -1558,6 +1572,36 @@ void RenderVoxelList::render_drill_window() {
                                return p.uuid == delete_uuid;
                            }),
             item.drill_paths.end());
+    }
+
+    // ---- 分析结果弹出窗口（后台完成后自动弹出，允许复制） ----
+    if (item.drill_strand_hits_show_popup) {
+        ImGui::OpenPopup(get_locale_cstr("dialog.drill_strand_hits"));
+        item.drill_strand_hits_show_popup = false;
+    }
+    if (ImGui::BeginPopupModal(get_locale_cstr("dialog.drill_strand_hits"),
+                               nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted(get_locale_cstr("label.drill_strand_hits"));
+        if (!item.drill_strand_hits_text.empty()) {
+            // 只读多行文本框：可滚动、可选中后 Ctrl+C 复制
+            ImGui::InputTextMultiline(
+                "##drill_strand_hits_text",
+                item.drill_strand_hits_text.data(),
+                item.drill_strand_hits_text.size() + 1,
+                ImVec2(480, 220), ImGuiInputTextFlags_ReadOnly);
+        } else {
+            ImGui::TextUnformatted(get_locale_cstr("label.drill_strand_none"));
+        }
+        ImGui::Separator();
+        if (ImGui::Button(get_locale_cstr("action.copy"))) {
+            SDL_SetClipboardText(item.drill_strand_hits_text.c_str());
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(get_locale_cstr("action.close"))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
 
     // ---- Active path point list ----

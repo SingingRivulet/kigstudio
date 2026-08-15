@@ -2071,6 +2071,158 @@ RenderVoxelList::RenderVoxelItem::build_hair_sdf() const {
 	return sdf_group(strand_sdfs);
 }
 
+std::vector<std::pair<std::string, std::vector<std::string>>>
+RenderVoxelList::RenderVoxelItem::compute_drill_strand_hits(
+    const std::function<bool()>& should_continue,
+    const std::function<void(float)>& progress) const {
+	using namespace sinriv::kigstudio::sdf;
+	using vec3f = sinriv::kigstudio::voxel::vec3f;
+
+	// 是否继续（未提供回调时始终继续）
+	auto keep_going = [&]() { return !should_continue || should_continue(); };
+	// 上报进度（未提供回调时忽略）
+	auto report = [&](float v) {
+		if (progress) progress(v);
+	};
+
+	std::vector<std::pair<std::string, std::vector<std::string>>> out;
+
+	const int n = static_cast<int>(hair_strands.size());
+	if (n == 0) return out;
+
+	// ---- 1. 逐发束构建原始 SDF（放样网格，未做任何相减） ----
+	std::vector<SDFBasePtr> orig_sdf(n);
+	for (int i = 0; i < n; ++i) {
+		if (!keep_going()) return out;  // 取消
+		auto tris = build_strand_loft_triangles(i);
+		if (tris.empty()) {
+			report(0.30f * static_cast<float>(i + 1) / n);
+			continue;
+		}
+		auto mesh_sdf = std::make_shared<SDF_Mesh>();
+		mesh_sdf->precision_mode = SDFPrecision::Precise;
+		if (!mesh_sdf->loadTriangles(tris)) {
+			report(0.30f * static_cast<float>(i + 1) / n);
+			continue;
+		}
+		orig_sdf[i] = std::move(mesh_sdf);
+		report(0.30f * static_cast<float>(i + 1) / n);
+	}
+
+	// ---- 2. 底模 SDF（减底模用） ----
+	SDFBasePtr base_sdf = nullptr;
+	if (addon_base_node_id >= 0 && manager) {
+		auto base_it = manager->items.find(addon_base_node_id);
+		if (base_it != manager->items.end()) {
+			base_sdf = base_it->second->sdf_data;
+			if (!base_sdf && !base_it->second->source_triangles.empty()) {
+				auto mesh_sdf = std::make_shared<SDF_Mesh>();
+				mesh_sdf->precision_mode = SDFPrecision::Precise;
+				if (mesh_sdf->loadTriangles(
+				        base_it->second->source_triangles))
+					base_sdf = std::move(mesh_sdf);
+			}
+		}
+	}
+
+	// ---- 3. 逐发束构建最终 SDF：减底模 → 互相减（第 i 根减 0..i-1 根） ----
+	std::vector<SDFBasePtr> final_sdf(n);
+	for (int i = 0; i < n; ++i) {
+		if (!keep_going()) return out;  // 取消
+		if (!orig_sdf[i]) {
+			report(0.30f + 0.25f * static_cast<float>(i + 1) / n);
+			continue;
+		}
+		SDFBasePtr s = orig_sdf[i];
+		// 减底模：埋入底模的部分不计入“可钻到的发束”
+		if (base_sdf) s = sdf_subtraction(s, base_sdf);
+		// 互相减：发束间重叠区只归属索引较大的发束（与拆分布尔一致）
+		for (int j = 0; j < i; ++j) {
+			if (!orig_sdf[j]) continue;
+			s = sdf_subtraction(s, orig_sdf[j]);
+		}
+		final_sdf[i] = std::move(s);
+		report(0.30f + 0.25f * static_cast<float>(i + 1) / n);
+	}
+
+	// ---- 4. 沿每根钻孔路径中线扫描，按顺序记录穿过的发束 ----
+	int total_paths = 0;
+	for (const auto& p : drill_paths)
+		if (p.visible && p.points.size() >= 2) ++total_paths;
+	int path_done = 0;
+	for (const auto& p : drill_paths) {
+		if (!p.visible || p.points.size() < 2) continue;
+		if (!keep_going()) return out;  // 取消
+		std::vector<std::string> hits;
+		std::string last_hit;  // 空串 = 当前不在任何发束内
+		// 采样步长取钻孔半径与 0.25 中的较小者，且不低于 0.05，保证能
+		// 扫到较细的发束又不至于对长路径产生过多采样点。
+		const float step = std::max(0.05f, std::min(p.radius, 0.25f));
+		for (size_t si = 0; si + 1 < p.points.size(); ++si) {
+			if (!keep_going()) return out;  // 取消
+			const auto& a = p.points[si];
+			const auto& b = p.points[si + 1];
+			const float dx = b.x - a.x;
+			const float dy = b.y - a.y;
+			const float dz = b.z - a.z;
+			const float len = std::sqrt(dx * dx + dy * dy + dz * dz);
+			const int sub =
+			    std::max(1, static_cast<int>(std::ceil(len / step)));
+			for (int k = 0; k < sub; ++k) {
+				const float t =
+				    (sub == 1) ? 0.0f
+				               : static_cast<float>(k) /
+				                     static_cast<float>(sub - 1);
+				const vec3f pt{a.x + dx * t, a.y + dy * t, a.z + dz * t};
+				int hit_idx = -1;
+				for (int i = 0; i < n; ++i) {
+					if (!final_sdf[i]) continue;
+					if (final_sdf[i]->get(pt.x, pt.y, pt.z) < 0.0f) {
+						hit_idx = i;
+						break;
+					}
+				}
+				const std::string hit_name =
+				    (hit_idx >= 0) ? hair_strands[hit_idx].name
+				                   : std::string();
+				if (hit_name != last_hit) {
+					last_hit = hit_name;
+					if (!hit_name.empty())
+						hits.push_back(hit_name);
+				}
+			}
+		}
+		out.emplace_back(p.uuid, std::move(hits));
+		++path_done;
+		report(0.55f +
+		       (total_paths > 0
+		            ? 0.45f * static_cast<float>(path_done) / total_paths
+		            : 0.45f));
+	}
+	return out;
+}
+
+std::string
+RenderVoxelList::RenderVoxelItem::format_drill_strand_hits_text() const {
+	std::string text;
+	for (const auto& [uuid, names] : drill_strand_hits) {
+		const DrillPath* dp = find_drill_path_by_uuid(uuid);
+		std::string line = dp ? dp->name : uuid;
+		if (names.empty()) {
+			line += get_locale_cstr("label.drill_strand_none");
+		} else {
+			line += ": ";
+			for (size_t i = 0; i < names.size(); ++i) {
+				if (i) line += " → ";
+				line += names[i];
+			}
+		}
+		if (!text.empty()) text += '\n';
+		text += line;
+	}
+	return text;
+}
+
 std::vector<sinriv::kigstudio::cgal::MeshData>
 RenderVoxelList::RenderVoxelItem::build_drill_tool_meshes() const {
 	std::vector<MeshData> result;

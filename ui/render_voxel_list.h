@@ -7,6 +7,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <optional>
@@ -771,6 +772,13 @@ class RenderVoxelList {
         std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>
             connection_faces_cache;
         bool connection_faces_dirty = true;
+        // 钻孔路径穿过的发束分析结果（运行时缓存，后台任务完成后写回）
+        std::vector<std::pair<std::string, std::vector<std::string>>>
+            drill_strand_hits;
+        // 分析结果的纯文本（弹出窗口显示/复制用），后台任务完成后填充
+        std::string drill_strand_hits_text;
+        // 后台分析完成后置 true，UI 下一帧弹出结果窗口并复位
+        bool drill_strand_hits_show_popup = false;
         // 钻孔/连接面渲染器：键名 "conn"（连接面）与 "drill_<uuid>"（前缀
         // 避免与发束 UUID 冲突）
         std::unordered_map<std::string,
@@ -780,6 +788,12 @@ class RenderVoxelList {
         /// Find a drill path by UUID. Returns nullptr if not found.
         DrillPath* find_drill_path_by_uuid(const std::string& id) {
             for (auto& p : drill_paths)
+                if (p.uuid == id) return &p;
+            return nullptr;
+        }
+        /// Const overload of find_drill_path_by_uuid.
+        const DrillPath* find_drill_path_by_uuid(const std::string& id) const {
+            for (const auto& p : drill_paths)
                 if (p.uuid == id) return &p;
             return nullptr;
         }
@@ -964,6 +978,19 @@ class RenderVoxelList {
 
         // Build SDF from all hair strands (union of per-strand SDF_Mesh)
         std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> build_hair_sdf() const;
+
+        // 计算每根钻孔路径依次穿过的发束名称（先减底模、再互相减、再沿
+        // 钻孔中线扫描）。返回 (路径 uuid, 有序发束名称列表)，仅含可见且
+        // 点数 ≥2 的路径。名称按中线行进顺序排列，连续重复已去重。
+        // should_continue：可空，返回 false 时中止计算；progress：可空，
+        // 接收 0..1 的进度。二者用于后台队列任务的进度显示与取消。
+        std::vector<std::pair<std::string, std::vector<std::string>>>
+        compute_drill_strand_hits(
+            const std::function<bool()>& should_continue = nullptr,
+            const std::function<void(float)>& progress = nullptr) const;
+
+        // 将 drill_strand_hits 格式化为纯文本（用于弹出窗口显示与复制）。
+        std::string format_drill_strand_hits_text() const;
 
         // Compute world-space bounding box of all hair strand loft meshes.
         // Returns {min, max}. If no valid strands, both are {0,0,0}.
@@ -1627,6 +1654,7 @@ class RenderVoxelList {
         TASK_EXPORT_STL_ALL = 10,
         TASK_EXECUTE_FLOW = 11,
         TASK_EXPORT_STL_SET = 12,
+        TASK_ANALYZE_DRILL_STRANDS = 13,
     };
     struct QueueTask {
         QueueTaskType type;
@@ -1692,6 +1720,7 @@ class RenderVoxelList {
     void queue_remove_item(int index);
     void queue_check_non_manifold(int index);
     void queue_extract_skeleton(int index);
+    void queue_analyze_drill_strands(int index);
     void queue_export_stl(int item_id,
                           const std::string& file_path,
                           int mode,
@@ -1713,6 +1742,9 @@ class RenderVoxelList {
                               int subdivisions,
                               bool save_to_file = true);
     bool isQueueRunning();
+    // 当前选中节点是否处于后台更新中（write_count != 0）。用于更新期间隐藏
+    // 附加件编辑器及其相关的所有窗口。
+    bool is_current_item_updating();
     std::string getQueueStatus();
     void setQueueStatus(const std::string& status);
     float getQueueProgress();

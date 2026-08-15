@@ -303,6 +303,9 @@ void init_locale_strings() {
     add_locale_string("status.checking_manifold",
                       {{"en", "Checking non-manifold edges..."},
                        {"zh", "正在检查非流形边..."}});
+    add_locale_string("status.analyzing_drill_strands",
+                      {{"en", "Analyzing drill strand hits..."},
+                       {"zh", "正在分析钻孔穿过的发束..."}});
     add_locale_string(
         "status.extracting_skeleton",
         {{"en", "Extracting skeleton..."}, {"zh", "正在提取骨架..."}});
@@ -1438,6 +1441,26 @@ void init_locale_strings() {
     add_locale_string("label.drill_no_points",
                       {{"en", "No points yet. Use \"Pick\" and click on the model."},
                        {"zh", "尚无拾取点。点击\"拾取点\"后在模型上点击添加。"}});
+    add_locale_string("action.analyze_drill_strands",
+                      {{"en", "Analyze Drill Strands"}, {"zh", "分析钻孔穿过的发束"}});
+    add_locale_string("tooltip.analyze_drill_strands",
+                      {{"en", "For each drill path, list the hair strands it passes through in order (base mesh subtracted first, then strands mutually subtracted, then sweep along the drill centerline)"},
+                       {"zh", "先对发束减底模并互相减，再沿钻孔中线扫描，按顺序列出每根路径穿过的发束"}});
+    add_locale_string("label.drill_strand_hits",
+                      {{"en", "Drill path → strands (in order):"}, {"zh", "钻孔路径 → 依次穿过的发束："}});
+    add_locale_string("label.drill_strand_none",
+                      {{"en", ": (none)"}, {"zh", "：(无)"}});
+    add_locale_string("dialog.drill_strand_hits",
+                      {{"en", "Drill Strand Hits"}, {"zh", "钻孔穿过的发束"}});
+    add_locale_string("log.queue.start_analyze_drill_strands",
+                      {{"en", "Start analyzing drill strand hits for node %d"},
+                       {"zh", "开始分析节点 %d 的钻孔穿过的发束"}});
+    add_locale_string("log.queue.done_analyze_drill_strands",
+                      {{"en", "Finished analyzing drill strand hits for node %d"},
+                       {"zh", "完成节点 %d 的钻孔发束分析"}});
+    add_locale_string("log.queue.error_analyze_drill_strands",
+                      {{"en", "Error analyzing drill strand hits for node %d: %s"},
+                       {"zh", "分析节点 %d 的钻孔发束时出错：%s"}});
 
     // ---- 正交投影编辑模式 ----
     add_locale_string("action.ortho_projection",
