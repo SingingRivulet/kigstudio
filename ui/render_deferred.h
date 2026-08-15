@@ -200,6 +200,10 @@ namespace sinriv::ui::render {
         bgfx::ViewId collision_fill_view_id_ = 2;
         bgfx::ViewId mesh_stencil_fill_view_id_ = 5;
         bgfx::ViewId lighting_view_id_ = 3;
+        // AO 中间 pass 的 view id；bgfx 默认按 id 升序执行，实际顺序由
+        // prepareFrame() 里的 setViewOrder 保证 AO(6/7) 在光照(3) 之前。
+        bgfx::ViewId ao_view_id_ = 6;
+        bgfx::ViewId ao_blur_view_id_ = 7;
         std::string shader_dir_ = "shader/base/";
         uint16_t width_ = 1;
         uint16_t height_ = 1;
@@ -232,6 +236,15 @@ namespace sinriv::ui::render {
         float mesh_stencil_local_mtx_[16]{};
         bgfx::TextureHandle mesh_stencil_body_texture_ = BGFX_INVALID_HANDLE;
         bgfx::FrameBufferHandle mesh_stencil_fb_ = BGFX_INVALID_HANDLE;
+        // SSAO 中间纹理：raw=噪声 AO 灰度，blur=双边模糊后的最终遮蔽系数
+        bgfx::TextureHandle ao_raw_texture_ = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle ao_blur_texture_ = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle ao_raw_fb_ = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle ao_blur_fb_ = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle ao_program_ = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle ao_blur_program_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle s_ao_raw_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle s_ao_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_albedo_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_normal_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_world_pos_ = BGFX_INVALID_HANDLE;
@@ -261,7 +274,7 @@ namespace sinriv::ui::render {
         std::array<float, 4> mouse_ori_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 4> mouse_dir_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 2> screen_mouse_pos_ = {0.f, 0.f};
-        // 钻孔 SSAO 参数：x=采样半径(世界单位) y=强度 z=屏幕采样半径(像素) w=开关
+        // 全局 SSAO 参数：x=采样半径(世界单位) y=强度 z=屏幕采样半径(像素) w=开关
         std::array<float, 4> ao_params_ = {1.5f, 0.8f, 12.0f, 1.0f};
         float scene_view_[16]{};
         float scene_proj_[16]{};

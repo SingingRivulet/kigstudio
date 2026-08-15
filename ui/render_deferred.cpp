@@ -150,6 +150,28 @@ void RenderDeferred::prepareFrame() {
     bgfx::setViewClear(mesh_stencil_fill_view_id_, BGFX_CLEAR_COLOR, 0x00000000);
     bgfx::touch(mesh_stencil_fill_view_id_);
 
+    // AO raw pass（未启用时保持白色 clear = 无遮蔽）
+    bgfx::setViewName(ao_view_id_, "AORaw");
+    bgfx::setViewFrameBuffer(ao_view_id_, ao_raw_fb_);
+    bgfx::setViewRect(ao_view_id_, 0, 0, width_, height_);
+    bgfx::setViewTransform(ao_view_id_, screen_view, screen_proj);
+    bgfx::setViewClear(ao_view_id_, BGFX_CLEAR_COLOR, 0xffffffff);
+    bgfx::touch(ao_view_id_);
+
+    // AO 双边模糊 pass
+    bgfx::setViewName(ao_blur_view_id_, "AOBlur");
+    bgfx::setViewFrameBuffer(ao_blur_view_id_, ao_blur_fb_);
+    bgfx::setViewRect(ao_blur_view_id_, 0, 0, width_, height_);
+    bgfx::setViewTransform(ao_blur_view_id_, screen_view, screen_proj);
+    bgfx::setViewClear(ao_blur_view_id_, BGFX_CLEAR_COLOR, 0xffffffff);
+    bgfx::touch(ao_blur_view_id_);
+
+    // bgfx 默认按 view id 升序执行，这里显式指定顺序，保证
+    // AO(6/7) 在光照合成(3) 之前、overlay(4) 在光照之后。
+    constexpr bgfx::ViewId kViewOrder[] = {0, 1, 2, 5, 6, 7, 3, 4};
+    bgfx::setViewOrder(0, static_cast<uint16_t>(BX_COUNTOF(kViewOrder)),
+                       kViewOrder);
+
     bgfx::setViewName(lighting_view_id_, "DeferredLighting");
     bgfx::setViewFrameBuffer(lighting_view_id_, BGFX_INVALID_HANDLE);
     bgfx::setViewRect(lighting_view_id_, 0, 0, width_, height_);
@@ -314,6 +336,31 @@ void RenderDeferred::render() {
         bgfx::submit(mesh_stencil_fill_view_id_, collision_program_);
     }
 
+    // ===== AO Passes =====
+    // 未启用时跳过提交，AO 纹理保持白色 clear（无遮蔽）。
+    if (ao_params_[3] > 0.5f && bgfx::isValid(ao_program_) &&
+        bgfx::isValid(ao_blur_program_)) {
+        bgfx::setTransform(identity_mtx_);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setIndexBuffer(&tib);
+        bgfx::setTexture(0, s_albedo_, albedo_texture_);
+        bgfx::setTexture(1, s_normal_, normal_texture_);
+        bgfx::setTexture(2, s_world_pos_, world_pos_texture_);
+        bgfx::setUniform(u_ao_params_, ao_params_.data());
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        bgfx::submit(ao_view_id_, ao_program_);
+
+        bgfx::setTransform(identity_mtx_);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setIndexBuffer(&tib);
+        bgfx::setTexture(0, s_ao_raw_, ao_raw_texture_);
+        bgfx::setTexture(1, s_normal_, normal_texture_);
+        bgfx::setTexture(2, s_world_pos_, world_pos_texture_);
+        bgfx::setUniform(u_ao_params_, ao_params_.data());
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        bgfx::submit(ao_blur_view_id_, ao_blur_program_);
+    }
+
     // ===== Lighting Pass =====
     bgfx::setStencil(BGFX_STENCIL_NONE);
     bgfx::setTransform(identity_mtx_);
@@ -325,12 +372,12 @@ void RenderDeferred::render() {
     bgfx::setTexture(3, s_collision_status_, collision_body_texture_);
     bgfx::setTexture(4, s_volume_, collision_volume_texture_);
     bgfx::setTexture(5, s_mesh_stencil_, mesh_stencil_body_texture_);
+    bgfx::setTexture(7, s_ao_, ao_blur_texture_);
     bgfx::setUniform(u_light_dir_, light_dir_.data());
     bgfx::setUniform(u_space_div_, space_div.data());
     bgfx::setUniform(u_space_div_mix_, space_div_mix.data());
     bgfx::setUniform(u_mouse_pos_, mouse_pos_.data());
     bgfx::setUniform(u_mouse_highlight_, mouse_highlight_.data());
-    bgfx::setUniform(u_ao_params_, ao_params_.data());
     bgfx::setUniform(u_pos_hightlight_counts_,
                      pos_hightlight_counts_gpu_.data());
     if (pos_hightlight_counts > 0) {
@@ -397,6 +444,14 @@ void RenderDeferred::release() {
     if (bgfx::isValid(s_mesh_stencil_)) {
         bgfx::destroy(s_mesh_stencil_);
         s_mesh_stencil_ = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_ao_raw_)) {
+        bgfx::destroy(s_ao_raw_);
+        s_ao_raw_ = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_ao_)) {
+        bgfx::destroy(s_ao_);
+        s_ao_ = BGFX_INVALID_HANDLE;
     }
     if (bgfx::isValid(u_ao_params_)) {
         bgfx::destroy(u_ao_params_);
@@ -473,6 +528,14 @@ void RenderDeferred::destroyPrograms() {
         bgfx::destroy(mesh_stencil_program_);
         mesh_stencil_program_ = BGFX_INVALID_HANDLE;
     }
+    if (bgfx::isValid(ao_program_)) {
+        bgfx::destroy(ao_program_);
+        ao_program_ = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(ao_blur_program_)) {
+        bgfx::destroy(ao_blur_program_);
+        ao_blur_program_ = BGFX_INVALID_HANDLE;
+    }
 }
 
 void RenderDeferred::destroyFrameBuffer() {
@@ -491,6 +554,14 @@ void RenderDeferred::destroyFrameBuffer() {
     if (bgfx::isValid(mesh_stencil_fb_)) {
         bgfx::destroy(mesh_stencil_fb_);
         mesh_stencil_fb_ = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(ao_raw_fb_)) {
+        bgfx::destroy(ao_raw_fb_);
+        ao_raw_fb_ = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(ao_blur_fb_)) {
+        bgfx::destroy(ao_blur_fb_);
+        ao_blur_fb_ = BGFX_INVALID_HANDLE;
     }
     if (bgfx::isValid(albedo_texture_)) {
         bgfx::destroy(albedo_texture_);
@@ -513,6 +584,12 @@ void RenderDeferred::destroyFrameBuffer() {
     if (bgfx::isValid(mesh_stencil_body_texture_)) {
         bgfx::destroy(mesh_stencil_body_texture_);
     }
+    if (bgfx::isValid(ao_raw_texture_)) {
+        bgfx::destroy(ao_raw_texture_);
+    }
+    if (bgfx::isValid(ao_blur_texture_)) {
+        bgfx::destroy(ao_blur_texture_);
+    }
     if (bgfx::isValid(depth_texture_)) {
         bgfx::destroy(depth_texture_);
     }
@@ -520,6 +597,8 @@ void RenderDeferred::destroyFrameBuffer() {
     collision_body_texture_ = BGFX_INVALID_HANDLE;
     collision_volume_texture_ = BGFX_INVALID_HANDLE;
     mesh_stencil_body_texture_ = BGFX_INVALID_HANDLE;
+    ao_raw_texture_ = BGFX_INVALID_HANDLE;
+    ao_blur_texture_ = BGFX_INVALID_HANDLE;
     normal_texture_ = BGFX_INVALID_HANDLE;
     world_pos_texture_ = BGFX_INVALID_HANDLE;
     world_pos_pick_texture_ = BGFX_INVALID_HANDLE;
@@ -657,7 +736,8 @@ bool RenderDeferred::ensureFrameBuffer() {
 
     if (bgfx::isValid(gbuffer_) && bgfx::isValid(collision_fb_) &&
         bgfx::isValid(collision_volume_fb_) &&
-        bgfx::isValid(mesh_stencil_fb_) &&
+        bgfx::isValid(mesh_stencil_fb_) && bgfx::isValid(ao_raw_fb_) &&
+        bgfx::isValid(ao_blur_fb_) &&
         width_ == fb_width_ && height_ == fb_height_) {
         return true;
     }
@@ -722,14 +802,35 @@ bool RenderDeferred::ensureFrameBuffer() {
         static_cast<uint8_t>(BX_COUNTOF(mesh_stencil_attachment)),
         mesh_stencil_attachment, false);
 
+    // SSAO 中间纹理：无深度附件的纯颜色 RT
+    ao_raw_texture_ = bgfx::createTexture2D(
+        width_, height_, false, 1, bgfx::TextureFormat::BGRA8, kSamplerFlags);
+    bgfx::TextureHandle ao_raw_attachment[] = {
+        ao_raw_texture_,
+    };
+    ao_raw_fb_ = bgfx::createFrameBuffer(
+        static_cast<uint8_t>(BX_COUNTOF(ao_raw_attachment)),
+        ao_raw_attachment, false);
+
+    ao_blur_texture_ = bgfx::createTexture2D(
+        width_, height_, false, 1, bgfx::TextureFormat::BGRA8, kSamplerFlags);
+    bgfx::TextureHandle ao_blur_attachment[] = {
+        ao_blur_texture_,
+    };
+    ao_blur_fb_ = bgfx::createFrameBuffer(
+        static_cast<uint8_t>(BX_COUNTOF(ao_blur_attachment)),
+        ao_blur_attachment, false);
+
     return bgfx::isValid(gbuffer_) && bgfx::isValid(collision_fb_) &&
            bgfx::isValid(collision_volume_fb_) &&
-           bgfx::isValid(mesh_stencil_fb_);
+           bgfx::isValid(mesh_stencil_fb_) && bgfx::isValid(ao_raw_fb_) &&
+           bgfx::isValid(ao_blur_fb_);
 }
 
 bool RenderDeferred::ensureProgram() {
     if (bgfx::isValid(combine_program_) && bgfx::isValid(collision_program_) &&
-        bgfx::isValid(volume_program_)) {
+        bgfx::isValid(volume_program_) && bgfx::isValid(ao_program_) &&
+        bgfx::isValid(ao_blur_program_)) {
         return true;
     }
 
@@ -754,6 +855,13 @@ bool RenderDeferred::ensureProgram() {
     if (!bgfx::isValid(s_mesh_stencil_)) {
         s_mesh_stencil_ =
             bgfx::createUniform("s_meshStencil", bgfx::UniformType::Sampler);
+    }
+    if (!bgfx::isValid(s_ao_raw_)) {
+        s_ao_raw_ =
+            bgfx::createUniform("s_aoRaw", bgfx::UniformType::Sampler);
+    }
+    if (!bgfx::isValid(s_ao_)) {
+        s_ao_ = bgfx::createUniform("s_ao", bgfx::UniformType::Sampler);
     }
     if (!bgfx::isValid(u_light_dir_)) {
         u_light_dir_ =
@@ -828,11 +936,23 @@ bool RenderDeferred::ensureProgram() {
         deferred_detail::loadShader(shader_dir_ + "vs_mesh_gbuffer.bin");
     bgfx::ShaderHandle fs_mesh_stencil =
         deferred_detail::loadShader(shader_dir_ + "fs_mesh_stencil.bin");
+    bgfx::ShaderHandle fs_ao =
+        deferred_detail::loadShader(shader_dir_ + "fs_ao.bin");
+    bgfx::ShaderHandle fs_ao_blur =
+        deferred_detail::loadShader(shader_dir_ + "fs_ao_blur.bin");
+    // combine/collision 用 createProgram(..., true) 会销毁 vs，AO 两个
+    // program 需要各自独立的 vs 句柄。
+    bgfx::ShaderHandle vs_ao =
+        deferred_detail::loadShader(shader_dir_ + "vs_screen_quad.bin");
+    bgfx::ShaderHandle vs_ao_blur =
+        deferred_detail::loadShader(shader_dir_ + "vs_screen_quad.bin");
 
     if (!bgfx::isValid(vs) || !bgfx::isValid(fs_combine) ||
         !bgfx::isValid(fs_collision) || !bgfx::isValid(vs_volume) ||
         !bgfx::isValid(fs_volume) || !bgfx::isValid(vs_mesh) ||
-        !bgfx::isValid(fs_mesh_stencil)) {
+        !bgfx::isValid(fs_mesh_stencil) || !bgfx::isValid(fs_ao) ||
+        !bgfx::isValid(fs_ao_blur) || !bgfx::isValid(vs_ao) ||
+        !bgfx::isValid(vs_ao_blur)) {
         if (bgfx::isValid(vs)) {
             bgfx::destroy(vs);
         }
@@ -854,6 +974,18 @@ bool RenderDeferred::ensureProgram() {
         if (bgfx::isValid(fs_mesh_stencil)) {
             bgfx::destroy(fs_mesh_stencil);
         }
+        if (bgfx::isValid(fs_ao)) {
+            bgfx::destroy(fs_ao);
+        }
+        if (bgfx::isValid(fs_ao_blur)) {
+            bgfx::destroy(fs_ao_blur);
+        }
+        if (bgfx::isValid(vs_ao)) {
+            bgfx::destroy(vs_ao);
+        }
+        if (bgfx::isValid(vs_ao_blur)) {
+            bgfx::destroy(vs_ao_blur);
+        }
         std::cerr << "RenderDeferred shader load failed from " << shader_dir_
                   << std::endl;
         return false;
@@ -863,9 +995,12 @@ bool RenderDeferred::ensureProgram() {
     collision_program_ = bgfx::createProgram(vs, fs_collision, true);
     volume_program_ = bgfx::createProgram(vs_volume, fs_volume, true);
     mesh_stencil_program_ = bgfx::createProgram(vs_mesh, fs_mesh_stencil, true);
+    ao_program_ = bgfx::createProgram(vs_ao, fs_ao, true);
+    ao_blur_program_ = bgfx::createProgram(vs_ao_blur, fs_ao_blur, true);
 
     return bgfx::isValid(combine_program_) &&
-           bgfx::isValid(collision_program_) && bgfx::isValid(volume_program_);
+           bgfx::isValid(collision_program_) && bgfx::isValid(volume_program_) &&
+           bgfx::isValid(ao_program_) && bgfx::isValid(ao_blur_program_);
 }
 
 }  // namespace sinriv::ui::render
