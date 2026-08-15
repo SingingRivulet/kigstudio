@@ -9,7 +9,9 @@ void main()
 {
     vec3 n = normalize(v_normal) * 0.5 + 0.5;
     gl_FragData[0] = u_baseColor;
-    gl_FragData[1] = vec4(n, 1.0);
+    // normal alpha=0 表示"非钻孔像素"（钻孔用 fs_mesh_gbuffer_drill 写 1.0），
+    // 供 fs_deferred_combine 的钻孔 SSAO 区分。
+    gl_FragData[1] = vec4(n, 0.0);
     gl_FragData[2] = vec4(v_pos, 1.0);
     // 不写 gl_FragData[3]：保留 mouse pick world_pos 通道中已有的下层表面数据，
     // 让 addon 模型在视觉上遮挡，但对鼠标拾取保持透明。

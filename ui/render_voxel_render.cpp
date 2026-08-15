@@ -2432,7 +2432,9 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
             if (drill_picking_active)
                 tool->renderGBuffer(transform, mesh_shader);
             else
-                tool->renderGBufferAddon(transform, mesh_shader);
+                // 钻孔/连接面用 drill 专用 program：normal alpha 写 1.0，
+                // 供延迟合并 pass 做钻孔专用 SSAO（接触阴影）。
+                tool->renderGBufferDrill(transform, mesh_shader);
         }
     }
 

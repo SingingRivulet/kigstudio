@@ -330,6 +330,7 @@ void RenderDeferred::render() {
     bgfx::setUniform(u_space_div_mix_, space_div_mix.data());
     bgfx::setUniform(u_mouse_pos_, mouse_pos_.data());
     bgfx::setUniform(u_mouse_highlight_, mouse_highlight_.data());
+    bgfx::setUniform(u_ao_params_, ao_params_.data());
     bgfx::setUniform(u_pos_hightlight_counts_,
                      pos_hightlight_counts_gpu_.data());
     if (pos_hightlight_counts > 0) {
@@ -396,6 +397,10 @@ void RenderDeferred::release() {
     if (bgfx::isValid(s_mesh_stencil_)) {
         bgfx::destroy(s_mesh_stencil_);
         s_mesh_stencil_ = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(u_ao_params_)) {
+        bgfx::destroy(u_ao_params_);
+        u_ao_params_ = BGFX_INVALID_HANDLE;
     }
     destroyCollisionUniforms();
 }
@@ -803,6 +808,10 @@ bool RenderDeferred::ensureProgram() {
         u_pos_hightlight_color_ = bgfx::createUniform(
             "u_pos_hightlight_color", bgfx::UniformType::Vec4,
             static_cast<uint16_t>(16));
+    }
+    if (!bgfx::isValid(u_ao_params_)) {
+        u_ao_params_ =
+            bgfx::createUniform("u_aoParams", bgfx::UniformType::Vec4);
     }
 
     bgfx::ShaderHandle vs =

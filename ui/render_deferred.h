@@ -251,6 +251,7 @@ namespace sinriv::ui::render {
         bgfx::UniformHandle u_pos_hightlight_counts_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_pos_hightlight_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_pos_hightlight_color_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_ao_params_ = BGFX_INVALID_HANDLE;
         std::array<float, 4> space_div = {1.0f, 0.0f, 0.0f, 0.0f};
         std::array<float, 4> space_div_mix = {1.0f, 0.0f, 0.0f, 0.0f};
         std::array<float, 4> light_dir_ = {0.3f, 0.5f, 0.8f, 0.0f};
@@ -260,6 +261,8 @@ namespace sinriv::ui::render {
         std::array<float, 4> mouse_ori_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 4> mouse_dir_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 2> screen_mouse_pos_ = {0.f, 0.f};
+        // 钻孔 SSAO 参数：x=采样半径(世界单位) y=强度 z=屏幕采样半径(像素) w=开关
+        std::array<float, 4> ao_params_ = {1.5f, 0.8f, 12.0f, 1.0f};
         float scene_view_[16]{};
         float scene_proj_[16]{};
         float scene_model_mtx_[16]{};

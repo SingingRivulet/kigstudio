@@ -110,6 +110,11 @@ namespace sinriv::ui::render {
                 gbuffer_addon_program_ = BGFX_INVALID_HANDLE;
                 std::cout << "RenderMeshShader shader(gbuffer_addon_program_) destroyed" << std::endl;
             }
+            if (bgfx::isValid(gbuffer_drill_program_)) {
+                bgfx::destroy(gbuffer_drill_program_);
+                gbuffer_drill_program_ = BGFX_INVALID_HANDLE;
+                std::cout << "RenderMeshShader shader(gbuffer_drill_program_) destroyed" << std::endl;
+            }
             if (bgfx::isValid(line_program_)) {
                 bgfx::destroy(line_program_);
                 line_program_ = BGFX_INVALID_HANDLE;
@@ -238,6 +243,35 @@ namespace sinriv::ui::render {
             return bgfx::isValid(gbuffer_addon_program_);
         }
 
+        // 钻孔版 GBuffer 程序：与 addon 版行为一致（不写 mouse pick 通道），
+        // 但 normal RT 的 alpha 写 1.0 作为钻孔像素标记，供延迟合并 pass
+        // 做钻孔专用 SSAO（addon_tool_renderers 中的钻孔/连接面使用）。
+        inline bool ensureGBufferDrillProgram() {
+            if (bgfx::isValid(gbuffer_drill_program_)) {
+                return true;
+            }
+            ensureUniforms();
+
+            bgfx::ShaderHandle vs =
+                sinriv::kigstudio::ui::loadShader(shader_dir_ + "vs_mesh_gbuffer.bin");
+            bgfx::ShaderHandle fs = sinriv::kigstudio::ui::loadShader(
+                shader_dir_ + "fs_mesh_gbuffer_drill.bin");
+            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
+                if (bgfx::isValid(vs)) {
+                    bgfx::destroy(vs);
+                }
+                if (bgfx::isValid(fs)) {
+                    bgfx::destroy(fs);
+                }
+                std::cerr << "RenderMesh drill gbuffer shader load failed from "
+                          << shader_dir_ << std::endl;
+                return false;
+            }
+
+            gbuffer_drill_program_ = bgfx::createProgram(vs, fs, true);
+            return bgfx::isValid(gbuffer_drill_program_);
+        }
+
         // Ortho depth-colour program: reuses the GBuffer vertex shader but
         // replaces the fragment shader with one that maps view-space depth to
         // a heatmap colour ramp (blue=near, red=far).
@@ -327,6 +361,7 @@ namespace sinriv::ui::render {
         std::string shader_dir_ = "shader/base/";
         bgfx::ProgramHandle gbuffer_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle gbuffer_addon_program_ = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle gbuffer_drill_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle line_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle ortho_depth_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle ortho_lighting_program_ = BGFX_INVALID_HANDLE;
@@ -593,6 +628,37 @@ namespace sinriv::ui::render {
             }
             bgfx::setState(state);
             bgfx::submit(shader.view_id_, shader.gbuffer_addon_program_);
+        }
+
+        // 钻孔版 GBuffer 渲染：行为与 renderGBufferAddon 相同（不写 mouse
+        // pick 通道），但使用 fs_mesh_gbuffer_drill，在 normal RT alpha 写
+        // 1.0 标记钻孔像素，供延迟合并 pass 做钻孔专用 SSAO。
+        void renderGBufferDrill(const float* transform, RenderMeshShader & shader) {
+            if (!layout_initialized_) {
+                mesh_detail::PosNormalVertex_bgfx::init(layout_);
+                layout_initialized_ = true;
+            }
+
+            if (empty() || !shader.ensureGBufferDrillProgram()) {
+                return;
+            }
+
+            bgfx::setTransform(transform);
+            bgfx::setVertexBuffer(0, mesh_.vbh);
+            bgfx::setIndexBuffer(mesh_.ibh);
+            shader.ensureUniforms();
+            bgfx::setUniform(shader.u_base_color_, base_color_.data());
+            uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                             BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                             BGFX_STATE_MSAA;
+            if (cull_backface) {
+                state |= BGFX_STATE_CULL_CCW;
+            }
+            if (cull_frontface) {
+                state |= BGFX_STATE_CULL_CW;
+            }
+            bgfx::setState(state);
+            bgfx::submit(shader.view_id_, shader.gbuffer_drill_program_);
         }
 
         // Ortho depth-colour render: maps view-space depth to a heatmap.
