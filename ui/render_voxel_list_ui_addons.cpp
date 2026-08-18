@@ -1105,7 +1105,8 @@ void RenderVoxelList::render_object_editor_addons() {
             push_undo_now(item.id, std::nullopt, "Add Hair Strand");
             HairStrand strand;
             strand.uuid = generate_uuid();
-            strand.name = "Strand " + std::to_string(item.hair_strands.size() + 1);
+            strand.name = item.make_unique_strand_name(
+                "Strand " + std::to_string(item.hair_strands.size() + 1));
             strand.expanded = true;
             item.hair_strands.push_back(strand);
             // Auto-enter guide curve drawing mode for the new strand
@@ -1660,7 +1661,8 @@ void RenderVoxelList::render_object_editor_addons() {
                 if (s) {
                     std::string old_uuid = s->uuid;
                     std::string new_uuid_val = generate_uuid();
-                    s->name = rename_buffer;
+                    s->name = item.make_unique_strand_name(rename_buffer,
+                                                           old_uuid);
                     item.rename_strand(old_uuid, new_uuid_val);
                     s->mesh_dirty = true;
                 }

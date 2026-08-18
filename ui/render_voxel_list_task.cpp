@@ -689,6 +689,9 @@ void RenderVoxelList::queue_thread() {
 
                     int total = static_cast<int>(target_ids.size());
                     int success = 0;
+                    // 已使用的输出文件名：多个节点标题相同（发束重名）时，
+                    // 同名文件会互相覆盖导致“静默跳过”，这里记录并去重。
+                    std::unordered_set<std::string> used_filenames;
                     for (int i = 0; i < total; ++i) {
                         if (!queue_should_continue.load() ||
                             !queue_running.load()) {
@@ -864,6 +867,25 @@ void RenderVoxelList::queue_thread() {
                                             filename = "node_" +
                                                         std::to_string(id) +
                                                         ".stl";
+                                    }
+                                    // 去重：文件名已存在时追加 " (n)"，避免
+                                    // 同名发束的子节点互相覆盖（静默跳过）。
+                                    {
+                                        const std::string base = filename;
+                                        std::string stem =
+                                            base.size() > 4 ? base.substr(
+                                                  0, base.size() - 4)
+                                                          : base;
+                                        std::string candidate = filename;
+                                        int dup_idx = 2;
+                                        while (!used_filenames.insert(candidate)
+                                                   .second) {
+                                            candidate =
+                                                stem + " (" +
+                                                std::to_string(dup_idx++) +
+                                                ").stl";
+                                        }
+                                        filename = candidate;
                                     }
                                     std::filesystem::path filepath =
                                         export_dir / filename;

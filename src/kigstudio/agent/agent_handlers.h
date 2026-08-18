@@ -1122,10 +1122,10 @@ inline cJSON* h_strand_create(cJSON* params, List& list) {
 	HairStrand strand;
 	strand.uuid = generate_uuid();
 	if (name && name[0]) {
-		strand.name = name;
+		strand.name = item->make_unique_strand_name(name);
 	} else {
-		strand.name =
-		    "Strand " + std::to_string(item->hair_strands.size() + 1);
+		strand.name = item->make_unique_strand_name(
+		    "Strand " + std::to_string(item->hair_strands.size() + 1));
 	}
 	strand.expanded = true;
 	item->hair_strands.push_back(std::move(strand));
@@ -1187,7 +1187,8 @@ inline cJSON* h_strand_update(cJSON* params, List& list) {
 
 	// Apply updatable fields
 	if (cJSON_HasObjectItem(params, "name")) {
-		strand->name = json_str(params, "name", "");
+		strand->name = item->make_unique_strand_name(
+		    json_str(params, "name", ""), strand->uuid);
 	}
 	if (cJSON_HasObjectItem(params, "section_rotation")) {
 		strand->section_rotation =
@@ -1605,9 +1606,10 @@ inline cJSON* h_strand_create_2d(cJSON* params, List& list) {
 		HairStrand s;
 		s.uuid = generate_uuid();
 		if (name && name[0])
-			s.name = name;
+			s.name = item->make_unique_strand_name(name);
 		else
-			s.name = "Strand " + std::to_string(item->hair_strands.size() + 1);
+			s.name = item->make_unique_strand_name(
+			    "Strand " + std::to_string(item->hair_strands.size() + 1));
 		s.expanded = true;
 		item->hair_strands.push_back(std::move(s));
 		actual_index = static_cast<int>(item->hair_strands.size() - 1);
@@ -1703,7 +1705,7 @@ inline cJSON* h_strand_rename(cJSON* params, List& list) {
 
 	// Update name if provided
 	if (new_name && new_name[0]) {
-		strand->name = new_name;
+		strand->name = item->make_unique_strand_name(new_name, strand_uuid);
 	}
 
 	// Generate or use provided new UUID

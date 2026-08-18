@@ -677,11 +677,16 @@ void RenderVoxelList::render_nav_map() {
 
                     char label_buf[256];
                     if (node->title.empty()) {
+                        // "label.node" contains a %d placeholder filled with nid,
+                        // so the visible text is already unique (no ## suffix needed).
                         snprintf(label_buf, sizeof(label_buf),
                                  get_locale_cstr("label.node"), nid);
                     } else {
-                        snprintf(label_buf, sizeof(label_buf), "%s",
-                                 node->title.c_str());
+                        // Append a unique ## id so duplicate titles (e.g. two
+                        // child nodes sharing a strand name) don't collide on
+                        // ImGui's Selectable ID and become unclickable.
+                        snprintf(label_buf, sizeof(label_buf), "%s##node_%d",
+                                 node->title.c_str(), nid);
                     }
 
                     float label_width = ImGui::GetContentRegionAvail().x -

@@ -865,6 +865,28 @@ class RenderVoxelList {
                 active_perpoint_section_edit_strand = new_uuid;
         }
 
+        /// Return a strand name that is unique among this item's strands.
+        /// If `base` collides with an existing strand (other than the optional
+        /// `exclude_uuid`), appends " (2)", " (3)", ... until it does not.
+        /// Strand names must be unique because child nodes produced by 更新碰撞
+        /// are titled after them (driving STL export filenames and node lists).
+        std::string make_unique_strand_name(
+            const std::string& base,
+            const std::string& exclude_uuid = "") const {
+            std::string root = base.empty() ? "Strand" : base;
+            auto name_taken = [&](const std::string& n) {
+                for (const auto& s : hair_strands)
+                    if (s.uuid != exclude_uuid && s.name == n)
+                        return true;
+                return false;
+            };
+            if (!name_taken(root)) return root;
+            for (int i = 2;; ++i) {
+                std::string c = root + " (" + std::to_string(i) + ")";
+                if (!name_taken(c)) return c;
+            }
+        }
+
         // 当前正在绘制引导曲线的发束 UUID（空=无）
         std::string active_guide_draw_strand;   // empty = none
         bool guide_curve_drawing_active = false;
