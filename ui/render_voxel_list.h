@@ -146,12 +146,22 @@ enum class HairStrandGenType : int {
     BRAID = 2,            // 麻花辫：核心 + 编织股 + 关节 + 桃形尖端
 };
 
+// 发束列表顶层条目：组与未分组发束在同一层级混合排序。
+// is_group=true 时 key 为组名（见 RenderVoxelItem::strand_groups），
+// false 时 key 为未分组发束的 uuid。
+struct StrandTopEntry {
+    bool is_group = false;
+    std::string key;
+};
+
 // 一根发束
 struct HairStrand {
     std::string name;
     /// Stable unique identifier (12 hex chars), generated at creation.
     /// Used as the key in addon_renderers map and for active strand tracking.
     std::string uuid;
+    /// 所属分组名（空 = 未分组）。分组名存于 RenderVoxelItem::strand_groups。
+    std::string group;
     // 引导曲线上的拾取点（世界坐标）
     std::vector<sinriv::kigstudio::voxel::vec3f> guide_points;
 
@@ -612,6 +622,10 @@ struct CollisionEditorSnapshot {
     bool show_connection_faces = false;
     // 显示背面：剔除发束正面，仅显示内侧，便于透过发束观察连接面
     bool show_back_face = false;
+    // 发束分组名列表（有序，空组也保留）
+    std::vector<std::string> strand_groups;
+    // 发束列表顶层顺序（组与未分组发束混合）
+    std::vector<StrandTopEntry> strand_top_order;
 };
 
 struct MarkedVoxelsSnapshot {
@@ -826,9 +840,108 @@ class RenderVoxelList {
         void apply_hairline_spindle();
         // 毛发数据
         std::vector<HairStrand> hair_strands;
-        // 拆分时每个结果子节点对应的发束索引（与 do_segment_addon 结果顺序一致，
-        // 供 do_segment 生成子节点标题）。仅 addon_split 时有意义，运行时临时数据。
-        std::vector<int> split_strand_indices;
+        // 发束分组名列表（有序，空组也保留；发束通过 HairStrand::group 引用）
+        std::vector<std::string> strand_groups;
+        // 发束列表顶层顺序：组与未分组发束在同一层级混合排序。
+        // 布尔计算（do_segment_addon）按此顺序以组/单发束为基本单元处理。
+        std::vector<StrandTopEntry> strand_top_order;
+
+        /// 清理 strand_top_order：移除失效条目（已删除的组/发束、已入组的
+        /// 发束），并把缺失的组（按 strand_groups 顺序）与未分组发束
+        /// （按 hair_strands 顺序）追加到末尾。幂等，可随时调用。
+        void reconcile_strand_top_order() {
+            std::vector<StrandTopEntry> cleaned;
+            auto seen = [&](bool g, const std::string& k) {
+                for (const auto& e : cleaned)
+                    if (e.is_group == g && e.key == k) return true;
+                return false;
+            };
+            auto group_valid = [&](const std::string& n) {
+                for (const auto& g : strand_groups)
+                    if (g == n) return true;
+                return false;
+            };
+            for (const auto& e : strand_top_order) {
+                if (e.is_group) {
+                    if (group_valid(e.key) && !seen(true, e.key))
+                        cleaned.push_back(e);
+                } else {
+                    const auto* s = find_strand_by_uuid(e.key);
+                    if (s && (s->group.empty() || !group_valid(s->group)) &&
+                        !seen(false, e.key))
+                        cleaned.push_back(e);
+                }
+            }
+            for (const auto& g : strand_groups)
+                if (!seen(true, g)) cleaned.push_back({true, g});
+            for (const auto& s : hair_strands)
+                if ((s.group.empty() || !group_valid(s.group)) &&
+                    !seen(false, s.uuid))
+                    cleaned.push_back({false, s.uuid});
+            strand_top_order = std::move(cleaned);
+        }
+
+        /// 布尔计算单元：一个组（组内发束先求并集）或一根未分组发束。
+        struct StrandUnitInfo {
+            std::string title;                // 组名或发束名（用于子节点标题）
+            std::vector<int> strand_indices;  // 组内发束在 hair_strands 中的索引
+        };
+        /// 按顶层顺序构建计算单元列表（只读，不修改成员）。
+        std::vector<StrandUnitInfo> build_strand_units() const {
+            // 与 reconcile_strand_top_order 相同的顺序，但不落盘
+            std::vector<StrandTopEntry> order;
+            auto seen = [&](bool g, const std::string& k) {
+                for (const auto& e : order)
+                    if (e.is_group == g && e.key == k) return true;
+                return false;
+            };
+            auto group_valid = [&](const std::string& n) {
+                for (const auto& g : strand_groups)
+                    if (g == n) return true;
+                return false;
+            };
+            for (const auto& e : strand_top_order) {
+                if (e.is_group) {
+                    if (group_valid(e.key) && !seen(true, e.key))
+                        order.push_back(e);
+                } else {
+                    const auto* s = find_strand_by_uuid(e.key);
+                    if (s && (s->group.empty() || !group_valid(s->group)) &&
+                        !seen(false, e.key))
+                        order.push_back(e);
+                }
+            }
+            for (const auto& g : strand_groups)
+                if (!seen(true, g)) order.push_back({true, g});
+            for (const auto& s : hair_strands)
+                if ((s.group.empty() || !group_valid(s.group)) &&
+                    !seen(false, s.uuid))
+                    order.push_back({false, s.uuid});
+
+            std::vector<StrandUnitInfo> units;
+            for (const auto& e : order) {
+                StrandUnitInfo u;
+                if (e.is_group) {
+                    u.title = e.key;
+                    for (size_t i = 0; i < hair_strands.size(); ++i)
+                        if (hair_strands[i].group == e.key)
+                            u.strand_indices.push_back(static_cast<int>(i));
+                    if (u.strand_indices.empty()) continue;  // 空组不参与计算
+                } else {
+                    const auto* s = find_strand_by_uuid(e.key);
+                    if (!s) continue;
+                    u.title = s->name;
+                    u.strand_indices.push_back(static_cast<int>(
+                        s - hair_strands.data()));
+                }
+                units.push_back(std::move(u));
+            }
+            return units;
+        }
+        // 拆分时每个结果子节点对应的计算单元标题（与 do_segment_addon 结果
+        // 顺序一致，供 do_segment 生成子节点标题）。仅 addon_split 时有意义，
+        // 运行时临时数据。
+        std::vector<std::string> split_unit_titles;
 
         /// Find a strand by UUID (O(n) linear search). Returns nullptr if not found.
         HairStrand* find_strand_by_uuid(const std::string& id) {
@@ -849,6 +962,8 @@ class RenderVoxelList {
             auto* s = find_strand_by_uuid(old_uuid);
             if (!s) return;
             s->uuid = new_uuid;
+            for (auto& e : strand_top_order)
+                if (!e.is_group && e.key == old_uuid) e.key = new_uuid;
             auto it = addon_renderers.find(old_uuid);
             if (it != addon_renderers.end()) {
                 auto node = addon_renderers.extract(it);
@@ -878,6 +993,21 @@ class RenderVoxelList {
                 for (const auto& s : hair_strands)
                     if (s.uuid != exclude_uuid && s.name == n)
                         return true;
+                return false;
+            };
+            if (!name_taken(root)) return root;
+            for (int i = 2;; ++i) {
+                std::string c = root + " (" + std::to_string(i) + ")";
+                if (!name_taken(c)) return c;
+            }
+        }
+
+        /// Return a group name that is unique among this item's strand groups.
+        std::string make_unique_group_name(const std::string& base) const {
+            std::string root = base.empty() ? "Group" : base;
+            auto name_taken = [&](const std::string& n) {
+                for (const auto& g : strand_groups)
+                    if (g == n) return true;
                 return false;
             };
             if (!name_taken(root)) return root;
@@ -1350,6 +1480,12 @@ class RenderVoxelList {
     // Strand rename popup state
     std::string pending_rename_strand_uuid;
     char rename_buffer[256] = {};
+    // Strand group rename popup state
+    std::string pending_rename_group;
+    char group_rename_buffer[256] = {};
+    // 发束多选状态（运行时数据，不序列化）
+    std::vector<std::string> selected_strand_uuids;
+    std::string strand_sel_anchor;  // Shift 范围选择的锚点 uuid
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_hairline_plane_window();

@@ -1846,11 +1846,64 @@ RenderVoxelList::RenderVoxelItem::do_segment_addon() {
     // 钻孔圆管（拆分/非拆分、几何/SDF 模式都先减去）
     const auto drill_meshes = build_drill_tool_meshes();
 
+    // 计算单元：一个组（组内发束先求并集）或一根未分组发束。
+    // 后续减底模、互减、钻孔均以单元为基本单位。
+    const auto units = build_strand_units();
+    // 单元标题（组名或发束名；无名发束退回“发束 N”）
+    auto unit_title = [&](size_t u) -> std::string {
+        if (!units[u].title.empty()) return units[u].title;
+        char buf[64];
+        std::snprintf(buf, sizeof(buf),
+                      get_locale_cstr("label.hair_strand"),
+                      units[u].strand_indices[0] + 1);
+        return buf;
+    };
+    // 单元网格：组内发束先用 CGAL 并集合成一个整体（并集失败时退回
+    // 三角形直接拼接），单发束单元直接复用其 loft 网格
+    auto build_unit_tris =
+        [&](const std::vector<std::vector<Tri>>& cached_strand_tris) {
+            std::vector<std::vector<Tri>> out(units.size());
+            for (size_t u = 0; u < units.size(); ++u) {
+                const auto& idxs = units[u].strand_indices;
+                if (idxs.size() == 1) {
+                    out[u] = cached_strand_tris[idxs[0]];
+                    continue;
+                }
+                std::vector<Tri> soup;
+                kcgal::MeshData acc;
+                bool acc_valid = false;
+                for (int si : idxs) {
+                    const auto& tris = cached_strand_tris[si];
+                    if (tris.empty()) continue;
+                    soup.insert(soup.end(), tris.begin(), tris.end());
+                    if (!acc_valid) {
+                        acc = to_mesh_data(tris);
+                        acc_valid = true;
+                    } else {
+                        auto uni =
+                            kcgal::mesh_union(acc, to_mesh_data(tris));
+                        if (!uni.empty()) {
+                            acc = std::move(uni);
+                        } else {
+                            std::cerr
+                                << "[do_segment] union failed in group \""
+                                << units[u].title
+                                << "\", falling back to triangle soup.\n";
+                            acc_valid = false;
+                            acc.clear();
+                        }
+                    }
+                }
+                out[u] = acc_valid ? strip_tris(acc) : std::move(soup);
+            }
+            return out;
+        };
+
     if (addon_split) {
-        // Each strand becomes an independent child node
+        // 每个计算单元（组或单根未分组发束）生成一个独立子节点
         ResultT result;
-        // 记录每个结果对应的发束索引，供调用方生成子节点标题
-        split_strand_indices.clear();
+        // 记录每个结果对应的单元标题，供调用方生成子节点标题
+        split_unit_titles.clear();
 
         // Pre-build all strand loft triangles once so each strand mesh
         // is only constructed one time, not O(n) times in the inner
@@ -1870,12 +1923,16 @@ RenderVoxelList::RenderVoxelItem::do_segment_addon() {
             cached_strand_tris[k] = build_strand_loft_triangles(k);
         }
 
-        for (int i = 0; i < n_strands; ++i) {
+        // 组内发束求并集，得到每个单元的整体网格
+        const auto cached_unit_tris = build_unit_tris(cached_strand_tris);
+        const int n_units = static_cast<int>(units.size());
+
+        for (int i = 0; i < n_units; ++i) {
             if (stop_requested()) return cancelled_result();
-            report_progress(0.1f + 0.6f * (static_cast<float>(i) / n_strands),
+            report_progress(0.1f + 0.6f * (static_cast<float>(i) / n_units),
                             fmt2(get_locale_string("status.segmenting.strand"),
-                                 i + 1, n_strands));
-            auto strand_tris = cached_strand_tris[i];
+                                 i + 1, n_units));
+            auto strand_tris = cached_unit_tris[i];
             if (strand_tris.empty()) continue;
 
             sinriv::kigstudio::voxel::VoxelGrid dummy_grid;
@@ -1896,24 +1953,24 @@ RenderVoxelList::RenderVoxelItem::do_segment_addon() {
                 }
             }
 
-            // 几何拆分：发束之间用几何布尔相减
+            // 几何拆分：单元之间用几何布尔相减
             if (geo_split) {
                 auto m = to_mesh_data(strand_tris);
-                const int total_ops = n_strands * (n_strands - 1) / 2;
+                const int total_ops = n_units * (n_units - 1) / 2;
                 static int op_count = 0;
                 for (int j = 0; j < i; ++j) {
-                    const auto& prev_tris = cached_strand_tris[j];
+                    const auto& prev_tris = cached_unit_tris[j];
                     if (prev_tris.empty()) continue;
                     if (stop_requested()) return cancelled_result();
                     report_progress(
-                        0.1f + 0.6f * (static_cast<float>(i) / n_strands) +
-                            0.6f / n_strands *
+                        0.1f + 0.6f * (static_cast<float>(i) / n_units) +
+                            0.6f / n_units *
                                 (static_cast<float>(j + 1) / (i + 1)),
                         fmt2(get_locale_string("status.segmenting.subtract"),
                              i + 1, j + 1));
                     ++op_count;
                     std::cerr << "[do_segment] boolean " << op_count
-                              << "/" << total_ops << " (strand "
+                              << "/" << total_ops << " (unit "
                               << (i + 1) << " - " << (j + 1) << ")\n";
                     try {
                         auto diffed = kcgal::mesh_difference(
@@ -1961,7 +2018,7 @@ RenderVoxelList::RenderVoxelItem::do_segment_addon() {
                 // 纯几何路径：子节点直接渲染三角形网格
                 result.emplace_back(std::move(dummy_grid), nullptr,
                                     std::move(strand_tris));
-                split_strand_indices.push_back(i);
+                split_unit_titles.push_back(unit_title(i));
                 continue;
             }
 
@@ -1973,14 +2030,14 @@ RenderVoxelList::RenderVoxelItem::do_segment_addon() {
             SDFBasePtr final_sdf = strand_sdf;
 
             if (sdf_split_needed) {
-                // Subtract all preceding strands (0..i-1)
+                // Subtract all preceding units (0..i-1)
                 for (int j = 0; j < i; ++j) {
-                    const auto& prev_tris = cached_strand_tris[j];
+                    const auto& prev_tris = cached_unit_tris[j];
                     if (prev_tris.empty()) continue;
                     if (stop_requested()) return cancelled_result();
                     report_progress(
-                        0.1f + 0.6f * (static_cast<float>(i) / n_strands) +
-                            0.6f / n_strands *
+                        0.1f + 0.6f * (static_cast<float>(i) / n_units) +
+                            0.6f / n_units *
                                 (static_cast<float>(j + 1) / (i + 1)),
                         fmt2(get_locale_string("status.segmenting.subtract"),
                              i + 1, j + 1));
@@ -1999,7 +2056,7 @@ RenderVoxelList::RenderVoxelItem::do_segment_addon() {
             result.emplace_back(std::move(dummy_grid),
                                 std::move(final_sdf),
                                 std::vector<Tri>{});
-            split_strand_indices.push_back(i);
+            split_unit_titles.push_back(unit_title(i));
         }
         if (result.empty()) {
             return {{voxel_grid_data, nullptr, {}}};
@@ -2007,52 +2064,56 @@ RenderVoxelList::RenderVoxelItem::do_segment_addon() {
         return result;
     } else {
         if (geo_reveal) {
-            // 纯几何路径：复用拆分流程（减底模→发束间互减→减钻孔→补洞），
-            // 最后把所有发束的三角形直接拼接为一个节点。
-            // 互减产生的切削面与被切发束表面重合（零厚度双面墙），
-            // 切片器可能仍报非流形边，但发束体积不再互相穿插。
+            // 纯几何路径：复用拆分流程（组内并集→减底模→单元间互减→
+            // 减钻孔→补洞），最后把所有单元的三角形直接拼接为一个节点。
+            // 互减产生的切削面与被切单元表面重合（零厚度双面墙），
+            // 切片器可能仍报非流形边，但单元体积不再互相穿插。
             const int n_strands = static_cast<int>(hair_strands.size());
             std::vector<decltype(build_strand_loft_triangles(0))>
                 cached_strand_tris(n_strands);
             for (int k = 0; k < n_strands; ++k) {
                 cached_strand_tris[k] = build_strand_loft_triangles(k);
             }
+            // 组内发束求并集，得到每个单元的整体网格
+            const auto cached_unit_tris =
+                build_unit_tris(cached_strand_tris);
+            const int n_units = static_cast<int>(units.size());
 
             kcgal::MeshData merged;
-            const int total_ops = n_strands * (n_strands - 1) / 2;
+            const int total_ops = n_units * (n_units - 1) / 2;
             int op_count = 0;
-            for (int i = 0; i < n_strands; ++i) {
+            for (int i = 0; i < n_units; ++i) {
                 if (stop_requested()) return cancelled_result();
-                report_progress(0.1f + 0.6f * (static_cast<float>(i) / n_strands),
+                report_progress(0.1f + 0.6f * (static_cast<float>(i) / n_units),
                                 fmt2(get_locale_string("status.segmenting.strand"),
-                                     i + 1, n_strands));
-                if (cached_strand_tris[i].empty()) continue;
-                auto m = to_mesh_data(cached_strand_tris[i]);
-                // 显露：从发束网格中减去底模
+                                     i + 1, n_units));
+                if (cached_unit_tris[i].empty()) continue;
+                auto m = to_mesh_data(cached_unit_tris[i]);
+                // 显露：从单元网格中减去底模
                 auto diffed = kcgal::mesh_difference(
                     m, base_mesh, /*allow_alpha_wrap=*/false);
                 if (!diffed.empty()) {
                     m = std::move(diffed);
                 } else {
                     std::cerr << "[do_segment] geometry reveal failed for"
-                              << " strand " << i
+                              << " unit " << i
                               << ", keeping original mesh.\n";
                 }
-                // 发束间互减：第 i 根减去 0..i-1 根（与拆分路径一致，
-                // 切削体用缓存的原始发束网格）
+                // 单元间互减：第 i 个单元减去 0..i-1 个单元（与拆分路径
+                // 一致，切削体用缓存的原始单元网格）
                 for (int j = 0; j < i; ++j) {
-                    const auto& prev_tris = cached_strand_tris[j];
+                    const auto& prev_tris = cached_unit_tris[j];
                     if (prev_tris.empty()) continue;
                     if (stop_requested()) return cancelled_result();
                     report_progress(
-                        0.1f + 0.6f * (static_cast<float>(i) / n_strands) +
-                            0.6f / n_strands *
+                        0.1f + 0.6f * (static_cast<float>(i) / n_units) +
+                            0.6f / n_units *
                                 (static_cast<float>(j + 1) / (i + 1)),
                         fmt2(get_locale_string("status.segmenting.subtract"),
                              i + 1, j + 1));
                     ++op_count;
                     std::cerr << "[do_segment] boolean " << op_count
-                              << "/" << total_ops << " (strand "
+                              << "/" << total_ops << " (unit "
                               << (i + 1) << " - " << (j + 1) << ")\n";
                     try {
                         auto cut = kcgal::mesh_difference(

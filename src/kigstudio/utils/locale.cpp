@@ -1323,6 +1323,41 @@ void init_locale_strings() {
     add_locale_string("label.hair_strands",
                       {{"en", "Hair Strands"}, {"zh", "发束列表"}});
 
+    // ---- 发束分组 ----
+    add_locale_string("action.add_strand_group",
+                      {{"en", "Add Group"}, {"zh", "新增组"}});
+    add_locale_string("tooltip.add_strand_group",
+                      {{"en", "Create a new strand group; move strands into it via "
+                              "the strand's \"...\" menu"},
+                       {"zh", "新建一个发束分组；在发束的“...”菜单中选择“移动到组”将其收归组内"}});
+    add_locale_string("label.default_group_name",
+                      {{"en", "Group"}, {"zh", "组"}});
+    add_locale_string("menu.move_to_group",
+                      {{"en", "Move to Group"}, {"zh", "移动到组"}});
+    add_locale_string("label.ungrouped",
+                      {{"en", "Ungrouped"}, {"zh", "未分组"}});
+    add_locale_string("action.rename_group",
+                      {{"en", "Rename Group..."}, {"zh", "重命名组..."}});
+    add_locale_string("action.delete_group",
+                      {{"en", "Delete Group"}, {"zh", "删除组"}});
+    add_locale_string("label.rename_group_prompt",
+                      {{"en", "Enter new name for this group:"},
+                       {"zh", "输入此分组的新名称："}});
+    add_locale_string("tooltip.group_node",
+                      {{"en", "Right-click for group actions"},
+                       {"zh", "右键打开分组操作菜单"}});
+    add_locale_string("tooltip.rename_group",
+                      {{"en", "Rename this group"},
+                       {"zh", "重命名此分组"}});
+    add_locale_string("tooltip.delete_group",
+                      {{"en", "Delete the group; strands in it become ungrouped"},
+                       {"zh", "删除分组，组内发束变为未分组"}});
+    add_locale_string("label.drag_move_strands",
+                      {{"en", "Move %d strand(s)"}, {"zh", "移动 %d 根发束"}});
+    add_locale_string("label.drop_to_ungroup",
+                      {{"en", "(Drop here to remove from group)"},
+                       {"zh", "（拖到此处移出分组）"}});
+
     // ---- 发根编辑模式 ----
     add_locale_string("action.hair_root_edit",
                       {{"en", "Hair Root Edit"}, {"zh", "发根编辑"}});

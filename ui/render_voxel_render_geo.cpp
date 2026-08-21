@@ -863,21 +863,12 @@ std::vector<RenderVoxelList::RenderVoxelItem*> RenderVoxelList::do_segment(
         new_item->voxel_grid_data = std::move(std::get<0>(results[i]));
         new_item->sdf_data = std::get<1>(results[i]);
         new_item->thumbnail_dirty = true;
-        // 发束类模型拆分：为每个子节点设置标题（发束名称，否则"发束 N"）
+        // 发束类模型拆分：为每个子节点设置标题（单元名：组名或发束名）
         if (it->second->source_type == 2 && it->second->addon_split &&
-            i < it->second->split_strand_indices.size()) {
-            int si = it->second->split_strand_indices[i];
-            if (si >= 0 &&
-                si < static_cast<int>(it->second->hair_strands.size())) {
-                const auto& strand = it->second->hair_strands[si];
-                if (!strand.name.empty()) {
-                    new_item->title = strand.name;
-                } else {
-                    char buf[64];
-                    snprintf(buf, sizeof(buf),
-                             get_locale_cstr("label.hair_strand"), si + 1);
-                    new_item->title = buf;
-                }
+            i < it->second->split_unit_titles.size()) {
+            const auto& unit_title = it->second->split_unit_titles[i];
+            if (!unit_title.empty()) {
+                new_item->title = unit_title;
             }
         }
         if (child_snapshots[i].has_value()) {

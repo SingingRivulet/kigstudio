@@ -80,6 +80,8 @@ cJSON* hair_strand_to_json(const HairStrand& strand) {
     cJSON* s_obj = cJSON_CreateObject();
     cJSON_AddStringToObject(s_obj, "name", strand.name.c_str());
     cJSON_AddStringToObject(s_obj, "uuid", strand.uuid.c_str());
+    if (!strand.group.empty())
+        cJSON_AddStringToObject(s_obj, "group", strand.group.c_str());
     cJSON_AddBoolToObject(s_obj, "expanded", strand.expanded);
     cJSON_AddBoolToObject(s_obj, "visible", strand.visible);
     cJSON_AddBoolToObject(s_obj, "hair_root_enabled", strand.hair_root_enabled);
@@ -166,6 +168,9 @@ HairStrand hair_strand_from_json(const cJSON* s_obj) {
         strand.uuid = uuid_obj->valuestring;
     else
         strand.uuid = generate_uuid();  // backward compat: old project files
+    cJSON* group_obj = cJSON_GetObjectItem(s_obj, "group");
+    if (group_obj && cJSON_IsString(group_obj))
+        strand.group = group_obj->valuestring;
     cJSON* exp_obj = cJSON_GetObjectItem(s_obj, "expanded");
     if (exp_obj)
         strand.expanded = exp_obj->valueint != 0;
@@ -606,6 +611,26 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
             cJSON_AddItemToArray(strands_arr, hair_strand_to_json(strand));
         }
         cJSON_AddItemToObject(obj, "hair_strands", strands_arr);
+    }
+    // hair strand groups (ordered, empty groups preserved)
+    if (!item.strand_groups.empty()) {
+        cJSON* groups_arr = cJSON_CreateArray();
+        for (const auto& g : item.strand_groups)
+            cJSON_AddItemToArray(groups_arr, cJSON_CreateString(g.c_str()));
+        cJSON_AddItemToObject(obj, "strand_groups", groups_arr);
+    }
+    // strand list top-level order (groups and ungrouped strands interleaved)
+    if (!item.strand_top_order.empty()) {
+        cJSON* ord_arr = cJSON_CreateArray();
+        for (const auto& e : item.strand_top_order) {
+            cJSON* e_obj = cJSON_CreateObject();
+            if (e.is_group)
+                cJSON_AddStringToObject(e_obj, "group", e.key.c_str());
+            else
+                cJSON_AddStringToObject(e_obj, "strand", e.key.c_str());
+            cJSON_AddItemToArray(ord_arr, e_obj);
+        }
+        cJSON_AddItemToObject(obj, "strand_top_order", ord_arr);
     }
     cJSON_AddNumberToObject(obj, "node_source_data_type",
                             item.node_source_data_type);
@@ -1157,6 +1182,32 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                     item->hair_strands.push_back(hair_strand_from_json(
                         cJSON_GetArrayItem(child, si)));
                 }
+            } else if (strcmp(key, "strand_groups") == 0) {
+                item->strand_groups.clear();
+                int group_count = cJSON_GetArraySize(child);
+                for (int gi = 0; gi < group_count; ++gi) {
+                    cJSON* g_obj = cJSON_GetArrayItem(child, gi);
+                    if (g_obj && cJSON_IsString(g_obj) &&
+                        g_obj->valuestring[0])
+                        item->strand_groups.push_back(g_obj->valuestring);
+                }
+            } else if (strcmp(key, "strand_top_order") == 0) {
+                item->strand_top_order.clear();
+                int ord_count = cJSON_GetArraySize(child);
+                for (int oi = 0; oi < ord_count; ++oi) {
+                    cJSON* e_obj = cJSON_GetArrayItem(child, oi);
+                    if (!e_obj || !cJSON_IsObject(e_obj)) continue;
+                    cJSON* g_key = cJSON_GetObjectItem(e_obj, "group");
+                    cJSON* s_key = cJSON_GetObjectItem(e_obj, "strand");
+                    if (g_key && cJSON_IsString(g_key) &&
+                        g_key->valuestring[0])
+                        item->strand_top_order.push_back(
+                            {true, g_key->valuestring});
+                    else if (s_key && cJSON_IsString(s_key) &&
+                             s_key->valuestring[0])
+                        item->strand_top_order.push_back(
+                            {false, s_key->valuestring});
+                }
             } else if (strcmp(key, "hair_angle_config") == 0) {
                 item->hair_angle_config.clear();
                 int ac_n = cJSON_GetArraySize(child);
@@ -1238,6 +1289,17 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
     item->nav_layout_vel[1] = 0.0f;
     item->nav_layout_pinned = false;
     item->nav_layout_pos_set = true;
+
+    // 一致性：发束引用但不在列表中的组名补进 strand_groups
+    for (const auto& s : item->hair_strands) {
+        if (s.group.empty()) continue;
+        bool found = false;
+        for (const auto& g : item->strand_groups)
+            if (g == s.group) { found = true; break; }
+        if (!found) item->strand_groups.push_back(s.group);
+    }
+    // 一致性：清理/补齐顶层顺序表
+    item->reconcile_strand_top_order();
 
     return item;
 }

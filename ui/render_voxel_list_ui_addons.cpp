@@ -1118,6 +1118,16 @@ void RenderVoxelList::render_object_editor_addons() {
         }
 
         ImGui::SameLine();
+        // 新增组按钮
+        if (ImGui::Button(get_locale_cstr("action.add_strand_group"))) {
+            push_undo_now(item.id, std::nullopt, "Add Strand Group");
+            item.strand_groups.push_back(item.make_unique_group_name(
+                get_locale_cstr("label.default_group_name")));
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.add_strand_group"));
+
+        ImGui::SameLine();
         if (ImGui::Button(get_locale_cstr("action.ortho_projection"))) {
             show_ortho_setup_window = true;
             ortho_state.viewport_size_defaulted = false;
@@ -1127,10 +1137,37 @@ void RenderVoxelList::render_object_editor_addons() {
 
         ImGui::Separator();
 
-        // 发束列表
+        // 发束列表（树状：组与未分组发束同级，按 strand_top_order 排序）
         int delete_idx = -1;
+        int delete_group_idx = -1;
         item.hovered_strand_uuid.clear();  // reset hover highlight each frame
-        for (size_t i = 0; i < item.hair_strands.size(); ++i) {
+        // 清理失效条目、把新组/新发束补进顶层顺序
+        item.reconcile_strand_top_order();
+        // 清理多选中的失效 uuid
+        selected_strand_uuids.erase(
+            std::remove_if(selected_strand_uuids.begin(),
+                           selected_strand_uuids.end(),
+                           [&](const std::string& u) {
+                               return item.find_strand_by_uuid(u) == nullptr;
+                           }),
+            selected_strand_uuids.end());
+        if (!strand_sel_anchor.empty() &&
+            !item.find_strand_by_uuid(strand_sel_anchor))
+            strand_sel_anchor.clear();
+        // 可见发束顺序（按顶层顺序遍历，组内成员跟随组），用于 Shift 范围选择
+        std::vector<std::string> visible_strand_order;
+        for (const auto& e : item.strand_top_order) {
+            if (e.is_group) {
+                for (const auto& s : item.hair_strands)
+                    if (s.group == e.key)
+                        visible_strand_order.push_back(s.uuid);
+            } else {
+                visible_strand_order.push_back(e.key);
+            }
+        }
+
+        // 渲染单个发束条目（组内与顶层共用）
+        auto render_strand_entry = [&](size_t i) {
             auto& strand = item.hair_strands[i];
             ImGui::PushID(static_cast<int>(i));
             bool strand_hovered = false;
@@ -1144,12 +1181,71 @@ void RenderVoxelList::render_object_editor_addons() {
                          get_locale_cstr("label.hair_strand"),
                          static_cast<int>(i + 1));
             }
-            int header_flags = ImGuiTreeNodeFlags_AllowOverlap;
-            if (strand.expanded)
-                header_flags |= ImGuiTreeNodeFlags_DefaultOpen;
-            bool expanded = ImGui::CollapsingHeader(header_label, header_flags);
-            strand.expanded = expanded;
+            // 多选状态
+            bool is_selected = false;
+            for (const auto& u : selected_strand_uuids)
+                if (u == strand.uuid) { is_selected = true; break; }
+
+            // OpenOnArrow：点击文本只做选择，不触发展开/折叠
+            int header_flags = ImGuiTreeNodeFlags_AllowOverlap |
+                               ImGuiTreeNodeFlags_OpenOnArrow;
+            if (is_selected) header_flags |= ImGuiTreeNodeFlags_Selected;
+            ImGui::SetNextItemOpen(strand.expanded, ImGuiCond_Always);
+            bool expanded = ImGui::TreeNodeEx(header_label, header_flags);
+            if (ImGui::IsItemToggledOpen())
+                strand.expanded = !strand.expanded;
             if (ImGui::IsItemHovered()) strand_hovered = true;
+
+            // 多选：Ctrl 切换单个、Shift 锚点范围、普通点击单选
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                const ImGuiIO& sel_io = ImGui::GetIO();
+                if (sel_io.KeyCtrl) {
+                    if (is_selected) {
+                        selected_strand_uuids.erase(
+                            std::remove(selected_strand_uuids.begin(),
+                                        selected_strand_uuids.end(),
+                                        strand.uuid),
+                            selected_strand_uuids.end());
+                    } else {
+                        selected_strand_uuids.push_back(strand.uuid);
+                    }
+                    strand_sel_anchor = strand.uuid;
+                } else if (sel_io.KeyShift && !strand_sel_anchor.empty() &&
+                           strand_sel_anchor != strand.uuid) {
+                    int a = -1, b = -1;
+                    for (size_t vi = 0; vi < visible_strand_order.size();
+                         ++vi) {
+                        if (visible_strand_order[vi] == strand_sel_anchor)
+                            a = static_cast<int>(vi);
+                        if (visible_strand_order[vi] == strand.uuid)
+                            b = static_cast<int>(vi);
+                    }
+                    if (a >= 0 && b >= 0) {
+                        if (a > b) std::swap(a, b);
+                        selected_strand_uuids.assign(
+                            visible_strand_order.begin() + a,
+                            visible_strand_order.begin() + b + 1);
+                    }
+                } else {
+                    selected_strand_uuids = {strand.uuid};
+                    strand_sel_anchor = strand.uuid;
+                }
+            }
+
+            // 拖拽源：拖到组节点上批量入组，拖到列表空白处移出分组
+            if (ImGui::BeginDragDropSource(
+                    ImGuiDragDropFlags_SourceAllowNullID)) {
+                // 拖动未选中的发束时，把它变为唯一选中项
+                if (!is_selected) {
+                    selected_strand_uuids = {strand.uuid};
+                    strand_sel_anchor = strand.uuid;
+                }
+                ImGui::SetDragDropPayload("STRAND_UUIDS", strand.uuid.c_str(),
+                                          strand.uuid.size() + 1);
+                ImGui::Text(get_locale_cstr("label.drag_move_strands"),
+                            static_cast<int>(selected_strand_uuids.size()));
+                ImGui::EndDragDropSource();
+            }
 
             // Show warning indicator when alpha_wrap repair failed for this strand
             if (strand.repair_failed) {
@@ -1191,34 +1287,7 @@ void RenderVoxelList::render_object_editor_addons() {
                 bool is_normal =
                     (strand.gen_type == HairStrandGenType::NORMAL);
 
-                // 三个按钮行
-                // 上移
-                if (i > 0) {
-                    if (ImGui::Button(get_locale_cstr("action.move_up"))) {
-                        push_undo_now(item.id, std::nullopt,
-                                      "Move Strand Up");
-                        std::swap(item.hair_strands[i],
-                                  item.hair_strands[i - 1]);
-                        item.hair_strands[i].mesh_dirty = true;
-                        item.hair_strands[i - 1].mesh_dirty = true;
-                    }
-                    ImGui::SameLine();
-                }
-                // 下移
-                if (i < item.hair_strands.size() - 1) {
-                    if (ImGui::Button(get_locale_cstr("action.move_down"))) {
-                        push_undo_now(item.id, std::nullopt,
-                                      "Move Strand Down");
-                        std::swap(item.hair_strands[i],
-                                  item.hair_strands[i + 1]);
-                        item.hair_strands[i].mesh_dirty = true;
-                        item.hair_strands[i + 1].mesh_dirty = true;
-                    }
-                    ImGui::SameLine();
-                }
-                
-                // 绘制引导曲线（自锁按钮）
-                ImGui::SameLine();
+                // 按钮行：绘制引导曲线（自锁按钮）
                 bool is_drawing =
                     (item.active_guide_draw_strand == item.hair_strands[i].uuid &&
                      item.guide_curve_drawing_active);
@@ -1337,6 +1406,30 @@ void RenderVoxelList::render_object_editor_addons() {
                     }
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("%s", get_locale_cstr("tooltip.rename_strand"));
+
+                    // --- 移动到组 ---
+                    if (ImGui::BeginMenu(get_locale_cstr("menu.move_to_group"))) {
+                        if (ImGui::MenuItem(get_locale_cstr("label.ungrouped"),
+                                            nullptr, strand.group.empty())) {
+                            if (!strand.group.empty()) {
+                                push_undo_now(item.id, std::nullopt,
+                                              "Move Strand To Group");
+                                strand.group.clear();
+                            }
+                        }
+                        if (!item.strand_groups.empty()) ImGui::Separator();
+                        for (const auto& g : item.strand_groups) {
+                            if (ImGui::MenuItem(g.c_str(), nullptr,
+                                                strand.group == g)) {
+                                if (strand.group != g) {
+                                    push_undo_now(item.id, std::nullopt,
+                                                  "Move Strand To Group");
+                                    strand.group = g;
+                                }
+                            }
+                        }
+                        ImGui::EndMenu();
+                    }
 
                     // --- 删除发束 ---
                     if (ImGui::MenuItem(get_locale_cstr("action.delete_strand"))) {
@@ -1596,10 +1689,279 @@ void RenderVoxelList::render_object_editor_addons() {
                     push_undo_now(item.id, param_snapshot, "Strand Parameter Edit");
                     strand.mesh_dirty = true;
                 }
+                ImGui::TreePop();
             }
 
             if (strand_hovered) item.hovered_strand_uuid = strand.uuid;
             ImGui::PopID();
+        };
+
+        // 拖放描述：0 无, 1 顶层缝隙(重排/移出组), 2 组内缝隙(入组定位),
+        // 3 组节点本身(入组)
+        struct {
+            int kind = 0;
+            size_t pos = 0;
+            std::string group;
+            bool is_group_payload = false;
+        } drop;
+
+        // 缝隙拖放目标：两个节点之间的细条，拖动悬停时高亮为一条线，
+        // 与放到节点本身（整个节点高亮）区分开
+        int gap_salt = 0;
+        auto render_drop_gap = [&](int kind, size_t pos,
+                                   const std::string& grp,
+                                   bool accept_groups) {
+            ImGui::PushID(100000 + (gap_salt++));
+            ImGui::Selectable("##drop_gap", false, 0,
+                              ImVec2(ImGui::GetContentRegionAvail().x, 4.0f));
+            const ImVec2 rmin = ImGui::GetItemRectMin();
+            const ImVec2 rmax = ImGui::GetItemRectMax();
+            if (ImGui::BeginDragDropTarget()) {
+                const ImGuiDragDropFlags gap_flags =
+                    ImGuiDragDropFlags_AcceptBeforeDelivery |
+                    ImGuiDragDropFlags_AcceptNoDrawDefaultRect;
+                const ImGuiPayload* payload =
+                    ImGui::AcceptDragDropPayload("STRAND_UUIDS", gap_flags);
+                bool group_payload = false;
+                if (!payload && accept_groups) {
+                    payload =
+                        ImGui::AcceptDragDropPayload("GROUP_NAME", gap_flags);
+                    group_payload = (payload != nullptr);
+                }
+                if (payload) {
+                    ImGui::GetWindowDrawList()->AddRectFilled(
+                        rmin, rmax,
+                        ImGui::GetColorU32(ImGuiCol_DragDropTarget));
+                    if (payload->IsDelivery()) {
+                        drop.kind = kind;
+                        drop.pos = pos;
+                        drop.group = group_payload
+                            ? std::string((const char*)payload->Data)
+                            : grp;
+                        drop.is_group_payload = group_payload;
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
+            ImGui::PopID();
+        };
+
+        // 顶层条目循环：组与未分组发束同级，按 strand_top_order 顺序；
+        // 每个条目前的缝隙是重排拖放目标（末尾缝隙 = 移到末尾/移出组）
+        for (size_t ti = 0; ti <= item.strand_top_order.size(); ++ti) {
+            render_drop_gap(1, ti, "", true);
+            if (ti == item.strand_top_order.size()) break;
+            const bool entry_is_group = item.strand_top_order[ti].is_group;
+            const std::string entry_key = item.strand_top_order[ti].key;
+            if (entry_is_group) {
+                ImGui::PushID(entry_key.c_str());
+                bool group_open = ImGui::TreeNodeEx(
+                    entry_key.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+                // 组节点拖拽源：拖到顶层缝隙调整顺序
+                if (ImGui::BeginDragDropSource(
+                        ImGuiDragDropFlags_SourceAllowNullID)) {
+                    ImGui::SetDragDropPayload("GROUP_NAME", entry_key.c_str(),
+                                              entry_key.size() + 1);
+                    ImGui::TextUnformatted(entry_key.c_str());
+                    ImGui::EndDragDropSource();
+                }
+                // 拖放目标（节点本身，默认高亮整个节点）：发束批量入组
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* payload =
+                            ImGui::AcceptDragDropPayload("STRAND_UUIDS")) {
+                        if (payload->IsDelivery()) {
+                            drop.kind = 3;
+                            drop.group = entry_key;
+                            drop.is_group_payload = false;
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+                if (ImGui::IsItemHovered() && !ImGui::IsItemToggledOpen())
+                    ImGui::SetTooltip("%s",
+                        get_locale_cstr("tooltip.group_node"));
+                if (ImGui::BeginPopupContextItem("group_ctx")) {
+                    if (ImGui::MenuItem(
+                            get_locale_cstr("action.rename_group"))) {
+                        pending_rename_group = entry_key;
+                        strncpy(group_rename_buffer, entry_key.c_str(),
+                                sizeof(group_rename_buffer) - 1);
+                        group_rename_buffer[sizeof(group_rename_buffer) - 1] =
+                            '\0';
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s",
+                            get_locale_cstr("tooltip.rename_group"));
+                    if (ImGui::MenuItem(
+                            get_locale_cstr("action.delete_group"))) {
+                        // 记录组名在 strand_groups 中的下标，延迟删除
+                        for (size_t gi = 0; gi < item.strand_groups.size();
+                             ++gi) {
+                            if (item.strand_groups[gi] == entry_key) {
+                                delete_group_idx = static_cast<int>(gi);
+                                break;
+                            }
+                        }
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s",
+                            get_locale_cstr("tooltip.delete_group"));
+                    ImGui::EndPopup();
+                }
+                if (group_open) {
+                    // 组内成员与缝隙（缝隙 = 插入到组内该位置）
+                    size_t member_idx = 0;
+                    render_drop_gap(2, 0, entry_key, false);
+                    for (size_t i = 0; i < item.hair_strands.size(); ++i) {
+                        if (item.hair_strands[i].group == entry_key) {
+                            render_strand_entry(i);
+                            ++member_idx;
+                            render_drop_gap(2, member_idx, entry_key, false);
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+                ImGui::PopID();
+            } else {
+                auto* s = item.find_strand_by_uuid(entry_key);
+                if (!s) continue;
+                size_t i = static_cast<size_t>(s - item.hair_strands.data());
+                render_strand_entry(i);
+            }
+        }
+
+        // 执行延迟的拖放操作（重排 / 入组）
+        if (drop.kind != 0) {
+            if (drop.is_group_payload) {
+                // 拖动组：仅支持顶层缝隙重排
+                if (drop.kind == 1) {
+                    int cur = -1;
+                    for (size_t k = 0; k < item.strand_top_order.size();
+                         ++k) {
+                        const auto& e = item.strand_top_order[k];
+                        if (e.is_group && e.key == drop.group) {
+                            cur = static_cast<int>(k);
+                            break;
+                        }
+                    }
+                    if (cur >= 0) {
+                        int pos = static_cast<int>(drop.pos);
+                        if (cur < pos) pos -= 1;
+                        if (pos != cur) {
+                            push_undo_now(item.id, std::nullopt,
+                                          "Drag Reorder Group");
+                            auto entry = item.strand_top_order[cur];
+                            item.strand_top_order.erase(
+                                item.strand_top_order.begin() + cur);
+                            item.strand_top_order.insert(
+                                item.strand_top_order.begin() + pos, entry);
+                        }
+                    }
+                }
+            } else {
+                // 拖动发束（可能多选）：全部取出，按拖动前可见顺序插入
+                auto in_selection = [&](const std::string& u) {
+                    for (const auto& x : selected_strand_uuids)
+                        if (x == u) return true;
+                    return false;
+                };
+                std::vector<std::string> dragged;
+                for (const auto& u : visible_strand_order)
+                    if (in_selection(u)) dragged.push_back(u);
+                if (!dragged.empty()) {
+                    if (drop.kind == 1) {
+                        // 顶层缝隙：全部变为未分组并插入该位置
+                        push_undo_now(item.id, std::nullopt,
+                                      "Drag Reorder Strands");
+                        std::vector<StrandTopEntry> base;
+                        size_t removed_before = 0;
+                        for (size_t k = 0;
+                             k < item.strand_top_order.size(); ++k) {
+                            const auto& e = item.strand_top_order[k];
+                            if (!e.is_group && in_selection(e.key)) {
+                                if (k < drop.pos) ++removed_before;
+                                continue;
+                            }
+                            base.push_back(e);
+                        }
+                        size_t insert_at = drop.pos - removed_before;
+                        if (insert_at > base.size())
+                            insert_at = base.size();
+                        for (const auto& u : dragged) {
+                            auto* s = item.find_strand_by_uuid(u);
+                            if (s) s->group.clear();
+                        }
+                        for (const auto& u : dragged) {
+                            base.insert(base.begin() + insert_at,
+                                        StrandTopEntry{false, u});
+                            ++insert_at;
+                        }
+                        item.strand_top_order = std::move(base);
+                    } else {
+                        // 组内缝隙 / 组节点：全部移入该组（缝隙带定位）
+                        push_undo_now(item.id, std::nullopt,
+                                      "Move Strands To Group");
+                        const std::string& G = drop.group;
+                        std::vector<std::string> members;
+                        size_t removed_before = 0;
+                        {
+                            size_t mi = 0;
+                            for (const auto& s : item.hair_strands) {
+                                if (s.group != G) continue;
+                                if (in_selection(s.uuid)) {
+                                    if (mi < drop.pos) ++removed_before;
+                                } else {
+                                    members.push_back(s.uuid);
+                                }
+                                ++mi;
+                            }
+                        }
+                        size_t insert_at =
+                            (drop.kind == 2)
+                                ? drop.pos - removed_before
+                                : members.size();
+                        if (insert_at > members.size())
+                            insert_at = members.size();
+                        for (const auto& u : dragged) {
+                            auto* s = item.find_strand_by_uuid(u);
+                            if (s) s->group = G;
+                        }
+                        for (const auto& u : dragged) {
+                            members.insert(members.begin() + insert_at, u);
+                            ++insert_at;
+                        }
+                        // 重建 hair_strands，使 G 的成员按新顺序排列
+                        auto in_members = [&](const std::string& u) {
+                            for (const auto& x : members)
+                                if (x == u) return true;
+                            return false;
+                        };
+                        std::vector<HairStrand> reordered;
+                        reordered.reserve(item.hair_strands.size());
+                        size_t next_member = 0;
+                        for (auto& s : item.hair_strands) {
+                            if (in_members(s.uuid)) {
+                                auto* t = item.find_strand_by_uuid(
+                                    members[next_member++]);
+                                reordered.push_back(std::move(*t));
+                            } else {
+                                reordered.push_back(std::move(s));
+                            }
+                        }
+                        item.hair_strands = std::move(reordered);
+                    }
+                }
+            }
+        }
+
+        // 延迟删除分组：组内发束变为未分组
+        if (delete_group_idx >= 0) {
+            push_undo_now(item.id, std::nullopt, "Delete Strand Group");
+            const std::string gname = item.strand_groups[delete_group_idx];
+            for (auto& s : item.hair_strands)
+                if (s.group == gname) s.group.clear();
+            item.strand_groups.erase(item.strand_groups.begin() +
+                                     delete_group_idx);
         }
 
         // 延迟删除
@@ -1680,6 +2042,59 @@ void RenderVoxelList::render_object_editor_addons() {
         if (!rename_open) {
             pending_rename_strand_uuid.clear();
             rename_buffer[0] = '\0';
+        }
+        ImGui::End();
+    }
+
+    // --- Rename strand group window (non-modal) ---
+    if (!pending_rename_group.empty()) {
+        ImGui::SetNextWindowSize(ImVec2(380, 120), ImGuiCond_Once);
+        char win_title[128];
+        snprintf(win_title, sizeof(win_title), "%s##RenameGroupWin",
+                 get_locale_cstr("action.rename_group"));
+        bool rename_open = true;
+        if (ImGui::Begin(win_title, &rename_open,
+                         ImGuiWindowFlags_NoCollapse |
+                             ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted(
+                get_locale_cstr("label.rename_group_prompt"));
+
+            ImGui::SetNextItemWidth(280);
+            if (ImGui::IsWindowAppearing())
+                ImGui::SetKeyboardFocusHere();
+            ImGui::InputText("##group_rename_input", group_rename_buffer,
+                             sizeof(group_rename_buffer));
+
+            bool confirm_disabled = group_rename_buffer[0] == '\0';
+            if (confirm_disabled) ImGui::BeginDisabled();
+            if (ImGui::Button(get_locale_cstr("action.ok")) ||
+                (!confirm_disabled &&
+                 ImGui::IsKeyPressed(ImGuiKey_Enter))) {
+                std::string new_name = group_rename_buffer;
+                if (new_name != pending_rename_group) {
+                    push_undo_now(item.id, std::nullopt,
+                                  "Rename Strand Group");
+                    new_name = item.make_unique_group_name(new_name);
+                    for (auto& g : item.strand_groups)
+                        if (g == pending_rename_group) g = new_name;
+                    for (auto& s : item.hair_strands)
+                        if (s.group == pending_rename_group)
+                            s.group = new_name;
+                }
+                pending_rename_group.clear();
+                group_rename_buffer[0] = '\0';
+            }
+            if (confirm_disabled) ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button(get_locale_cstr("action.cancel")) ||
+                ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                pending_rename_group.clear();
+                group_rename_buffer[0] = '\0';
+            }
+        }
+        if (!rename_open) {
+            pending_rename_group.clear();
+            group_rename_buffer[0] = '\0';
         }
         ImGui::End();
     }

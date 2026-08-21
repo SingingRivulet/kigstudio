@@ -133,7 +133,9 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.addon_base_node_id,
             item.drill_paths,
             item.show_connection_faces,
-            item.show_back_face};
+            item.show_back_face,
+            item.strand_groups,
+            item.strand_top_order};
 }
 
 void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
@@ -223,6 +225,8 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
         dp.mesh_dirty = true;
     item.show_connection_faces = snapshot.show_connection_faces;
     item.show_back_face = snapshot.show_back_face;
+    item.strand_groups = snapshot.strand_groups;
+    item.strand_top_order = snapshot.strand_top_order;
     if (conn_inputs_changed)
         item.connection_faces_dirty = true;
     item.sdf_precision_cache = snapshot.sdf_precision_cache;
