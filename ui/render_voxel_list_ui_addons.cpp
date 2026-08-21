@@ -1118,16 +1118,6 @@ void RenderVoxelList::render_object_editor_addons() {
         }
 
         ImGui::SameLine();
-        // 新增组按钮
-        if (ImGui::Button(get_locale_cstr("action.add_strand_group"))) {
-            push_undo_now(item.id, std::nullopt, "Add Strand Group");
-            item.strand_groups.push_back(item.make_unique_group_name(
-                get_locale_cstr("label.default_group_name")));
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.add_strand_group"));
-
-        ImGui::SameLine();
         if (ImGui::Button(get_locale_cstr("action.ortho_projection"))) {
             show_ortho_setup_window = true;
             ortho_state.viewport_size_defaulted = false;
@@ -1140,6 +1130,7 @@ void RenderVoxelList::render_object_editor_addons() {
         // 发束列表（树状：组与未分组发束同级，按 strand_top_order 排序）
         int delete_idx = -1;
         int delete_group_idx = -1;
+        std::string pending_create_group_at;  // 右键“创建组”的发束 uuid
         item.hovered_strand_uuid.clear();  // reset hover highlight each frame
         // 清理失效条目、把新组/新发束补进顶层顺序
         item.reconcile_strand_top_order();
@@ -1165,6 +1156,15 @@ void RenderVoxelList::render_object_editor_addons() {
                 visible_strand_order.push_back(e.key);
             }
         }
+        // 是否在当前多选集合中
+        auto in_selection = [&](const std::string& u) {
+            for (const auto& x : selected_strand_uuids)
+                if (x == u) return true;
+            return false;
+        };
+        // 拖拽状态与本帧悬停记录（供缝隙显示与节点高亮用）
+        const bool drag_active = (ImGui::GetDragDropPayload() != nullptr);
+        std::string cur_hover_node, cur_hover_gap;
 
         // 渲染单个发束条目（组内与顶层共用）
         auto render_strand_entry = [&](size_t i) {
@@ -1195,6 +1195,9 @@ void RenderVoxelList::render_object_editor_addons() {
             if (ImGui::IsItemToggledOpen())
                 strand.expanded = !strand.expanded;
             if (ImGui::IsItemHovered()) strand_hovered = true;
+            // 拖拽悬停记忆：决定下一帧显示该节点上下的缝隙
+            if (drag_active && ImGui::IsItemHovered())
+                cur_hover_node = "s:" + strand.uuid;
 
             // 多选：Ctrl 切换单个、Shift 锚点范围、普通点击单选
             if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
@@ -1245,6 +1248,23 @@ void RenderVoxelList::render_object_editor_addons() {
                 ImGui::Text(get_locale_cstr("label.drag_move_strands"),
                             static_cast<int>(selected_strand_uuids.size()));
                 ImGui::EndDragDropSource();
+            }
+
+            // 右键菜单：用选中的发束在此位置创建组（仅未分组发束）
+            if (strand.group.empty()) {
+                if (ImGui::BeginPopupContextItem("strand_ctx")) {
+                    bool has_selection = !selected_strand_uuids.empty();
+                    if (!has_selection) ImGui::BeginDisabled();
+                    if (ImGui::MenuItem(
+                            get_locale_cstr("action.create_group_from_sel"))) {
+                        pending_create_group_at = strand.uuid;
+                    }
+                    if (!has_selection) ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s",
+                            get_locale_cstr("tooltip.create_group_from_sel"));
+                    ImGui::EndPopup();
+                }
             }
 
             // Show warning indicator when alpha_wrap repair failed for this strand
@@ -1705,15 +1725,20 @@ void RenderVoxelList::render_object_editor_addons() {
             bool is_group_payload = false;
         } drop;
 
-        // 缝隙拖放目标：两个节点之间的细条，拖动悬停时高亮为一条线，
-        // 与放到节点本身（整个节点高亮）区分开
-        int gap_salt = 0;
+        // 缝隙拖放目标：平时不渲染；拖动时只显示悬停节点上下的缝隙，
+        // 悬停时高亮为一条线，与放到节点本身（整个节点高亮）区分开。
+        // show=true 表示该缝隙与当前悬停节点相邻；已悬停的缝隙通过
+        // strand_drag_hover_gap 记忆保持显示，避免节点→缝隙间闪烁。
         auto render_drop_gap = [&](int kind, size_t pos,
                                    const std::string& grp,
-                                   bool accept_groups) {
-            ImGui::PushID(100000 + (gap_salt++));
+                                   bool accept_groups, bool show,
+                                   const std::string& gap_id) {
+            if (!drag_active) return;
+            if (!show && strand_drag_hover_gap != gap_id) return;
+            ImGui::PushID(gap_id.c_str());
             ImGui::Selectable("##drop_gap", false, 0,
                               ImVec2(ImGui::GetContentRegionAvail().x, 4.0f));
+            if (ImGui::IsItemHovered()) cur_hover_gap = gap_id;
             const ImVec2 rmin = ImGui::GetItemRectMin();
             const ImVec2 rmax = ImGui::GetItemRectMax();
             if (ImGui::BeginDragDropTarget()) {
@@ -1747,9 +1772,23 @@ void RenderVoxelList::render_object_editor_addons() {
         };
 
         // 顶层条目循环：组与未分组发束同级，按 strand_top_order 顺序；
-        // 每个条目前的缝隙是重排拖放目标（末尾缝隙 = 移到末尾/移出组）
+        // 缝隙只显示在拖拽悬停节点的上下（末尾缝隙 = 移到末尾/移出组）
+        std::string prev_top_key;
         for (size_t ti = 0; ti <= item.strand_top_order.size(); ++ti) {
-            render_drop_gap(1, ti, "", true);
+            std::string below_key;
+            if (ti < item.strand_top_order.size()) {
+                const auto& e = item.strand_top_order[ti];
+                below_key = (e.is_group ? "g:" : "s:") + e.key;
+            }
+            const bool show_gap =
+                (!below_key.empty() &&
+                 strand_drag_hover_node == below_key) ||
+                (!prev_top_key.empty() &&
+                 strand_drag_hover_node == prev_top_key);
+            render_drop_gap(1, ti, "", true, show_gap,
+                            "t:" + (below_key.empty()
+                                        ? std::string("#end")
+                                        : below_key));
             if (ti == item.strand_top_order.size()) break;
             const bool entry_is_group = item.strand_top_order[ti].is_group;
             const std::string entry_key = item.strand_top_order[ti].key;
@@ -1757,6 +1796,8 @@ void RenderVoxelList::render_object_editor_addons() {
                 ImGui::PushID(entry_key.c_str());
                 bool group_open = ImGui::TreeNodeEx(
                     entry_key.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+                if (drag_active && ImGui::IsItemHovered())
+                    cur_hover_node = "g:" + entry_key;
                 // 组节点拖拽源：拖到顶层缝隙调整顺序
                 if (ImGui::BeginDragDropSource(
                         ImGuiDragDropFlags_SourceAllowNullID)) {
@@ -1809,25 +1850,52 @@ void RenderVoxelList::render_object_editor_addons() {
                     ImGui::EndPopup();
                 }
                 if (group_open) {
-                    // 组内成员与缝隙（缝隙 = 插入到组内该位置）
+                    // 组内成员与缝隙（缝隙 = 插入到组内该位置，
+                    // 同样只显示悬停成员上下的缝隙）
                     size_t member_idx = 0;
-                    render_drop_gap(2, 0, entry_key, false);
+                    std::string prev_member_key;
                     for (size_t i = 0; i < item.hair_strands.size(); ++i) {
-                        if (item.hair_strands[i].group == entry_key) {
-                            render_strand_entry(i);
-                            ++member_idx;
-                            render_drop_gap(2, member_idx, entry_key, false);
-                        }
+                        if (item.hair_strands[i].group != entry_key) continue;
+                        const std::string mkey =
+                            "s:" + item.hair_strands[i].uuid;
+                        const bool show_mgap =
+                            (strand_drag_hover_node == mkey) ||
+                            (!prev_member_key.empty() &&
+                             strand_drag_hover_node == prev_member_key);
+                        render_drop_gap(2, member_idx, entry_key, false,
+                                        show_mgap,
+                                        "m:" + entry_key + ":" +
+                                            item.hair_strands[i].uuid);
+                        render_strand_entry(i);
+                        prev_member_key = mkey;
+                        ++member_idx;
                     }
+                    // 组内末尾缝隙：接在最后一个成员之后
+                    render_drop_gap(2, member_idx, entry_key, false,
+                                    !prev_member_key.empty() &&
+                                        strand_drag_hover_node ==
+                                            prev_member_key,
+                                    "m:" + entry_key + ":#end");
                     ImGui::TreePop();
                 }
                 ImGui::PopID();
             } else {
                 auto* s = item.find_strand_by_uuid(entry_key);
-                if (!s) continue;
-                size_t i = static_cast<size_t>(s - item.hair_strands.data());
-                render_strand_entry(i);
+                if (s) {
+                    size_t i = static_cast<size_t>(
+                        s - item.hair_strands.data());
+                    render_strand_entry(i);
+                }
             }
+            prev_top_key = below_key;
+        }
+
+        // 更新拖拽悬停记忆（供下一帧决定显示哪些缝隙）
+        strand_drag_hover_node = cur_hover_node;
+        strand_drag_hover_gap = cur_hover_gap;
+        if (!drag_active) {
+            strand_drag_hover_node.clear();
+            strand_drag_hover_gap.clear();
         }
 
         // 执行延迟的拖放操作（重排 / 入组）
@@ -1860,11 +1928,6 @@ void RenderVoxelList::render_object_editor_addons() {
                 }
             } else {
                 // 拖动发束（可能多选）：全部取出，按拖动前可见顺序插入
-                auto in_selection = [&](const std::string& u) {
-                    for (const auto& x : selected_strand_uuids)
-                        if (x == u) return true;
-                    return false;
-                };
                 std::vector<std::string> dragged;
                 for (const auto& u : visible_strand_order)
                     if (in_selection(u)) dragged.push_back(u);
@@ -1952,6 +2015,40 @@ void RenderVoxelList::render_object_editor_addons() {
                     }
                 }
             }
+        }
+
+        // 执行延迟的“创建组”：新组插到被右键节点的顶层位置，
+        // 所有选中发束移入该组
+        if (!pending_create_group_at.empty()) {
+            auto* clicked = item.find_strand_by_uuid(pending_create_group_at);
+            if (clicked && !selected_strand_uuids.empty()) {
+                push_undo_now(item.id, std::nullopt,
+                              "Create Strand Group");
+                const std::string gname = item.make_unique_group_name(
+                    get_locale_cstr("label.default_group_name"));
+                item.strand_groups.push_back(gname);
+                // 被右键节点的顶层下标（组内成员取其所属组的下标）
+                size_t pos = item.strand_top_order.size();
+                const std::string clicked_group = clicked->group;
+                for (size_t k = 0; k < item.strand_top_order.size();
+                     ++k) {
+                    const auto& e = item.strand_top_order[k];
+                    if ((!e.is_group && e.key == clicked->uuid) ||
+                        (e.is_group && !clicked_group.empty() &&
+                         e.key == clicked_group)) {
+                        pos = k;
+                        break;
+                    }
+                }
+                item.strand_top_order.insert(
+                    item.strand_top_order.begin() + pos,
+                    StrandTopEntry{true, gname});
+                for (const auto& u : selected_strand_uuids) {
+                    auto* s = item.find_strand_by_uuid(u);
+                    if (s) s->group = gname;
+                }
+            }
+            pending_create_group_at.clear();
         }
 
         // 延迟删除分组：组内发束变为未分组

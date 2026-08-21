@@ -1486,6 +1486,10 @@ class RenderVoxelList {
     // 发束多选状态（运行时数据，不序列化）
     std::vector<std::string> selected_strand_uuids;
     std::string strand_sel_anchor;  // Shift 范围选择的锚点 uuid
+    // 拖拽悬停记忆（运行时）：缝隙只显示在悬停节点的上下；
+    // 记住悬停的缝隙本身，防止光标从节点移入缝隙时闪烁
+    std::string strand_drag_hover_node;
+    std::string strand_drag_hover_gap;
     void render_plane_editor(RenderVoxelItem& item);
     void render_collision_body_editor(RenderVoxelItem& item);
     void render_hairline_plane_window();

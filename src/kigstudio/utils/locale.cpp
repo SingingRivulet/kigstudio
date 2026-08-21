@@ -1354,6 +1354,12 @@ void init_locale_strings() {
                        {"zh", "删除分组，组内发束变为未分组"}});
     add_locale_string("label.drag_move_strands",
                       {{"en", "Move %d strand(s)"}, {"zh", "移动 %d 根发束"}});
+    add_locale_string("action.create_group_from_sel",
+                      {{"en", "Create Group"}, {"zh", "创建组"}});
+    add_locale_string("tooltip.create_group_from_sel",
+                      {{"en", "Create a new group at this position and move "
+                              "the selected strands into it"},
+                       {"zh", "在此位置创建新组，并把选中的发束移入组内"}});
     add_locale_string("label.drop_to_ungroup",
                       {{"en", "(Drop here to remove from group)"},
                        {"zh", "（拖到此处移出分组）"}});
