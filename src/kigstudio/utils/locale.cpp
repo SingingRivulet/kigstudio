@@ -1324,6 +1324,16 @@ void init_locale_strings() {
                       {{"en", "Hair Strands"}, {"zh", "发束列表"}});
 
     // ---- 发束分组 ----
+    add_locale_string("label.pick_type_none",
+                      {{"en", "Untyped"}, {"zh", "无类型"}});
+    add_locale_string("label.pick_type_origin_mesh",
+                      {{"en", "Original Mesh"}, {"zh", "原始网格"}});
+    add_locale_string("label.pick_type_voxel",
+                      {{"en", "Voxel"}, {"zh", "体素"}});
+    add_locale_string("label.pick_type_addon",
+                      {{"en", "Addon"}, {"zh", "附加件"}});
+    add_locale_string("label.pick_type_exported_mesh",
+                      {{"en", "Exported Mesh"}, {"zh", "导出网格"}});
     add_locale_string("action.add_strand_group",
                       {{"en", "Add Group"}, {"zh", "新增组"}});
     add_locale_string("tooltip.add_strand_group",

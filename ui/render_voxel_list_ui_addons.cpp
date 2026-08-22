@@ -1131,6 +1131,7 @@ void RenderVoxelList::render_object_editor_addons() {
         int delete_idx = -1;
         int delete_group_idx = -1;
         std::string pending_create_group_at;  // 右键“创建组”的发束 uuid
+        std::string model_ctx_strand_uuid;    // 模型上右键的发束 uuid
         item.hovered_strand_uuid.clear();  // reset hover highlight each frame
         // 清理失效条目、把新组/新发束补进顶层顺序
         item.reconcile_strand_top_order();
@@ -1165,6 +1166,61 @@ void RenderVoxelList::render_object_editor_addons() {
         // 拖拽状态与本帧悬停记录（供缝隙显示与节点高亮用）
         const bool drag_active = (ImGui::GetDragDropPayload() != nullptr);
         std::string cur_hover_node, cur_hover_gap;
+
+        // 视口内直接点击发束：左键选中（Ctrl 切换多选），右键弹“创建组”。
+        // 拖动（旋转相机）不触发选中；绘制/拾取模式下不响应。
+        {
+            const ImGuiIO& vio = ImGui::GetIO();
+            const bool picking_busy =
+                item.guide_curve_drawing_active || item.width_editing_active ||
+                item.drill_picking_active || item.hairline_point_picking_active;
+            HairStrand* hovered_strand =
+                (mouse_pick_type == 3 && mouse_pick_id >= 1 &&
+                 mouse_pick_id <= static_cast<int>(item.hair_strands.size()))
+                    ? &item.hair_strands[mouse_pick_id - 1]
+                    : nullptr;
+            if (!picking_busy && hovered_strand && !vio.WantCaptureMouse) {
+                if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
+                    vio.MouseDragMaxDistanceSqr[0] <= 36.0f) {
+                    if (vio.KeyCtrl) {
+                        if (in_selection(hovered_strand->uuid)) {
+                            selected_strand_uuids.erase(
+                                std::remove(selected_strand_uuids.begin(),
+                                            selected_strand_uuids.end(),
+                                            hovered_strand->uuid),
+                                selected_strand_uuids.end());
+                        } else {
+                            selected_strand_uuids.push_back(
+                                hovered_strand->uuid);
+                        }
+                        strand_sel_anchor = hovered_strand->uuid;
+                    } else {
+                        selected_strand_uuids = {hovered_strand->uuid};
+                        strand_sel_anchor = hovered_strand->uuid;
+                    }
+                }
+                // 右键：仅未分组发束可创建组（与树状列表行为一致）
+                if (hovered_strand->group.empty() &&
+                    ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                    if (!in_selection(hovered_strand->uuid)) {
+                        selected_strand_uuids = {hovered_strand->uuid};
+                        strand_sel_anchor = hovered_strand->uuid;
+                    }
+                    model_ctx_strand_uuid = hovered_strand->uuid;
+                    ImGui::OpenPopup("model_strand_ctx");
+                }
+            }
+            if (ImGui::BeginPopup("model_strand_ctx")) {
+                if (ImGui::MenuItem(
+                        get_locale_cstr("action.create_group_from_sel"))) {
+                    pending_create_group_at = model_ctx_strand_uuid;
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s",
+                        get_locale_cstr("tooltip.create_group_from_sel"));
+                ImGui::EndPopup();
+            }
+        }
 
         // 渲染单个发束条目（组内与顶层共用）
         auto render_strand_entry = [&](size_t i) {

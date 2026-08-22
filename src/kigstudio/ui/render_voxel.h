@@ -83,6 +83,17 @@ namespace sinriv::ui::render {
         inline RenderMesh& getMeshRenderer() { return mesh_renderer_; }
         inline const RenderMesh& getMeshRenderer() const { return mesh_renderer_; }
 
+        // ID 拾取（见 RenderMesh::setPickId）：转发给内部所有网格渲染器
+        inline void setPickId(uint32_t type, uint32_t id) {
+            pick_id_type_ = type;
+            pick_id_id_ = id;
+            mesh_renderer_.setPickId(type, id);
+            for (auto& [key, mesh] : chunk_meshes_) {
+                (void)key;
+                mesh.setPickId(type, id);
+            }
+        }
+
         inline std::pair<vec3f, vec3f> getLocalBounds() const {
             vec3f min_b = {std::numeric_limits<float>::max(),
                            std::numeric_limits<float>::max(),
@@ -201,9 +212,12 @@ namespace sinriv::ui::render {
         }
 
         inline void renderGBuffer(const float* transform, RenderMeshShader & shader) {
+            // 新建 chunk 可能尚未设置 pick id，这里统一兜底
+            mesh_renderer_.setPickId(pick_id_type_, pick_id_id_);
             if (!chunk_meshes_.empty()) {
                 for (auto& [key, mesh] : chunk_meshes_) {
                     (void)key;
+                    mesh.setPickId(pick_id_type_, pick_id_id_);
                     mesh.showAxis = showAxis;
                     mesh.renderGBuffer(transform, shader);
                 }
@@ -283,6 +297,8 @@ namespace sinriv::ui::render {
         bool showAxis = false;
 
        private:
+        uint32_t pick_id_type_ = 0;
+        uint32_t pick_id_id_ = 0;
         RenderMesh mesh_renderer_;
         std::unordered_map<uint64_t, RenderMesh> chunk_meshes_;
     };

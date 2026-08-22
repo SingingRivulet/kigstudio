@@ -2512,6 +2512,12 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     sinriv::ui::render::RenderMeshShader& mesh_shader) {
     mesh_renderer.cull_backface = false;
     exported_mesh_renderer.cull_backface = false;
+    // ID 拾取类型：0 无类型 / 1 原始网格 / 2 体素 / 3 附加件 / 4 导出网格
+    mesh_renderer.setPickId(1, 0);
+    origin_mesh_renderer.setPickId(1, 0);
+    exported_mesh_renderer.setPickId(4, 0);
+    voxel_renderer.setPickId(2, 0);
+    marked_mesh_renderer.setPickId(2, 0);
     if (showMesh) {
         mesh_renderer.renderGBuffer(transform, mesh_shader);
     }
@@ -2573,6 +2579,29 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
             for (auto& [uuid, addon] : addon_renderers) {
                 addon->cull_backface = false;
                 addon->cull_frontface = show_back_face;
+                // ID 拾取：附加件(3)，id = 发束下标+1
+                uint32_t strand_pick_id = 0;
+                for (size_t si = 0; si < hair_strands.size(); ++si) {
+                    if (hair_strands[si].uuid == uuid) {
+                        strand_pick_id = static_cast<uint32_t>(si) + 1;
+                        break;
+                    }
+                }
+                addon->setPickId(3, strand_pick_id);
+                // 选中的发束由绿色变为青色
+                bool strand_selected = false;
+                if (manager) {
+                    for (const auto& u : manager->selected_strand_uuids) {
+                        if (u == uuid) {
+                            strand_selected = true;
+                            break;
+                        }
+                    }
+                }
+                if (strand_selected)
+                    addon->setBaseColor(0.25f, 0.8f, 0.8f, 1.0f);
+                else
+                    addon->setBaseColor(0.3f, 0.65f, 0.42f, 1.0f);
                 if (drill_picking_active)
                     addon->renderGBuffer(transform, mesh_shader);
                 else

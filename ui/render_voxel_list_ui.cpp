@@ -323,6 +323,40 @@ void RenderVoxelList::render_ui() {
         ImGui::SameLine();
         ImGui::Text(get_locale_cstr("label.mouse_world_pos"), mouse_world_pos.x,
                     mouse_world_pos.y, mouse_world_pos.z);
+        // 显示鼠标位置的 ID 拾取类型；附加件模式附加发束名/uuid
+        if (mouse_pick_type >= 0) {
+            const char* pick_type_key = nullptr;
+            switch (mouse_pick_type) {
+            case 0: pick_type_key = "label.pick_type_none"; break;
+            case 1: pick_type_key = "label.pick_type_origin_mesh"; break;
+            case 2: pick_type_key = "label.pick_type_voxel"; break;
+            case 3: pick_type_key = "label.pick_type_addon"; break;
+            case 4: pick_type_key = "label.pick_type_exported_mesh"; break;
+            default: break;
+            }
+            if (pick_type_key) {
+                ImGui::SameLine();
+                ImGui::Text("%s", get_locale_cstr(pick_type_key));
+                if (mouse_pick_type == 3 && mouse_pick_id >= 1) {
+                    std::string strand_label;
+                    {
+                        std::lock_guard<std::mutex> lock(locker);
+                        auto it = items.find(render_id);
+                        if (it != items.end() &&
+                            mouse_pick_id <= static_cast<int>(
+                                it->second->hair_strands.size())) {
+                            const auto& s =
+                                it->second->hair_strands[mouse_pick_id - 1];
+                            strand_label = s.name.empty() ? s.uuid : s.name;
+                        }
+                    }
+                    if (!strand_label.empty()) {
+                        ImGui::SameLine();
+                        ImGui::Text("%s", strand_label.c_str());
+                    }
+                }
+            }
+        }
         ImGui::SameLine();
         ImGui::Text(get_locale_cstr("label.current_memory_status"),
                     memory_current / 1024.0f / 1024.0f,

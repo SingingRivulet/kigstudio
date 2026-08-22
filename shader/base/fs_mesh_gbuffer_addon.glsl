@@ -4,6 +4,7 @@ $input v_normal, v_pos
 #include <bgfx_shader.sh>
 
 uniform vec4 u_baseColor;
+uniform vec4 u_pickId;
 
 void main()
 {
@@ -15,4 +16,6 @@ void main()
     gl_FragData[2] = vec4(v_pos, 1.0);
     // 不写 gl_FragData[3]：保留 mouse pick world_pos 通道中已有的下层表面数据，
     // 让 addon 模型在视觉上遮挡，但对鼠标拾取保持透明。
+    // ID 拾取通道照常写入：发束需要可通过 ID 纹理被选中。
+    gl_FragData[4] = u_pickId;
 }

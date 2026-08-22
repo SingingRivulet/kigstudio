@@ -5,6 +5,7 @@ $input v_normal, v_pos
 uniform vec4 u_baseColor;
 uniform vec4 u_excludeFromTint;
 uniform vec4 u_lightingMode;
+uniform vec4 u_pickId;
 
 void main()
 {
@@ -28,4 +29,5 @@ void main()
     float exclude = u_excludeFromTint.x > 0.5 ? 0.0 : 1.0;
     gl_FragData[2] = vec4(v_pos, exclude);
     gl_FragData[3] = vec4(v_pos, exclude);
+    gl_FragData[4] = u_pickId;
 }

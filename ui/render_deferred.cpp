@@ -396,6 +396,19 @@ void RenderDeferred::render() {
         bgfx::blit(lighting_view_id_, readback_, 0, 0, world_pos_pick_texture_,
                    mouse_x, mouse_y, 2, 2);
         bgfx::readTexture(readback_, readback_buffer);
+        bgfx::blit(lighting_view_id_, id_readback_, 0, 0, id_pick_texture_,
+                   mouse_x, mouse_y, 2, 2);
+        bgfx::readTexture(id_readback_, id_readback_buffer_);
+        // BGRA8 内存序为 B,G,R,A；alpha=0 表示背景（无拾取）。
+        // id 为 16 位：G=低字节，B=高字节。
+        if (id_readback_buffer_[3] > 127) {
+            mouse_pick_type_ = id_readback_buffer_[2];
+            mouse_pick_id_ = id_readback_buffer_[1] |
+                             (static_cast<int>(id_readback_buffer_[0]) << 8);
+        } else {
+            mouse_pick_type_ = -1;
+            mouse_pick_id_ = 0;
+        }
         if (readback_buffer[3] > 0.5f) {
             mouse_highlight_[0] = 1.0;
             mouse_highlight_[1] = mouse_highlight_range_;
@@ -575,6 +588,12 @@ void RenderDeferred::destroyFrameBuffer() {
     if (bgfx::isValid(world_pos_pick_texture_)) {
         bgfx::destroy(world_pos_pick_texture_);
     }
+    if (bgfx::isValid(id_pick_texture_)) {
+        bgfx::destroy(id_pick_texture_);
+    }
+    if (bgfx::isValid(id_readback_)) {
+        bgfx::destroy(id_readback_);
+    }
     if (bgfx::isValid(collision_body_texture_)) {
         bgfx::destroy(collision_body_texture_);
     }
@@ -602,6 +621,8 @@ void RenderDeferred::destroyFrameBuffer() {
     normal_texture_ = BGFX_INVALID_HANDLE;
     world_pos_texture_ = BGFX_INVALID_HANDLE;
     world_pos_pick_texture_ = BGFX_INVALID_HANDLE;
+    id_pick_texture_ = BGFX_INVALID_HANDLE;
+    id_readback_ = BGFX_INVALID_HANDLE;
     depth_texture_ = BGFX_INVALID_HANDLE;
 }
 
@@ -754,8 +775,14 @@ bool RenderDeferred::ensureFrameBuffer() {
         width_, height_, false, 1, bgfx::TextureFormat::RGBA32F, kSamplerFlags);
     world_pos_pick_texture_ = bgfx::createTexture2D(
         width_, height_, false, 1, bgfx::TextureFormat::RGBA32F, kSamplerFlags);
+    // ID 拾取附件：R=位置类型，G=id 低字节，B=id 高字节（16 位 id）
+    id_pick_texture_ = bgfx::createTexture2D(
+        width_, height_, false, 1, bgfx::TextureFormat::BGRA8, kSamplerFlags);
     readback_ =
         bgfx::createTexture2D(2, 2, false, 1, bgfx::TextureFormat::RGBA32F,
+                              BGFX_TEXTURE_READ_BACK | BGFX_TEXTURE_BLIT_DST);
+    id_readback_ =
+        bgfx::createTexture2D(2, 2, false, 1, bgfx::TextureFormat::BGRA8,
                               BGFX_TEXTURE_READ_BACK | BGFX_TEXTURE_BLIT_DST);
     depth_texture_ = bgfx::createTexture2D(
         width_, height_, false, 1, bgfx::TextureFormat::D24S8, kSamplerFlags);
@@ -765,6 +792,7 @@ bool RenderDeferred::ensureFrameBuffer() {
         normal_texture_,
         world_pos_texture_,
         world_pos_pick_texture_,
+        id_pick_texture_,
         depth_texture_,
     };
     gbuffer_ = bgfx::createFrameBuffer(

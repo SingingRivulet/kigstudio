@@ -222,7 +222,9 @@ namespace sinriv::ui::render {
         bgfx::TextureHandle normal_texture_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle world_pos_texture_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle world_pos_pick_texture_ = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle id_pick_texture_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle readback_ = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle id_readback_ = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle depth_texture_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle combine_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle collision_program_ = BGFX_INVALID_HANDLE;
@@ -274,6 +276,11 @@ namespace sinriv::ui::render {
         std::array<float, 4> mouse_ori_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 4> mouse_dir_ = {0.f, 0.f, 0.f, 0.f};
         std::array<float, 2> screen_mouse_pos_ = {0.f, 0.f};
+        // ID 拾取结果（由 render() 从 id_pick_texture_ 回读解码）：
+        // -1=无拾取/背景，0=无类型，1=原始网格，2=体素，3=附加件，4=导出网格；
+        // id 含义随类型而定（附加件模式下为发束下标+1）。
+        int mouse_pick_type_ = -1;
+        int mouse_pick_id_ = 0;
         // 全局 SSAO 参数：x=采样半径(世界单位) y=强度 z=屏幕采样半径(像素) w=开关
         std::array<float, 4> ao_params_ = {1.5f, 0.8f, 12.0f, 1.0f};
         float scene_view_[16]{};
@@ -288,5 +295,6 @@ namespace sinriv::ui::render {
         std::vector<CollisionItem> collision_items_;
         float identity_mtx_[16]{};
         float readback_buffer[2 * 2 * 4]; // 用于从GPU读取碰撞信息
+        uint8_t id_readback_buffer_[2 * 2 * 4]{}; // ID 拾取回读（BGRA8）
     };
 }

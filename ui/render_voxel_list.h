@@ -1419,6 +1419,10 @@ class RenderVoxelList {
     bool mouse_world_pos_valid = false;
     bool mouse_world_pos_picked = false;
     bool mouse_world_pos_picked_auto_snapping = false;  // 自动吸附
+    // ID 拾取（来自 RenderDeferred 回读）：-1=无, 0=无类型, 1=原始网格,
+    // 2=体素, 3=附加件(id=发束下标+1), 4=导出网格
+    int mouse_pick_type = -1;
+    int mouse_pick_id = 0;
     bool disable_camera_on_pick = false;
     float mouse_highlight_range = 3.0f;
     void update_mouse_pos(RenderDeferred& renderer);

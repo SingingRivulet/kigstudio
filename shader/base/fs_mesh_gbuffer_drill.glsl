@@ -4,6 +4,7 @@ $input v_normal, v_pos
 #include <bgfx_shader.sh>
 
 uniform vec4 u_baseColor;
+uniform vec4 u_pickId;
 
 void main()
 {
@@ -15,4 +16,5 @@ void main()
     gl_FragData[2] = vec4(v_pos, 1.0);
     // 不写 gl_FragData[3]：与 addon 版一致，钻孔对鼠标拾取保持透明
     // （拾取模式下改用 fs_mesh_gbuffer，写完整 world_pos）。
+    gl_FragData[4] = u_pickId;
 }

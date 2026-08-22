@@ -317,6 +317,8 @@ void RenderVoxelList::update_mouse_pos(RenderDeferred& deferred_renderer) {
         }
     }
     mouse_world_pos_valid = deferred_renderer.mouse_highlight_[0] > 0.5f;
+    mouse_pick_type = deferred_renderer.mouse_pick_type_;
+    mouse_pick_id = deferred_renderer.mouse_pick_id_;
     if (mouse_world_pos_valid) {
         mouse_world_pos.x = deferred_renderer.mouse_pos_[0];
         mouse_world_pos.y = deferred_renderer.mouse_pos_[1];

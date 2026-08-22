@@ -162,6 +162,10 @@ namespace sinriv::ui::render {
                 bgfx::destroy(u_depth_scale_);
                 u_depth_scale_ = BGFX_INVALID_HANDLE;
             }
+            if (bgfx::isValid(u_pick_id_)) {
+                bgfx::destroy(u_pick_id_);
+                u_pick_id_ = BGFX_INVALID_HANDLE;
+            }
         }
 
         inline void ensureUniforms() {
@@ -185,6 +189,9 @@ namespace sinriv::ui::render {
             }
             if (!bgfx::isValid(u_depth_scale_)) {
                 u_depth_scale_ = bgfx::createUniform("u_depthScale", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_pick_id_)) {
+                u_pick_id_ = bgfx::createUniform("u_pickId", bgfx::UniformType::Vec4);
             }
         }
 
@@ -372,6 +379,7 @@ namespace sinriv::ui::render {
         bgfx::UniformHandle u_view_dir_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_center_pos_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_depth_scale_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_pick_id_ = BGFX_INVALID_HANDLE;
         float identity_mtx_[16]{};
     };
 
@@ -392,6 +400,15 @@ namespace sinriv::ui::render {
 
         inline void setBaseColor(float r, float g, float b, float a = 1.0f) {
             base_color_ = {r, g, b, a};
+        }
+
+        // ID 拾取：type=位置类型（0 无类型/1 原始网格/2 体素/3 附加件/4 导出网格），
+        // id=对象编号（附加件模式下为发束下标+1，16 位）。
+        // 写入 GBuffer 第 5 个附件：R=类型，G=id 低字节，B=id 高字节。
+        inline void setPickId(uint32_t type, uint32_t id) {
+            pick_id_ = {static_cast<float>(type & 0xFF) / 255.0f,
+                        static_cast<float>(id & 0xFF) / 255.0f,
+                        static_cast<float>((id >> 8) & 0xFF) / 255.0f, 1.0f};
         }
 
         inline std::array<float, 4> getBaseColor() const {
@@ -585,6 +602,7 @@ namespace sinriv::ui::render {
             bgfx::setUniform(shader.u_depth_bias_, depth_bias_vec);
             float exclude_vec[4] = {exclude_from_tint ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f};
             bgfx::setUniform(shader.u_exclude_from_tint_, exclude_vec);
+            bgfx::setUniform(shader.u_pick_id_, pick_id_.data());
             uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                              BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
                              BGFX_STATE_MSAA;
@@ -617,6 +635,7 @@ namespace sinriv::ui::render {
             bgfx::setIndexBuffer(mesh_.ibh);
             shader.ensureUniforms();
             bgfx::setUniform(shader.u_base_color_, base_color_.data());
+            bgfx::setUniform(shader.u_pick_id_, pick_id_.data());
             uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                              BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
                              BGFX_STATE_MSAA;
@@ -648,6 +667,7 @@ namespace sinriv::ui::render {
             bgfx::setIndexBuffer(mesh_.ibh);
             shader.ensureUniforms();
             bgfx::setUniform(shader.u_base_color_, base_color_.data());
+            bgfx::setUniform(shader.u_pick_id_, pick_id_.data());
             uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                              BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
                              BGFX_STATE_MSAA;
@@ -855,6 +875,8 @@ namespace sinriv::ui::render {
         vec3f local_bound_min_{};
         vec3f local_bound_max_{};
         std::array<float, 4> base_color_ = {0.82f, 0.82f, 0.82f, 1.0f};
+        // ID 拾取值（见 setPickId），默认 type=0（无类型）
+        std::array<float, 4> pick_id_ = {0.0f, 0.0f, 0.0f, 1.0f};
         float depth_bias_ = 0.0f;
         float identity_mtx_[16]{};
         std::vector<vec3f> cpu_vertices_;
