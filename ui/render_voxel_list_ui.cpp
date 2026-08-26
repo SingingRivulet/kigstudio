@@ -452,6 +452,7 @@ void RenderVoxelList::render_ui() {
     // 物体编辑器更新中时，隐藏附加件编辑器及其相关的所有窗口
     if (!is_current_item_updating()) {
         render_object_editor_addons();
+        render_strand_editor_window();
         render_guide_curve_window();
         render_width_editor_window();
         render_cross_section_editor();

@@ -976,6 +976,488 @@ void RenderVoxelList::render_width_editor_window() {
     ImGui::End();
 }
 
+void RenderVoxelList::render_strand_editor_window() {
+    if (!show_addon_window || !show_strand_editor_window)
+        return;
+
+    // 先取发束名用于窗口标题
+    std::string strand_title;
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(render_id);
+        if (it != items.end()) {
+            auto* s = it->second->find_strand_by_uuid(strand_editor_uuid);
+            if (s) strand_title = s->name;
+        }
+    }
+    std::string title =
+        (strand_title.empty() ? std::string(get_locale_cstr("window.strand_editor"))
+                              : strand_title) +
+        "##strand_editor_window";
+
+    ImGui::SetNextWindowSize(ImVec2(320, 480), ImGuiCond_Once);
+    bool window_open = true;
+    if (!ImGui::Begin(title.c_str(), &window_open)) {
+        ImGui::End();
+        return;
+    }
+    if (!window_open) {
+        show_strand_editor_window = false;
+        strand_editor_uuid.clear();
+        ImGui::End();
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(locker);
+    auto item_it = items.find(render_id);
+    if (item_it == items.end() || item_it->second->source_type != 2) {
+        ImGui::End();
+        show_strand_editor_window = false;
+        strand_editor_uuid.clear();
+        return;
+    }
+    RenderVoxelItem& item = *item_it->second;
+    auto* strand_ptr = item.find_strand_by_uuid(strand_editor_uuid);
+    if (!strand_ptr) {
+        // 发束已被删除，关闭窗口
+        ImGui::End();
+        show_strand_editor_window = false;
+        strand_editor_uuid.clear();
+        return;
+    }
+    size_t i = static_cast<size_t>(strand_ptr - item.hair_strands.data());
+    auto& strand = *strand_ptr;
+
+        // Snapshot for undo/redo of parameter edits
+        auto param_snapshot = capture_snapshot(item);
+        EditResult param_edits;
+
+        // 发束生成类型选择
+        const char* gen_type_names[] = {
+            get_locale_cstr("label.strand_type_normal"),
+            get_locale_cstr("label.strand_type_candy"),
+            get_locale_cstr("label.strand_type_braid"),
+        };
+        int type_int = static_cast<int>(strand.gen_type);
+        ImGui::SetNextItemWidth(140);
+        if (ImGui::Combo("##strand_type", &type_int, gen_type_names, 3)) {
+            strand.gen_type =
+                static_cast<HairStrandGenType>(type_int);
+            strand.mesh_dirty = true;
+            param_edits.value_changed = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.strand_type"));
+
+        bool is_normal =
+            (strand.gen_type == HairStrandGenType::NORMAL);
+
+        // 按钮行：绘制引导曲线（自锁按钮）
+        bool is_drawing =
+            (item.active_guide_draw_strand == item.hair_strands[i].uuid &&
+             item.guide_curve_drawing_active);
+        if (is_drawing) {
+            ImGui::PushStyleColor(ImGuiCol_Button,
+                                  ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
+        }
+        if (ImGui::Button(
+                is_drawing
+                    ? get_locale_cstr("action.stop_drawing")
+                    : get_locale_cstr("action.draw_guide_curve"))) {
+            if (is_drawing) {
+                item.guide_curve_drawing_active = false;
+                item.active_guide_draw_strand.clear();
+                show_guide_curve_window = false;
+            } else {
+                // 互斥：打开引导曲线时关闭宽度编辑器
+                if (item.width_editing_active) {
+                    item.width_editing_active = false;
+                    item.active_width_edit_strand.clear();
+                    show_width_editor_window = false;
+                }
+                item.guide_curve_drawing_active = true;
+                item.active_guide_draw_strand = item.hair_strands[i].uuid;
+                show_guide_curve_window = true;
+            }
+        }
+        if (is_drawing) {
+            ImGui::PopStyleColor();
+        }
+
+        // --- 编辑宽度向量（仅普通发束） ---
+        if (is_normal) {
+            ImGui::SameLine();
+            bool is_width_editing_popup =
+                (item.active_width_edit_strand == item.hair_strands[i].uuid &&
+                    item.width_editing_active);
+            if (ImGui::Button(
+                    is_width_editing_popup
+                        ? get_locale_cstr("action.stop_width_edit")
+                        : get_locale_cstr("action.edit_width"))) {
+                if (is_width_editing_popup) {
+                    item.width_editing_active = false;
+                    item.active_width_edit_strand.clear();
+                    show_width_editor_window = false;
+                } else {
+                    if (item.guide_curve_drawing_active) {
+                        item.guide_curve_drawing_active = false;
+                        item.active_guide_draw_strand.clear();
+                        show_guide_curve_window = false;
+                    }
+                    item.width_editing_active = true;
+                    item.active_width_edit_strand = item.hair_strands[i].uuid;
+                    show_width_editor_window = true;
+                }
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.edit_width"));
+        }
+
+        // 省略号菜单按钮（始终显示，弹出菜单包含编辑宽度/截面/删除/清空）
+        ImGui::SameLine();
+        char more_menu_id[64];
+        snprintf(more_menu_id, sizeof(more_menu_id), "...##strand_more_%zu", i);
+        if (ImGui::Button(more_menu_id)) {
+            ImGui::OpenPopup(more_menu_id);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", get_locale_cstr("tooltip.strand_more"));
+        if (ImGui::BeginPopup(more_menu_id)) {
+
+            // --- 编辑截面（仅普通发束可用） ---
+            if (!is_normal) ImGui::BeginDisabled();
+            bool is_section_editing_popup =
+                (item.active_section_edit_strand == item.hair_strands[i].uuid);
+            if (ImGui::MenuItem(
+                    is_section_editing_popup
+                        ? get_locale_cstr("action.stop_edit_section")
+                        : get_locale_cstr("action.edit_section"))) {
+                if (is_section_editing_popup) {
+                    item.active_section_edit_strand.clear();
+                    show_cross_section_editor_window = false;
+                } else {
+                    bool has_overrides = false;
+                    for (const auto& wp :
+                         item.hair_strands[i].width_points) {
+                        if (wp.section_state.vertices.size() >= 3) {
+                            has_overrides = true;
+                            break;
+                        }
+                    }
+                    if (has_overrides) {
+                        show_perpoint_confirm_global_open = true;
+                        pending_global_section_strand =
+                            static_cast<int>(i);
+                    } else {
+                        item.active_section_edit_strand =
+                            item.hair_strands[i].uuid;
+                        show_cross_section_editor_window = true;
+                    }
+                }
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.edit_section"));
+            if (!is_normal) ImGui::EndDisabled();
+
+            ImGui::Separator();
+
+            // --- 重命名发束 ---
+            if (ImGui::MenuItem(get_locale_cstr("action.rename_strand"))) {
+                pending_rename_strand_uuid = item.hair_strands[i].uuid;
+                strncpy(rename_buffer, item.hair_strands[i].name.c_str(),
+                        sizeof(rename_buffer) - 1);
+                rename_buffer[sizeof(rename_buffer) - 1] = '\0';
+                // OpenPopup is called after EndPopup below
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.rename_strand"));
+
+            // --- 移动到组 ---
+            if (ImGui::BeginMenu(get_locale_cstr("menu.move_to_group"))) {
+                if (ImGui::MenuItem(get_locale_cstr("label.ungrouped"),
+                                    nullptr, strand.group.empty())) {
+                    if (!strand.group.empty()) {
+                        push_undo_now(item.id, std::nullopt,
+                                      "Move Strand To Group");
+                        strand.group.clear();
+                    }
+                }
+                if (!item.strand_groups.empty()) ImGui::Separator();
+                for (const auto& g : item.strand_groups) {
+                    if (ImGui::MenuItem(g.c_str(), nullptr,
+                                        strand.group == g)) {
+                        if (strand.group != g) {
+                            push_undo_now(item.id, std::nullopt,
+                                          "Move Strand To Group");
+                            strand.group = g;
+                        }
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            // --- 删除发束 ---
+            if (ImGui::MenuItem(get_locale_cstr("action.delete_strand"))) {
+                pending_delete_strand_idx = static_cast<int>(i);
+                show_strand_editor_window = false;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.delete_strand"));
+
+            // --- 清空引导点 ---
+            if (ImGui::MenuItem(get_locale_cstr("action.clear_guide_points"))) {
+                push_undo_now(item.id, std::nullopt, "Clear Guide Points");
+                strand.guide_points.clear();
+                strand.mesh_dirty = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.clear_guide_points"));
+
+            ImGui::EndPopup();
+        }
+
+        // 显示点数信息（所有类型共用引导曲线点数）
+        ImGui::Text(get_locale_cstr("label.guide_curve_points"),
+                    static_cast<int>(strand.guide_points.size()));
+
+        if (is_normal) {
+            // --- NORMAL type: existing params ---
+            ImGui::SameLine();
+            ImGui::Text(get_locale_cstr("label.width_points"),
+                        static_cast<int>(strand.width_points.size()));
+
+            // Section rotation slider
+            ImGui::SetNextItemWidth(160);
+            float old_rot = strand.section_rotation;
+            ImGui::SliderFloat(get_locale_cstr("label.section_rotation"),
+                               &strand.section_rotation, -180.0f, 180.0f,
+                               "%.0f deg");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_rot != strand.section_rotation) {
+                strand.mesh_dirty = true;
+                param_edits.value_changed = true;
+            }
+
+            // Section subdiv
+            ImGui::SetNextItemWidth(160);
+            int old_section_subdiv = strand.section_subdiv;
+            ImGui::SliderInt(get_locale_cstr("label.section_subdiv"),
+                             &strand.section_subdiv, 1, 32);
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_section_subdiv != strand.section_subdiv) {
+                strand.mesh_dirty = true;
+                param_edits.value_changed = true;
+            }
+        } else if (strand.gen_type ==
+                   HairStrandGenType::CANDIED_HAWTHORN) {
+            // --- 糖葫芦 parameters ---
+            ImGui::SetNextItemWidth(160);
+            float old_ccr = strand.candy_cylinder_radius;
+            ImGui::DragFloat(get_locale_cstr("label.candy_cylinder_radius"),
+                             &strand.candy_cylinder_radius, 0.1f, 0.1f,
+                             20.0f, "%.1f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_ccr != strand.candy_cylinder_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            ImGui::SetNextItemWidth(160);
+            float old_ces = strand.candy_ellipsoid_spacing;
+            ImGui::DragFloat(get_locale_cstr("label.candy_ellipsoid_spacing"),
+                             &strand.candy_ellipsoid_spacing, 0.5f, 0.5f,
+                             50.0f, "%.1f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_ces != strand.candy_ellipsoid_spacing) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            ImGui::SetNextItemWidth(160);
+            float old_era = strand.candy_ellipsoid_radius_a;
+            ImGui::DragFloat(get_locale_cstr("label.candy_ellipsoid_radius_a"),
+                             &strand.candy_ellipsoid_radius_a, 0.1f, 0.1f,
+                             20.0f, "%.1f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_era != strand.candy_ellipsoid_radius_a) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            ImGui::SetNextItemWidth(160);
+            float old_erb = strand.candy_ellipsoid_radius_b;
+            ImGui::DragFloat(get_locale_cstr("label.candy_ellipsoid_radius_b"),
+                             &strand.candy_ellipsoid_radius_b, 0.1f, 0.2f,
+                             30.0f, "%.1f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_erb != strand.candy_ellipsoid_radius_b) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            // Joint toggle
+            bool old_cj = strand.candy_use_joints;
+            ImGui::Checkbox(get_locale_cstr("label.candy_use_joints"),
+                            &strand.candy_use_joints);
+            if (old_cj != strand.candy_use_joints) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            // Tip params (shared between special types)
+            ImGui::SeparatorText(get_locale_cstr("label.tip_params"));
+            ImGui::SetNextItemWidth(160);
+            float old_tl = strand.special_tip_length;
+            ImGui::DragFloat(get_locale_cstr("label.special_tip_length"),
+                             &strand.special_tip_length, 0.1f, 0.1f, 30.0f,
+                             "%.1f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_tl != strand.special_tip_length) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            ImGui::SetNextItemWidth(160);
+            float old_tr = strand.special_tip_radius;
+            ImGui::DragFloat(get_locale_cstr("label.special_tip_radius"),
+                             &strand.special_tip_radius, 0.1f, 0.1f, 20.0f,
+                             "%.1f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_tr != strand.special_tip_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+        } else if (strand.gen_type == HairStrandGenType::BRAID) {
+            // --- 麻花辫 parameters ---
+            ImGui::SetNextItemWidth(160);
+            float old_bcr = strand.braid_core_radius;
+            ImGui::DragFloat(get_locale_cstr("label.braid_core_radius"),
+                             &strand.braid_core_radius, 0.1f, 0.1f, 10.0f,
+                             "%.1f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_bcr != strand.braid_core_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            ImGui::SetNextItemWidth(160);
+            float old_bsr = strand.braid_strand_radius;
+            ImGui::DragFloat(get_locale_cstr("label.braid_strand_radius"),
+                             &strand.braid_strand_radius, 0.05f, 0.1f, 10.0f,
+                             "%.2f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_bsr != strand.braid_strand_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            ImGui::SetNextItemWidth(160);
+            float old_bbr = strand.braid_braid_radius;
+            ImGui::DragFloat(get_locale_cstr("label.braid_braid_radius"),
+                             &strand.braid_braid_radius, 0.1f, 0.2f, 20.0f,
+                             "%.1f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_bbr != strand.braid_braid_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            ImGui::SetNextItemWidth(160);
+            float old_btp = strand.braid_twist_pitch;
+            ImGui::DragFloat(get_locale_cstr("label.braid_twist_pitch"),
+                             &strand.braid_twist_pitch, 1.0f, 2.0f, 200.0f,
+                             "%.1f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_btp != strand.braid_twist_pitch) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            ImGui::SetNextItemWidth(160);
+            int old_bsc = strand.braid_strand_count;
+            ImGui::DragInt(get_locale_cstr("label.braid_strand_count"),
+                           &strand.braid_strand_count, 1, 2, 6);
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_bsc != strand.braid_strand_count) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            // Joint toggle
+            bool old_bj = strand.braid_use_joints;
+            ImGui::Checkbox(get_locale_cstr("label.braid_use_joints"),
+                            &strand.braid_use_joints);
+            if (old_bj != strand.braid_use_joints) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            // Tip params (shared between special types)
+            ImGui::SeparatorText(get_locale_cstr("label.tip_params"));
+            ImGui::SetNextItemWidth(160);
+            float old_tl = strand.special_tip_length;
+            ImGui::DragFloat(get_locale_cstr("label.special_tip_length"),
+                             &strand.special_tip_length, 0.1f, 0.1f, 30.0f,
+                             "%.1f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_tl != strand.special_tip_length) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+
+            ImGui::SetNextItemWidth(160);
+            float old_tr = strand.special_tip_radius;
+            ImGui::DragFloat(get_locale_cstr("label.special_tip_radius"),
+                             &strand.special_tip_radius, 0.1f, 0.1f, 20.0f,
+                             "%.1f");
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_tr != strand.special_tip_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
+        }
+
+        // 几何体细分精度（特殊发束类型：糖葫芦/麻花辫）
+        if (!is_normal) {
+            ImGui::SetNextItemWidth(160);
+            int old_sq = strand.special_quality;
+            ImGui::SliderInt(get_locale_cstr("label.special_quality"),
+                             &strand.special_quality, 4, 64);
+            if (ImGui::IsItemActivated()) param_edits.activated = true;
+            if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+            if (old_sq != strand.special_quality) {
+                strand.mesh_dirty = true;
+                param_edits.value_changed = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", get_locale_cstr("tooltip.special_quality"));
+        }
+
+        // 细分精度：引导曲线贝塞尔插值（所有类型共用）
+        ImGui::SetNextItemWidth(160);
+        int old_guide_subdiv = strand.guide_samples_per_segment;
+        ImGui::SliderInt(get_locale_cstr("label.guide_subdiv"),
+                         &strand.guide_samples_per_segment, 4, 128);
+        if (ImGui::IsItemActivated()) param_edits.activated = true;
+        if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+        if (old_guide_subdiv != strand.guide_samples_per_segment) {
+            strand.mesh_dirty = true;
+            param_edits.value_changed = true;
+        }
+
+        // Alpha wrap 修复参数（所有类型共用）
+        ImGui::SetNextItemWidth(160);
+        float old_repair_alpha = strand.repair_alpha;
+        ImGui::SliderFloat(get_locale_cstr("label.alpha_wrap_alpha"),
+                           &strand.repair_alpha, 0.01f, 100.0f, "%.2f");
+        if (ImGui::IsItemActivated()) param_edits.activated = true;
+        if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+        if (old_repair_alpha != strand.repair_alpha) {
+            strand.mesh_dirty = true;
+            param_edits.value_changed = true;
+        }
+        // ImGui::SameLine();
+        ImGui::SetNextItemWidth(160);
+        float old_repair_offset = strand.repair_offset;
+        ImGui::SliderFloat(get_locale_cstr("label.alpha_wrap_offset"),
+                           &strand.repair_offset, 0.001f, 10.0f, "%.3f");
+        if (ImGui::IsItemActivated()) param_edits.activated = true;
+        if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
+        if (old_repair_offset != strand.repair_offset) {
+            strand.mesh_dirty = true;
+            param_edits.value_changed = true;
+        }
+
+        // --- Push undo for parameter edits ---
+        // begin_edit sets collision_edit_active=true, which blocks
+        // push_undo_now during multi-frame drags. end_edit clears it
+        // on release so the undo entry captures exactly one pre-edit
+        // snapshot per drag gesture.
+        if (param_edits.activated) {
+            begin_edit(item.id);
+        }
+        if (param_edits.deactivated_after_edit) {
+            end_edit(item.id, "Strand Parameter Edit");
+            strand.mesh_dirty = true;
+        } else if (param_edits.value_changed && !item.collision_edit_active) {
+            // Discrete change (keyboard input, +/- buttons) — no
+            // drag session active, so push immediately.
+            push_undo_now(item.id, param_snapshot, "Strand Parameter Edit");
+            strand.mesh_dirty = true;
+        }
+    ImGui::End();
+}
+
 void RenderVoxelList::render_object_editor_addons() {
     // 窗口是否可见取决于当前选中节点是否为附加件模式
     {
@@ -1115,6 +1597,9 @@ void RenderVoxelList::render_object_editor_addons() {
             item.guide_curve_drawing_active = true;
             item.active_guide_draw_strand = strand.uuid;
             show_guide_curve_window = true;
+            // 弹出发束编辑窗口
+            strand_editor_uuid = strand.uuid;
+            show_strand_editor_window = true;
         }
 
         ImGui::SameLine();
@@ -1128,7 +1613,6 @@ void RenderVoxelList::render_object_editor_addons() {
         ImGui::Separator();
 
         // 发束列表（树状：组与未分组发束同级，按 strand_top_order 排序）
-        int delete_idx = -1;
         int delete_group_idx = -1;
         std::string pending_create_group_at;  // 右键“创建组”的发束 uuid
         std::string model_ctx_strand_uuid;    // 模型上右键的发束 uuid
@@ -1166,6 +1650,9 @@ void RenderVoxelList::render_object_editor_addons() {
         // 拖拽状态与本帧悬停记录（供缝隙显示与节点高亮用）
         const bool drag_active = (ImGui::GetDragDropPayload() != nullptr);
         std::string cur_hover_node, cur_hover_gap;
+        // 普通点击已选中的节点时，延迟到松开（且未拖动）才折叠为单选，
+        // 避免多选状态下按下即折叠、无法整体拖动
+        std::string collapse_sel_on_release;
 
         // 视口内直接点击发束：左键选中（Ctrl 切换多选），右键弹“创建组”。
         // 拖动（旋转相机）不触发选中；绘制/拾取模式下不响应。
@@ -1197,6 +1684,9 @@ void RenderVoxelList::render_object_editor_addons() {
                     } else {
                         selected_strand_uuids = {hovered_strand->uuid};
                         strand_sel_anchor = hovered_strand->uuid;
+                        // 在模型上点击发束：弹出发束编辑窗口
+                        strand_editor_uuid = hovered_strand->uuid;
+                        show_strand_editor_window = true;
                     }
                 }
                 // 右键：仅未分组发束可创建组（与树状列表行为一致）
@@ -1226,7 +1716,6 @@ void RenderVoxelList::render_object_editor_addons() {
         auto render_strand_entry = [&](size_t i) {
             auto& strand = item.hair_strands[i];
             ImGui::PushID(static_cast<int>(i));
-            bool strand_hovered = false;
 
             char header_label[64];
             if (!strand.name.empty()) {
@@ -1242,17 +1731,15 @@ void RenderVoxelList::render_object_editor_addons() {
             for (const auto& u : selected_strand_uuids)
                 if (u == strand.uuid) { is_selected = true; break; }
 
-            // OpenOnArrow：点击文本只做选择，不触发展开/折叠
-            int header_flags = ImGuiTreeNodeFlags_AllowOverlap |
-                               ImGuiTreeNodeFlags_OpenOnArrow;
-            if (is_selected) header_flags |= ImGuiTreeNodeFlags_Selected;
-            ImGui::SetNextItemOpen(strand.expanded, ImGuiCond_Always);
-            bool expanded = ImGui::TreeNodeEx(header_label, header_flags);
-            if (ImGui::IsItemToggledOpen())
-                strand.expanded = !strand.expanded;
-            if (ImGui::IsItemHovered()) strand_hovered = true;
+            // 发束行（叶子）：点击选中并弹出发束编辑窗口，不再展开
+            ImGui::Selectable(header_label, is_selected);
+            bool strand_hovered = ImGui::IsItemHovered();
             // 拖拽悬停记忆：决定下一帧显示该节点上下的缝隙
-            if (drag_active && ImGui::IsItemHovered())
+            // （AllowWhenBlockedByActiveItem：拖动时拖拽源占用 ActiveId，
+            //  默认 IsItemHovered 会被它屏蔽）
+            if (drag_active &&
+                ImGui::IsItemHovered(
+                    ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
                 cur_hover_node = "s:" + strand.uuid;
 
             // 多选：Ctrl 切换单个、Shift 锚点范围、普通点击单选
@@ -1285,15 +1772,36 @@ void RenderVoxelList::render_object_editor_addons() {
                             visible_strand_order.begin() + a,
                             visible_strand_order.begin() + b + 1);
                     }
+                } else if (!is_selected) {
+                    selected_strand_uuids = {strand.uuid};
+                    strand_sel_anchor = strand.uuid;
                 } else {
+                    // 点击的是已选中节点：先保持多选，松开未拖动再折叠
+                    collapse_sel_on_release = strand.uuid;
+                }
+                // 点击发束弹出发束编辑窗口（Shift 范围选择除外）
+                if (!sel_io.KeyShift) {
+                    strand_editor_uuid = strand.uuid;
+                    show_strand_editor_window = true;
+                }
+            }
+            // 松开左键且未拖动：折叠为被点击的这一根
+            if (collapse_sel_on_release == strand.uuid &&
+                ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                const ImGuiIO& rel_io = ImGui::GetIO();
+                if (!rel_io.KeyCtrl && !rel_io.KeyShift &&
+                    rel_io.MouseDragMaxDistanceSqr[0] <= 36.0f) {
                     selected_strand_uuids = {strand.uuid};
                     strand_sel_anchor = strand.uuid;
                 }
+                collapse_sel_on_release.clear();
             }
 
             // 拖拽源：拖到组节点上批量入组，拖到列表空白处移出分组
+            // （SourceNoHoldToOpenOthers：禁止悬停 0.7s 自动展开其他节点）
             if (ImGui::BeginDragDropSource(
-                    ImGuiDragDropFlags_SourceAllowNullID)) {
+                    ImGuiDragDropFlags_SourceAllowNullID |
+                    ImGuiDragDropFlags_SourceNoHoldToOpenOthers)) {
                 // 拖动未选中的发束时，把它变为唯一选中项
                 if (!is_selected) {
                     selected_strand_uuids = {strand.uuid};
@@ -1338,436 +1846,6 @@ void RenderVoxelList::render_object_editor_addons() {
                 ImGui::SetTooltip("%s", get_locale_cstr("tooltip.strand_visible"));
             if (old_vis != strand.visible) strand.mesh_dirty = true;
 
-            if (expanded) {
-                // Snapshot for undo/redo of parameter edits
-                auto param_snapshot = capture_snapshot(item);
-                EditResult param_edits;
-
-                // 发束生成类型选择
-                const char* gen_type_names[] = {
-                    get_locale_cstr("label.strand_type_normal"),
-                    get_locale_cstr("label.strand_type_candy"),
-                    get_locale_cstr("label.strand_type_braid"),
-                };
-                int type_int = static_cast<int>(strand.gen_type);
-                ImGui::SetNextItemWidth(140);
-                if (ImGui::Combo("##strand_type", &type_int, gen_type_names, 3)) {
-                    strand.gen_type =
-                        static_cast<HairStrandGenType>(type_int);
-                    strand.mesh_dirty = true;
-                    param_edits.value_changed = true;
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("%s", get_locale_cstr("tooltip.strand_type"));
-
-                bool is_normal =
-                    (strand.gen_type == HairStrandGenType::NORMAL);
-
-                // 按钮行：绘制引导曲线（自锁按钮）
-                bool is_drawing =
-                    (item.active_guide_draw_strand == item.hair_strands[i].uuid &&
-                     item.guide_curve_drawing_active);
-                if (is_drawing) {
-                    ImGui::PushStyleColor(ImGuiCol_Button,
-                                          ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
-                }
-                if (ImGui::Button(
-                        is_drawing
-                            ? get_locale_cstr("action.stop_drawing")
-                            : get_locale_cstr("action.draw_guide_curve"))) {
-                    if (is_drawing) {
-                        item.guide_curve_drawing_active = false;
-                        item.active_guide_draw_strand.clear();
-                        show_guide_curve_window = false;
-                    } else {
-                        // 互斥：打开引导曲线时关闭宽度编辑器
-                        if (item.width_editing_active) {
-                            item.width_editing_active = false;
-                            item.active_width_edit_strand.clear();
-                            show_width_editor_window = false;
-                        }
-                        item.guide_curve_drawing_active = true;
-                        item.active_guide_draw_strand = item.hair_strands[i].uuid;
-                        show_guide_curve_window = true;
-                    }
-                }
-                if (is_drawing) {
-                    ImGui::PopStyleColor();
-                }
-
-                // --- 编辑宽度向量（仅普通发束） ---
-                if (is_normal) {
-                    ImGui::SameLine();
-                    bool is_width_editing_popup =
-                        (item.active_width_edit_strand == item.hair_strands[i].uuid &&
-                            item.width_editing_active);
-                    if (ImGui::Button(
-                            is_width_editing_popup
-                                ? get_locale_cstr("action.stop_width_edit")
-                                : get_locale_cstr("action.edit_width"))) {
-                        if (is_width_editing_popup) {
-                            item.width_editing_active = false;
-                            item.active_width_edit_strand.clear();
-                            show_width_editor_window = false;
-                        } else {
-                            if (item.guide_curve_drawing_active) {
-                                item.guide_curve_drawing_active = false;
-                                item.active_guide_draw_strand.clear();
-                                show_guide_curve_window = false;
-                            }
-                            item.width_editing_active = true;
-                            item.active_width_edit_strand = item.hair_strands[i].uuid;
-                            show_width_editor_window = true;
-                        }
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.edit_width"));
-                }
-
-                // 省略号菜单按钮（始终显示，弹出菜单包含编辑宽度/截面/删除/清空）
-                ImGui::SameLine();
-                char more_menu_id[64];
-                snprintf(more_menu_id, sizeof(more_menu_id), "...##strand_more_%zu", i);
-                if (ImGui::Button(more_menu_id)) {
-                    ImGui::OpenPopup(more_menu_id);
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("%s", get_locale_cstr("tooltip.strand_more"));
-                if (ImGui::BeginPopup(more_menu_id)) {
-
-                    // --- 编辑截面（仅普通发束可用） ---
-                    if (!is_normal) ImGui::BeginDisabled();
-                    bool is_section_editing_popup =
-                        (item.active_section_edit_strand == item.hair_strands[i].uuid);
-                    if (ImGui::MenuItem(
-                            is_section_editing_popup
-                                ? get_locale_cstr("action.stop_edit_section")
-                                : get_locale_cstr("action.edit_section"))) {
-                        if (is_section_editing_popup) {
-                            item.active_section_edit_strand.clear();
-                            show_cross_section_editor_window = false;
-                        } else {
-                            bool has_overrides = false;
-                            for (const auto& wp :
-                                 item.hair_strands[i].width_points) {
-                                if (wp.section_state.vertices.size() >= 3) {
-                                    has_overrides = true;
-                                    break;
-                                }
-                            }
-                            if (has_overrides) {
-                                show_perpoint_confirm_global_open = true;
-                                pending_global_section_strand =
-                                    static_cast<int>(i);
-                            } else {
-                                item.active_section_edit_strand =
-                                    item.hair_strands[i].uuid;
-                                show_cross_section_editor_window = true;
-                            }
-                        }
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.edit_section"));
-                    if (!is_normal) ImGui::EndDisabled();
-
-                    ImGui::Separator();
-
-                    // --- 重命名发束 ---
-                    if (ImGui::MenuItem(get_locale_cstr("action.rename_strand"))) {
-                        pending_rename_strand_uuid = item.hair_strands[i].uuid;
-                        strncpy(rename_buffer, item.hair_strands[i].name.c_str(),
-                                sizeof(rename_buffer) - 1);
-                        rename_buffer[sizeof(rename_buffer) - 1] = '\0';
-                        // OpenPopup is called after EndPopup below
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.rename_strand"));
-
-                    // --- 移动到组 ---
-                    if (ImGui::BeginMenu(get_locale_cstr("menu.move_to_group"))) {
-                        if (ImGui::MenuItem(get_locale_cstr("label.ungrouped"),
-                                            nullptr, strand.group.empty())) {
-                            if (!strand.group.empty()) {
-                                push_undo_now(item.id, std::nullopt,
-                                              "Move Strand To Group");
-                                strand.group.clear();
-                            }
-                        }
-                        if (!item.strand_groups.empty()) ImGui::Separator();
-                        for (const auto& g : item.strand_groups) {
-                            if (ImGui::MenuItem(g.c_str(), nullptr,
-                                                strand.group == g)) {
-                                if (strand.group != g) {
-                                    push_undo_now(item.id, std::nullopt,
-                                                  "Move Strand To Group");
-                                    strand.group = g;
-                                }
-                            }
-                        }
-                        ImGui::EndMenu();
-                    }
-
-                    // --- 删除发束 ---
-                    if (ImGui::MenuItem(get_locale_cstr("action.delete_strand"))) {
-                        delete_idx = static_cast<int>(i);
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.delete_strand"));
-
-                    // --- 清空引导点 ---
-                    if (ImGui::MenuItem(get_locale_cstr("action.clear_guide_points"))) {
-                        push_undo_now(item.id, std::nullopt, "Clear Guide Points");
-                        strand.guide_points.clear();
-                        strand.mesh_dirty = true;
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.clear_guide_points"));
-
-                    ImGui::EndPopup();
-                }
-
-                // 显示点数信息（所有类型共用引导曲线点数）
-                ImGui::Text(get_locale_cstr("label.guide_curve_points"),
-                            static_cast<int>(strand.guide_points.size()));
-
-                if (is_normal) {
-                    // --- NORMAL type: existing params ---
-                    ImGui::SameLine();
-                    ImGui::Text(get_locale_cstr("label.width_points"),
-                                static_cast<int>(strand.width_points.size()));
-
-                    // Section rotation slider
-                    ImGui::SetNextItemWidth(160);
-                    float old_rot = strand.section_rotation;
-                    ImGui::SliderFloat(get_locale_cstr("label.section_rotation"),
-                                       &strand.section_rotation, -180.0f, 180.0f,
-                                       "%.0f deg");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_rot != strand.section_rotation) {
-                        strand.mesh_dirty = true;
-                        param_edits.value_changed = true;
-                    }
-
-                    // Section subdiv
-                    ImGui::SetNextItemWidth(160);
-                    int old_section_subdiv = strand.section_subdiv;
-                    ImGui::SliderInt(get_locale_cstr("label.section_subdiv"),
-                                     &strand.section_subdiv, 1, 32);
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_section_subdiv != strand.section_subdiv) {
-                        strand.mesh_dirty = true;
-                        param_edits.value_changed = true;
-                    }
-                } else if (strand.gen_type ==
-                           HairStrandGenType::CANDIED_HAWTHORN) {
-                    // --- 糖葫芦 parameters ---
-                    ImGui::SetNextItemWidth(160);
-                    float old_ccr = strand.candy_cylinder_radius;
-                    ImGui::DragFloat(get_locale_cstr("label.candy_cylinder_radius"),
-                                     &strand.candy_cylinder_radius, 0.1f, 0.1f,
-                                     20.0f, "%.1f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_ccr != strand.candy_cylinder_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    ImGui::SetNextItemWidth(160);
-                    float old_ces = strand.candy_ellipsoid_spacing;
-                    ImGui::DragFloat(get_locale_cstr("label.candy_ellipsoid_spacing"),
-                                     &strand.candy_ellipsoid_spacing, 0.5f, 0.5f,
-                                     50.0f, "%.1f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_ces != strand.candy_ellipsoid_spacing) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    ImGui::SetNextItemWidth(160);
-                    float old_era = strand.candy_ellipsoid_radius_a;
-                    ImGui::DragFloat(get_locale_cstr("label.candy_ellipsoid_radius_a"),
-                                     &strand.candy_ellipsoid_radius_a, 0.1f, 0.1f,
-                                     20.0f, "%.1f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_era != strand.candy_ellipsoid_radius_a) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    ImGui::SetNextItemWidth(160);
-                    float old_erb = strand.candy_ellipsoid_radius_b;
-                    ImGui::DragFloat(get_locale_cstr("label.candy_ellipsoid_radius_b"),
-                                     &strand.candy_ellipsoid_radius_b, 0.1f, 0.2f,
-                                     30.0f, "%.1f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_erb != strand.candy_ellipsoid_radius_b) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    // Joint toggle
-                    bool old_cj = strand.candy_use_joints;
-                    ImGui::Checkbox(get_locale_cstr("label.candy_use_joints"),
-                                    &strand.candy_use_joints);
-                    if (old_cj != strand.candy_use_joints) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    // Tip params (shared between special types)
-                    ImGui::SeparatorText(get_locale_cstr("label.tip_params"));
-                    ImGui::SetNextItemWidth(160);
-                    float old_tl = strand.special_tip_length;
-                    ImGui::DragFloat(get_locale_cstr("label.special_tip_length"),
-                                     &strand.special_tip_length, 0.1f, 0.1f, 30.0f,
-                                     "%.1f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_tl != strand.special_tip_length) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    ImGui::SetNextItemWidth(160);
-                    float old_tr = strand.special_tip_radius;
-                    ImGui::DragFloat(get_locale_cstr("label.special_tip_radius"),
-                                     &strand.special_tip_radius, 0.1f, 0.1f, 20.0f,
-                                     "%.1f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_tr != strand.special_tip_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-                } else if (strand.gen_type == HairStrandGenType::BRAID) {
-                    // --- 麻花辫 parameters ---
-                    ImGui::SetNextItemWidth(160);
-                    float old_bcr = strand.braid_core_radius;
-                    ImGui::DragFloat(get_locale_cstr("label.braid_core_radius"),
-                                     &strand.braid_core_radius, 0.1f, 0.1f, 10.0f,
-                                     "%.1f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_bcr != strand.braid_core_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    ImGui::SetNextItemWidth(160);
-                    float old_bsr = strand.braid_strand_radius;
-                    ImGui::DragFloat(get_locale_cstr("label.braid_strand_radius"),
-                                     &strand.braid_strand_radius, 0.05f, 0.1f, 10.0f,
-                                     "%.2f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_bsr != strand.braid_strand_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    ImGui::SetNextItemWidth(160);
-                    float old_bbr = strand.braid_braid_radius;
-                    ImGui::DragFloat(get_locale_cstr("label.braid_braid_radius"),
-                                     &strand.braid_braid_radius, 0.1f, 0.2f, 20.0f,
-                                     "%.1f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_bbr != strand.braid_braid_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    ImGui::SetNextItemWidth(160);
-                    float old_btp = strand.braid_twist_pitch;
-                    ImGui::DragFloat(get_locale_cstr("label.braid_twist_pitch"),
-                                     &strand.braid_twist_pitch, 1.0f, 2.0f, 200.0f,
-                                     "%.1f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_btp != strand.braid_twist_pitch) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    ImGui::SetNextItemWidth(160);
-                    int old_bsc = strand.braid_strand_count;
-                    ImGui::DragInt(get_locale_cstr("label.braid_strand_count"),
-                                   &strand.braid_strand_count, 1, 2, 6);
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_bsc != strand.braid_strand_count) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    // Joint toggle
-                    bool old_bj = strand.braid_use_joints;
-                    ImGui::Checkbox(get_locale_cstr("label.braid_use_joints"),
-                                    &strand.braid_use_joints);
-                    if (old_bj != strand.braid_use_joints) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    // Tip params (shared between special types)
-                    ImGui::SeparatorText(get_locale_cstr("label.tip_params"));
-                    ImGui::SetNextItemWidth(160);
-                    float old_tl = strand.special_tip_length;
-                    ImGui::DragFloat(get_locale_cstr("label.special_tip_length"),
-                                     &strand.special_tip_length, 0.1f, 0.1f, 30.0f,
-                                     "%.1f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_tl != strand.special_tip_length) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-
-                    ImGui::SetNextItemWidth(160);
-                    float old_tr = strand.special_tip_radius;
-                    ImGui::DragFloat(get_locale_cstr("label.special_tip_radius"),
-                                     &strand.special_tip_radius, 0.1f, 0.1f, 20.0f,
-                                     "%.1f");
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_tr != strand.special_tip_radius) { strand.mesh_dirty = true; param_edits.value_changed = true; }
-                }
-
-                // 几何体细分精度（特殊发束类型：糖葫芦/麻花辫）
-                if (!is_normal) {
-                    ImGui::SetNextItemWidth(160);
-                    int old_sq = strand.special_quality;
-                    ImGui::SliderInt(get_locale_cstr("label.special_quality"),
-                                     &strand.special_quality, 4, 64);
-                    if (ImGui::IsItemActivated()) param_edits.activated = true;
-                    if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                    if (old_sq != strand.special_quality) {
-                        strand.mesh_dirty = true;
-                        param_edits.value_changed = true;
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", get_locale_cstr("tooltip.special_quality"));
-                }
-
-                // 细分精度：引导曲线贝塞尔插值（所有类型共用）
-                ImGui::SetNextItemWidth(160);
-                int old_guide_subdiv = strand.guide_samples_per_segment;
-                ImGui::SliderInt(get_locale_cstr("label.guide_subdiv"),
-                                 &strand.guide_samples_per_segment, 4, 128);
-                if (ImGui::IsItemActivated()) param_edits.activated = true;
-                if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                if (old_guide_subdiv != strand.guide_samples_per_segment) {
-                    strand.mesh_dirty = true;
-                    param_edits.value_changed = true;
-                }
-
-                // Alpha wrap 修复参数（所有类型共用）
-                ImGui::SetNextItemWidth(160);
-                float old_repair_alpha = strand.repair_alpha;
-                ImGui::SliderFloat(get_locale_cstr("label.alpha_wrap_alpha"),
-                                   &strand.repair_alpha, 0.01f, 100.0f, "%.2f");
-                if (ImGui::IsItemActivated()) param_edits.activated = true;
-                if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                if (old_repair_alpha != strand.repair_alpha) {
-                    strand.mesh_dirty = true;
-                    param_edits.value_changed = true;
-                }
-                // ImGui::SameLine();
-                ImGui::SetNextItemWidth(160);
-                float old_repair_offset = strand.repair_offset;
-                ImGui::SliderFloat(get_locale_cstr("label.alpha_wrap_offset"),
-                                   &strand.repair_offset, 0.001f, 10.0f, "%.3f");
-                if (ImGui::IsItemActivated()) param_edits.activated = true;
-                if (ImGui::IsItemDeactivatedAfterEdit()) param_edits.deactivated_after_edit = true;
-                if (old_repair_offset != strand.repair_offset) {
-                    strand.mesh_dirty = true;
-                    param_edits.value_changed = true;
-                }
-
-                // --- Push undo for parameter edits ---
-                // begin_edit sets collision_edit_active=true, which blocks
-                // push_undo_now during multi-frame drags. end_edit clears it
-                // on release so the undo entry captures exactly one pre-edit
-                // snapshot per drag gesture.
-                if (param_edits.activated) {
-                    begin_edit(item.id);
-                }
-                if (param_edits.deactivated_after_edit) {
-                    end_edit(item.id, "Strand Parameter Edit");
-                    strand.mesh_dirty = true;
-                } else if (param_edits.value_changed && !item.collision_edit_active) {
-                    // Discrete change (keyboard input, +/- buttons) — no
-                    // drag session active, so push immediately.
-                    push_undo_now(item.id, param_snapshot, "Strand Parameter Edit");
-                    strand.mesh_dirty = true;
-                }
-                ImGui::TreePop();
-            }
-
             if (strand_hovered) item.hovered_strand_uuid = strand.uuid;
             ImGui::PopID();
         };
@@ -1794,7 +1872,9 @@ void RenderVoxelList::render_object_editor_addons() {
             ImGui::PushID(gap_id.c_str());
             ImGui::Selectable("##drop_gap", false, 0,
                               ImVec2(ImGui::GetContentRegionAvail().x, 4.0f));
-            if (ImGui::IsItemHovered()) cur_hover_gap = gap_id;
+            if (ImGui::IsItemHovered(
+                    ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
+                cur_hover_gap = gap_id;
             const ImVec2 rmin = ImGui::GetItemRectMin();
             const ImVec2 rmax = ImGui::GetItemRectMax();
             if (ImGui::BeginDragDropTarget()) {
@@ -1852,11 +1932,15 @@ void RenderVoxelList::render_object_editor_addons() {
                 ImGui::PushID(entry_key.c_str());
                 bool group_open = ImGui::TreeNodeEx(
                     entry_key.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
-                if (drag_active && ImGui::IsItemHovered())
+                if (drag_active &&
+                    ImGui::IsItemHovered(
+                        ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
                     cur_hover_node = "g:" + entry_key;
                 // 组节点拖拽源：拖到顶层缝隙调整顺序
+                // （SourceNoHoldToOpenOthers：禁止悬停自动展开其他节点）
                 if (ImGui::BeginDragDropSource(
-                        ImGuiDragDropFlags_SourceAllowNullID)) {
+                        ImGuiDragDropFlags_SourceAllowNullID |
+                        ImGuiDragDropFlags_SourceNoHoldToOpenOthers)) {
                     ImGui::SetDragDropPayload("GROUP_NAME", entry_key.c_str(),
                                               entry_key.size() + 1);
                     ImGui::TextUnformatted(entry_key.c_str());
@@ -2117,33 +2201,37 @@ void RenderVoxelList::render_object_editor_addons() {
                                      delete_group_idx);
         }
 
-        // 延迟删除
-        if (delete_idx >= 0) {
+        // 延迟删除（由发束编辑窗口发起）
+        if (pending_delete_strand_idx >= 0 &&
+            pending_delete_strand_idx <
+                static_cast<int>(item.hair_strands.size())) {
+            const int del = pending_delete_strand_idx;
             // 如果正在绘制/编辑被删除的发束，先停止
-            if (item.active_guide_draw_strand == item.hair_strands[delete_idx].uuid) {
+            if (item.active_guide_draw_strand == item.hair_strands[del].uuid) {
                 item.guide_curve_drawing_active = false;
                 item.active_guide_draw_strand.clear();
                 show_guide_curve_window = false;
             }
-            if (item.active_width_edit_strand == item.hair_strands[delete_idx].uuid) {
+            if (item.active_width_edit_strand == item.hair_strands[del].uuid) {
                 item.width_editing_active = false;
                 item.active_width_edit_strand.clear();
                 show_width_editor_window = false;
             }
-            if (item.active_section_edit_strand == item.hair_strands[delete_idx].uuid) {
+            if (item.active_section_edit_strand == item.hair_strands[del].uuid) {
                 item.active_section_edit_strand.clear();
                 show_cross_section_editor_window = false;
             }
-            if (item.active_perpoint_section_edit_strand == item.hair_strands[delete_idx].uuid) {
+            if (item.active_perpoint_section_edit_strand == item.hair_strands[del].uuid) {
                 item.perpoint_section_editing_active = false;
                 item.active_perpoint_section_edit_strand.clear();
                 item.active_perpoint_section_edit_width_idx = -1;
                 show_perpoint_section_editor_window = false;
             }
             push_undo_now(item.id, std::nullopt, "Delete Hair Strand");
-            item.hair_strands.erase(item.hair_strands.begin() + delete_idx);
+            item.hair_strands.erase(item.hair_strands.begin() + del);
             for (auto& s : item.hair_strands) s.mesh_dirty = true;
         }
+        pending_delete_strand_idx = -1;
 
     }
 

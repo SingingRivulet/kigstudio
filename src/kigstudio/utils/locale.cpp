@@ -1324,6 +1324,8 @@ void init_locale_strings() {
                       {{"en", "Hair Strands"}, {"zh", "发束列表"}});
 
     // ---- 发束分组 ----
+    add_locale_string("window.strand_editor",
+                      {{"en", "Strand Editor"}, {"zh", "发束编辑器"}});
     add_locale_string("label.pick_type_none",
                       {{"en", "Untyped"}, {"zh", "无类型"}});
     add_locale_string("label.pick_type_origin_mesh",

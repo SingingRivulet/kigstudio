@@ -1445,6 +1445,7 @@ class RenderVoxelList {
     void render_object_editor_voxel_tab_content(RenderVoxelItem& item);
     void render_object_editor_comment_tab_content(RenderVoxelItem& item);
     void render_object_editor_addons();
+    void render_strand_editor_window();
     void render_guide_curve_window();
     void render_width_editor_window();
     void render_cross_section_editor();
@@ -1490,6 +1491,10 @@ class RenderVoxelList {
     // 发束多选状态（运行时数据，不序列化）
     std::vector<std::string> selected_strand_uuids;
     std::string strand_sel_anchor;  // Shift 范围选择的锚点 uuid
+    // 发束编辑窗口（独立于附加件编辑器）：点击树中的发束或模型上的发束弹出
+    bool show_strand_editor_window = false;
+    std::string strand_editor_uuid;
+    int pending_delete_strand_idx = -1;  // 发束编辑窗口请求的延迟删除
     // 拖拽悬停记忆（运行时）：缝隙只显示在悬停节点的上下；
     // 记住悬停的缝隙本身，防止光标从节点移入缝隙时闪烁
     std::string strand_drag_hover_node;
