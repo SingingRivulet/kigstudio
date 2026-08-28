@@ -1786,6 +1786,20 @@ class RenderVoxelList {
                         int load_mode = 0,
                         bool load_as_sdf = false,
                         sinriv::kigstudio::sdf::SDFPrecision voxel_precision = sinriv::kigstudio::sdf::SDFPrecision::Fast);
+    // 雕刻模式：从源节点加载体素 + 稀疏分块 SDF（SDFChunkedGrid）。
+    // sdf_subdivisions 为 SDF 相对体素大小的细分倍数（sdf 采样边长 =
+    // voxel_size / sdf_subdivisions）。
+    void load_sculpt_from_node(int target_item_id,
+                               int source_node_id,
+                               float voxel_size,
+                               int sdf_subdivisions);
+
+    // 后台线程体素化（带进度上报），load_from_node / load_sculpt_from_node 共用
+    void voxelize_triangles_bg(
+        const std::vector<sinriv::kigstudio::voxel::triangle_bvh<float>::triangle>& triangles,
+        float voxel_size,
+        sinriv::kigstudio::sdf::SDFPrecision voxel_precision,
+        sinriv::kigstudio::voxel::VoxelGrid& out_voxel);
 
     // Cache helpers for node sources
     std::filesystem::path get_cache_dir(const std::string& subdir) const;
@@ -1826,6 +1840,9 @@ class RenderVoxelList {
         TASK_EXECUTE_FLOW = 11,
         TASK_EXPORT_STL_SET = 12,
         TASK_ANALYZE_DRILL_STRANDS = 13,
+        TASK_LOAD_SCULPT = 14,
+        TASK_UPDATE_SDF_DISPLAY = 15,
+        TASK_UPDATE_SDF_REGION = 16,
     };
     struct QueueTask {
         QueueTaskType type;
@@ -1851,6 +1868,10 @@ class RenderVoxelList {
         // 工作流执行
         std::vector<FlowEntry> flow_input_entries;
         std::vector<FlowEntry> flow_output_entries;
+        // SDF 显示局部更新区域（TASK_UPDATE_SDF_REGION），
+        // 体素坐标闭区间（voxel_grid_data 坐标系）
+        sinriv::kigstudio::Vec3i region_min{0, 0, 0};
+        sinriv::kigstudio::Vec3i region_max{0, 0, 0};
     };
     std::queue<QueueTask> queue;
     std::mutex queue_mutex;
@@ -1885,6 +1906,23 @@ class RenderVoxelList {
                           int node_source_sdf_subdivisions = 2,
                           bool node_source_sdf_simplify = false,
                           float node_source_sdf_simplify_ratio = 0.1f);
+    void queue_load_sculpt(int item_id,
+                           int source_node_id,
+                           float voxel_size,
+                           int sdf_subdivisions);
+    // 从当前 sdf_data 全量重建 SDF 平滑 mesh 显示（雕刻模式"更新 SDF"）
+    void queue_update_sdf_display(int item_id, int sdf_subdivisions);
+    void update_sdf_display_bg(int item_id, int sdf_subdivisions);
+    // SDF 显示局部更新：仅重建 [voxel_min, voxel_max]（voxel_grid_data
+    // 体素坐标闭区间）覆盖的 chunk。调用前 SDF 数据应已被修改。
+    void queue_update_sdf_region(int item_id,
+                                 sinriv::kigstudio::Vec3i voxel_min,
+                                 sinriv::kigstudio::Vec3i voxel_max,
+                                 int sdf_subdivisions);
+    void update_sdf_region_bg(int item_id,
+                              sinriv::kigstudio::Vec3i voxel_min,
+                              sinriv::kigstudio::Vec3i voxel_max,
+                              int sdf_subdivisions);
     void queue_do_segment(int index);
     void queue_do_segment();
     void queue_do_segment_unsafe();

@@ -298,7 +298,18 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
     }
 
     // SDF 预览渲染按钮
-    if (item.sdf_data) {
+    if (item.sdf_data && item.source_type == 3) {
+        // 雕刻模式：SDF 实时显示，按钮变为"更新 SDF"，从当前 SDF 数据
+        // 全量重建显示（局部更新走 queue_update_sdf_region）
+        ImGui::SameLine();
+        if (ImGui::Button(get_locale_cstr("action.update_sdf"))) {
+            queue_update_sdf_display(item.id,
+                                     item.node_source_sdf_subdivisions);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(get_locale_cstr("tooltip.update_sdf"));
+        }
+    } else if (item.sdf_data) {
         ImGui::SameLine();
         const std::string sdf_preview_popup_title =
             localize_id("dialog.sdf_preview", item.id);

@@ -72,26 +72,48 @@ class SmoothMeshGenerator {
             return;
         }
 
-        // 计算存在 chunk 的包围盒
+        // 存在 chunk 及其 26-邻域（限制在包围盒范围内，保持既有行为）
+        std::set<uint64_t> chunks_to_process = buildChunkSet(true);
+        processChunkSet(chunks_to_process, callback, nullptr);
+    }
+
+    using ChunkCallback =
+        std::function<void(uint64_t chunk_key,
+                           const std::vector<std::tuple<Triangle, vec3f>>&)>;
+
+    // 对给定 chunk 集合逐 chunk 生成；每个 chunk（包括产出为空的）都会
+    // 触发一次 chunk_callback，供调用方按 chunk 缓存/擦除。
+    void generateForChunks(const std::set<uint64_t>& chunk_keys,
+                           ChunkCallback chunk_callback) {
+        numTriangles_ = 0;
+        processChunkSet(chunk_keys, nullptr, &chunk_callback);
+    }
+
+    // 存在 chunk 及其 26-邻域。clip_to_bbox 为 true 时邻域裁剪到存在
+    // chunk 的包围盒（generate() 的既有行为）；为 false 时不裁剪，保证
+    // 边界处由邻居 chunk 拥有的面片也能生成（供按 chunk 缓存的显示路径）。
+    std::set<uint64_t> buildChunkSet(bool clip_to_bbox) const {
+        std::set<uint64_t> chunks_to_process;
+
         int min_cx = std::numeric_limits<int>::max();
         int min_cy = std::numeric_limits<int>::max();
         int min_cz = std::numeric_limits<int>::max();
         int max_cx = std::numeric_limits<int>::min();
         int max_cy = std::numeric_limits<int>::min();
         int max_cz = std::numeric_limits<int>::min();
-        for (const auto& [chunk_key, chunk] : voxelData_.chunks) {
-            int cx, cy, cz;
-            unpackChunkKey(chunk_key, cx, cy, cz);
-            min_cx = std::min(min_cx, cx);
-            min_cy = std::min(min_cy, cy);
-            min_cz = std::min(min_cz, cz);
-            max_cx = std::max(max_cx, cx);
-            max_cy = std::max(max_cy, cy);
-            max_cz = std::max(max_cz, cz);
+        if (clip_to_bbox) {
+            for (const auto& [chunk_key, chunk] : voxelData_.chunks) {
+                int cx, cy, cz;
+                unpackChunkKey(chunk_key, cx, cy, cz);
+                min_cx = std::min(min_cx, cx);
+                min_cy = std::min(min_cy, cy);
+                min_cz = std::min(min_cz, cz);
+                max_cx = std::max(max_cx, cx);
+                max_cy = std::max(max_cy, cy);
+                max_cz = std::max(max_cz, cz);
+            }
         }
 
-        // 收集所有存在 chunk 及其 26-邻域（限制在包围盒范围内）
-        std::set<uint64_t> chunks_to_process;
         for (const auto& [chunk_key, chunk] : voxelData_.chunks) {
             chunks_to_process.insert(chunk_key);
             int cx, cy, cz;
@@ -100,17 +122,25 @@ class SmoothMeshGenerator {
                 for (int dy = -1; dy <= 1; ++dy) {
                     for (int dz = -1; dz <= 1; ++dz) {
                         int nx = cx + dx, ny = cy + dy, nz = cz + dz;
-                        if (nx >= min_cx && nx <= max_cx &&
-                            ny >= min_cy && ny <= max_cy &&
-                            nz >= min_cz && nz <= max_cz) {
+                        if (!clip_to_bbox ||
+                            (nx >= min_cx && nx <= max_cx &&
+                             ny >= min_cy && ny <= max_cy &&
+                             nz >= min_cz && nz <= max_cz)) {
                             chunks_to_process.insert(packChunkKey(nx, ny, nz));
                         }
                     }
                 }
             }
         }
+        return chunks_to_process;
+    }
 
-        // 按chunk处理，生成每个chunk的mesh
+   private:
+    // 逐 chunk 处理。triangle_callback 与 chunk_callback 二选一：
+    // 前者直接流式输出三角形，后者按 chunk 分组缓冲后回调（含空 chunk）。
+    void processChunkSet(const std::set<uint64_t>& chunks_to_process,
+                         TriangleCallback triangle_callback,
+                         ChunkCallback* chunk_callback) {
         int total_chunks = static_cast<int>(chunks_to_process.size());
         int chunk_count = 0;
 
@@ -127,7 +157,16 @@ class SmoothMeshGenerator {
 
             int cx, cy, cz;
             unpackChunkKey(chunk_key, cx, cy, cz);
-            processChunk(cx, cy, cz, callback);
+            if (chunk_callback) {
+                std::vector<std::tuple<Triangle, vec3f>> tris;
+                processChunk(cx, cy, cz,
+                             [&](const Triangle& tri, const vec3f& normal) {
+                                 tris.emplace_back(tri, normal);
+                             });
+                (*chunk_callback)(chunk_key, tris);
+            } else {
+                processChunk(cx, cy, cz, triangle_callback);
+            }
         }
 
         if (status_callback_) {
@@ -135,7 +174,6 @@ class SmoothMeshGenerator {
         }
     }
 
-   private:
     // ============================================================
     // 成员变量
     // ============================================================
@@ -658,6 +696,70 @@ class SmoothMeshGenerator {
         }
     }
 };
+
+// ============================================================
+// 按 chunk 分组/局部区域生成（无 stitch/fill，供按 chunk 缓存的显示路径）
+// ============================================================
+
+void generateSmoothMeshChunked(
+    sinriv::kigstudio::voxel::VoxelGrid& voxelData,
+    int& numTriangles,
+    std::function<bool(const std::string&)> status_callback,
+    bool computeNormals,
+    int subdivisions,
+    const sdf::SDFBase* sdf_ptr,
+    const std::function<void(
+        uint64_t, const std::vector<std::tuple<Triangle, vec3f>>&)>&
+        chunk_callback) {
+    // processChunk 内部会无条件调用 status_callback_，这里保证非空
+    if (!status_callback) {
+        status_callback = [](const std::string&) { return true; };
+    }
+    SmoothMeshGenerator gen(voxelData, numTriangles, status_callback,
+                            computeNormals, subdivisions, sdf_ptr);
+    // 不裁剪的 26-邻域：边界处由邻居 chunk 拥有的面片需要其所属 chunk 被处理
+    gen.generateForChunks(gen.buildChunkSet(false), chunk_callback);
+}
+
+std::unordered_map<uint64_t, std::vector<std::tuple<Triangle, vec3f>>>
+generateSmoothMeshForRegion(
+    sinriv::kigstudio::voxel::VoxelGrid& voxelData,
+    Vec3i voxel_min,
+    Vec3i voxel_max,
+    int& numTriangles,
+    int subdivisions,
+    const sdf::SDFBase* sdf_ptr,
+    bool computeNormals) {
+    // 膨胀 1 体素：chunk 的 SDF 采样域带 ±1 体素 halo，边界修改会影响
+    // 面邻居 chunk 的 mesh。>>5 与现有 &31/>>5 约定一致（负数天然 floor）。
+    int min_cx = (voxel_min.x - 1) >> 5;
+    int min_cy = (voxel_min.y - 1) >> 5;
+    int min_cz = (voxel_min.z - 1) >> 5;
+    int max_cx = (voxel_max.x + 1) >> 5;
+    int max_cy = (voxel_max.y + 1) >> 5;
+    int max_cz = (voxel_max.z + 1) >> 5;
+
+    std::set<uint64_t> chunk_keys;
+    for (int cx = min_cx; cx <= max_cx; ++cx) {
+        for (int cy = min_cy; cy <= max_cy; ++cy) {
+            for (int cz = min_cz; cz <= max_cz; ++cz) {
+                chunk_keys.insert(packChunkKey(cx, cy, cz));
+            }
+        }
+    }
+
+    SmoothMeshGenerator gen(voxelData, numTriangles,
+                            [](const std::string&) { return true; },
+                            computeNormals, subdivisions, sdf_ptr);
+    std::unordered_map<uint64_t, std::vector<std::tuple<Triangle, vec3f>>>
+        result;
+    gen.generateForChunks(
+        chunk_keys,
+        [&](uint64_t key, const std::vector<std::tuple<Triangle, vec3f>>& tris) {
+            result[key] = tris;
+        });
+    return result;
+}
 
 // ============================================================
 // 对外接口（保持原签名兼容）

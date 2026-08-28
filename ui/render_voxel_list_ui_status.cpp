@@ -29,25 +29,124 @@ namespace sinriv::ui::render {
 void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
     item.showSilhouetteCenter = false;
 
-    // Source Type 单选按钮组
+    // Source Type 下拉选择框（文件/节点/附加件/雕刻）
     ImGui::Separator();
-    int source_type = item.source_type;
-    if (ImGui::RadioButton(get_locale_cstr("label.source_file"), &source_type,
-                           0)) {
-        push_undo_now(item.id, std::nullopt, "Source Type");
-        item.source_type = source_type;
+    {
+        const char* source_type_names[] = {
+            get_locale_cstr("label.source_file"),
+            get_locale_cstr("label.source_node"),
+            get_locale_cstr("label.source_addon"),
+            get_locale_cstr("label.source_sculpt"),
+        };
+        int source_type = item.source_type;
+        if (ImGui::Combo(get_locale_cstr("label.source_type"), &source_type,
+                         source_type_names, 4)) {
+            push_undo_now(item.id, std::nullopt, "Source Type");
+            item.source_type = source_type;
+        }
     }
-    ImGui::SameLine();
-    if (ImGui::RadioButton(get_locale_cstr("label.source_node"), &source_type,
-                           1)) {
-        push_undo_now(item.id, std::nullopt, "Source Type");
-        item.source_type = source_type;
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton(get_locale_cstr("label.source_addon"), &source_type,
-                           2)) {
-        push_undo_now(item.id, std::nullopt, "Source Type");
-        item.source_type = source_type;
+
+    // 雕刻模式：源节点选择 + 体素大小 + SDF 细分精度 + 加载
+    if (item.source_type == 3) {
+        ImGui::Separator();
+        // 源节点选择器（有任何 mesh/sdf/voxel 数据的节点，排除循环引用）
+        std::vector<std::pair<int, std::string>> candidates;
+        if (item.manager) {
+            for (auto& [other_id, other] : item.manager->items) {
+                if (other_id == item.id)
+                    continue;
+                if (item.manager->would_form_source_cycle(item.id, other_id))
+                    continue;
+                bool has_data = !other->source_triangles.empty() ||
+                                other->sdf_data != nullptr ||
+                                !other->voxel_grid_data.chunks.empty();
+                if (!has_data)
+                    continue;
+                std::string label = "Node " + std::to_string(other_id);
+                if (other->sdf_data)
+                    label += " [SDF]";
+                candidates.push_back({other_id, label});
+            }
+        }
+        int current_source = -1;
+        std::vector<const char*> candidate_names;
+        for (size_t i = 0; i < candidates.size(); ++i) {
+            candidate_names.push_back(candidates[i].second.c_str());
+            if (candidates[i].first == item.source_node_id) {
+                current_source = static_cast<int>(i);
+            }
+        }
+        if (ImGui::Combo(get_locale_cstr("label.source_node_id"),
+                         &current_source, candidate_names.data(),
+                         static_cast<int>(candidate_names.size()))) {
+            push_undo_now(item.id, std::nullopt, "Sculpt Source Node");
+            if (current_source >= 0 &&
+                current_source < static_cast<int>(candidates.size())) {
+                item.source_node_id = candidates[current_source].first;
+            }
+        }
+
+        if (item.source_node_id < 0) {
+            ImGui::TextWrapped("%s",
+                               get_locale_cstr("label.sculpt_no_source"));
+            return;
+        }
+
+        // Voxel Size（加载前设置，加载时按此体素化）
+        ImGui::Separator();
+        ImGui::TextUnformatted(get_locale_cstr("label.voxel_size"));
+        ImGui::SameLine();
+        const float button_size = ImGui::GetFrameHeight();
+        if (ImGui::Button("-##sculptvoxelsize", ImVec2(button_size, 0))) {
+            auto tmp = item.stl_voxel_size / 2.0f;
+            if (tmp >= 0.0001f) {
+                item.stl_voxel_size = tmp;
+            }
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.0f);
+        ImGui::DragFloat("##SculptVoxelSize", &item.stl_voxel_size, 0.1f, 0.0f,
+                         0.0f, "%.4f");
+        ImGui::SameLine();
+        if (ImGui::Button("+##sculptvoxelsize", ImVec2(button_size, 0))) {
+            item.stl_voxel_size = item.stl_voxel_size * 2.0f;
+            if (item.stl_voxel_size > 1000.0f) {
+                item.stl_voxel_size = 1000.0f;
+            }
+        }
+
+        // SDF 细分精度（SDF 采样边长 = 体素大小 / 细分倍数）
+        ImGui::DragInt(
+            get_locale_cstr("label.node_source_sdf_subdivisions"),
+            &item.node_source_sdf_subdivisions, 1, 1, 8);
+
+        // 加载按钮
+        ImGui::Separator();
+        if (ImGui::Button(get_locale_cstr("action.sculpt_load"))) {
+            queue_load_sculpt(item.id, item.source_node_id,
+                              item.stl_voxel_size,
+                              item.node_source_sdf_subdivisions);
+        }
+
+        // 后台加载进度条与取消按钮
+        if (item.write_count > 0) {
+            ImGui::Separator();
+            ImGui::TextWrapped("%s", this->getQueueStatus().c_str());
+            const char* cancel_label = get_locale_cstr("action.cancel");
+            ImVec2 cancel_size = ImGui::CalcTextSize(cancel_label);
+            cancel_size.x += ImGui::GetStyle().FramePadding.x * 2;
+            cancel_size.y = 0;
+            float progress_width = ImGui::GetContentRegionAvail().x -
+                                   cancel_size.x -
+                                   ImGui::GetStyle().ItemSpacing.x;
+            ImGui::ProgressBar(this->getQueueProgress(),
+                               ImVec2(progress_width, 0));
+            ImGui::SameLine();
+            if (ImGui::Button(cancel_label, cancel_size)) {
+                this->queue_should_continue = false;
+            }
+        }
+        return;  // 雕刻模式不显示后面的通用加载模式等UI
     }
 
     // 附加件模式：显示专用UI

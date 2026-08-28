@@ -78,7 +78,8 @@ void RenderVoxelList::render_nav_map() {
             item->sdf_split_target_id >= 0) {
             sdf_sources.insert(item->sdf_split_target_id);
         }
-        if (item->source_type == 1 && item->source_node_id >= 0) {
+        if ((item->source_type == 1 || item->source_type == 3) &&
+            item->source_node_id >= 0) {
             node_sources.insert(item->source_node_id);
         }
         if (item->source_type == 2 && item->addon_base_node_id >= 0) {
@@ -135,7 +136,8 @@ void RenderVoxelList::render_nav_map() {
         for (auto& [id, item] : this->items) {
             if (hidden_nodes.count(id))
                 continue;
-            if (item->source_type == 1 && item->source_node_id >= 0 &&
+            if ((item->source_type == 1 || item->source_type == 3) &&
+                item->source_node_id >= 0 &&
                 !hidden_nodes.count(item->source_node_id) &&
                 this->items.find(item->source_node_id) != this->items.end()) {
                 layout_edges.push_back({item->source_node_id, id});
@@ -351,7 +353,8 @@ void RenderVoxelList::render_nav_map() {
             ImNodes::EndInputAttribute();
         }
 
-        if (item->source_type == 1 && item->source_node_id >= 0) {
+        if ((item->source_type == 1 || item->source_type == 3) &&
+            item->source_node_id >= 0) {
             ImGui::SameLine(0.0f, 4.0f);
             ImNodes::BeginInputAttribute(id * 1000 + 3,
                                          ImNodesPinShape_CircleFilled);
@@ -535,7 +538,8 @@ void RenderVoxelList::render_nav_map() {
 
     // 绘制 Source Node 依赖线
     for (auto& [id, item] : this->items) {
-        if (item->source_type == 1 && item->source_node_id >= 0 &&
+        if ((item->source_type == 1 || item->source_type == 3) &&
+            item->source_node_id >= 0 &&
             !hidden_nodes.count(id) &&
             !hidden_nodes.count(item->source_node_id) &&
             this->items.find(item->source_node_id) != this->items.end()) {
@@ -905,7 +909,9 @@ bool RenderVoxelList::would_form_source_cycle(int from_id, int to_id) {
         if (it == items.end())
             break;
         current =
-            it->second->source_type == 1 ? it->second->source_node_id : -1;
+            (it->second->source_type == 1 || it->second->source_type == 3)
+                ? it->second->source_node_id
+                : -1;
     }
     return false;
 }

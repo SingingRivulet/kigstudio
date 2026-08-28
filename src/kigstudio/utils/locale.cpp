@@ -1249,12 +1249,34 @@ void init_locale_strings() {
                       {{"en", "processing chunk"}, {"zh", "处理块"}});
 
     // Node source labels
+    add_locale_string("label.source_type",
+                      {{"en", "Source Type"}, {"zh", "来源类型"}});
     add_locale_string("label.source_file",
                       {{"en", "File"}, {"zh", "文件"}});
     add_locale_string("label.source_node",
                       {{"en", "Node"}, {"zh", "节点"}});
     add_locale_string("label.source_addon",
                       {{"en", "Addon"}, {"zh", "附加件"}});
+    add_locale_string("label.source_sculpt",
+                      {{"en", "Sculpt"}, {"zh", "雕刻"}});
+    add_locale_string("label.sculpt_no_source",
+                      {{"en", "Select a source node with mesh/SDF/voxel data."},
+                       {"zh", "请选择一个带网格/SDF/体素数据的源节点。"}});
+    add_locale_string("action.sculpt_load",
+                      {{"en", "Load for Sculpting"}, {"zh", "加载雕刻数据"}});
+    add_locale_string("status.sculpt_baking_sdf",
+                      {{"en", "Baking chunked SDF"}, {"zh", "烘焙分块SDF"}});
+    add_locale_string("status.updating_sdf_mesh",
+                      {{"en", "Updating SDF mesh"}, {"zh", "更新SDF网格"}});
+    add_locale_string("action.update_sdf",
+                      {{"en", "Update SDF"}, {"zh", "更新 SDF"}});
+    add_locale_string(
+        "tooltip.update_sdf",
+        {{"en", "Rebuild the SDF preview from current SDF data."},
+         {"zh", "根据当前 SDF 数据重建 SDF 预览。"}});
+    add_locale_string("error.sculpt_no_source_data",
+                      {{"en", "Source node has no mesh/voxel data available."},
+                       {"zh", "源节点没有可用的网格/体素数据。"}});
     add_locale_string("window.addon_editor",
                       {{"en", "Addon Editor"}, {"zh", "附加件编辑器"}});
     add_locale_string("label.addon_base_model",

@@ -4,6 +4,7 @@
 #include <tuple>
 #include <set>
 #include <map>
+#include <unordered_map>
 #include <string>
 #include <fstream>
 #include <cmath>
@@ -27,6 +28,29 @@ namespace sinriv::kigstudio::voxel {
         const sdf::SDFBase * sdf = nullptr);
     Generator<std::tuple<Triangle, vec3f>> generateMesh(sinriv::kigstudio::octree::Octree& voxelData, double isolevel, int& numTriangles, bool computeNormals = false);
     Generator<std::tuple<Triangle, vec3f>> generateMeshForChunk(sinriv::kigstudio::voxel::VoxelGrid& voxelData, uint64_t chunkKey, double isolevel, int& numTriangles, bool computeNormals = false, float expand = 0.0f);
+
+    // 按 chunk 分组的全量 SDF 平滑网格生成（无 stitch/fill），供按 chunk 缓存的显示路径
+    void generateSmoothMeshChunked(
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
+        int& numTriangles,
+        std::function<bool(const std::string&)> status_callback,
+        bool computeNormals,
+        int subdivisions,
+        const sdf::SDFBase* sdf,
+        const std::function<void(uint64_t, const std::vector<std::tuple<Triangle, vec3f>>&)>& chunk_callback);
+
+    // 局部区域 SDF 平滑网格重建（无 stitch/fill）。
+    // voxel_min/voxel_max 为体素坐标闭区间；内部膨胀 1 体素以覆盖邻居 chunk
+    // 的边界 mesh。返回 map 包含所有受影响 chunk，空 mesh 对应空 vector。
+    std::unordered_map<uint64_t, std::vector<std::tuple<Triangle, vec3f>>>
+    generateSmoothMeshForRegion(
+        sinriv::kigstudio::voxel::VoxelGrid& voxelData,
+        sinriv::kigstudio::Vec3i voxel_min,
+        sinriv::kigstudio::Vec3i voxel_max,
+        int& numTriangles,
+        int subdivisions = 3,
+        const sdf::SDFBase* sdf = nullptr,
+        bool computeNormals = false);
 
     void saveMeshToASCIISTL(const std::vector<std::tuple<Triangle,vec3f>>& meshTriangles, const std::string& filename);
     void saveMeshToBinarySTL(const std::vector<std::tuple<Triangle,vec3f>>& meshTriangles, const std::string& filename);

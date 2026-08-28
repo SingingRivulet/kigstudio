@@ -46,7 +46,7 @@ void RenderVoxelList::process_queue_result() {
         update_nav_node_status = true;
         // 断开指向被删除节点的 source-node 引用
         for (auto& [id, item] : items) {
-            if (item->source_type == 1 &&
+            if ((item->source_type == 1 || item->source_type == 3) &&
                 item->source_node_id == removed_id) {
                 item->source_type = 0;
                 item->source_node_id = -1;
@@ -197,6 +197,69 @@ void RenderVoxelList::queue_thread() {
                         "log.queue.error_reload_stl", task.index,
                         get_locale_string("log.queue.unknown_error").c_str());
                     std::cerr << "Unknown error reloading STL file. "
+                              << std::endl;
+                    TRACE_STACK();
+                }
+                queue_running = false;
+                break;
+            case TASK_LOAD_SCULPT:
+                // 雕刻模式：从源节点加载体素 + 稀疏分块 SDF
+                queue_running = true;
+                try {
+                    append_queue_logf("log.queue.start_reload_stl", task.index,
+                                      ("node " +
+                                       std::to_string(task.source_node_id))
+                                          .c_str());
+                    load_sculpt_from_node(task.index, task.source_node_id,
+                                          task.voxel_size,
+                                          task.node_source_sdf_subdivisions);
+                    append_queue_logf("log.queue.done_reload_stl", task.index);
+                    show_toastf(1500.0f, "log.queue.done_reload_stl",
+                                task.index);
+                } catch (std::exception& e) {
+                    append_queue_logf("log.queue.error_reload_stl", task.index,
+                                      e.what());
+                    std::cerr << "Error loading sculpt node: " << e.what()
+                              << std::endl;
+                    TRACE_STACK();
+                } catch (...) {
+                    append_queue_logf(
+                        "log.queue.error_reload_stl", task.index,
+                        get_locale_string("log.queue.unknown_error").c_str());
+                    std::cerr << "Unknown error loading sculpt node. "
+                              << std::endl;
+                    TRACE_STACK();
+                }
+                queue_running = false;
+                break;
+            case TASK_UPDATE_SDF_DISPLAY:
+                // 全量重建 SDF 平滑 mesh 显示
+                queue_running = true;
+                try {
+                    update_sdf_display_bg(task.index, task.subdivisions);
+                } catch (std::exception& e) {
+                    std::cerr << "Error updating SDF display: " << e.what()
+                              << std::endl;
+                    TRACE_STACK();
+                } catch (...) {
+                    std::cerr << "Unknown error updating SDF display. "
+                              << std::endl;
+                    TRACE_STACK();
+                }
+                queue_running = false;
+                break;
+            case TASK_UPDATE_SDF_REGION:
+                // 局部重建 SDF 平滑 mesh 显示
+                queue_running = true;
+                try {
+                    update_sdf_region_bg(task.index, task.region_min,
+                                         task.region_max, task.subdivisions);
+                } catch (std::exception& e) {
+                    std::cerr << "Error updating SDF region: " << e.what()
+                              << std::endl;
+                    TRACE_STACK();
+                } catch (...) {
+                    std::cerr << "Unknown error updating SDF region. "
                               << std::endl;
                     TRACE_STACK();
                 }
@@ -1206,6 +1269,50 @@ void RenderVoxelList::queue_reload_stl(int item_id,
     task.node_source_sdf_subdivisions = node_source_sdf_subdivisions;
     task.node_source_sdf_simplify = node_source_sdf_simplify;
     task.node_source_sdf_simplify_ratio = node_source_sdf_simplify_ratio;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
+}
+
+void RenderVoxelList::queue_load_sculpt(int item_id,
+                                        int source_node_id,
+                                        float voxel_size,
+                                        int sdf_subdivisions) {
+    if (source_node_id < 0)
+        return;
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_LOAD_SCULPT;
+    task.index = item_id;
+    task.source_node_id = source_node_id;
+    task.voxel_size = voxel_size;
+    task.node_source_sdf_subdivisions = sdf_subdivisions;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
+}
+
+void RenderVoxelList::queue_update_sdf_display(int item_id,
+                                               int sdf_subdivisions) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_UPDATE_SDF_DISPLAY;
+    task.index = item_id;
+    task.subdivisions = sdf_subdivisions;
+    queue.push(task);
+    this->queue_num = static_cast<int>(queue.size());
+}
+
+void RenderVoxelList::queue_update_sdf_region(
+    int item_id,
+    sinriv::kigstudio::Vec3i voxel_min,
+    sinriv::kigstudio::Vec3i voxel_max,
+    int sdf_subdivisions) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    QueueTask task;
+    task.type = TASK_UPDATE_SDF_REGION;
+    task.index = item_id;
+    task.region_min = voxel_min;
+    task.region_max = voxel_max;
+    task.subdivisions = sdf_subdivisions;
     queue.push(task);
     this->queue_num = static_cast<int>(queue.size());
 }

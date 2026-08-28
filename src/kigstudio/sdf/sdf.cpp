@@ -1,4 +1,5 @@
 #include "kigstudio/sdf/sdf.h"
+#include "kigstudio/sdf/sdf_chunked.h"
 #include <cstdint>
 #include <cstring>
 #include <cmath>
@@ -584,6 +585,11 @@ static bool _register_sdf_types = []() {
     });
     sdf_register_type("group", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
         auto obj = std::make_shared<SDF_Group>(std::vector<std::shared_ptr<SDFBase>>());
+        obj->fromJSON(json);
+        return obj;
+    });
+    sdf_register_type("chunked_grid", [](const cJSON* json) -> std::shared_ptr<SDFBase> {
+        auto obj = std::make_shared<SDFChunkedGrid>();
         obj->fromJSON(json);
         return obj;
     });

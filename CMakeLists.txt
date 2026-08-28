@@ -119,6 +119,7 @@ foreach(TEST_FILE ${TEST_FILES})
         ole32
         winmm
         imgui
+        zlib
     )
 endforeach()
 

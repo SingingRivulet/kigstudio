@@ -162,18 +162,11 @@ std::tuple<VoxelGrid, VoxelGrid> VoxelGrid::bfsSplit(
 
         const Chunk& inside_chunk = inside_it->second;
 
-        Chunk out_chunk;
+        Chunk out_chunk = src_chunk;
+        out_chunk.andNotWith(inside_chunk);
 
-        bool has_voxel = false;
-
-        for (int i = 0; i < Chunk::WORD_COUNT; i++) {
-            out_chunk.data[i] = src_chunk.data[i] & ~inside_chunk.data[i];
-
-            has_voxel |= (out_chunk.data[i] != 0);
-        }
-
-        if (has_voxel) {
-            outside.chunks.emplace(key, out_chunk);
+        if (!out_chunk.empty()) {
+            outside.chunks.emplace(key, std::move(out_chunk));
         }
     }
 

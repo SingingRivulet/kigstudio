@@ -4,6 +4,7 @@
 #include "kigstudio/utils/vec3.h"
 #include "kigstudio/voxel/collision.h"
 #include "kigstudio/voxel/concave.h"
+#include "kigstudio/voxel/voxel_chunk.h"
 
 #include <cJSON.h>
 #include <bit>
@@ -22,40 +23,7 @@ namespace sinriv::kigstudio {
 namespace voxel {
 
 // ================= Chunk =================
-
-struct Chunk {
-    static constexpr int SIZE = 32;
-    static constexpr int VOXEL_COUNT = SIZE * SIZE * SIZE;  // 32768
-    static constexpr int WORD_COUNT = VOXEL_COUNT / 64;     // 512
-
-    uint64_t data[WORD_COUNT] = {};
-
-    inline int index(int x, int y, int z) const {
-        return (z * SIZE + y) * SIZE + x;
-    }
-
-    inline void set(int x, int y, int z) {
-        int i = index(x, y, z);
-        data[i >> 6] |= (1ULL << (i & 63));
-    }
-
-    inline bool get(int x, int y, int z) const {
-        int i = index(x, y, z);
-        return (data[i >> 6] >> (i & 63)) & 1ULL;
-    }
-
-    inline void clear(int x, int y, int z) {
-        int i = index(x, y, z);
-        data[i >> 6] &= ~(1ULL << (i & 63));
-    }
-
-    inline bool empty() const {
-        for (int i = 0; i < WORD_COUNT; i++)
-            if (data[i])
-                return false;
-        return true;
-    }
-};
+// Chunk 定义移至 voxel_chunk.h（4 种存储类型：Dense/AllZero/AllOne/Subtree）
 
 // ================= Hash =================
 
@@ -131,6 +99,7 @@ class VoxelGrid {
             for (const auto& p : pts) {
                 chunk.set(p.x & 31, p.y & 31, p.z & 31);
             }
+            chunk.compress();
         }
     }
 
@@ -213,6 +182,7 @@ class VoxelGrid {
             for (const auto& p : pts) {
                 it->second.clear(p.x & 31, p.y & 31, p.z & 31);
             }
+            it->second.compress();
             if (it->second.empty()) {
                 chunks.erase(it);
             }
@@ -257,7 +227,7 @@ class VoxelGrid {
 
                 // ===== 3. 如果当前没有 bits，加载当前 word =====
                 if (bits == 0) {
-                    bits = it->second.data[word];
+                    bits = it->second.getWord(word);
 
                     if (bits == 0) {
                         // 当前 word 为空 → 跳下一个

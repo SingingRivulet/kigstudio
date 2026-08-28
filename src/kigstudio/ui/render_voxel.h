@@ -5,6 +5,7 @@
 
 #include "kigstudio/ui/render_mesh.h"
 #include "kigstudio/voxel/voxelizer_svo.h"
+#include "kigstudio/voxel/voxel2mesh.h"
 
 namespace sinriv::ui::render {
     class RenderVoxel {
@@ -208,6 +209,69 @@ namespace sinriv::ui::render {
                 }
             } else {
                 chunk_meshes_[chunk_key].loadGeometry(mesh);
+            }
+        }
+
+        // 应用预生成的 chunk mesh 集合：空 mesh 擦除、非空热替换。
+        // 供后台线程预生成后提交（与 updateSDFRegion 语义相同，但不重新生成）。
+        inline void applyChunkMeshes(
+            const std::unordered_map<
+                uint64_t,
+                std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>>>&
+                meshes) {
+            for (const auto& [key, tris] : meshes) {
+                auto it = chunk_meshes_.find(key);
+                if (tris.empty()) {
+                    if (it != chunk_meshes_.end()) {
+                        chunk_meshes_.erase(it);
+                    }
+                } else {
+                    chunk_meshes_[key].loadGeometry(tris);
+                }
+            }
+        }
+
+        // ============ SDF chunked mesh ============
+        // 全量：清空 chunk_meshes_，逐 chunk 生成 SDF 平滑 mesh 填充（无 stitch/fill）
+        inline void loadSDFChunked(
+            VoxelGrid& voxel_data,
+            int subdivisions,
+            const sinriv::kigstudio::sdf::SDFBase* sdf,
+            bool compute_normals = true) {
+            chunk_meshes_.clear();
+            int num_triangles = 0;
+            sinriv::kigstudio::voxel::generateSmoothMeshChunked(
+                voxel_data, num_triangles, {}, compute_normals, subdivisions, sdf,
+                [this](uint64_t key,
+                       const std::vector<std::tuple<Triangle, sinriv::kigstudio::voxel::vec3f>>& tris) {
+                    if (!tris.empty()) {
+                        chunk_meshes_[key].loadGeometry(tris);
+                    }
+                });
+        }
+
+        // 区域：重建受影响 chunk 的 SDF mesh，空 mesh 擦除、非空热替换。
+        // voxel_min/voxel_max 为体素坐标闭区间。
+        inline void updateSDFRegion(
+            VoxelGrid& voxel_data,
+            sinriv::kigstudio::Vec3i voxel_min,
+            sinriv::kigstudio::Vec3i voxel_max,
+            int subdivisions,
+            const sinriv::kigstudio::sdf::SDFBase* sdf,
+            bool compute_normals = true) {
+            int num_triangles = 0;
+            auto region = sinriv::kigstudio::voxel::generateSmoothMeshForRegion(
+                voxel_data, voxel_min, voxel_max, num_triangles, subdivisions, sdf,
+                compute_normals);
+            for (auto& [key, tris] : region) {
+                auto it = chunk_meshes_.find(key);
+                if (tris.empty()) {
+                    if (it != chunk_meshes_.end()) {
+                        chunk_meshes_.erase(it);
+                    }
+                } else {
+                    chunk_meshes_[key].loadGeometry(tris);
+                }
             }
         }
 

@@ -1,4 +1,5 @@
 #include <cmath>
+#include <climits>
 #include <cstdint>
 #include <set>
 #include <unordered_map>
@@ -9,6 +10,7 @@
 #include "kigstudio/cgal/mesh_subdivision.h"
 #include "kigstudio/cgal/skeleton_extraction.h"
 #include "kigstudio/mesh/conebox.h"
+#include "kigstudio/sdf/sdf_chunked.h"
 #include "kigstudio/sdf/sdf_mesh.h"
 #include "kigstudio/utils/generator.h"
 #include "render_voxel_list.h"
@@ -1544,6 +1546,120 @@ std::filesystem::path RenderVoxelList::get_voxel_cache_path(int node_id) const {
     return get_cache_dir("voxel") / (std::to_string(node_id) + ".vxgrid");
 }
 
+// 后台线程体素化（带进度上报），供 load_from_node / load_sculpt_from_node 共用
+void RenderVoxelList::voxelize_triangles_bg(
+    const std::vector<Triangle>& triangles,
+    float voxel_size,
+    sinriv::kigstudio::sdf::SDFPrecision voxel_precision,
+    sinriv::kigstudio::voxel::VoxelGrid& out_voxel) {
+    using namespace sinriv::kigstudio::voxel;
+    if (triangles.empty())
+        return;
+    triangle_bvh<float> bvh;
+    size_t tri_idx = 0;
+    const size_t tri_total = triangles.size();
+    for (const auto& tri : triangles) {
+        bvh.insert(tri);
+        if (++tri_idx % 100 == 0) {
+            queue_progress = 0.25f + 0.05f * (static_cast<float>(tri_idx) /
+                                              static_cast<float>(std::max(
+                                                  size_t(1), tri_total)));
+            setQueueStatus(
+                get_locale_string("status.building_spatial_index"));
+        }
+    }
+
+    out_voxel.voxel_size = {voxel_size, voxel_size, voxel_size};
+    out_voxel.global_position = bvh.global_boundBox_min;
+
+    float minx = floor(bvh.global_boundBox_min.x / voxel_size) * voxel_size;
+    float miny = floor(bvh.global_boundBox_min.y / voxel_size) * voxel_size;
+    float minz = floor(bvh.global_boundBox_min.z / voxel_size) * voxel_size;
+    float maxx = ceil(bvh.global_boundBox_max.x / voxel_size) * voxel_size;
+    float maxy = ceil(bvh.global_boundBox_max.y / voxel_size) * voxel_size;
+    float maxz = ceil(bvh.global_boundBox_max.z / voxel_size) * voxel_size;
+    int num_block_x =
+        static_cast<int>(floor((maxx - minx) / voxel_size)) + 1;
+    int num_block_y =
+        static_cast<int>(floor((maxy - miny) / voxel_size)) + 1;
+    int num_block_z =
+        static_cast<int>(floor((maxz - minz) / voxel_size)) + 1;
+
+    std::mutex candidate_locker;
+    std::vector<Vec3i> candidates_x;
+    std::vector<Vec3i> candidates_y;
+    std::vector<Vec3i> candidates_z;
+    candidates_x.reserve(1024);
+    candidates_y.reserve(1024);
+    candidates_z.reserve(1024);
+    size_t total_rays = static_cast<size_t>(num_block_y) * num_block_z +
+                        static_cast<size_t>(num_block_x) * num_block_z +
+                        static_cast<size_t>(num_block_x) * num_block_y;
+    if (total_rays == 0)
+        total_rays = 1;
+    std::atomic<size_t> callback_count{0};
+
+    auto make_callback = [&](std::vector<Vec3i>& out) {
+        return [&](auto start, auto end) {
+            int start_x = static_cast<int>(std::round(
+                (start.x - out_voxel.global_position.x) / voxel_size));
+            int start_y = static_cast<int>(std::round(
+                (start.y - out_voxel.global_position.y) / voxel_size));
+            int start_z = static_cast<int>(std::round(
+                (start.z - out_voxel.global_position.z) / voxel_size));
+            int end_x = static_cast<int>(std::round(
+                (end.x - out_voxel.global_position.x) / voxel_size));
+            int end_y = static_cast<int>(std::round(
+                (end.y - out_voxel.global_position.y) / voxel_size));
+            int end_z = static_cast<int>(std::round(
+                (end.z - out_voxel.global_position.z) / voxel_size));
+
+            std::vector<Vec3i> local;
+            local.reserve(std::max(0, end_x - start_x + 1) *
+                          std::max(0, end_y - start_y + 1) *
+                          std::max(0, end_z - start_z + 1));
+            for (int i = start_x; i <= end_x; ++i) {
+                for (int j = start_y; j <= end_y; ++j) {
+                    for (int k = start_z; k <= end_z; ++k) {
+                        if (i >= 0 && j >= 0 && k >= 0) {
+                            local.push_back({i, j, k});
+                        }
+                    }
+                }
+            }
+            if (!local.empty()) {
+                std::lock_guard<std::mutex> lock(candidate_locker);
+                out.insert(out.end(), local.begin(), local.end());
+            }
+
+            size_t cnt =
+                callback_count.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (cnt % 100 == 0) {
+                float p =
+                    0.30f + 0.35f * std::min(1.0f, static_cast<float>(cnt) /
+                                                       static_cast<float>(
+                                                           total_rays * 2));
+                queue_progress = p;
+                setQueueStatus(get_locale_string("status.voxelizing"));
+            }
+        };
+    };
+
+    bvh.getSolidByFace(voxel_size, voxel_size, voxel_size,
+                       triangle_bvh<float>::voxel_face_X,
+                       make_callback(candidates_x));
+    bvh.getSolidByFace(voxel_size, voxel_size, voxel_size,
+                       triangle_bvh<float>::voxel_face_Y,
+                       make_callback(candidates_y));
+    bvh.getSolidByFace(voxel_size, voxel_size, voxel_size,
+                       triangle_bvh<float>::voxel_face_Z,
+                       make_callback(candidates_z));
+
+    insert_voxels_with_optional_verify(
+        out_voxel, candidates_x, candidates_y, candidates_z, triangles,
+        voxel_size, voxel_precision);
+}
+
 void RenderVoxelList::load_from_node(int target_item_id,
                                      int source_node_id,
                                      int node_source_data_type,
@@ -1605,111 +1721,8 @@ void RenderVoxelList::load_from_node(int target_item_id,
     // Helper: voxelize a triangle set using the given voxel size
     auto voxelize_triangles = [&](const std::vector<Triangle>& triangles,
                                   VoxelGrid& out_voxel) {
-        if (triangles.empty())
-            return;
-        triangle_bvh<float> bvh;
-        size_t tri_idx = 0;
-        const size_t tri_total = triangles.size();
-        for (const auto& tri : triangles) {
-            bvh.insert(tri);
-            if (++tri_idx % 100 == 0) {
-                queue_progress = 0.25f + 0.05f * (static_cast<float>(tri_idx) /
-                                                  static_cast<float>(std::max(
-                                                      size_t(1), tri_total)));
-                setQueueStatus(
-                    get_locale_string("status.building_spatial_index"));
-            }
-        }
-
-        out_voxel.voxel_size = {voxel_size, voxel_size, voxel_size};
-        out_voxel.global_position = bvh.global_boundBox_min;
-
-        float minx = floor(bvh.global_boundBox_min.x / voxel_size) * voxel_size;
-        float miny = floor(bvh.global_boundBox_min.y / voxel_size) * voxel_size;
-        float minz = floor(bvh.global_boundBox_min.z / voxel_size) * voxel_size;
-        float maxx = ceil(bvh.global_boundBox_max.x / voxel_size) * voxel_size;
-        float maxy = ceil(bvh.global_boundBox_max.y / voxel_size) * voxel_size;
-        float maxz = ceil(bvh.global_boundBox_max.z / voxel_size) * voxel_size;
-        int num_block_x =
-            static_cast<int>(floor((maxx - minx) / voxel_size)) + 1;
-        int num_block_y =
-            static_cast<int>(floor((maxy - miny) / voxel_size)) + 1;
-        int num_block_z =
-            static_cast<int>(floor((maxz - minz) / voxel_size)) + 1;
-
-        std::mutex candidate_locker;
-        std::vector<Vec3i> candidates_x;
-        std::vector<Vec3i> candidates_y;
-        std::vector<Vec3i> candidates_z;
-        candidates_x.reserve(1024);
-        candidates_y.reserve(1024);
-        candidates_z.reserve(1024);
-        size_t total_rays = static_cast<size_t>(num_block_y) * num_block_z +
-                            static_cast<size_t>(num_block_x) * num_block_z +
-                            static_cast<size_t>(num_block_x) * num_block_y;
-        if (total_rays == 0)
-            total_rays = 1;
-        std::atomic<size_t> callback_count{0};
-
-        auto make_callback = [&](std::vector<Vec3i>& out) {
-            return [&](auto start, auto end) {
-                int start_x = static_cast<int>(std::round(
-                    (start.x - out_voxel.global_position.x) / voxel_size));
-                int start_y = static_cast<int>(std::round(
-                    (start.y - out_voxel.global_position.y) / voxel_size));
-                int start_z = static_cast<int>(std::round(
-                    (start.z - out_voxel.global_position.z) / voxel_size));
-                int end_x = static_cast<int>(std::round(
-                    (end.x - out_voxel.global_position.x) / voxel_size));
-                int end_y = static_cast<int>(std::round(
-                    (end.y - out_voxel.global_position.y) / voxel_size));
-                int end_z = static_cast<int>(std::round(
-                    (end.z - out_voxel.global_position.z) / voxel_size));
-
-                std::vector<Vec3i> local;
-                local.reserve(std::max(0, end_x - start_x + 1) *
-                              std::max(0, end_y - start_y + 1) *
-                              std::max(0, end_z - start_z + 1));
-                for (int i = start_x; i <= end_x; ++i) {
-                    for (int j = start_y; j <= end_y; ++j) {
-                        for (int k = start_z; k <= end_z; ++k) {
-                            if (i >= 0 && j >= 0 && k >= 0) {
-                                local.push_back({i, j, k});
-                            }
-                        }
-                    }
-                }
-                if (!local.empty()) {
-                    std::lock_guard<std::mutex> lock(candidate_locker);
-                    out.insert(out.end(), local.begin(), local.end());
-                }
-
-                size_t cnt =
-                    callback_count.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (cnt % 100 == 0) {
-                    float p =
-                        0.30f + 0.35f * std::min(1.0f, static_cast<float>(cnt) /
-                                                           static_cast<float>(
-                                                               total_rays * 2));
-                    queue_progress = p;
-                    setQueueStatus(get_locale_string("status.voxelizing"));
-                }
-            };
-        };
-
-        bvh.getSolidByFace(voxel_size, voxel_size, voxel_size,
-                           triangle_bvh<float>::voxel_face_X,
-                           make_callback(candidates_x));
-        bvh.getSolidByFace(voxel_size, voxel_size, voxel_size,
-                           triangle_bvh<float>::voxel_face_Y,
-                           make_callback(candidates_y));
-        bvh.getSolidByFace(voxel_size, voxel_size, voxel_size,
-                           triangle_bvh<float>::voxel_face_Z,
-                           make_callback(candidates_z));
-
-        insert_voxels_with_optional_verify(
-            out_voxel, candidates_x, candidates_y, candidates_z, triangles,
-            voxel_size, voxel_precision);
+        voxelize_triangles_bg(triangles, voxel_size, voxel_precision,
+                              out_voxel);
     };
 
     // Gather source mesh triangles according to node_source_data_type
@@ -2039,5 +2052,311 @@ void RenderVoxelList::load_from_node(int target_item_id,
         std::cerr << "[load_from_node] cache write failed: " << e.what()
                   << std::endl;
     }
+}
+
+// 雕刻模式加载：源节点 → 体素 + 稀疏分块 SDF（SDFChunkedGrid）。
+// 体素按 voxel_size 体素化；SDF 采样边长 = voxel_size / sdf_subdivisions，
+// 源节点有 sdf_data 时优先用它烘焙，否则由网格构建 SDF_Mesh 再烘焙。
+void RenderVoxelList::load_sculpt_from_node(int target_item_id,
+                                            int source_node_id,
+                                            float voxel_size,
+                                            int sdf_subdivisions) {
+    using namespace sinriv::kigstudio::voxel;
+    using vec3f = sinriv::kigstudio::vec3<float>;
+    namespace sdf_ns = sinriv::kigstudio::sdf;
+
+    // 快照源数据并在锁内标记目标写入中
+    std::vector<Triangle> source_triangles;
+    VoxelGrid source_voxel_grid;
+    std::shared_ptr<sdf_ns::SDFBase> source_sdf;
+    RenderVoxelItem* target_ptr = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto source_it = items.find(source_node_id);
+        auto target_it = items.find(target_item_id);
+        if (source_it == items.end() || target_it == items.end()) {
+            return;
+        }
+        auto& source = *source_it->second;
+        target_ptr = target_it->second.get();
+        target_ptr->ref_count++;
+        target_ptr->write_count++;
+
+        source_triangles = source.source_triangles;
+        source_voxel_grid = source.voxel_grid_data;
+        source_sdf = source.sdf_data;
+    }
+
+    sdf_subdivisions = std::max(1, sdf_subdivisions);
+    queue_progress = 0.05f;
+
+    // ============ 1. 体素 ============
+    VoxelGrid target_voxel;
+    if (!source_triangles.empty()) {
+        setQueueStatus(get_locale_string("status.voxelizing"));
+        voxelize_triangles_bg(source_triangles, voxel_size,
+                              sinriv::kigstudio::sdf::SDFPrecision::Fast,
+                              target_voxel);
+    } else if (!source_voxel_grid.chunks.empty()) {
+        // 源没有网格但有体素：直接复制（沿用源的体素大小）
+        target_voxel = source_voxel_grid;
+        voxel_size = target_voxel.voxel_size.x;
+    } else {
+        std::lock_guard<std::mutex> lock(locker);
+        target_ptr->ref_count--;
+        target_ptr->write_count--;
+        setQueueStatus(get_locale_string("error.sculpt_no_source_data"));
+        queue_progress = 1.0f;
+        return;
+    }
+
+    // ============ 2. 稀疏分块 SDF ============
+    // 体素 chunk 粗包围盒 -> 世界范围 -> SDF 体素范围（外扩窄带）
+    const float sdf_vs =
+        target_voxel.voxel_size.x / static_cast<float>(sdf_subdivisions);
+    const int band = 8;  // 窄带宽度（SDF 体素数），与截断距离对应
+    std::shared_ptr<sdf_ns::SDFChunkedGrid> chunked_sdf;
+    {
+        int min_cx = INT_MAX, min_cy = INT_MAX, min_cz = INT_MAX;
+        int max_cx = INT_MIN, max_cy = INT_MIN, max_cz = INT_MIN;
+        for (const auto& [key, chunk] : target_voxel.chunks) {
+            int cx, cy, cz;
+            unpackChunkKey(key, cx, cy, cz);
+            min_cx = std::min(min_cx, cx);
+            min_cy = std::min(min_cy, cy);
+            min_cz = std::min(min_cz, cz);
+            max_cx = std::max(max_cx, cx);
+            max_cy = std::max(max_cy, cy);
+            max_cz = std::max(max_cz, cz);
+        }
+        const vec3f gp = target_voxel.global_position;
+        const float vs = target_voxel.voxel_size.x;
+        const vec3f world_min(gp.x + (min_cx << 5) * vs,
+                              gp.y + (min_cy << 5) * vs,
+                              gp.z + (min_cz << 5) * vs);
+        const vec3f world_max(gp.x + ((max_cx + 1) << 5) * vs,
+                              gp.y + ((max_cy + 1) << 5) * vs,
+                              gp.z + ((max_cz + 1) << 5) * vs);
+
+        const Vec3i sdf_min(
+            static_cast<int>(std::floor((world_min.x - gp.x) / sdf_vs)) - band,
+            static_cast<int>(std::floor((world_min.y - gp.y) / sdf_vs)) - band,
+            static_cast<int>(std::floor((world_min.z - gp.z) / sdf_vs)) - band);
+        const Vec3i sdf_max(
+            static_cast<int>(std::ceil((world_max.x - gp.x) / sdf_vs)) + band,
+            static_cast<int>(std::ceil((world_max.y - gp.y) / sdf_vs)) + band,
+            static_cast<int>(std::ceil((world_max.z - gp.z) / sdf_vs)) + band);
+
+        // SDF 来源：优先源节点的 sdf_data，否则由网格构建 SDF_Mesh
+        std::shared_ptr<sdf_ns::SDFBase> bake_source = source_sdf;
+        if (!bake_source && !source_triangles.empty()) {
+            setQueueStatus(get_locale_string("status.building_spatial_index"));
+            auto mesh_sdf = std::make_shared<sdf_ns::SDF_Mesh>();
+            mesh_sdf->loadTriangles(source_triangles);
+            bake_source = std::move(mesh_sdf);
+        }
+        if (bake_source) {
+            setQueueStatus(get_locale_string("status.sculpt_baking_sdf"));
+            queue_progress = 0.7f;
+            chunked_sdf = std::make_shared<sdf_ns::SDFChunkedGrid>(
+                sdf_ns::SDFChunkedGrid::fromSDF(
+                    *bake_source, sdf_min, sdf_max, gp,
+                    vec3f(sdf_vs, sdf_vs, sdf_vs),
+                    band * sdf_vs));
+        }
+    }
+
+    // ============ 3. chunk mesh（CPU 侧，避免持锁阻塞 UI） ============
+    // 雕刻模式实时显示 SDF 平滑 mesh（分块，后续雕刻可局部热更新），
+    // 不再生成体素 MC mesh。
+    queue_progress = 0.9f;
+    std::unordered_map<uint64_t,
+                       std::vector<std::tuple<Triangle, vec3f>>>
+        sdf_chunk_meshes;
+    if (chunked_sdf && !target_voxel.chunks.empty()) {
+        int num_triangles = 0;
+        generateSmoothMeshChunked(
+            target_voxel, num_triangles,
+            [&](const std::string& status) {
+                setQueueStatus(status);
+                return queue_should_continue.load() && queue_running.load();
+            },
+            true, sdf_subdivisions, chunked_sdf.get(),
+            [&](uint64_t key,
+                const std::vector<std::tuple<Triangle, vec3f>>& tris) {
+                if (!tris.empty()) {
+                    sdf_chunk_meshes[key] = tris;
+                }
+            });
+    }
+
+    // ============ 4. 写回目标节点 ============
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto target_it = items.find(target_item_id);
+        if (target_it != items.end()) {
+            auto& target = *target_it->second;
+            target.mesh_renderer.clear();
+            target.exported_mesh_renderer.clear();
+            target.cached_mesh.clear();
+            target.cached_mesh_dirty = true;
+            target.exported_mesh_synced = false;
+            target.voxel_renderer.clear();
+            target.sdf_data = nullptr;
+            target.source_triangles.clear();
+            target.voxel_grid_data.chunks.clear();
+            target.mesh_only = false;
+            target.stl_path.clear();
+
+            target.origin_mesh_renderer.clear();
+            target.origin_mesh_renderer.setBaseColor(0.0f, 0.0f, 1.0f, 1.0f);
+            if (!source_triangles.empty()) {
+                target.origin_mesh_renderer.loadGeometry(
+                    triangle_generator_with_normals(source_triangles));
+            }
+
+            if (!source_triangles.empty()) {
+                target.source_triangles = source_triangles;
+                target.mesh_renderer.loadGeometry(
+                    triangle_generator_with_normals(target.source_triangles));
+            }
+            if (!target_voxel.chunks.empty()) {
+                target.voxel_grid_data = std::move(target_voxel);
+                target.voxel_renderer.loadChunkMeshes(sdf_chunk_meshes);
+            }
+            if (chunked_sdf) {
+                target.sdf_data = std::move(chunked_sdf);
+            }
+            target.stl_voxel_size = voxel_size;
+            target.node_source_sdf_subdivisions = sdf_subdivisions;
+            target.thumbnail_dirty = true;
+            target.dirty = true;
+        }
+        target_ptr->ref_count--;
+        target_ptr->write_count--;
+    }
+
+    setQueueStatus(get_locale_string("status.done"));
+    queue_progress = 1.0f;
+}
+
+// 从当前 sdf_data 全量重建 SDF 平滑 mesh 显示（雕刻模式"更新 SDF"按钮，
+// 后台线程执行）。
+void RenderVoxelList::update_sdf_display_bg(int item_id,
+                                            int sdf_subdivisions) {
+    using namespace sinriv::kigstudio::voxel;
+    using vec3f = sinriv::kigstudio::vec3<float>;
+    namespace sdf_ns = sinriv::kigstudio::sdf;
+
+    // 快照数据
+    VoxelGrid voxel_copy;
+    std::shared_ptr<sdf_ns::SDFBase> sdf_copy;
+    RenderVoxelItem* item_ptr = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(item_id);
+        if (it == items.end()) {
+            return;
+        }
+        item_ptr = it->second.get();
+        if (!item_ptr->sdf_data ||
+            item_ptr->voxel_grid_data.chunks.empty()) {
+            return;
+        }
+        item_ptr->ref_count++;
+        item_ptr->write_count++;
+        voxel_copy = item_ptr->voxel_grid_data;
+        sdf_copy = item_ptr->sdf_data;
+    }
+
+    sdf_subdivisions = std::max(1, sdf_subdivisions);
+    queue_progress = 0.1f;
+    setQueueStatus(get_locale_string("status.updating_sdf_mesh"));
+
+    std::unordered_map<uint64_t,
+                       std::vector<std::tuple<Triangle, vec3f>>>
+        chunk_meshes;
+    int num_triangles = 0;
+    generateSmoothMeshChunked(
+        voxel_copy, num_triangles,
+        [&](const std::string& status) {
+            setQueueStatus(status);
+            return queue_should_continue.load() && queue_running.load();
+        },
+        true, sdf_subdivisions, sdf_copy.get(),
+        [&](uint64_t key,
+            const std::vector<std::tuple<Triangle, vec3f>>& tris) {
+            if (!tris.empty()) {
+                chunk_meshes[key] = tris;
+            }
+        });
+
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(item_id);
+        // SDF 数据在生成期间未被替换才更新显示
+        if (it != items.end() && it->second->sdf_data.get() == sdf_copy.get()) {
+            it->second->voxel_renderer.loadChunkMeshes(chunk_meshes);
+        }
+        item_ptr->ref_count--;
+        item_ptr->write_count--;
+    }
+
+    setQueueStatus(get_locale_string("status.done"));
+    queue_progress = 1.0f;
+}
+
+// SDF 显示局部更新：仅重建 [voxel_min, voxel_max]（voxel_grid_data 体素
+// 坐标闭区间）覆盖的 chunk，空 mesh 擦除、非空热替换。后台线程执行。
+void RenderVoxelList::update_sdf_region_bg(int item_id,
+                                           sinriv::kigstudio::Vec3i voxel_min,
+                                           sinriv::kigstudio::Vec3i voxel_max,
+                                           int sdf_subdivisions) {
+    using namespace sinriv::kigstudio::voxel;
+    using vec3f = sinriv::kigstudio::vec3<float>;
+    namespace sdf_ns = sinriv::kigstudio::sdf;
+
+    // 快照数据
+    VoxelGrid voxel_copy;
+    std::shared_ptr<sdf_ns::SDFBase> sdf_copy;
+    RenderVoxelItem* item_ptr = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(item_id);
+        if (it == items.end()) {
+            return;
+        }
+        item_ptr = it->second.get();
+        if (!item_ptr->sdf_data ||
+            item_ptr->voxel_grid_data.chunks.empty()) {
+            return;
+        }
+        item_ptr->ref_count++;
+        item_ptr->write_count++;
+        voxel_copy = item_ptr->voxel_grid_data;
+        sdf_copy = item_ptr->sdf_data;
+    }
+
+    sdf_subdivisions = std::max(1, sdf_subdivisions);
+    setQueueStatus(get_locale_string("status.updating_sdf_mesh"));
+
+    int num_triangles = 0;
+    auto region = generateSmoothMeshForRegion(
+        voxel_copy, voxel_min, voxel_max, num_triangles, sdf_subdivisions,
+        sdf_copy.get(), true);
+
+    {
+        std::lock_guard<std::mutex> lock(locker);
+        auto it = items.find(item_id);
+        // SDF 数据在生成期间未被替换才更新显示
+        if (it != items.end() && it->second->sdf_data.get() == sdf_copy.get()) {
+            it->second->voxel_renderer.applyChunkMeshes(region);
+        }
+        item_ptr->ref_count--;
+        item_ptr->write_count--;
+    }
+
+    setQueueStatus(get_locale_string("status.done"));
+    queue_progress = 1.0f;
 }
 }  // namespace sinriv::ui::render

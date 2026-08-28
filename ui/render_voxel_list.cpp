@@ -237,7 +237,7 @@ void RenderVoxelList::brush_marked_voxels(
                 for (int word = 0;
                      word < sinriv::kigstudio::voxel::Chunk::WORD_COUNT;
                      ++word) {
-                    uint64_t bits = chunk.data[word];
+                    uint64_t bits = chunk.getWord(word);
                     while (bits != 0) {
                         const int bit = std::countr_zero(bits);
                         bits &= bits - 1;
@@ -936,8 +936,7 @@ void RenderVoxelList::end_marked_edit(int item_id, const std::string& desc) {
                     changed = true;
                     break;
                 }
-                if (memcmp(chunk.data, ait->second.data, sizeof(chunk.data)) !=
-                    0) {
+                if (!chunk.equals(ait->second)) {
                     changed = true;
                     break;
                 }

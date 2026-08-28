@@ -5,9 +5,7 @@ VoxelGrid VoxelGrid::unionWith_local(const VoxelGrid& other) const {
     VoxelGrid r = *this;
 
     for (auto& [key, chunk] : other.chunks) {
-        auto& dst = r.chunks[key];
-        for (int i = 0; i < Chunk::WORD_COUNT; i++)
-            dst.data[i] |= chunk.data[i];
+        r.chunks[key].orWith(chunk);
     }
     return r;
 }
@@ -20,9 +18,8 @@ VoxelGrid VoxelGrid::intersection_local(const VoxelGrid& other) const {
         if (it == other.chunks.end())
             continue;
 
-        Chunk out;
-        for (int i = 0; i < Chunk::WORD_COUNT; i++)
-            out.data[i] = chunk.data[i] & it->second.data[i];
+        Chunk out = chunk;
+        out.andWith(it->second);
 
         if (!out.empty())
             r.chunks[key] = out;
@@ -38,8 +35,7 @@ VoxelGrid VoxelGrid::difference_local(const VoxelGrid& other) const {
 
         auto it = other.chunks.find(key);
         if (it != other.chunks.end()) {
-            for (int i = 0; i < Chunk::WORD_COUNT; i++)
-                out.data[i] &= ~it->second.data[i];
+            out.andNotWith(it->second);
         }
 
         if (!out.empty())
