@@ -1286,6 +1286,40 @@ void init_locale_strings() {
     add_locale_string("label.sculpt_sdf_not_chunked",
                       {{"en", "SDF is not chunked; please reload."},
                        {"zh", "SDF 未分块，请重新加载。"}});
+    add_locale_string("label.sculpt_brush_type",
+                      {{"en", "Brush Type"}, {"zh", "笔刷类型"}});
+    add_locale_string("label.sculpt_brush_smooth",
+                      {{"en", "Smooth"}, {"zh", "平滑"}});
+    add_locale_string("label.sculpt_brush_flatten",
+                      {{"en", "Flatten"}, {"zh", "铲平"}});
+    add_locale_string("label.sculpt_brush_draw",
+                      {{"en", "Draw"}, {"zh", "笔刷"}});
+    add_locale_string("label.sculpt_draw_amount",
+                      {{"en", "Draw Amount"}, {"zh", "增减量"}});
+    add_locale_string(
+        "tooltip.sculpt_flatten",
+        {{"en", "The flatten plane is locked at stroke start."},
+         {"zh", "铲平平面在起笔时锁定。"}});
+    add_locale_string("tooltip.sculpt_draw",
+                      {{"en", "Hold Shift to carve."},
+                       {"zh", "按住 Shift 刻槽。"}});
+    add_locale_string("label.sculpt_brush_inflate",
+                      {{"en", "Inflate"}, {"zh", "膨胀"}});
+    add_locale_string("label.sculpt_brush_move",
+                      {{"en", "Move"}, {"zh", "变形"}});
+    add_locale_string("label.sculpt_brush_repair",
+                      {{"en", "Field Repair"}, {"zh", "场修复"}});
+    add_locale_string("tooltip.sculpt_inflate",
+                      {{"en", "Hold Shift to deflate."},
+                       {"zh", "按住 Shift 收缩。"}});
+    add_locale_string("tooltip.sculpt_move",
+                      {{"en", "Drag to pull the surface."},
+                       {"zh", "拖动以拉扯表面。"}});
+    add_locale_string(
+        "tooltip.sculpt_repair",
+        {{"en", "Re-distance the SDF in the brush area (fixes spikes after "
+                "heavy sculpting)."},
+         {"zh", "修复笔刷区域内的距离场（消除重度雕刻后的棱刺）。"}});
     add_locale_string("window.addon_editor",
                       {{"en", "Addon Editor"}, {"zh", "附加件编辑器"}});
     add_locale_string("label.addon_base_model",

@@ -134,6 +134,17 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
             ImGui::Checkbox(get_locale_cstr("label.sculpt_brush_enable"),
                             &item.sculpt_brush_enabled);
             if (item.sculpt_brush_enabled) {
+                const char* brush_type_names[] = {
+                    get_locale_cstr("label.sculpt_brush_smooth"),
+                    get_locale_cstr("label.sculpt_brush_flatten"),
+                    get_locale_cstr("label.sculpt_brush_draw"),
+                    get_locale_cstr("label.sculpt_brush_inflate"),
+                    get_locale_cstr("label.sculpt_brush_move"),
+                    get_locale_cstr("label.sculpt_brush_repair"),
+                };
+                ImGui::SetNextItemWidth(120.0f);
+                ImGui::Combo(get_locale_cstr("label.sculpt_brush_type"),
+                             &item.sculpt_brush_type, brush_type_names, 6);
                 ImGui::SetNextItemWidth(120.0f);
                 ImGui::DragFloat(get_locale_cstr("label.sculpt_brush_radius"),
                                  &item.sculpt_brush_radius, 0.1f, 0.1f,
@@ -142,6 +153,28 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 ImGui::SliderFloat(
                     get_locale_cstr("label.sculpt_smooth_strength"),
                     &item.sculpt_smooth_strength, 0.0f, 1.0f, "%.2f");
+                if (item.sculpt_brush_type == 2 ||
+                    item.sculpt_brush_type == 3) {
+                    ImGui::SetNextItemWidth(120.0f);
+                    ImGui::DragFloat(
+                        get_locale_cstr("label.sculpt_draw_amount"),
+                        &item.sculpt_draw_amount, 0.05f, 0.0f, 1000.0f,
+                        "%.2f");
+                    ImGui::TextWrapped(
+                        "%s",
+                        get_locale_cstr(item.sculpt_brush_type == 2
+                                            ? "tooltip.sculpt_draw"
+                                            : "tooltip.sculpt_inflate"));
+                } else if (item.sculpt_brush_type == 1) {
+                    ImGui::TextWrapped(
+                        "%s", get_locale_cstr("tooltip.sculpt_flatten"));
+                } else if (item.sculpt_brush_type == 4) {
+                    ImGui::TextWrapped("%s",
+                                       get_locale_cstr("tooltip.sculpt_move"));
+                } else if (item.sculpt_brush_type == 5) {
+                    ImGui::TextWrapped(
+                        "%s", get_locale_cstr("tooltip.sculpt_repair"));
+                }
             }
         }
 

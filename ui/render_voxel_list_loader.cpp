@@ -638,10 +638,13 @@ cJSON* RenderVoxelList::item_to_json(const RenderVoxelItem& item) const {
                             item.node_source_sdf_subdivisions);
     cJSON_AddBoolToObject(obj, "sculpt_brush_enabled",
                           item.sculpt_brush_enabled);
+    cJSON_AddNumberToObject(obj, "sculpt_brush_type", item.sculpt_brush_type);
     cJSON_AddNumberToObject(obj, "sculpt_brush_radius",
                             item.sculpt_brush_radius);
     cJSON_AddNumberToObject(obj, "sculpt_smooth_strength",
                             item.sculpt_smooth_strength);
+    cJSON_AddNumberToObject(obj, "sculpt_draw_amount",
+                            item.sculpt_draw_amount);
     cJSON_AddBoolToObject(obj, "node_source_sdf_simplify",
                           item.node_source_sdf_simplify);
     cJSON_AddNumberToObject(obj, "node_source_sdf_simplify_ratio",
@@ -996,10 +999,14 @@ RenderVoxelList::item_from_json(const cJSON* obj) {
                 item->node_source_sdf_subdivisions = child->valueint;
             } else if (strcmp(key, "sculpt_brush_enabled") == 0) {
                 item->sculpt_brush_enabled = cJSON_IsTrue(child);
+            } else if (strcmp(key, "sculpt_brush_type") == 0) {
+                item->sculpt_brush_type = child->valueint;
             } else if (strcmp(key, "sculpt_brush_radius") == 0) {
                 item->sculpt_brush_radius = static_cast<float>(value);
             } else if (strcmp(key, "sculpt_smooth_strength") == 0) {
                 item->sculpt_smooth_strength = static_cast<float>(value);
+            } else if (strcmp(key, "sculpt_draw_amount") == 0) {
+                item->sculpt_draw_amount = static_cast<float>(value);
             } else if (strcmp(key, "silhouette_shape_mode") == 0) {
                 item->silhouette_shape_mode =
                     static_cast<SilhouetteShapeMode>(child->valueint);
@@ -1401,10 +1408,14 @@ cJSON* RenderVoxelList::snapshot_to_json(
                             snapshot.node_source_sdf_subdivisions);
     cJSON_AddBoolToObject(obj, "sculpt_brush_enabled",
                           snapshot.sculpt_brush_enabled);
+    cJSON_AddNumberToObject(obj, "sculpt_brush_type",
+                            snapshot.sculpt_brush_type);
     cJSON_AddNumberToObject(obj, "sculpt_brush_radius",
                             snapshot.sculpt_brush_radius);
     cJSON_AddNumberToObject(obj, "sculpt_smooth_strength",
                             snapshot.sculpt_smooth_strength);
+    cJSON_AddNumberToObject(obj, "sculpt_draw_amount",
+                            snapshot.sculpt_draw_amount);
     cJSON_AddBoolToObject(obj, "node_source_sdf_simplify",
                           snapshot.node_source_sdf_simplify);
     cJSON_AddNumberToObject(obj, "node_source_sdf_simplify_ratio",
@@ -1697,10 +1708,14 @@ std::optional<CollisionEditorSnapshot> RenderVoxelList::snapshot_from_json(
                 snapshot.node_source_sdf_subdivisions = child->valueint;
             } else if (strcmp(key, "sculpt_brush_enabled") == 0) {
                 snapshot.sculpt_brush_enabled = cJSON_IsTrue(child);
+            } else if (strcmp(key, "sculpt_brush_type") == 0) {
+                snapshot.sculpt_brush_type = child->valueint;
             } else if (strcmp(key, "sculpt_brush_radius") == 0) {
                 snapshot.sculpt_brush_radius = static_cast<float>(value);
             } else if (strcmp(key, "sculpt_smooth_strength") == 0) {
                 snapshot.sculpt_smooth_strength = static_cast<float>(value);
+            } else if (strcmp(key, "sculpt_draw_amount") == 0) {
+                snapshot.sculpt_draw_amount = static_cast<float>(value);
             } else if (strcmp(key, "silhouette_shape_mode") == 0) {
                 snapshot.silhouette_shape_mode =
                     static_cast<SilhouetteShapeMode>(child->valueint);

@@ -137,8 +137,10 @@ CollisionEditorSnapshot RenderVoxelList::capture_snapshot(
             item.strand_groups,
             item.strand_top_order,
             item.sculpt_brush_enabled,
+            item.sculpt_brush_type,
             item.sculpt_brush_radius,
-            item.sculpt_smooth_strength};
+            item.sculpt_smooth_strength,
+            item.sculpt_draw_amount};
 }
 
 void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
@@ -231,8 +233,10 @@ void RenderVoxelList::apply_snapshot(RenderVoxelItem& item,
     item.strand_groups = snapshot.strand_groups;
     item.strand_top_order = snapshot.strand_top_order;
     item.sculpt_brush_enabled = snapshot.sculpt_brush_enabled;
+    item.sculpt_brush_type = snapshot.sculpt_brush_type;
     item.sculpt_brush_radius = snapshot.sculpt_brush_radius;
     item.sculpt_smooth_strength = snapshot.sculpt_smooth_strength;
+    item.sculpt_draw_amount = snapshot.sculpt_draw_amount;
     if (conn_inputs_changed)
         item.connection_faces_dirty = true;
     item.sdf_precision_cache = snapshot.sdf_precision_cache;

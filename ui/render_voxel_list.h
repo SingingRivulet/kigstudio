@@ -630,8 +630,10 @@ struct CollisionEditorSnapshot {
 
     // 雕刻笔刷参数（追加在末尾，保持聚合初始化位置对应）
     bool sculpt_brush_enabled = false;
+    int sculpt_brush_type = 0;
     float sculpt_brush_radius = 5.0f;
     float sculpt_smooth_strength = 0.5f;
+    float sculpt_draw_amount = 0.0f;
 };
 
 struct MarkedVoxelsSnapshot {
@@ -1330,11 +1332,17 @@ class RenderVoxelList {
         // ============ 雕刻模式（source_type == 3） ============
         // 笔刷参数（随工程序列化）
         bool sculpt_brush_enabled = false;
+        int sculpt_brush_type = 0;           // 0 平滑 / 1 铲平 / 2 增减料
         float sculpt_brush_radius = 5.0f;    // 世界单位
         float sculpt_smooth_strength = 0.5f; // 0..1
+        float sculpt_draw_amount = 0.0f;     // 增减量（世界单位/dab，<=0 时用 sdf_vs）
         // 笔画状态（不序列化）
         bool sculpt_stroke_active = false;
         SculptSnapshot sculpt_stroke_snapshot;
+        // 铲平平面（起笔时锁定，笔画内不变）
+        bool sculpt_flatten_plane_valid = false;
+        sinriv::kigstudio::voxel::vec3f sculpt_flatten_plane_origin = {0.0f, 0.0f, 0.0f};
+        sinriv::kigstudio::voxel::vec3f sculpt_flatten_plane_normal = {0.0f, 0.0f, 1.0f};
         std::deque<SculptSnapshot> sculpt_undo_stack;
         std::deque<SculptSnapshot> sculpt_redo_stack;
         // SDF 显示局部刷新节流：dirty 区域（体素坐标闭区间）
@@ -1648,11 +1656,16 @@ class RenderVoxelList {
     bool can_undo_marked(int item_id) const;
     bool can_redo_marked(int item_id) const;
 
-    // 雕刻模式：平滑笔画 + 笔画级撤销/重做 + SDF 显示局部刷新节流
+    // 雕刻模式：笔画 + 笔画级撤销/重做 + SDF 显示局部刷新节流
+    // sculpt_dab_at：按 item.sculpt_brush_type 分派
+    // （0 平滑/1 铲平/2 增减料/3 膨胀/4 变形/5 场修复），
+    // invert（Shift）对增减料=刻槽、膨胀=收缩；drag_delta 仅变形使用
     void begin_sculpt_stroke(int item_id);
-    void sculpt_smooth_at(
-        int item_id,
-        const sinriv::kigstudio::sdf::Vec3f& pos);
+    void sculpt_dab_at(
+        int item_id, const sinriv::kigstudio::sdf::Vec3f& pos,
+        bool invert = false,
+        const sinriv::kigstudio::sdf::Vec3f& drag_delta =
+            sinriv::kigstudio::sdf::Vec3f(0.0f, 0.0f, 0.0f));
     void end_sculpt_stroke(int item_id);
     void undo_sculpt(int item_id);
     void redo_sculpt(int item_id);

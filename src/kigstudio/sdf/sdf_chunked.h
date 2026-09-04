@@ -197,6 +197,25 @@ class SDFChunkedGrid : public SDFBase {
         return affected;
     }
 
+    // ============ 笔刷共用 ============
+    // 球形笔刷的 SDF 体素 AABB（采样点在体素中心：v = (p-gp)/vs - 0.5）
+    inline void brushRegionAABB(const Vec3f& center_world, float radius,
+                                Vec3i& out_min, Vec3i& out_max) const {
+        const float cx =
+            (center_world.x - global_position.x) / voxel_size.x - 0.5f;
+        const float cy =
+            (center_world.y - global_position.y) / voxel_size.y - 0.5f;
+        const float cz =
+            (center_world.z - global_position.z) / voxel_size.z - 0.5f;
+        const float rv = radius / voxel_size.x;  // 分块网格总是各向同性
+        out_min = Vec3i(static_cast<int>(std::floor(cx - rv)),
+                        static_cast<int>(std::floor(cy - rv)),
+                        static_cast<int>(std::floor(cz - rv)));
+        out_max = Vec3i(static_cast<int>(std::ceil(cx + rv)),
+                        static_cast<int>(std::ceil(cy + rv)),
+                        static_cast<int>(std::ceil(cz + rv)));
+    }
+
     // ============ 平滑笔刷 ============
     // 球形区域内的 27 邻域均值平滑：
     //   new = lerp(old, avg27, strength * falloff(dist/radius))
@@ -221,12 +240,7 @@ class SDFChunkedGrid : public SDFBase {
             (center_world.z - global_position.z) / voxel_size.z - 0.5f;
         const float rv = radius / voxel_size.x;  // 分块网格总是各向同性
 
-        out_min = Vec3i(static_cast<int>(std::floor(cx - rv)),
-                        static_cast<int>(std::floor(cy - rv)),
-                        static_cast<int>(std::floor(cz - rv)));
-        out_max = Vec3i(static_cast<int>(std::ceil(cx + rv)),
-                        static_cast<int>(std::ceil(cy + rv)),
-                        static_cast<int>(std::ceil(cz + rv)));
+        brushRegionAABB(center_world, radius, out_min, out_max);
 
         const int nx = out_max.x - out_min.x + 1;
         const int ny = out_max.y - out_min.y + 1;
@@ -316,6 +330,621 @@ class SDFChunkedGrid : public SDFBase {
         }
         if (changed) {
             // 去重 + 压缩回收
+            std::sort(touched.begin(), touched.end());
+            touched.erase(std::unique(touched.begin(), touched.end()),
+                          touched.end());
+            for (uint64_t key : touched) {
+                auto it = chunks.find(key);
+                if (it != chunks.end()) {
+                    it->second.compress();
+                }
+            }
+            if (affected_chunks) {
+                *affected_chunks = std::move(touched);
+            }
+        }
+        return changed;
+    }
+
+    // ============ 铲平笔刷 ============
+    // 把笔刷球内的 SDF 值双向拉向目标平面（世界单位距离）：
+    //   new = lerp(old, dot(w - plane_origin, plane_normal), strength * falloff)
+    // 逐点操作，单遍写回；falloff、远场 clamp/跳过、chunk 簿记与
+    // smoothRegion 一致。plane_normal 需已归一化。纯远场区域返回 false。
+    bool flattenRegion(const Vec3f& center_world, float radius, float strength,
+                       const Vec3f& plane_origin, const Vec3f& plane_normal,
+                       Vec3i& out_min, Vec3i& out_max,
+                       std::vector<uint64_t>* affected_chunks = nullptr) {
+        if (radius <= 0.f || strength <= 0.f) {
+            return false;
+        }
+        const float cx =
+            (center_world.x - global_position.x) / voxel_size.x - 0.5f;
+        const float cy =
+            (center_world.y - global_position.y) / voxel_size.y - 0.5f;
+        const float cz =
+            (center_world.z - global_position.z) / voxel_size.z - 0.5f;
+        const float rv = radius / voxel_size.x;
+        brushRegionAABB(center_world, radius, out_min, out_max);
+
+        // 局部窄带宽度：区域内非远场值的最大绝对值；全远场则无事可做
+        float cap = 0.f;
+        for (int z = out_min.z; z <= out_max.z; ++z) {
+            for (int y = out_min.y; y <= out_max.y; ++y) {
+                for (int x = out_min.x; x <= out_max.x; ++x) {
+                    const float v = getVoxelValue(x, y, z);
+                    if (std::fabs(v) < kSDFChunkedFar) {
+                        cap = std::max(cap, std::fabs(v));
+                    }
+                }
+            }
+        }
+        if (cap <= 0.f) {
+            return false;
+        }
+        auto clamp_far = [&](float v) {
+            if (v >= kSDFChunkedFar) return cap;
+            if (v <= -kSDFChunkedFar) return -cap;
+            return v;
+        };
+
+        std::vector<uint64_t> touched;
+        bool changed = false;
+        for (int z = out_min.z; z <= out_max.z; ++z) {
+            for (int y = out_min.y; y <= out_max.y; ++y) {
+                for (int x = out_min.x; x <= out_max.x; ++x) {
+                    const float wx = x - cx, wy = y - cy, wz = z - cz;
+                    const float dist = std::sqrt(wx * wx + wy * wy + wz * wz);
+                    float t = dist / rv;
+                    t = std::clamp(t, 0.f, 1.f);
+                    const float falloff = 1.f - t * t * (3.f - 2.f * t);
+                    if (falloff <= 0.f) {
+                        continue;
+                    }
+
+                    const float old_v = getVoxelValue(x, y, z);
+                    const Vec3f w = voxelCenterToWorld({x, y, z});
+                    const float d_plane =
+                        (w.x - plane_origin.x) * plane_normal.x +
+                        (w.y - plane_origin.y) * plane_normal.y +
+                        (w.z - plane_origin.z) * plane_normal.z;
+                    const float new_v =
+                        old_v + (clamp_far(d_plane) - clamp_far(old_v)) *
+                                    strength * falloff;
+                    if (new_v == old_v) {
+                        continue;
+                    }
+                    if (std::fabs(old_v) >= kSDFChunkedFar &&
+                        std::fabs(new_v) > cap) {
+                        continue;
+                    }
+                    setVoxelValue(x, y, z, new_v);
+                    touched.push_back(voxel::packChunkKey(x >> 5, y >> 5,
+                                                          z >> 5));
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            std::sort(touched.begin(), touched.end());
+            touched.erase(std::unique(touched.begin(), touched.end()),
+                          touched.end());
+            for (uint64_t key : touched) {
+                auto it = chunks.find(key);
+                if (it != chunks.end()) {
+                    it->second.compress();
+                }
+            }
+            if (affected_chunks) {
+                *affected_chunks = std::move(touched);
+            }
+        }
+        return changed;
+    }
+
+    // ============ 增减料笔刷 ============
+    // 把等值面沿法线外推/内收：
+    //   new = old - dir * amount * strength * falloff
+    // dir=+1 增料（表面外扩），dir=-1 减料/刻槽。amount 为世界单位。
+    // 与平滑/铲平不同：cap 取 max(局部窄带 cap, radius)，允许在空处
+    // 起一团料。逐点操作，单遍写回；其余簿记与 smoothRegion 一致。
+    bool drawRegion(const Vec3f& center_world, float radius, float strength,
+                    float amount, float dir, Vec3i& out_min, Vec3i& out_max,
+                    std::vector<uint64_t>* affected_chunks = nullptr) {
+        if (radius <= 0.f || strength <= 0.f || amount <= 0.f || dir == 0.f) {
+            return false;
+        }
+        const float cx =
+            (center_world.x - global_position.x) / voxel_size.x - 0.5f;
+        const float cy =
+            (center_world.y - global_position.y) / voxel_size.y - 0.5f;
+        const float cz =
+            (center_world.z - global_position.z) / voxel_size.z - 0.5f;
+        const float rv = radius / voxel_size.x;
+        brushRegionAABB(center_world, radius, out_min, out_max);
+
+        float cap = 0.f;
+        for (int z = out_min.z; z <= out_max.z; ++z) {
+            for (int y = out_min.y; y <= out_max.y; ++y) {
+                for (int x = out_min.x; x <= out_max.x; ++x) {
+                    const float v = getVoxelValue(x, y, z);
+                    if (std::fabs(v) < kSDFChunkedFar) {
+                        cap = std::max(cap, std::fabs(v));
+                    }
+                }
+            }
+        }
+        cap = std::max(cap, radius);  // 空中起料的兜底窄带
+        auto clamp_far = [&](float v) {
+            if (v >= kSDFChunkedFar) return cap;
+            if (v <= -kSDFChunkedFar) return -cap;
+            return v;
+        };
+
+        std::vector<uint64_t> touched;
+        bool changed = false;
+        for (int z = out_min.z; z <= out_max.z; ++z) {
+            for (int y = out_min.y; y <= out_max.y; ++y) {
+                for (int x = out_min.x; x <= out_max.x; ++x) {
+                    const float wx = x - cx, wy = y - cy, wz = z - cz;
+                    const float dist = std::sqrt(wx * wx + wy * wy + wz * wz);
+                    float t = dist / rv;
+                    t = std::clamp(t, 0.f, 1.f);
+                    const float falloff = 1.f - t * t * (3.f - 2.f * t);
+                    if (falloff <= 0.f) {
+                        continue;
+                    }
+
+                    const float old_v = getVoxelValue(x, y, z);
+                    const float new_v = clamp_far(old_v) - dir * amount *
+                                                              strength *
+                                                              falloff;
+                    if (new_v == old_v) {
+                        continue;
+                    }
+                    // 远场且结果仍在窄带外：跳过（减料进空气/增料进深内部）
+                    if (std::fabs(old_v) >= kSDFChunkedFar &&
+                        std::fabs(new_v) > cap) {
+                        continue;
+                    }
+                    setVoxelValue(x, y, z, new_v);
+                    touched.push_back(voxel::packChunkKey(x >> 5, y >> 5,
+                                                          z >> 5));
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            std::sort(touched.begin(), touched.end());
+            touched.erase(std::unique(touched.begin(), touched.end()),
+                          touched.end());
+            for (uint64_t key : touched) {
+                auto it = chunks.find(key);
+                if (it != chunks.end()) {
+                    it->second.compress();
+                }
+            }
+            if (affected_chunks) {
+                *affected_chunks = std::move(touched);
+            }
+        }
+        return changed;
+    }
+
+    // ============ 膨胀/收缩笔刷 ============
+    // 与 drawRegion 相同，但 falloff 为平台型：t<=0.7 恒为 1，[0.7,1] 内
+    // smoothstep 降到 0。核心区内等值面沿法线均匀外扩/内缩（整体肿胀），
+    // 区别于 draw 的球面凸起轮廓。dir=+1 膨胀，dir=-1 收缩。
+    bool inflateRegion(const Vec3f& center_world, float radius, float strength,
+                       float amount, float dir, Vec3i& out_min, Vec3i& out_max,
+                       std::vector<uint64_t>* affected_chunks = nullptr) {
+        if (radius <= 0.f || strength <= 0.f || amount <= 0.f || dir == 0.f) {
+            return false;
+        }
+        const float cx =
+            (center_world.x - global_position.x) / voxel_size.x - 0.5f;
+        const float cy =
+            (center_world.y - global_position.y) / voxel_size.y - 0.5f;
+        const float cz =
+            (center_world.z - global_position.z) / voxel_size.z - 0.5f;
+        const float rv = radius / voxel_size.x;
+        brushRegionAABB(center_world, radius, out_min, out_max);
+
+        float cap = 0.f;
+        for (int z = out_min.z; z <= out_max.z; ++z) {
+            for (int y = out_min.y; y <= out_max.y; ++y) {
+                for (int x = out_min.x; x <= out_max.x; ++x) {
+                    const float v = getVoxelValue(x, y, z);
+                    if (std::fabs(v) < kSDFChunkedFar) {
+                        cap = std::max(cap, std::fabs(v));
+                    }
+                }
+            }
+        }
+        cap = std::max(cap, radius);  // 空中起料的兜底窄带
+        auto clamp_far = [&](float v) {
+            if (v >= kSDFChunkedFar) return cap;
+            if (v <= -kSDFChunkedFar) return -cap;
+            return v;
+        };
+
+        std::vector<uint64_t> touched;
+        bool changed = false;
+        for (int z = out_min.z; z <= out_max.z; ++z) {
+            for (int y = out_min.y; y <= out_max.y; ++y) {
+                for (int x = out_min.x; x <= out_max.x; ++x) {
+                    const float wx = x - cx, wy = y - cy, wz = z - cz;
+                    const float dist = std::sqrt(wx * wx + wy * wy + wz * wz);
+                    float t = dist / rv;
+                    t = std::clamp(t, 0.f, 1.f);
+                    // 平台型 falloff
+                    float falloff = 1.f;
+                    if (t > 0.7f) {
+                        const float t2 = (t - 0.7f) / 0.3f;
+                        falloff = 1.f - t2 * t2 * (3.f - 2.f * t2);
+                    }
+                    if (falloff <= 0.f) {
+                        continue;
+                    }
+
+                    const float old_v = getVoxelValue(x, y, z);
+                    const float new_v = clamp_far(old_v) - dir * amount *
+                                                              strength *
+                                                              falloff;
+                    if (new_v == old_v) {
+                        continue;
+                    }
+                    if (std::fabs(old_v) >= kSDFChunkedFar &&
+                        std::fabs(new_v) > cap) {
+                        continue;
+                    }
+                    setVoxelValue(x, y, z, new_v);
+                    touched.push_back(voxel::packChunkKey(x >> 5, y >> 5,
+                                                          z >> 5));
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            std::sort(touched.begin(), touched.end());
+            touched.erase(std::unique(touched.begin(), touched.end()),
+                          touched.end());
+            for (uint64_t key : touched) {
+                auto it = chunks.find(key);
+                if (it != chunks.end()) {
+                    it->second.compress();
+                }
+            }
+            if (affected_chunks) {
+                *affected_chunks = std::move(touched);
+            }
+        }
+        return changed;
+    }
+
+    // ============ 变形笔刷（拖动平流） ============
+    // 把笔刷球内的场沿 drag 方向平流：new(p) = old(p - delta·strength·falloff)。
+    // 两遍法：快照 AABB + halo（覆盖最大位移），从快照三线性采样后写回。
+    // delta 为世界单位位移（通常取相邻 dab 的鼠标世界位移）。
+    bool moveRegion(const Vec3f& center_world, float radius, float strength,
+                    const Vec3f& delta_world, Vec3i& out_min, Vec3i& out_max,
+                    std::vector<uint64_t>* affected_chunks = nullptr) {
+        if (radius <= 0.f || strength <= 0.f) {
+            return false;
+        }
+        const float dlen = delta_world.length();
+        if (dlen * strength < 1e-6f) {
+            return false;
+        }
+        const float cx =
+            (center_world.x - global_position.x) / voxel_size.x - 0.5f;
+        const float cy =
+            (center_world.y - global_position.y) / voxel_size.y - 0.5f;
+        const float cz =
+            (center_world.z - global_position.z) / voxel_size.z - 0.5f;
+        const float rv = radius / voxel_size.x;
+        brushRegionAABB(center_world, radius, out_min, out_max);
+
+        // halo 覆盖最大位移（体素单位）
+        const int halo =
+            static_cast<int>(std::ceil(dlen * strength / voxel_size.x)) + 1;
+        const int nx = out_max.x - out_min.x + 1;
+        const int ny = out_max.y - out_min.y + 1;
+        const int nz = out_max.z - out_min.z + 1;
+        const int hx = nx + 2 * halo, hy = ny + 2 * halo, hz = nz + 2 * halo;
+        const int ox = out_min.x - halo, oy = out_min.y - halo,
+                  oz = out_min.z - halo;
+        std::vector<float> snap(static_cast<size_t>(hx) * hy * hz);
+        auto snap_idx = [&](int x, int y, int z) {
+            return (z * hy + y) * hx + x;
+        };
+        for (int z = 0; z < hz; ++z) {
+            for (int y = 0; y < hy; ++y) {
+                for (int x = 0; x < hx; ++x) {
+                    snap[snap_idx(x, y, z)] =
+                        getVoxelValue(ox + x, oy + y, oz + z);
+                }
+            }
+        }
+
+        float cap = 0.f;
+        for (float v : snap) {
+            if (std::fabs(v) < kSDFChunkedFar) {
+                cap = std::max(cap, std::fabs(v));
+            }
+        }
+        if (cap <= 0.f) {
+            return false;
+        }
+        auto clamp_far = [&](float v) {
+            if (v >= kSDFChunkedFar) return cap;
+            if (v <= -kSDFChunkedFar) return -cap;
+            return v;
+        };
+
+        // 快照内三线性采样（输入为体素连续坐标）
+        auto sample = [&](float fx, float fy, float fz) {
+            const float sx = fx - static_cast<float>(ox);
+            const float sy = fy - static_cast<float>(oy);
+            const float sz = fz - static_cast<float>(oz);
+            const int x0 = std::clamp(static_cast<int>(std::floor(sx)), 0,
+                                      hx - 2);
+            const int y0 = std::clamp(static_cast<int>(std::floor(sy)), 0,
+                                      hy - 2);
+            const int z0 = std::clamp(static_cast<int>(std::floor(sz)), 0,
+                                      hz - 2);
+            const float tx = std::clamp(sx - static_cast<float>(x0), 0.f, 1.f);
+            const float ty = std::clamp(sy - static_cast<float>(y0), 0.f, 1.f);
+            const float tz = std::clamp(sz - static_cast<float>(z0), 0.f, 1.f);
+            const float c00 =
+                snap[snap_idx(x0, y0, z0)] * (1.f - tx) +
+                snap[snap_idx(x0 + 1, y0, z0)] * tx;
+            const float c10 =
+                snap[snap_idx(x0, y0 + 1, z0)] * (1.f - tx) +
+                snap[snap_idx(x0 + 1, y0 + 1, z0)] * tx;
+            const float c01 =
+                snap[snap_idx(x0, y0, z0 + 1)] * (1.f - tx) +
+                snap[snap_idx(x0 + 1, y0, z0 + 1)] * tx;
+            const float c11 =
+                snap[snap_idx(x0, y0 + 1, z0 + 1)] * (1.f - tx) +
+                snap[snap_idx(x0 + 1, y0 + 1, z0 + 1)] * tx;
+            const float c0 = c00 * (1.f - ty) + c10 * ty;
+            const float c1 = c01 * (1.f - ty) + c11 * ty;
+            return c0 * (1.f - tz) + c1 * tz;
+        };
+
+        // 位移（体素单位）
+        const float dvx = delta_world.x * strength / voxel_size.x;
+        const float dvy = delta_world.y * strength / voxel_size.y;
+        const float dvz = delta_world.z * strength / voxel_size.z;
+
+        std::vector<uint64_t> touched;
+        bool changed = false;
+        for (int z = out_min.z; z <= out_max.z; ++z) {
+            for (int y = out_min.y; y <= out_max.y; ++y) {
+                for (int x = out_min.x; x <= out_max.x; ++x) {
+                    const float wx = x - cx, wy = y - cy, wz = z - cz;
+                    const float dist = std::sqrt(wx * wx + wy * wy + wz * wz);
+                    float t = dist / rv;
+                    t = std::clamp(t, 0.f, 1.f);
+                    const float falloff = 1.f - t * t * (3.f - 2.f * t);
+                    if (falloff <= 0.f) {
+                        continue;
+                    }
+
+                    const float old_v = getVoxelValue(x, y, z);
+                    const float new_v = clamp_far(
+                        sample(x - dvx * falloff, y - dvy * falloff,
+                               z - dvz * falloff));
+                    if (new_v == old_v) {
+                        continue;
+                    }
+                    if (std::fabs(old_v) >= kSDFChunkedFar &&
+                        std::fabs(new_v) > cap) {
+                        continue;
+                    }
+                    setVoxelValue(x, y, z, new_v);
+                    touched.push_back(voxel::packChunkKey(x >> 5, y >> 5,
+                                                          z >> 5));
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            std::sort(touched.begin(), touched.end());
+            touched.erase(std::unique(touched.begin(), touched.end()),
+                          touched.end());
+            for (uint64_t key : touched) {
+                auto it = chunks.find(key);
+                if (it != chunks.end()) {
+                    it->second.compress();
+                }
+            }
+            if (affected_chunks) {
+                *affected_chunks = std::move(touched);
+            }
+        }
+        return changed;
+    }
+
+    // ============ 场修复笔刷（局部重距离化） ============
+    // 雕刻多笔后 SDF 偏离真实距离场（|∇f|≠1），meshing 出现棱刺。
+    // 在笔刷区域内做 Godunov 上风重距离化：符号固定不变，符号变化的
+    // 6 邻接体素为锚点（保值），其余按 |∇u|=1（体素单位）迭代求解，
+    // 写回 new = lerp(old, sign·repaired, strength·falloff)。
+    bool repairRegion(const Vec3f& center_world, float radius, float strength,
+                      Vec3i& out_min, Vec3i& out_max,
+                      std::vector<uint64_t>* affected_chunks = nullptr) {
+        if (radius <= 0.f || strength <= 0.f) {
+            return false;
+        }
+        const float cx =
+            (center_world.x - global_position.x) / voxel_size.x - 0.5f;
+        const float cy =
+            (center_world.y - global_position.y) / voxel_size.y - 0.5f;
+        const float cz =
+            (center_world.z - global_position.z) / voxel_size.z - 0.5f;
+        const float rv = radius / voxel_size.x;
+        brushRegionAABB(center_world, radius, out_min, out_max);
+
+        const int nx = out_max.x - out_min.x + 1;
+        const int ny = out_max.y - out_min.y + 1;
+        const int nz = out_max.z - out_min.z + 1;
+        const int hx = nx + 2, hy = ny + 2, hz = nz + 2;
+        std::vector<float> snap(static_cast<size_t>(hx) * hy * hz);
+        auto idx = [&](int x, int y, int z) { return (z * hy + y) * hx + x; };
+        for (int z = 0; z < hz; ++z) {
+            for (int y = 0; y < hy; ++y) {
+                for (int x = 0; x < hx; ++x) {
+                    snap[idx(x, y, z)] = getVoxelValue(out_min.x + x - 1,
+                                                       out_min.y + y - 1,
+                                                       out_min.z + z - 1);
+                }
+            }
+        }
+        float cap = 0.f;
+        for (float v : snap) {
+            if (std::fabs(v) < kSDFChunkedFar) {
+                cap = std::max(cap, std::fabs(v));
+            }
+        }
+        if (cap <= 0.f) {
+            return false;
+        }
+        auto clamp_far = [&](float v) {
+            if (v >= kSDFChunkedFar) return cap;
+            if (v <= -kSDFChunkedFar) return -cap;
+            return v;
+        };
+
+        // 工作场：幅度（体素单位）+ 符号 + 锚点标记；halo 层固定为边界
+        const float inv_vs = 1.f / voxel_size.x;
+        std::vector<float> u(snap.size());
+        std::vector<int8_t> sgn(snap.size());
+        std::vector<char> fixed(snap.size(), 0);
+        for (int z = 0; z < hz; ++z) {
+            for (int y = 0; y < hy; ++y) {
+                for (int x = 0; x < hx; ++x) {
+                    const float v = clamp_far(snap[idx(x, y, z)]);
+                    const int i = idx(x, y, z);
+                    sgn[i] = v >= 0.f ? 1 : -1;
+                    u[i] = std::fabs(v) * inv_vs;
+                    // halo 层固定
+                    if (x == 0 || y == 0 || z == 0 || x == hx - 1 ||
+                        y == hy - 1 || z == hz - 1) {
+                        fixed[i] = 1;
+                    }
+                }
+            }
+        }
+        // 锚点：内部体素且 6 邻接有异号
+        for (int z = 1; z < hz - 1; ++z) {
+            for (int y = 1; y < hy - 1; ++y) {
+                for (int x = 1; x < hx - 1; ++x) {
+                    const int i = idx(x, y, z);
+                    const int8_t s = sgn[i];
+                    if (sgn[idx(x - 1, y, z)] != s ||
+                        sgn[idx(x + 1, y, z)] != s ||
+                        sgn[idx(x, y - 1, z)] != s ||
+                        sgn[idx(x, y + 1, z)] != s ||
+                        sgn[idx(x, y, z - 1)] != s ||
+                        sgn[idx(x, y, z + 1)] != s) {
+                        fixed[i] = 1;
+                    }
+                }
+            }
+        }
+        // 非固定点初始化为大范围（体素单位）
+        const float big = cap * inv_vs;
+        for (size_t i = 0; i < u.size(); ++i) {
+            if (!fixed[i]) {
+                u[i] = big;
+            }
+        }
+
+        // Godunov 上风 Gauss-Seidel 迭代
+        const int sweeps = nx + ny + nz;
+        for (int sweep = 0; sweep < sweeps; ++sweep) {
+            for (int z = 1; z < hz - 1; ++z) {
+                for (int y = 1; y < hy - 1; ++y) {
+                    for (int x = 1; x < hx - 1; ++x) {
+                        const int i = idx(x, y, z);
+                        if (fixed[i]) {
+                            continue;
+                        }
+                        float a = std::min(u[idx(x - 1, y, z)],
+                                           u[idx(x + 1, y, z)]);
+                        float b = std::min(u[idx(x, y - 1, z)],
+                                           u[idx(x, y + 1, z)]);
+                        float c = std::min(u[idx(x, y, z - 1)],
+                                           u[idx(x, y, z + 1)]);
+                        if (a > b) std::swap(a, b);
+                        if (b > c) std::swap(b, c);
+                        if (a > b) std::swap(a, b);
+                        double un = a + 1.0;
+                        if (un > b) {
+                            const double disc2 =
+                                2.0 - (a - b) * (a - b);
+                            un = (a + b + std::sqrt(std::max(0.0, disc2))) *
+                                 0.5;
+                            if (un > c) {
+                                const double s = a + b + c;
+                                const double disc3 =
+                                    s * s -
+                                    3.0 * (a * a + b * b + c * c - 1.0);
+                                un = (s + std::sqrt(std::max(0.0, disc3))) /
+                                     3.0;
+                            }
+                        }
+                        if (un < u[i]) {
+                            u[i] = static_cast<float>(un);
+                        }
+                    }
+                }
+            }
+        }
+
+        std::vector<uint64_t> touched;
+        bool changed = false;
+        for (int z = 1; z < hz - 1; ++z) {
+            for (int y = 1; y < hy - 1; ++y) {
+                for (int x = 1; x < hx - 1; ++x) {
+                    const float wx = out_min.x + x - 1 - cx;
+                    const float wy = out_min.y + y - 1 - cy;
+                    const float wz = out_min.z + z - 1 - cz;
+                    const float dist = std::sqrt(wx * wx + wy * wy + wz * wz);
+                    float t = dist / rv;
+                    t = std::clamp(t, 0.f, 1.f);
+                    const float falloff = 1.f - t * t * (3.f - 2.f * t);
+                    if (falloff <= 0.f) {
+                        continue;
+                    }
+
+                    const int vx = out_min.x + x - 1;
+                    const int vy = out_min.y + y - 1;
+                    const int vz = out_min.z + z - 1;
+                    const float old_v = snap[idx(x, y, z)];
+                    const int i = idx(x, y, z);
+                    const float repaired =
+                        static_cast<float>(sgn[i]) * u[i] * voxel_size.x;
+                    const float new_v =
+                        old_v + (repaired - clamp_far(old_v)) * strength *
+                                    falloff;
+                    if (new_v == old_v) {
+                        continue;
+                    }
+                    if (std::fabs(old_v) >= kSDFChunkedFar &&
+                        std::fabs(new_v) > cap) {
+                        continue;
+                    }
+                    setVoxelValue(vx, vy, vz, new_v);
+                    touched.push_back(voxel::packChunkKey(vx >> 5, vy >> 5,
+                                                          vz >> 5));
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
             std::sort(touched.begin(), touched.end());
             touched.erase(std::unique(touched.begin(), touched.end()),
                           touched.end());

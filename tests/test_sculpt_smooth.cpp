@@ -172,6 +172,204 @@ int main() {
         assert(grid.chunks.size() == chunks_before);
     }
 
+    // ============ 用例 5：铲平把表面拉向锁定平面 ============
+    {
+        NoisySphere sphere(Vec3f(20.f, 20.f, 20.f), 12.f);
+        SDFChunkedGrid grid = SDFChunkedGrid::fromSDF(
+            sphere, Vec3i(-4, -4, -4), Vec3i(43, 43, 43));
+
+        // 锁定平面：过笔刷中心 (8,20,20)，法线 +X（d_plane = w.x - 8）
+        const Vec3f plane_o(8.f, 20.f, 20.f), plane_n(1.f, 0.f, 0.f);
+        // 笔刷核心区（角点距中心 3.46 < 半径 6，falloff >= 0.38）
+        const Vec3i bmin(6, 18, 18), bmax(10, 22, 22);
+        auto plane_dev = [&]() {
+            float sum = 0.f;
+            int count = 0;
+            for (int z = bmin.z; z <= bmax.z; ++z)
+                for (int y = bmin.y; y <= bmax.y; ++y)
+                    for (int x = bmin.x; x <= bmax.x; ++x) {
+                        float v = grid.getVoxelValue(x, y, z);
+                        if (std::fabs(v) >= 2.0f) continue;
+                        sum += std::fabs(v - ((x + 0.5f) - 8.f));
+                        ++count;
+                    }
+            return count > 0 ? sum / count : 0.f;
+        };
+        const float before = plane_dev();
+        assert(before > 0.05f && "curved noisy surface should deviate from plane");
+
+        Vec3i rmin, rmax;
+        for (int i = 0; i < 8; ++i) {
+            bool changed =
+                grid.flattenRegion(Vec3f(8.f, 20.f, 20.f), 6.0f, 1.0f, plane_o,
+                                   plane_n, rmin, rmax);
+            assert(changed);
+        }
+        const float after = plane_dev();
+        assert(after < before * 0.5f && "flatten should converge to the plane");
+
+        // 区域外不受影响
+        assert(grid.getVoxelValue(40, 40, 40) >= kSDFChunkedFar);
+        const float opposite = grid.getVoxelValue(38, 20, 20);
+        const float expected_opposite = sphere.get(Vec3f(38.5f, 20.5f, 20.5f));
+        assert(std::fabs(opposite - expected_opposite) < 1e-4f);
+    }
+
+    // ============ 用例 6：增减料笔刷（增料外扩 / 减料刻槽 / 空中起料） ============
+    {
+        SDF_Sphere sphere(Vec3f(20.f, 20.f, 20.f), 12.f);
+        SDFChunkedGrid grid = SDFChunkedGrid::fromSDF(
+            sphere, Vec3i(-4, -4, -4), Vec3i(43, 43, 43));
+
+        Vec3i rmin, rmax;
+        // 增料：球面外一点 (6,20,20)（体素中心世界 (6.5,20.5,20.5)，
+        // 原 SDF≈+1.5 > 0）被推成内部
+        assert(grid.getVoxelValue(6, 20, 20) > 0.f);
+        bool changed = grid.drawRegion(Vec3f(8.f, 20.f, 20.f), 6.0f, 1.0f,
+                                       2.0f, 1.0f, rmin, rmax);
+        assert(changed);
+        assert(grid.getVoxelValue(6, 20, 20) < 0.f && "add should expand");
+
+        // 减料：在未增料的副本上刻槽，笔刷中心体素 (8,20,20) 变正
+        SDFChunkedGrid grid2 = SDFChunkedGrid::fromSDF(
+            sphere, Vec3i(-4, -4, -4), Vec3i(43, 43, 43));
+        assert(grid2.getVoxelValue(8, 20, 20) < 0.f);
+        changed = grid2.drawRegion(Vec3f(8.f, 20.f, 20.f), 6.0f, 1.0f, 2.0f,
+                                   -1.0f, rmin, rmax);
+        assert(changed);
+        assert(grid2.getVoxelValue(8, 20, 20) > 0.f && "carve should dig");
+
+        // 空中起料：纯远场 dab（cap=radius 兜底）生成新 chunk
+        const size_t chunks_before = grid.chunks.size();
+        changed = grid.drawRegion(Vec3f(200.f, 200.f, 200.f), 5.0f, 1.0f,
+                                  2.0f, 1.0f, rmin, rmax);
+        assert(changed);
+        assert(grid.chunks.size() > chunks_before);
+        assert(grid.getVoxelValue(200, 200, 200) < kSDFChunkedFar);
+        // 空中减料仍是 no-op
+        const size_t chunks_after_air = grid.chunks.size();
+        changed = grid.drawRegion(Vec3f(260.f, 260.f, 260.f), 5.0f, 1.0f,
+                                  2.0f, -1.0f, rmin, rmax);
+        assert(!changed && "carving empty air should be a no-op");
+        assert(grid.chunks.size() == chunks_after_air);
+    }
+
+    // ============ 用例 7：膨胀/收缩（平台型 falloff） ============
+    {
+        SDF_Sphere sphere(Vec3f(20.f, 20.f, 20.f), 12.f);
+        SDFChunkedGrid grid = SDFChunkedGrid::fromSDF(
+            sphere, Vec3i(-4, -4, -4), Vec3i(43, 43, 43));
+
+        Vec3i rmin, rmax;
+        // 膨胀：核心区内（t<=0.7，falloff=1）均匀外扩 amount
+        // 体素 (8,20,20)：连续中心 7.5，dist=0.866，t=0.144 < 0.7 → 全额
+        // 球面外点 (6,20,20)（t=0.25 < 0.7 → 平台区）也精确减少 amount
+        const float w0 = grid.getVoxelValue(6, 20, 20);
+        assert(w0 > 0.f);
+        const float v0 = grid.getVoxelValue(8, 20, 20);
+        bool changed = grid.inflateRegion(Vec3f(8.f, 20.f, 20.f), 6.0f, 1.0f,
+                                          1.0f, 1.0f, rmin, rmax);
+        assert(changed);
+        const float v1 = grid.getVoxelValue(8, 20, 20);
+        assert(std::fabs(v1 - (v0 - 1.0f)) < 1e-4f &&
+               "inflate core should shift by exactly amount");
+        assert(std::fabs(grid.getVoxelValue(6, 20, 20) - (w0 - 1.0f)) <
+                   1e-4f &&
+               "plateau falloff should be 1 inside t<=0.7");
+
+        // 收缩：副本上 dir=-1，表面点变正
+        SDFChunkedGrid grid2 = SDFChunkedGrid::fromSDF(
+            sphere, Vec3i(-4, -4, -4), Vec3i(43, 43, 43));
+        changed = grid2.inflateRegion(Vec3f(8.f, 20.f, 20.f), 6.0f, 1.0f,
+                                      1.0f, -1.0f, rmin, rmax);
+        assert(changed);
+        assert(grid2.getVoxelValue(8, 20, 20) > 0.f && "deflate should dig");
+        // 区域外不变
+        assert(grid2.getVoxelValue(40, 40, 40) >= kSDFChunkedFar);
+        const float opposite = grid2.getVoxelValue(38, 20, 20);
+        const float expected_opposite = sphere.get(Vec3f(38.5f, 20.5f, 20.5f));
+        assert(std::fabs(opposite - expected_opposite) < 1e-4f);
+    }
+
+    // ============ 用例 8：变形（拖动平流） ============
+    {
+        SDF_Sphere sphere(Vec3f(20.f, 20.f, 20.f), 12.f);
+        SDFChunkedGrid grid = SDFChunkedGrid::fromSDF(
+            sphere, Vec3i(-4, -4, -4), Vec3i(43, 43, 43));
+
+        Vec3i rmin, rmax;
+        // delta≈0：no-op
+        assert(!grid.moveRegion(Vec3f(8.f, 20.f, 20.f), 6.0f, 1.0f,
+                                Vec3f(0.f, 0.f, 0.f), rmin, rmax));
+
+        // 表面点 (8,20,20)（原 SDF≈-0.48 < 0）沿 +X 拖 2 个体素后变正
+        // （表面被推离该点）
+        assert(grid.getVoxelValue(8, 20, 20) < 0.f);
+        bool changed =
+            grid.moveRegion(Vec3f(8.f, 20.f, 20.f), 6.0f, 1.0f,
+                            Vec3f(2.f, 0.f, 0.f), rmin, rmax);
+        assert(changed);
+        assert(grid.getVoxelValue(8, 20, 20) > 0.f &&
+               "surface should move away from the dab point");
+        // 反侧不受影响
+        const float opposite = grid.getVoxelValue(38, 20, 20);
+        const float expected_opposite = sphere.get(Vec3f(38.5f, 20.5f, 20.5f));
+        assert(std::fabs(opposite - expected_opposite) < 1e-4f);
+    }
+
+    // ============ 用例 9：场修复（局部重距离化） ============
+    {
+        // 平面场 v = (x+0.5) - 8（完美距离场，零交叉在 x=8）
+        struct Plane : public SDFBase {
+            float get(const Vec3f& p) const override { return p.x - 8.f; }
+            std::string getInfo(int indent = 0) const override {
+                return "plane";
+            }
+            cJSON* toJSON() const override { return nullptr; }
+            void fromJSON(const cJSON*) override {}
+        } plane;
+        SDFChunkedGrid grid = SDFChunkedGrid::fromSDF(plane, Vec3i(0, 0, 0),
+                                                      Vec3i(31, 31, 31),
+                                                      Vec3f(0.f, 0.f, 0.f),
+                                                      Vec3f(1.f, 1.f, 1.f),
+                                                      20.0f);
+
+        // 把笔刷区域内的值 ×1.5（零交叉不变，距离失真）
+        Vec3i rmin, rmax;
+        grid.brushRegionAABB(Vec3f(8.f, 16.f, 16.f), 8.0f, rmin, rmax);
+        for (int z = rmin.z; z <= rmax.z; ++z)
+            for (int y = rmin.y; y <= rmax.y; ++y)
+                for (int x = rmin.x; x <= rmax.x; ++x) {
+                    const float v = grid.getVoxelValue(x, y, z);
+                    if (std::fabs(v) < kSDFChunkedFar) {
+                        grid.setVoxelValue(x, y, z, v * 1.5f);
+                    }
+                }
+        // 在中心线 y=z=16, x∈[5,11] 上测最大偏差（该处 falloff >= 0.59，
+        // 修复确实写入；区域边缘 falloff→0 不纳入测量）
+        auto max_dev = [&]() {
+            float dev = 0.f;
+            for (int x = 5; x <= 11; ++x) {
+                const float v = grid.getVoxelValue(x, 16, 16);
+                dev = std::max(dev, std::fabs(v - ((x + 0.5f) - 8.f)));
+            }
+            return dev;
+        };
+        const float dev_before = max_dev();
+        assert(dev_before > 1.0f && "distorted field should deviate");
+
+        Vec3i omin, omax;
+        const bool changed = grid.repairRegion(Vec3f(8.f, 16.f, 16.f), 8.0f,
+                                               1.0f, omin, omax);
+        assert(changed);
+        const float dev_after = max_dev();
+        assert(dev_after < dev_before * 0.6f &&
+               "repair should reduce distance error");
+        // 符号不变
+        assert(grid.getVoxelValue(7, 16, 16) < 0.f);
+        assert(grid.getVoxelValue(8, 16, 16) > 0.f);
+    }
+
     std::cout << "test_sculpt_smooth: all cases passed" << std::endl;
     return 0;
 }

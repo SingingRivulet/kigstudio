@@ -117,10 +117,12 @@ void RenderVoxelList::begin_sculpt_stroke(int item_id) {
     }
     item.sculpt_stroke_active = true;
     item.sculpt_stroke_snapshot = SculptSnapshot{};
+    item.sculpt_flatten_plane_valid = false;
 }
 
-void RenderVoxelList::sculpt_smooth_at(int item_id,
-                                       const sdf_ns::Vec3f& pos) {
+void RenderVoxelList::sculpt_dab_at(int item_id, const sdf_ns::Vec3f& pos,
+                                    bool invert,
+                                    const sdf_ns::Vec3f& drag_delta) {
     std::lock_guard<std::mutex> lock(locker);
     auto it = items.find(item_id);
     if (it == items.end()) {
@@ -139,6 +141,7 @@ void RenderVoxelList::sculpt_smooth_at(int item_id,
         // 容错：未显式 begin 时隐式开笔
         item.sculpt_stroke_active = true;
         item.sculpt_stroke_snapshot = SculptSnapshot{};
+        item.sculpt_flatten_plane_valid = false;
     }
 
     const float sdf_vs = grid->voxel_size.x;
@@ -203,10 +206,67 @@ void RenderVoxelList::sculpt_smooth_at(int item_id,
         }
     }
 
-    // ============ 平滑 ============
+    // ============ 应用笔刷（按 sculpt_brush_type 分派） ============
     Vec3i out_min, out_max;
-    const bool changed = grid->smoothRegion(pos, r, item.sculpt_smooth_strength,
-                                            out_min, out_max);
+    bool changed = false;
+    if (item.sculpt_brush_type == 1) {
+        // 铲平：首个 dab 锁定平面——SDF 梯度法线 + 一步牛顿投影到等值面
+        if (!item.sculpt_flatten_plane_valid) {
+            const float eps = sdf_vs;
+            const auto g = [&](float x, float y, float z) {
+                return grid->get(sdf_ns::Vec3f(x, y, z));
+            };
+            sdf_ns::Vec3f grad(
+                g(pos.x + eps, pos.y, pos.z) - g(pos.x - eps, pos.y, pos.z),
+                g(pos.x, pos.y + eps, pos.z) - g(pos.x, pos.y - eps, pos.z),
+                g(pos.x, pos.y, pos.z + eps) - g(pos.x, pos.y, pos.z - eps));
+            const float v0 = grid->get(pos);
+            const float len = grad.length();
+            if (len < 1e-6f || std::fabs(v0) >= sdf_ns::kSDFChunkedFar) {
+                return;  // 空中 dab：无法定义铲平平面
+            }
+            grad = grad / len;
+            item.sculpt_flatten_plane_origin = {
+                pos.x - v0 * grad.x, pos.y - v0 * grad.y, pos.z - v0 * grad.z};
+            item.sculpt_flatten_plane_normal = {grad.x, grad.y, grad.z};
+            item.sculpt_flatten_plane_valid = true;
+        }
+        changed = grid->flattenRegion(
+            pos, r, item.sculpt_smooth_strength,
+            sdf_ns::Vec3f(item.sculpt_flatten_plane_origin.x,
+                          item.sculpt_flatten_plane_origin.y,
+                          item.sculpt_flatten_plane_origin.z),
+            sdf_ns::Vec3f(item.sculpt_flatten_plane_normal.x,
+                          item.sculpt_flatten_plane_normal.y,
+                          item.sculpt_flatten_plane_normal.z),
+            out_min, out_max);
+    } else if (item.sculpt_brush_type == 2) {
+        // 增减料：默认增料，invert（Shift）刻槽
+        const float amount = item.sculpt_draw_amount > 0.f
+                                 ? item.sculpt_draw_amount
+                                 : sdf_vs;
+        changed = grid->drawRegion(pos, r, item.sculpt_smooth_strength, amount,
+                                   invert ? -1.0f : 1.0f, out_min, out_max);
+    } else if (item.sculpt_brush_type == 3) {
+        // 膨胀/收缩：平台型 falloff，invert（Shift）收缩
+        const float amount = item.sculpt_draw_amount > 0.f
+                                 ? item.sculpt_draw_amount
+                                 : sdf_vs;
+        changed = grid->inflateRegion(pos, r, item.sculpt_smooth_strength,
+                                      amount, invert ? -1.0f : 1.0f, out_min,
+                                      out_max);
+    } else if (item.sculpt_brush_type == 4) {
+        // 变形：沿鼠标拖动方向平流场
+        changed = grid->moveRegion(pos, r, item.sculpt_smooth_strength,
+                                   drag_delta, out_min, out_max);
+    } else if (item.sculpt_brush_type == 5) {
+        // 场修复：局部重距离化
+        changed = grid->repairRegion(pos, r, item.sculpt_smooth_strength,
+                                     out_min, out_max);
+    } else {
+        changed = grid->smoothRegion(pos, r, item.sculpt_smooth_strength,
+                                     out_min, out_max);
+    }
     if (!changed) {
         return;
     }

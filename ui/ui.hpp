@@ -55,6 +55,9 @@ int ui_main(int argc, const char* const* argv) {
     bool middleMouseDownOnPick = false;
     // 雕刻笔画进行中（左键按住 + 雕刻笔刷启用）
     bool sculpt_stroke_active = false;
+    // 上一 dab 的鼠标世界位置（变形笔刷拖动增量用）
+    sinriv::kigstudio::voxel::collision::vec3f sculpt_last_dab_pos = {0, 0, 0};
+    bool sculpt_last_dab_valid = false;
     // Nav map infinite panning state (middle-mouse drag in node graph)
     bool nav_map_panning = false;
     ImVec2 nav_map_pan_start_pos;
@@ -407,9 +410,12 @@ int ui_main(int argc, const char* const* argv) {
                             it->second->sculpt_brush_enabled) {
                             sculpt_stroke_active = true;
                             render_items.begin_sculpt_stroke(render_items.render_id);
-                            render_items.sculpt_smooth_at(
+                            render_items.sculpt_dab_at(
                                 render_items.render_id,
-                                render_items.mouse_world_pos);
+                                render_items.mouse_world_pos,
+                                (SDL_GetModState() & KMOD_SHIFT) != 0);
+                            sculpt_last_dab_pos = render_items.mouse_world_pos;
+                            sculpt_last_dab_valid = true;
                         }
                     }
                     // 引导曲线绘制模式
@@ -459,6 +465,7 @@ int ui_main(int argc, const char* const* argv) {
                     if (sculpt_stroke_active) {
                         render_items.end_sculpt_stroke(render_items.render_id);
                         sculpt_stroke_active = false;
+                        sculpt_last_dab_valid = false;
                     }
                     if (leftMouseDownOnPick) {
                         bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
@@ -658,6 +665,7 @@ int ui_main(int argc, const char* const* argv) {
                     leftMouseDown = false;
                     leftMouseDownOnPick = false;
                     sculpt_stroke_active = false;
+                    sculpt_last_dab_valid = false;
                     guide_curve_click_valid = false;
                     width_edit_click_valid = false;
                     hairline_point_pick_valid = false;
@@ -768,12 +776,22 @@ int ui_main(int argc, const char* const* argv) {
                             }
                         }
                     }
-                    // 雕刻平滑笔画
+                    // 雕刻笔画
                     if (leftMouseDown && sculpt_stroke_active &&
                         render_items.mouse_world_pos_valid) {
-                        render_items.sculpt_smooth_at(
+                        // 变形笔刷的拖动增量：相邻 dab 的鼠标世界位移
+                        sinriv::kigstudio::voxel::collision::vec3f delta = {
+                            0, 0, 0};
+                        if (sculpt_last_dab_valid) {
+                            delta = render_items.mouse_world_pos -
+                                    sculpt_last_dab_pos;
+                        }
+                        render_items.sculpt_dab_at(
                             render_items.render_id,
-                            render_items.mouse_world_pos);
+                            render_items.mouse_world_pos,
+                            (SDL_GetModState() & KMOD_SHIFT) != 0, delta);
+                        sculpt_last_dab_pos = render_items.mouse_world_pos;
+                        sculpt_last_dab_valid = true;
                     }
                     io.MousePos = ImVec2((float)e.motion.x, (float)e.motion.y);
                 }
