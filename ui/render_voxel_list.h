@@ -27,6 +27,7 @@
 #endif
 
 #include "kigstudio/sdf/sdf_mesh.h"
+#include "kigstudio/sdf/sdf_chunked.h"
 #include "kigstudio/cgal/mesh_repair.h"
 #include "kigstudio/sdf/sdf_shape.h"
 #include "kigstudio/ui/render_collision.h"
@@ -626,11 +627,30 @@ struct CollisionEditorSnapshot {
     std::vector<std::string> strand_groups;
     // 发束列表顶层顺序（组与未分组发束混合）
     std::vector<StrandTopEntry> strand_top_order;
+
+    // 雕刻笔刷参数（追加在末尾，保持聚合初始化位置对应）
+    bool sculpt_brush_enabled = false;
+    float sculpt_brush_radius = 5.0f;
+    float sculpt_smooth_strength = 0.5f;
 };
 
 struct MarkedVoxelsSnapshot {
     sinriv::kigstudio::voxel::VoxelGrid marked_voxels;
     std::string description;
+};
+
+// 雕刻笔画快照：一笔中被触碰的 SDF/体素 chunk（首次触碰前的状态），
+// 以及笔画新建（原先不存在）的 chunk key——撤销时删除。
+struct SculptSnapshot {
+    std::string description;
+    std::unordered_map<uint64_t, sinriv::kigstudio::sdf::SDFChunk> sdf_chunks;
+    std::unordered_map<uint64_t, sinriv::kigstudio::voxel::Chunk> voxel_chunks;
+    std::unordered_set<uint64_t> sdf_chunks_created;
+    std::unordered_set<uint64_t> voxel_chunks_created;
+    // 体素坐标闭区间（voxel_grid_data 坐标系），撤销/重做后局部刷新显示
+    sinriv::kigstudio::Vec3i region_min{0, 0, 0};
+    sinriv::kigstudio::Vec3i region_max{0, 0, 0};
+    bool has_region = false;
 };
 
 class RenderVoxelList {
@@ -1307,6 +1327,22 @@ class RenderVoxelList {
         float angle_config_preview_theta = 0;  // live theta for cyan highlight
         float angle_config_preview_phi = 0;    // live phi for cyan highlight
 
+        // ============ 雕刻模式（source_type == 3） ============
+        // 笔刷参数（随工程序列化）
+        bool sculpt_brush_enabled = false;
+        float sculpt_brush_radius = 5.0f;    // 世界单位
+        float sculpt_smooth_strength = 0.5f; // 0..1
+        // 笔画状态（不序列化）
+        bool sculpt_stroke_active = false;
+        SculptSnapshot sculpt_stroke_snapshot;
+        std::deque<SculptSnapshot> sculpt_undo_stack;
+        std::deque<SculptSnapshot> sculpt_redo_stack;
+        // SDF 显示局部刷新节流：dirty 区域（体素坐标闭区间）
+        bool sdf_region_dirty = false;
+        sinriv::kigstudio::Vec3i sdf_dirty_min{0, 0, 0};
+        sinriv::kigstudio::Vec3i sdf_dirty_max{0, 0, 0};
+        bool sdf_display_updating = false;
+
         inline void markVoxelChunkDirty(int wx,
                                         int wy,
                                         int wz,
@@ -1611,6 +1647,18 @@ class RenderVoxelList {
     void redo_marked(int item_id);
     bool can_undo_marked(int item_id) const;
     bool can_redo_marked(int item_id) const;
+
+    // 雕刻模式：平滑笔画 + 笔画级撤销/重做 + SDF 显示局部刷新节流
+    void begin_sculpt_stroke(int item_id);
+    void sculpt_smooth_at(
+        int item_id,
+        const sinriv::kigstudio::sdf::Vec3f& pos);
+    void end_sculpt_stroke(int item_id);
+    void undo_sculpt(int item_id);
+    void redo_sculpt(int item_id);
+    bool can_undo_sculpt(int item_id) const;
+    bool can_redo_sculpt(int item_id) const;
+    void flush_sculpt_dirty_regions();
     bool has_dirty_items() const;
     void clear_all_dirty();
 

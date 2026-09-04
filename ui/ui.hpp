@@ -53,6 +53,8 @@ int ui_main(int argc, const char* const* argv) {
     bool middleMouseDown = false;
     bool leftMouseDownOnPick = false;
     bool middleMouseDownOnPick = false;
+    // 雕刻笔画进行中（左键按住 + 雕刻笔刷启用）
+    bool sculpt_stroke_active = false;
     // Nav map infinite panning state (middle-mouse drag in node graph)
     bool nav_map_panning = false;
     ImVec2 nav_map_pan_start_pos;
@@ -396,6 +398,20 @@ int ui_main(int argc, const char* const* argv) {
                     if (leftMouseDownOnPick) {
                         render_items.begin_marked_edit(render_items.render_id);
                     }
+                    // 雕刻笔刷：左键按下开笔（不与体素刷选同时进行）
+                    if (!picking_active && !io.WantCaptureMouse &&
+                        render_items.mouse_world_pos_valid) {
+                        auto it = render_items.items.find(render_items.render_id);
+                        if (it != render_items.items.end() &&
+                            it->second->source_type == 3 &&
+                            it->second->sculpt_brush_enabled) {
+                            sculpt_stroke_active = true;
+                            render_items.begin_sculpt_stroke(render_items.render_id);
+                            render_items.sculpt_smooth_at(
+                                render_items.render_id,
+                                render_items.mouse_world_pos);
+                        }
+                    }
                     // 引导曲线绘制模式
                     // Require mouse to be over valid geometry at press time,
                     // so clicking outside the model (empty space or UI panel)
@@ -440,6 +456,10 @@ int ui_main(int argc, const char* const* argv) {
 
             if (e.type == SDL_MOUSEBUTTONUP) {
                 if (e.button.button == SDL_BUTTON_LEFT) {
+                    if (sculpt_stroke_active) {
+                        render_items.end_sculpt_stroke(render_items.render_id);
+                        sculpt_stroke_active = false;
+                    }
                     if (leftMouseDownOnPick) {
                         bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
                         render_items.end_marked_edit(
@@ -637,6 +657,7 @@ int ui_main(int argc, const char* const* argv) {
                     }
                     leftMouseDown = false;
                     leftMouseDownOnPick = false;
+                    sculpt_stroke_active = false;
                     guide_curve_click_valid = false;
                     width_edit_click_valid = false;
                     hairline_point_pick_valid = false;
@@ -719,7 +740,8 @@ int ui_main(int argc, const char* const* argv) {
                             (int)nav_map_pan_start_pos.y);
                         nav_map_panning = false;
                     }
-                    if (leftMouseDown && !io.WantCaptureMouse && !leftMouseDownOnPick) {
+                    if (leftMouseDown && !io.WantCaptureMouse && !leftMouseDownOnPick &&
+                        !sculpt_stroke_active) {
                         yaw += e.motion.xrel * 0.3f;
                         pitch += e.motion.yrel * 0.3f;
                     }
@@ -746,6 +768,13 @@ int ui_main(int argc, const char* const* argv) {
                             }
                         }
                     }
+                    // 雕刻平滑笔画
+                    if (leftMouseDown && sculpt_stroke_active &&
+                        render_items.mouse_world_pos_valid) {
+                        render_items.sculpt_smooth_at(
+                            render_items.render_id,
+                            render_items.mouse_world_pos);
+                    }
                     io.MousePos = ImVec2((float)e.motion.x, (float)e.motion.y);
                 }
             }
@@ -771,7 +800,14 @@ int ui_main(int argc, const char* const* argv) {
                 } else if (e.key.keysym.sym == SDLK_o && ctrl) {
                     render_items.show_load_dialog = true;
                 } else if (e.key.keysym.sym == SDLK_z && ctrl) {
-                    if (render_items.object_editor_tab == 1) {
+                    auto zit = render_items.items.find(render_items.render_id);
+                    const bool sculpt_undoable =
+                        zit != render_items.items.end() &&
+                        zit->second->source_type == 3 &&
+                        render_items.can_undo_sculpt(render_items.render_id);
+                    if (sculpt_undoable) {
+                        render_items.undo_sculpt(render_items.render_id);
+                    } else if (render_items.object_editor_tab == 1) {
                         render_items.undo_marked(render_items.render_id);
                     } else {
                         render_items.undo(render_items.render_id);
@@ -800,7 +836,14 @@ int ui_main(int argc, const char* const* argv) {
                         }
                     }
                 } else if (e.key.keysym.sym == SDLK_y && ctrl) {
-                    if (render_items.object_editor_tab == 1) {
+                    auto yit = render_items.items.find(render_items.render_id);
+                    const bool sculpt_redoable =
+                        yit != render_items.items.end() &&
+                        yit->second->source_type == 3 &&
+                        render_items.can_redo_sculpt(render_items.render_id);
+                    if (sculpt_redoable) {
+                        render_items.redo_sculpt(render_items.render_id);
+                    } else if (render_items.object_editor_tab == 1) {
                         render_items.redo_marked(render_items.render_id);
                     } else {
                         render_items.redo(render_items.render_id);

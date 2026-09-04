@@ -2329,6 +2329,7 @@ void RenderVoxelList::update_sdf_region_bg(int item_id,
         item_ptr = it->second.get();
         if (!item_ptr->sdf_data ||
             item_ptr->voxel_grid_data.chunks.empty()) {
+            item_ptr->sdf_display_updating = false;
             return;
         }
         item_ptr->ref_count++;
@@ -2354,6 +2355,7 @@ void RenderVoxelList::update_sdf_region_bg(int item_id,
         }
         item_ptr->ref_count--;
         item_ptr->write_count--;
+        item_ptr->sdf_display_updating = false;
     }
 
     setQueueStatus(get_locale_string("status.done"));

@@ -1277,6 +1277,15 @@ void init_locale_strings() {
     add_locale_string("error.sculpt_no_source_data",
                       {{"en", "Source node has no mesh/voxel data available."},
                        {"zh", "源节点没有可用的网格/体素数据。"}});
+    add_locale_string("label.sculpt_brush_enable",
+                      {{"en", "Enable Sculpt Brush"}, {"zh", "启用雕刻笔刷"}});
+    add_locale_string("label.sculpt_brush_radius",
+                      {{"en", "Brush Radius"}, {"zh", "笔刷半径"}});
+    add_locale_string("label.sculpt_smooth_strength",
+                      {{"en", "Smooth Strength"}, {"zh", "平滑强度"}});
+    add_locale_string("label.sculpt_sdf_not_chunked",
+                      {{"en", "SDF is not chunked; please reload."},
+                       {"zh", "SDF 未分块，请重新加载。"}});
     add_locale_string("window.addon_editor",
                       {{"en", "Addon Editor"}, {"zh", "附加件编辑器"}});
     add_locale_string("label.addon_base_model",

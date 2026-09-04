@@ -128,6 +128,23 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                               item.node_source_sdf_subdivisions);
         }
 
+        // 雕刻笔刷（加载出 SDF 后可用）
+        if (item.sdf_data) {
+            ImGui::Separator();
+            ImGui::Checkbox(get_locale_cstr("label.sculpt_brush_enable"),
+                            &item.sculpt_brush_enabled);
+            if (item.sculpt_brush_enabled) {
+                ImGui::SetNextItemWidth(120.0f);
+                ImGui::DragFloat(get_locale_cstr("label.sculpt_brush_radius"),
+                                 &item.sculpt_brush_radius, 0.1f, 0.1f,
+                                 1000.0f, "%.2f");
+                ImGui::SetNextItemWidth(120.0f);
+                ImGui::SliderFloat(
+                    get_locale_cstr("label.sculpt_smooth_strength"),
+                    &item.sculpt_smooth_strength, 0.0f, 1.0f, "%.2f");
+            }
+        }
+
         // 后台加载进度条与取消按钮
         if (item.write_count > 0) {
             ImGui::Separator();

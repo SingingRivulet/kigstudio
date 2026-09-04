@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cJSON.h>
+#include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -30,6 +32,32 @@ struct SDFChunk {
     Type type = Type::Uniform;
     float uniform_value = kSDFChunkedFar;
     std::unique_ptr<float[]> dense;
+
+    SDFChunk() = default;
+    SDFChunk(const SDFChunk& o) : type(o.type), uniform_value(o.uniform_value) {
+        if (o.dense) {
+            dense = std::make_unique<float[]>(VOXEL_COUNT);
+            std::memcpy(dense.get(), o.dense.get(),
+                        sizeof(float) * VOXEL_COUNT);
+        }
+    }
+    SDFChunk& operator=(const SDFChunk& o) {
+        if (this == &o) {
+            return *this;
+        }
+        type = o.type;
+        uniform_value = o.uniform_value;
+        if (o.dense) {
+            dense = std::make_unique<float[]>(VOXEL_COUNT);
+            std::memcpy(dense.get(), o.dense.get(),
+                        sizeof(float) * VOXEL_COUNT);
+        } else {
+            dense.reset();
+        }
+        return *this;
+    }
+    SDFChunk(SDFChunk&&) = default;
+    SDFChunk& operator=(SDFChunk&&) = default;
 
     static inline int index(int x, int y, int z) {
         return (z * SIZE + y) * SIZE + x;
@@ -167,6 +195,141 @@ class SDFChunkedGrid : public SDFBase {
             }
         }
         return affected;
+    }
+
+    // ============ 平滑笔刷 ============
+    // 球形区域内的 27 邻域均值平滑：
+    //   new = lerp(old, avg27, strength * falloff(dist/radius))
+    // falloff 为 smoothstep(1→0)，中心强、边缘无感。
+    // 两遍法（先快照区域+1 halo 再写回），跨 chunk 采样走 getVoxelValue。
+    // 窄带外的 ±kSDFChunkedFar 参与平均前会被钳制到局部窄带宽度 cap，
+    // 防止远场值把表面拉飞；纯远场区域直接返回 false。
+    // 返回是否有写入；out_min/out_max 为受影响区域（SDF 体素坐标闭区间），
+    // affected_chunks 非空时收集被触碰的 chunk key。
+    bool smoothRegion(const Vec3f& center_world, float radius, float strength,
+                      Vec3i& out_min, Vec3i& out_max,
+                      std::vector<uint64_t>* affected_chunks = nullptr) {
+        if (radius <= 0.f || strength <= 0.f) {
+            return false;
+        }
+        // 世界 -> SDF 体素连续坐标（采样点在体素中心：v = (p-gp)/vs - 0.5）
+        const float cx =
+            (center_world.x - global_position.x) / voxel_size.x - 0.5f;
+        const float cy =
+            (center_world.y - global_position.y) / voxel_size.y - 0.5f;
+        const float cz =
+            (center_world.z - global_position.z) / voxel_size.z - 0.5f;
+        const float rv = radius / voxel_size.x;  // 分块网格总是各向同性
+
+        out_min = Vec3i(static_cast<int>(std::floor(cx - rv)),
+                        static_cast<int>(std::floor(cy - rv)),
+                        static_cast<int>(std::floor(cz - rv)));
+        out_max = Vec3i(static_cast<int>(std::ceil(cx + rv)),
+                        static_cast<int>(std::ceil(cy + rv)),
+                        static_cast<int>(std::ceil(cz + rv)));
+
+        const int nx = out_max.x - out_min.x + 1;
+        const int ny = out_max.y - out_min.y + 1;
+        const int nz = out_max.z - out_min.z + 1;
+        // 快照含 1 体素 halo
+        const int hx = nx + 2, hy = ny + 2, hz = nz + 2;
+        std::vector<float> snap(static_cast<size_t>(hx) * hy * hz);
+        auto snap_idx = [&](int x, int y, int z) {
+            return (z * hy + y) * hx + x;
+        };
+        for (int z = 0; z < hz; ++z) {
+            for (int y = 0; y < hy; ++y) {
+                for (int x = 0; x < hx; ++x) {
+                    snap[snap_idx(x, y, z)] =
+                        getVoxelValue(out_min.x + x - 1, out_min.y + y - 1,
+                                      out_min.z + z - 1);
+                }
+            }
+        }
+
+        // 局部窄带宽度：快照内非远场值的最大绝对值；全远场则无事可做
+        float cap = 0.f;
+        for (float v : snap) {
+            if (std::fabs(v) < kSDFChunkedFar) {
+                cap = std::max(cap, std::fabs(v));
+            }
+        }
+        if (cap <= 0.f) {
+            return false;
+        }
+        auto clamp_far = [&](float v) {
+            if (v >= kSDFChunkedFar) return cap;
+            if (v <= -kSDFChunkedFar) return -cap;
+            return v;
+        };
+
+        std::vector<uint64_t> touched;
+        bool changed = false;
+        for (int z = 0; z < nz; ++z) {
+            for (int y = 0; y < ny; ++y) {
+                for (int x = 0; x < nx; ++x) {
+                    // 27 邻域均值（快照坐标 +1 偏移 halo）
+                    float sum = 0.f;
+                    for (int dz = -1; dz <= 1; ++dz) {
+                        for (int dy = -1; dy <= 1; ++dy) {
+                            for (int dx = -1; dx <= 1; ++dx) {
+                                sum += clamp_far(snap[snap_idx(
+                                    x + 1 + dx, y + 1 + dy, z + 1 + dz)]);
+                            }
+                        }
+                    }
+                    const float avg = sum * (1.f / 27.f);
+
+                    const float wx = out_min.x + x - cx;
+                    const float wy = out_min.y + y - cy;
+                    const float wz = out_min.z + z - cz;
+                    const float dist = std::sqrt(wx * wx + wy * wy + wz * wz);
+                    float t = dist / rv;  // 0 中心 → 1+ 边缘
+                    t = std::clamp(t, 0.f, 1.f);
+                    const float falloff = 1.f - t * t * (3.f - 2.f * t);
+                    if (falloff <= 0.f) {
+                        continue;
+                    }
+
+                    const int vx = out_min.x + x;
+                    const int vy = out_min.y + y;
+                    const int vz = out_min.z + z;
+                    const float old_v = snap[snap_idx(x + 1, y + 1, z + 1)];
+                    const float new_v =
+                        old_v + (clamp_far(avg) - clamp_far(old_v)) *
+                                    strength * falloff;
+                    if (new_v == old_v) {
+                        continue;
+                    }
+                    // 远场（缺失/Uniform ±kFar）且平滑后仍在窄带外：跳过，
+                    // 避免把远场写成无意义的大数值稠密 chunk
+                    if (std::fabs(old_v) >= kSDFChunkedFar &&
+                        std::fabs(new_v) > cap) {
+                        continue;
+                    }
+                    setVoxelValue(vx, vy, vz, new_v);
+                    touched.push_back(
+                        voxel::packChunkKey(vx >> 5, vy >> 5, vz >> 5));
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            // 去重 + 压缩回收
+            std::sort(touched.begin(), touched.end());
+            touched.erase(std::unique(touched.begin(), touched.end()),
+                          touched.end());
+            for (uint64_t key : touched) {
+                auto it = chunks.find(key);
+                if (it != chunks.end()) {
+                    it->second.compress();
+                }
+            }
+            if (affected_chunks) {
+                *affected_chunks = std::move(touched);
+            }
+        }
+        return changed;
     }
 
     // ============ 从解析式 SDF 烘焙 ============

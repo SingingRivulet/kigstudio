@@ -24,6 +24,7 @@ void RenderVoxelList::render_ui() {
 
     processThumbnails();
     process_ortho_render();
+    flush_sculpt_dirty_regions();
     item_status_height = 0;
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.f);
