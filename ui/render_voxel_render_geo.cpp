@@ -2334,6 +2334,7 @@ void RenderVoxelList::update_sdf_region_bg(int item_id,
         }
         item_ptr->ref_count++;
         item_ptr->write_count++;
+        item_ptr->silent_write_count++;  // 静默更新：锁定控件但不显示进度
         voxel_copy = item_ptr->voxel_grid_data;
         sdf_copy = item_ptr->sdf_data;
     }
@@ -2355,6 +2356,7 @@ void RenderVoxelList::update_sdf_region_bg(int item_id,
         }
         item_ptr->ref_count--;
         item_ptr->write_count--;
+        item_ptr->silent_write_count--;
         item_ptr->sdf_display_updating = false;
     }
 

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -1230,5 +1231,17 @@ class SDFChunkedGrid : public SDFBase {
         }
     }
 };
+
+// ============ .sdfchk 二进制文件序列化 ============
+// 格式：magic "SDFCHK1\0"(8B) + version(u32=1) + global_position(3*f32) +
+//       voxel_size(3*f32) + chunk_count(u32) +
+//       每个 chunk: key(u64) + type(u8, 0=Uniform 1=Dense) +
+//                   Uniform: uniform_value(f32) / Dense: 32768*f32
+bool save_chunked_file(const std::filesystem::path& path,
+                       const SDFChunkedGrid& grid,
+                       std::string* error = nullptr);
+bool load_chunked_file(const std::filesystem::path& path,
+                       SDFChunkedGrid& grid,
+                       std::string* error = nullptr);
 
 }  // namespace sinriv::kigstudio::sdf

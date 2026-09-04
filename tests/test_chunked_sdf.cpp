@@ -3,6 +3,7 @@
 #include <cJSON.h>
 #include <cassert>
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <set>
 #include <vector>
@@ -195,6 +196,52 @@ int main() {
                 }
             }
         }
+    }
+
+    // ============ 用例 4b：.sdfchk 二进制文件 round-trip ============
+    {
+        SDF_Sphere sphere(Vec3f(20.f, 20.f, 20.f), 12.f);
+        SDFChunkedGrid grid = SDFChunkedGrid::fromSDF(
+            sphere, Vec3i(-4, -4, -4), Vec3i(43, 43, 43));
+        grid.global_position = Vec3f(1.5f, -2.0f, 3.25f);
+        grid.voxel_size = Vec3f(0.125f, 0.125f, 0.125f);
+        // 手动加一个 Uniform chunk，覆盖两种存储状态
+        grid.chunks[packChunkKey(7, 7, 7)].type = SDFChunk::Type::Uniform;
+        grid.chunks[packChunkKey(7, 7, 7)].uniform_value = -3.5f;
+
+        const auto path =
+            std::filesystem::temp_directory_path() / "test_sdfchk_roundtrip.sdfchk";
+        std::string error;
+        assert(save_chunked_file(path, grid, &error) && error.c_str());
+
+        SDFChunkedGrid restored;
+        assert(load_chunked_file(path, restored, &error) && error.c_str());
+        std::filesystem::remove(path);
+
+        assert(restored.chunks.size() == grid.chunks.size());
+        assert(restored.global_position.x == 1.5f &&
+               restored.global_position.y == -2.0f &&
+               restored.global_position.z == 3.25f);
+        assert(restored.voxel_size.x == 0.125f);
+        auto uit = restored.chunks.find(packChunkKey(7, 7, 7));
+        assert(uit != restored.chunks.end());
+        assert(uit->second.type == SDFChunk::Type::Uniform);
+        assert(uit->second.uniform_value == -3.5f);
+        for (int z = -4; z <= 43; z += 7) {
+            for (int y = -4; y <= 43; y += 7) {
+                for (int x = -4; x <= 43; x += 7) {
+                    assert(restored.getVoxelValue(x, y, z) ==
+                               grid.getVoxelValue(x, y, z) &&
+                           "sdfchk round-trip should preserve values exactly");
+                }
+            }
+        }
+
+        // 损坏文件不应崩溃，且不应覆盖调用方数据
+        SDFChunkedGrid guard;
+        guard.setVoxelValue(0, 0, 0, -1.0f);
+        assert(!load_chunked_file(path, guard, &error));  // 文件已删除
+        assert(guard.getVoxelValue(0, 0, 0) == -1.0f);
     }
 
     // ============ 用例 5：与 mesher 联调，局部重 meshing 等价于全量 ============

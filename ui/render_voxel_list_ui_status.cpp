@@ -46,8 +46,17 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
         }
     }
 
-    // 雕刻模式：源节点选择 + 体素大小 + SDF 细分精度 + 加载
     if (item.source_type == 3) {
+        // 雕刻模式：源节点选择 + 体素大小 + 细分 + 加载在本 Tab 内
+        render_sculpt_load_section(item);
+        return;
+    }
+    render_file_status_tab_tail(item);
+}
+
+// 雕刻模式的加载配置（文件状态 Tab 内）：源节点选择 + 体素大小 + SDF 细分精度 + 加载
+void RenderVoxelList::render_sculpt_load_section(RenderVoxelItem& item) {
+    {
         ImGui::Separator();
         // 源节点选择器（有任何 mesh/sdf/voxel 数据的节点，排除循环引用）
         std::vector<std::pair<int, std::string>> candidates;
@@ -128,6 +137,30 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                               item.node_source_sdf_subdivisions);
         }
 
+        // 后台加载进度条与取消按钮（静默的局部刷新不显示，防止笔画期间闪烁）
+        if (item.write_count > item.silent_write_count) {
+            ImGui::Separator();
+            ImGui::TextWrapped("%s", this->getQueueStatus().c_str());
+            const char* cancel_label = get_locale_cstr("action.cancel");
+            ImVec2 cancel_size = ImGui::CalcTextSize(cancel_label);
+            cancel_size.x += ImGui::GetStyle().FramePadding.x * 2;
+            cancel_size.y = 0;
+            float progress_width = ImGui::GetContentRegionAvail().x -
+                                   cancel_size.x -
+                                   ImGui::GetStyle().ItemSpacing.x;
+            ImGui::ProgressBar(this->getQueueProgress(),
+                               ImVec2(progress_width, 0));
+            ImGui::SameLine();
+            if (ImGui::Button(cancel_label, cancel_size)) {
+                this->queue_should_continue = false;
+            }
+        }
+    }
+}
+
+// 雕刻 Tab：笔刷（仅加载出 SDF 后此 Tab 才显示，见 render_object_editor）
+void RenderVoxelList::render_sculpt_tab(RenderVoxelItem& item) {
+    {
         // 雕刻笔刷（加载出 SDF 后可用）
         if (item.sdf_data) {
             ImGui::Separator();
@@ -177,28 +210,11 @@ void RenderVoxelList::render_file_status_tab(RenderVoxelItem& item) {
                 }
             }
         }
-
-        // 后台加载进度条与取消按钮
-        if (item.write_count > 0) {
-            ImGui::Separator();
-            ImGui::TextWrapped("%s", this->getQueueStatus().c_str());
-            const char* cancel_label = get_locale_cstr("action.cancel");
-            ImVec2 cancel_size = ImGui::CalcTextSize(cancel_label);
-            cancel_size.x += ImGui::GetStyle().FramePadding.x * 2;
-            cancel_size.y = 0;
-            float progress_width = ImGui::GetContentRegionAvail().x -
-                                   cancel_size.x -
-                                   ImGui::GetStyle().ItemSpacing.x;
-            ImGui::ProgressBar(this->getQueueProgress(),
-                               ImVec2(progress_width, 0));
-            ImGui::SameLine();
-            if (ImGui::Button(cancel_label, cancel_size)) {
-                this->queue_should_continue = false;
-            }
-        }
-        return;  // 雕刻模式不显示后面的通用加载模式等UI
     }
+}
 
+// 文件状态 Tab 的其余部分（附加件/文件/节点模式）
+void RenderVoxelList::render_file_status_tab_tail(RenderVoxelItem& item) {
     // 附加件模式：显示专用UI
     if (item.source_type == 2) {
         ImGui::Separator();

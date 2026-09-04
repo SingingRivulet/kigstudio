@@ -324,7 +324,8 @@ void RenderVoxelList::render_nav_map() {
         ImNodes::BeginNode(id);
 
         ImNodes::BeginNodeTitleBar();
-        if (item->write_count > 0) {
+        // 静默更新（雕刻局部刷新）不显示"更新中"，防止笔画期间标题闪烁
+        if (item->write_count > item->silent_write_count) {
             if (!item->title.empty()) {
                 ImGui::Text("%s (%s)", item->title.c_str(),
                             get_locale_cstr("label.updating"));

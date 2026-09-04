@@ -1937,6 +1937,7 @@ bool RenderVoxelList::save_project(const std::string& folder) {
     try {
         std::filesystem::create_directories(dir / "voxels");
         std::filesystem::create_directories(dir / "marked");
+        std::filesystem::create_directories(dir / "sdf");
     } catch (const std::exception& e) {
         last_save_error = std::string("create_directories failed: ") + e.what();
         return false;
@@ -1987,6 +1988,29 @@ bool RenderVoxelList::save_project(const std::string& folder) {
                                   marked_error + ")";
                 cJSON_Delete(root);
                 return false;
+            }
+        }
+        // 雕刻模式的分块 SDF 保存为 sdf/<id>.sdfchk；不再持有分块 SDF 时
+        // 删除过期文件，避免加载到旧数据
+        {
+            std::filesystem::path sdf_path =
+                dir / "sdf" / (std::to_string(id) + ".sdfchk");
+            auto* chunked =
+                dynamic_cast<sinriv::kigstudio::sdf::SDFChunkedGrid*>(
+                    item->sdf_data.get());
+            if (chunked) {
+                std::string sdf_error;
+                if (!sinriv::kigstudio::sdf::save_chunked_file(
+                        sdf_path, *chunked, &sdf_error)) {
+                    last_save_error = "save sdf failed: " +
+                                      path_to_utf8(sdf_path) + " (" +
+                                      sdf_error + ")";
+                    cJSON_Delete(root);
+                    return false;
+                }
+            } else if (std::filesystem::exists(sdf_path)) {
+                std::error_code ec;
+                std::filesystem::remove(sdf_path, ec);
             }
         }
     }
@@ -2195,6 +2219,8 @@ bool RenderVoxelList::load_project(const std::string& folder) {
 	        return false;
     }
     int count = cJSON_GetArraySize(items_arr);
+    // 恢复了分块 SDF 的雕刻节点：(id, sdf细分)，加载完成后后台重建平滑显示
+    std::vector<std::pair<int, int>> sculpt_display_rebuilds;
     {
         std::lock_guard<std::mutex> lock(locker);
         for (int i = 0; i < count; ++i) {
@@ -2332,8 +2358,33 @@ bool RenderVoxelList::load_project(const std::string& folder) {
                     }
                 }
             }
+            // 雕刻模式：恢复分块 SDF（sdf/<id>.sdfchk）
+            if (item->source_type == 3) {
+                std::filesystem::path sdf_path =
+                    dir / "sdf" / (std::to_string(id) + ".sdfchk");
+                if (std::filesystem::exists(sdf_path)) {
+                    auto grid = std::make_shared<
+                        sinriv::kigstudio::sdf::SDFChunkedGrid>();
+                    std::string sdf_error;
+                    if (sinriv::kigstudio::sdf::load_chunked_file(
+                            sdf_path, *grid, &sdf_error)) {
+                        item->sdf_data = std::move(grid);
+                        sculpt_display_rebuilds.emplace_back(
+                            id, item->node_source_sdf_subdivisions);
+                    } else {
+                        std::cerr << "[load_project] load sdfchk failed for "
+                                     "item "
+                                  << id << ": " << sdf_error << std::endl;
+                    }
+                }
+            }
             items[id] = std::move(item);
         }
+    }
+
+    // 恢复的分块 SDF 需要重建平滑显示 mesh（后台线程执行）
+    for (const auto& [sculpt_id, sculpt_subdiv] : sculpt_display_rebuilds) {
+        queue_update_sdf_display(sculpt_id, sculpt_subdiv);
     }
 
     // 加载工作流输入/输出（节点ID + 文件路径，兼容旧格式）

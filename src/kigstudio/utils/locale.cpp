@@ -86,6 +86,8 @@ void init_locale_strings() {
                       {{"en", "Voxel Picking"}, {"zh", "文件"}});
     add_locale_string("tab.comment",
                       {{"en", "Comment"}, {"zh", "注释"}});
+    add_locale_string("tab.sculpt",
+                      {{"en", "Sculpt"}, {"zh", "雕刻"}});
     add_locale_string("window.edit_segment_plane",
                       {{"en", "Edit Segment Plane"}, {"zh", "编辑分割平面"}});
     add_locale_string("window.nav_node_map",

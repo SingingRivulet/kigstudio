@@ -541,6 +541,20 @@ enum class SilhouetteShapeMode : int {
     COUNT
 };
 
+// 雕刻笔画快照：一笔中被触碰的 SDF/体素 chunk（首次触碰前的状态），
+// 以及笔画新建（原先不存在）的 chunk key——撤销时删除。
+struct SculptSnapshot {
+    std::string description;
+    std::unordered_map<uint64_t, sinriv::kigstudio::sdf::SDFChunk> sdf_chunks;
+    std::unordered_map<uint64_t, sinriv::kigstudio::voxel::Chunk> voxel_chunks;
+    std::unordered_set<uint64_t> sdf_chunks_created;
+    std::unordered_set<uint64_t> voxel_chunks_created;
+    // 体素坐标闭区间（voxel_grid_data 坐标系），撤销/重做后局部刷新显示
+    sinriv::kigstudio::Vec3i region_min{0, 0, 0};
+    sinriv::kigstudio::Vec3i region_max{0, 0, 0};
+    bool has_region = false;
+};
+
 struct CollisionEditorSnapshot {
     sinriv::kigstudio::voxel::collision::CollisionGroup collision_group;
     sinriv::kigstudio::Plane<float> plane;
@@ -634,25 +648,15 @@ struct CollisionEditorSnapshot {
     float sculpt_brush_radius = 5.0f;
     float sculpt_smooth_strength = 0.5f;
     float sculpt_draw_amount = 0.0f;
+
+    // 雕刻笔画载荷（不序列化）：非空表示该历史条目是一笔雕刻，
+    // 撤销/重做时恢复快照中的 chunk。聚合初始化不提它（默认 nullopt）。
+    std::optional<SculptSnapshot> sculpt;
 };
 
 struct MarkedVoxelsSnapshot {
     sinriv::kigstudio::voxel::VoxelGrid marked_voxels;
     std::string description;
-};
-
-// 雕刻笔画快照：一笔中被触碰的 SDF/体素 chunk（首次触碰前的状态），
-// 以及笔画新建（原先不存在）的 chunk key——撤销时删除。
-struct SculptSnapshot {
-    std::string description;
-    std::unordered_map<uint64_t, sinriv::kigstudio::sdf::SDFChunk> sdf_chunks;
-    std::unordered_map<uint64_t, sinriv::kigstudio::voxel::Chunk> voxel_chunks;
-    std::unordered_set<uint64_t> sdf_chunks_created;
-    std::unordered_set<uint64_t> voxel_chunks_created;
-    // 体素坐标闭区间（voxel_grid_data 坐标系），撤销/重做后局部刷新显示
-    sinriv::kigstudio::Vec3i region_min{0, 0, 0};
-    sinriv::kigstudio::Vec3i region_max{0, 0, 0};
-    bool has_region = false;
 };
 
 class RenderVoxelList {
@@ -669,6 +673,8 @@ class RenderVoxelList {
 
     std::atomic<float> queue_progress = 0;
     std::atomic<bool> queue_running = false;
+    // 当前执行的队列任务是否为静默任务（静默时不弹异步进度窗口）
+    std::atomic<bool> queue_current_silent{false};
     std::atomic<bool> queue_should_continue = true;
     std::string queue_status;
     std::mutex queue_status_mtx;
@@ -1343,13 +1349,14 @@ class RenderVoxelList {
         bool sculpt_flatten_plane_valid = false;
         sinriv::kigstudio::voxel::vec3f sculpt_flatten_plane_origin = {0.0f, 0.0f, 0.0f};
         sinriv::kigstudio::voxel::vec3f sculpt_flatten_plane_normal = {0.0f, 0.0f, 1.0f};
-        std::deque<SculptSnapshot> sculpt_undo_stack;
-        std::deque<SculptSnapshot> sculpt_redo_stack;
         // SDF 显示局部刷新节流：dirty 区域（体素坐标闭区间）
         bool sdf_region_dirty = false;
         sinriv::kigstudio::Vec3i sdf_dirty_min{0, 0, 0};
         sinriv::kigstudio::Vec3i sdf_dirty_max{0, 0, 0};
         bool sdf_display_updating = false;
+        // 静默后台更新计数（雕刻局部刷新）：计入 write_count 锁定控件，
+        // 但不显示"更新中"/进度条，防止笔画期间窗口闪烁
+        int silent_write_count = 0;
 
         inline void markVoxelChunkDirty(int wx,
                                         int wy,
@@ -1480,6 +1487,9 @@ class RenderVoxelList {
     void copy_node_config(const RenderVoxelItem& item);
     void paste_node_config(RenderVoxelItem& item);
     void render_file_status_tab(RenderVoxelItem& item);
+    void render_file_status_tab_tail(RenderVoxelItem& item);
+    void render_sculpt_load_section(RenderVoxelItem& item);
+    void render_sculpt_tab(RenderVoxelItem& item);
     void render_object_editor_collision_tab_content(RenderVoxelItem& item);
     void render_object_editor_chain_mode(RenderVoxelItem& item);
     void render_object_editor_sdf_node_split_mode(RenderVoxelItem& item);
@@ -1667,11 +1677,12 @@ class RenderVoxelList {
         const sinriv::kigstudio::sdf::Vec3f& drag_delta =
             sinriv::kigstudio::sdf::Vec3f(0.0f, 0.0f, 0.0f));
     void end_sculpt_stroke(int item_id);
-    void undo_sculpt(int item_id);
-    void redo_sculpt(int item_id);
-    bool can_undo_sculpt(int item_id) const;
-    bool can_redo_sculpt(int item_id) const;
     void flush_sculpt_dirty_regions();
+    // 雕刻历史载荷：恢复/逆取快照中的 chunk（供 undo()/redo() 使用）。
+    // sdf_data 不是 SDFChunkedGrid 时跳过 chunk 恢复（如重新加载后）。
+    void apply_sculpt_payload(RenderVoxelItem& item, const SculptSnapshot& snap);
+    SculptSnapshot capture_sculpt_inverse(RenderVoxelItem& item,
+                                          const SculptSnapshot& reference);
     bool has_dirty_items() const;
     void clear_all_dirty();
 
@@ -1933,6 +1944,8 @@ class RenderVoxelList {
         // 体素坐标闭区间（voxel_grid_data 坐标系）
         sinriv::kigstudio::Vec3i region_min{0, 0, 0};
         sinriv::kigstudio::Vec3i region_max{0, 0, 0};
+        // 静默任务：执行期间不显示异步进度窗口（雕刻笔画的高频局部刷新）
+        bool silent = false;
     };
     std::queue<QueueTask> queue;
     std::mutex queue_mutex;

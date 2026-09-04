@@ -1,6 +1,7 @@
 #include "kigstudio/sdf/sdf.h"
 #include "kigstudio/sdf/sdf_chunked.h"
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <cmath>
 
@@ -595,6 +596,115 @@ static bool _register_sdf_types = []() {
     });
     return true;
 }();
+
+// ============ SDFChunkedGrid .sdfchk 文件序列化 ============
+
+bool save_chunked_file(const std::filesystem::path& path,
+                       const SDFChunkedGrid& grid,
+                       std::string* error) {
+#ifdef _WIN32
+    FILE* fp = _wfopen(path.wstring().c_str(), L"wb");
+#else
+    FILE* fp = std::fopen(path.c_str(), "wb");
+#endif
+    if (!fp) {
+        if (error)
+            *error = "open file failed";
+        return false;
+    }
+    auto write = [&](const void* data, size_t size) -> bool {
+        return std::fwrite(data, 1, size, fp) == size;
+    };
+    const char magic[8] = {'S', 'D', 'F', 'C', 'H', 'K', '1', '\0'};
+    const uint32_t version = 1;
+    bool ok = write(magic, 8) && write(&version, sizeof(version));
+    ok = ok && write(&grid.global_position, sizeof(grid.global_position));
+    ok = ok && write(&grid.voxel_size, sizeof(grid.voxel_size));
+    const uint32_t chunk_count = static_cast<uint32_t>(grid.chunks.size());
+    ok = ok && write(&chunk_count, sizeof(chunk_count));
+    for (const auto& [key, chunk] : grid.chunks) {
+        const uint8_t type =
+            chunk.type == SDFChunk::Type::Dense ? 1 : 0;
+        ok = ok && write(&key, sizeof(key)) && write(&type, sizeof(type));
+        if (!ok)
+            break;
+        if (type == 0) {
+            ok = ok && write(&chunk.uniform_value, sizeof(float));
+        } else {
+            ok = ok && write(chunk.dense.get(),
+                             sizeof(float) * SDFChunk::VOXEL_COUNT);
+        }
+        if (!ok)
+            break;
+    }
+    std::fclose(fp);
+    if (!ok && error)
+        *error = "write file failed";
+    return ok;
+}
+
+bool load_chunked_file(const std::filesystem::path& path,
+                       SDFChunkedGrid& grid,
+                       std::string* error) {
+#ifdef _WIN32
+    FILE* fp = _wfopen(path.wstring().c_str(), L"rb");
+#else
+    FILE* fp = std::fopen(path.c_str(), "rb");
+#endif
+    if (!fp) {
+        if (error)
+            *error = "open file failed";
+        return false;
+    }
+    auto read = [&](void* data, size_t size) -> bool {
+        return std::fread(data, 1, size, fp) == size;
+    };
+    auto fail = [&](const char* msg) {
+        std::fclose(fp);
+        if (error)
+            *error = msg;
+        return false;
+    };
+    char magic[8];
+    uint32_t version;
+    if (!read(magic, 8) || !read(&version, sizeof(version)))
+        return fail("truncated header");
+    if (std::strncmp(magic, "SDFCHK1", 7) != 0 || version != 1)
+        return fail("bad magic or unsupported version");
+
+    // 读到临时对象，失败不破坏调用方的现有数据
+    SDFChunkedGrid tmp;
+    if (!read(&tmp.global_position, sizeof(tmp.global_position)) ||
+        !read(&tmp.voxel_size, sizeof(tmp.voxel_size)))
+        return fail("truncated header");
+    uint32_t chunk_count;
+    if (!read(&chunk_count, sizeof(chunk_count)))
+        return fail("truncated header");
+    for (uint32_t i = 0; i < chunk_count; ++i) {
+        uint64_t key;
+        uint8_t type;
+        if (!read(&key, sizeof(key)) || !read(&type, sizeof(type)))
+            return fail("truncated chunk header");
+        SDFChunk chunk;
+        if (type == 0) {
+            chunk.type = SDFChunk::Type::Uniform;
+            if (!read(&chunk.uniform_value, sizeof(float)))
+                return fail("truncated chunk data");
+        } else if (type == 1) {
+            chunk.type = SDFChunk::Type::Dense;
+            chunk.dense = std::make_unique<float[]>(SDFChunk::VOXEL_COUNT);
+            if (!read(chunk.dense.get(),
+                      sizeof(float) * SDFChunk::VOXEL_COUNT))
+                return fail("truncated chunk data");
+        } else {
+            return fail("unknown chunk type");
+        }
+        tmp.chunks.emplace(key, chunk);
+    }
+    std::fclose(fp);
+    grid = std::move(tmp);
+    return true;
+}
 
 }  // namespace sinriv::kigstudio::sdf
 

@@ -334,11 +334,20 @@ bool RenderVoxelList::undo(int item_id) {
         return false;
     // push current state to redo stack, preserving the undo entry's description
     // so redo/undo filtering can track the editing context across cycles
+    auto& entry = it->second->undo_stack.back();
     auto redo_snapshot = capture_snapshot(*it->second);
-    redo_snapshot.description = it->second->undo_stack.back().description;
+    redo_snapshot.description = entry.description;
+    // 雕刻条目：应用前取当前 chunk 状态作为 redo 载荷
+    if (entry.sculpt.has_value()) {
+        redo_snapshot.sculpt =
+            capture_sculpt_inverse(*it->second, *entry.sculpt);
+    }
     it->second->redo_stack.push_back(std::move(redo_snapshot));
     // apply undo snapshot
-    apply_snapshot(*it->second, it->second->undo_stack.back());
+    apply_snapshot(*it->second, entry);
+    if (entry.sculpt.has_value()) {
+        apply_sculpt_payload(*it->second, *entry.sculpt);
+    }
     it->second->undo_stack.pop_back();
     it->second->dirty = true;
     it->second->auto_segment_update = false;
@@ -353,11 +362,20 @@ bool RenderVoxelList::redo(int item_id) {
     if (it == items.end() || it->second->redo_stack.empty())
         return false;
     // push current state to undo stack, preserving the redo entry's description
+    auto& entry = it->second->redo_stack.back();
     auto undo_snapshot = capture_snapshot(*it->second);
-    undo_snapshot.description = it->second->redo_stack.back().description;
+    undo_snapshot.description = entry.description;
+    // 雕刻条目：应用前取当前 chunk 状态作为 undo 载荷
+    if (entry.sculpt.has_value()) {
+        undo_snapshot.sculpt =
+            capture_sculpt_inverse(*it->second, *entry.sculpt);
+    }
     it->second->undo_stack.push_back(std::move(undo_snapshot));
     // apply redo snapshot
-    apply_snapshot(*it->second, it->second->redo_stack.back());
+    apply_snapshot(*it->second, entry);
+    if (entry.sculpt.has_value()) {
+        apply_sculpt_payload(*it->second, *entry.sculpt);
+    }
     it->second->redo_stack.pop_back();
     it->second->dirty = true;
     it->second->auto_segment_update = false;

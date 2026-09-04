@@ -52,7 +52,9 @@ void RenderVoxelList::render_object_editor() {
             }
 
             bool is_updating = item.write_count != 0;
-            if (is_updating) {
+            // 静默更新（雕刻局部刷新）只锁定控件，不显示"更新中"防止闪烁
+            bool show_updating = item.write_count > item.silent_write_count;
+            if (show_updating) {
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "%s",
                                    get_locale_cstr("label.updating"));
             }
@@ -69,12 +71,14 @@ void RenderVoxelList::render_object_editor() {
                 ImGuiTabItemFlags flags_voxel = 0;
                 ImGuiTabItemFlags flags_file_status = 0;
                 ImGuiTabItemFlags flags_comment = 0;
+                ImGuiTabItemFlags flags_sculpt = 0;
                 if (last_object_editor_tab != object_editor_tab) {
                     // 重置所有 Tab 的标志位
                     flags_collision = 0;
                     flags_voxel = 0;
                     flags_file_status = 0;
                     flags_comment = 0;
+                    flags_sculpt = 0;
 
                     // 根据当前选中的 Tab 设置对应的选中标志
                     if (object_editor_tab == 0)
@@ -85,6 +89,8 @@ void RenderVoxelList::render_object_editor() {
                         flags_file_status = ImGuiTabItemFlags_SetSelected;
                     else if (object_editor_tab == 3)
                         flags_comment = ImGuiTabItemFlags_SetSelected;
+                    else if (object_editor_tab == 4)
+                        flags_sculpt = ImGuiTabItemFlags_SetSelected;
 
                     last_object_editor_tab = object_editor_tab;
                 }
@@ -123,6 +129,19 @@ void RenderVoxelList::render_object_editor() {
                         render_file_status_tab(item);
                         ImGui::EndTabItem();
                     }
+                }
+
+                // ===== Tab: Sculpt（仅雕刻模式且已加载雕刻数据时显示）=====
+                if (item.source_type == 3 && item.sdf_data) {
+                    if (ImGui::BeginTabItem(get_locale_cstr("tab.sculpt"),
+                                            nullptr, flags_sculpt)) {
+                        object_editor_tab = 4;
+                        render_sculpt_tab(item);
+                        ImGui::EndTabItem();
+                    }
+                } else if (object_editor_tab == 4) {
+                    // 非雕刻模式隐藏雕刻Tab，回退到碰撞编辑Tab
+                    object_editor_tab = 0;
                 }
 
                 // ===== Tab: Comment =====

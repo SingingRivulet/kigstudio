@@ -318,6 +318,37 @@ void RenderVoxelList::sculpt_dab_at(int item_id, const sdf_ns::Vec3f& pos,
     item.thumbnail_dirty = true;
 }
 
+void RenderVoxelList::apply_sculpt_payload(RenderVoxelItem& item,
+                                           const SculptSnapshot& snap) {
+    // 重新加载等操作后 SDF 可能已被整体替换：跳过 chunk 恢复
+    auto* grid = sculpt_sdf(item);
+    if (!grid) {
+        return;
+    }
+    apply_sculpt_snapshot(item, *grid, snap);
+    if (snap.has_region) {
+        if (!item.sdf_region_dirty) {
+            item.sdf_dirty_min = snap.region_min;
+            item.sdf_dirty_max = snap.region_max;
+            item.sdf_region_dirty = true;
+        } else {
+            expand_region(item.sdf_dirty_min, item.sdf_dirty_max,
+                          snap.region_min, snap.region_max);
+        }
+    }
+    item.dirty = true;
+    item.thumbnail_dirty = true;
+}
+
+SculptSnapshot RenderVoxelList::capture_sculpt_inverse(
+    RenderVoxelItem& item, const SculptSnapshot& reference) {
+    auto* grid = sculpt_sdf(item);
+    if (!grid) {
+        return SculptSnapshot{};
+    }
+    return capture_sculpt_state(item, *grid, reference, reference.description);
+}
+
 void RenderVoxelList::end_sculpt_stroke(int item_id) {
     std::lock_guard<std::mutex> lock(locker);
     auto it = items.find(item_id);
@@ -331,75 +362,18 @@ void RenderVoxelList::end_sculpt_stroke(int item_id) {
     item.sculpt_stroke_active = false;
     auto& snap = item.sculpt_stroke_snapshot;
     if (snap.has_region) {
-        snap.description = "雕刻平滑";
-        item.sculpt_undo_stack.push_back(std::move(snap));
-        item.sculpt_redo_stack.clear();
-        if (item.sculpt_undo_stack.size() > kMaxUndoSize) {
-            item.sculpt_undo_stack.pop_front();
-        }
+        // 并入主撤销栈：配置快照 + 雕刻 chunk 载荷，统一时间线
+        static const char* kBrushNames[] = {"平滑", "铲平", "笔刷",
+                                            "膨胀", "变形", "场修复"};
+        const int bt = std::clamp(item.sculpt_brush_type, 0, 5);
+        CollisionEditorSnapshot entry = capture_snapshot(item);
+        snap.description = std::string("雕刻·") + kBrushNames[bt];
+        entry.description = snap.description;
+        entry.sculpt = std::move(snap);
+        push_undo_now(item_id, entry, entry.description);
         item.dirty = true;
     }
     item.sculpt_stroke_snapshot = SculptSnapshot{};
-}
-
-void RenderVoxelList::undo_sculpt(int item_id) {
-    std::lock_guard<std::mutex> lock(locker);
-    auto it = items.find(item_id);
-    if (it == items.end()) {
-        return;
-    }
-    auto& item = *it->second;
-    auto* grid = sculpt_sdf(item);
-    if (!grid || item.sculpt_undo_stack.empty() || item.sdf_display_updating) {
-        return;
-    }
-    SculptSnapshot snap = std::move(item.sculpt_undo_stack.back());
-    item.sculpt_undo_stack.pop_back();
-    item.sculpt_redo_stack.push_back(
-        capture_sculpt_state(item, *grid, snap, snap.description));
-    apply_sculpt_snapshot(item, *grid, snap);
-    if (snap.has_region) {
-        item.sdf_dirty_min = snap.region_min;
-        item.sdf_dirty_max = snap.region_max;
-        item.sdf_region_dirty = true;
-    }
-    item.dirty = true;
-    item.thumbnail_dirty = true;
-}
-
-void RenderVoxelList::redo_sculpt(int item_id) {
-    std::lock_guard<std::mutex> lock(locker);
-    auto it = items.find(item_id);
-    if (it == items.end()) {
-        return;
-    }
-    auto& item = *it->second;
-    auto* grid = sculpt_sdf(item);
-    if (!grid || item.sculpt_redo_stack.empty() || item.sdf_display_updating) {
-        return;
-    }
-    SculptSnapshot snap = std::move(item.sculpt_redo_stack.back());
-    item.sculpt_redo_stack.pop_back();
-    item.sculpt_undo_stack.push_back(
-        capture_sculpt_state(item, *grid, snap, snap.description));
-    apply_sculpt_snapshot(item, *grid, snap);
-    if (snap.has_region) {
-        item.sdf_dirty_min = snap.region_min;
-        item.sdf_dirty_max = snap.region_max;
-        item.sdf_region_dirty = true;
-    }
-    item.dirty = true;
-    item.thumbnail_dirty = true;
-}
-
-bool RenderVoxelList::can_undo_sculpt(int item_id) const {
-    auto it = items.find(item_id);
-    return it != items.end() && !it->second->sculpt_undo_stack.empty();
-}
-
-bool RenderVoxelList::can_redo_sculpt(int item_id) const {
-    auto it = items.find(item_id);
-    return it != items.end() && !it->second->sculpt_redo_stack.empty();
 }
 
 void RenderVoxelList::flush_sculpt_dirty_regions() {

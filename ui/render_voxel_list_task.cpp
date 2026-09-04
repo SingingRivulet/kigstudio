@@ -85,6 +85,7 @@ void RenderVoxelList::queue_thread() {
         }
         auto task = queue.front();
         queue.pop();
+        queue_current_silent = task.silent;
         queue_mutex.unlock();
 
         switch (task.type) {
@@ -1313,6 +1314,7 @@ void RenderVoxelList::queue_update_sdf_region(
     task.region_min = voxel_min;
     task.region_max = voxel_max;
     task.subdivisions = sdf_subdivisions;
+    task.silent = true;  // 雕刻笔画高频刷新，不弹进度窗口
     queue.push(task);
     this->queue_num = static_cast<int>(queue.size());
 }

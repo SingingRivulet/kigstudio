@@ -421,7 +421,8 @@ void RenderVoxelList::render_ui() {
 
     ImGui::PopStyleVar();
 
-    if (this->isQueueRunning()) {
+    // 静默任务（雕刻局部刷新）执行期间不弹异步进度窗口
+    if (this->isQueueRunning() && !this->queue_current_silent.load()) {
         float async_y = window_height - item_status_height - 10.0f;
         ImGui::SetNextWindowPos(ImVec2((float)window_width, async_y),
                                 ImGuiCond_Always, ImVec2(1.0f, 1.0f));

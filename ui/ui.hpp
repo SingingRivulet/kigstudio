@@ -818,14 +818,7 @@ int ui_main(int argc, const char* const* argv) {
                 } else if (e.key.keysym.sym == SDLK_o && ctrl) {
                     render_items.show_load_dialog = true;
                 } else if (e.key.keysym.sym == SDLK_z && ctrl) {
-                    auto zit = render_items.items.find(render_items.render_id);
-                    const bool sculpt_undoable =
-                        zit != render_items.items.end() &&
-                        zit->second->source_type == 3 &&
-                        render_items.can_undo_sculpt(render_items.render_id);
-                    if (sculpt_undoable) {
-                        render_items.undo_sculpt(render_items.render_id);
-                    } else if (render_items.object_editor_tab == 1) {
+                    if (render_items.object_editor_tab == 1) {
                         render_items.undo_marked(render_items.render_id);
                     } else {
                         render_items.undo(render_items.render_id);
@@ -854,14 +847,7 @@ int ui_main(int argc, const char* const* argv) {
                         }
                     }
                 } else if (e.key.keysym.sym == SDLK_y && ctrl) {
-                    auto yit = render_items.items.find(render_items.render_id);
-                    const bool sculpt_redoable =
-                        yit != render_items.items.end() &&
-                        yit->second->source_type == 3 &&
-                        render_items.can_redo_sculpt(render_items.render_id);
-                    if (sculpt_redoable) {
-                        render_items.redo_sculpt(render_items.render_id);
-                    } else if (render_items.object_editor_tab == 1) {
+                    if (render_items.object_editor_tab == 1) {
                         render_items.redo_marked(render_items.render_id);
                     } else {
                         render_items.redo(render_items.render_id);
@@ -1059,6 +1045,16 @@ int ui_main(int argc, const char* const* argv) {
         ImGui::NewFrame();
         render_items.update_mouse_pos(deferred_renderer);
         deferred_renderer.mouse_highlight_range_ = render_items.mouse_highlight_range;
+        // 雕刻模式且启用笔刷时，光标半径随笔刷半径变化
+        {
+            auto it = render_items.items.find(render_items.render_id);
+            if (it != render_items.items.end() &&
+                it->second->source_type == 3 &&
+                it->second->sculpt_brush_enabled) {
+                deferred_renderer.mouse_highlight_range_ =
+                    it->second->sculpt_brush_radius;
+            }
+        }
         render_items.render_ui();
         ImGui::Render();
 
