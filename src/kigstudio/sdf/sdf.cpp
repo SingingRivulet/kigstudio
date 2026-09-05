@@ -1,5 +1,7 @@
 #include "kigstudio/sdf/sdf.h"
 #include "kigstudio/sdf/sdf_chunked.h"
+#include "kigstudio/utils/base64.h"
+#include "kigstudio/utils/compress.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -597,11 +599,166 @@ static bool _register_sdf_types = []() {
     return true;
 }();
 
+// ============ SDFChunkedGrid chunk 记录二进制编解码 ============
+
+std::vector<uint8_t> serialize_chunk_records(const SDFChunkedGrid& grid) {
+    std::vector<uint8_t> raw;
+    auto append = [&](const void* p, size_t n) {
+        const uint8_t* b = static_cast<const uint8_t*>(p);
+        raw.insert(raw.end(), b, b + n);
+    };
+    for (const auto& [key, chunk] : grid.chunks) {
+        const uint8_t type = chunk.type == SDFChunk::Type::Dense ? 1 : 0;
+        append(&key, sizeof(key));
+        append(&type, sizeof(type));
+        if (type == 0) {
+            append(&chunk.uniform_value, sizeof(float));
+        } else {
+            append(chunk.dense.get(), sizeof(float) * SDFChunk::VOXEL_COUNT);
+        }
+    }
+    return raw;
+}
+
+bool deserialize_chunk_records(const uint8_t* data, size_t size,
+                               SDFChunkedGrid& grid) {
+    size_t pos = 0;
+    auto read = [&](void* out, size_t n) -> bool {
+        if (pos + n > size)
+            return false;
+        std::memcpy(out, data + pos, n);
+        pos += n;
+        return true;
+    };
+    while (pos < size) {
+        uint64_t key;
+        uint8_t type;
+        if (!read(&key, sizeof(key)) || !read(&type, sizeof(type)))
+            return false;
+        SDFChunk chunk;
+        if (type == 0) {
+            chunk.type = SDFChunk::Type::Uniform;
+            if (!read(&chunk.uniform_value, sizeof(float)))
+                return false;
+        } else if (type == 1) {
+            chunk.type = SDFChunk::Type::Dense;
+            chunk.dense = std::make_unique<float[]>(SDFChunk::VOXEL_COUNT);
+            if (!read(chunk.dense.get(),
+                      sizeof(float) * SDFChunk::VOXEL_COUNT))
+                return false;
+        } else {
+            return false;
+        }
+        grid.chunks.emplace(key, chunk);
+    }
+    return true;
+}
+
+// ============ SDFChunkedGrid JSON 序列化 ============
+// chunks 以 base64(zlib(二进制chunk记录)) 字符串存储；旧 JSON 数组格式可读。
+
+cJSON* SDFChunkedGrid::toJSON() const {
+    cJSON* obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "type", "chunked_grid");
+    cJSON_AddItemToObject(obj, "global_position",
+                          sinriv::kigstudio::to_json(global_position));
+    cJSON_AddItemToObject(obj, "voxel_size",
+                          sinriv::kigstudio::to_json(voxel_size));
+
+    std::vector<uint8_t> raw = serialize_chunk_records(*this);
+    std::vector<uint8_t> compressed;
+    if (sinriv::kigstudio::zlibCompress(raw, compressed)) {
+        cJSON_AddStringToObject(
+            obj, "chunks_b64",
+            sinriv::kigstudio::base64Encode(compressed).c_str());
+        cJSON_AddNumberToObject(obj, "chunks_raw_size",
+                                static_cast<double>(raw.size()));
+    }
+    return obj;
+}
+
+void SDFChunkedGrid::fromJSON(const cJSON* json) {
+    if (!json) {
+        return;
+    }
+    chunks.clear();
+
+    const cJSON* gp = cJSON_GetObjectItem(json, "global_position");
+    if (gp) {
+        global_position = sinriv::kigstudio::vec3_from_json<Vec3f>(gp);
+    }
+    const cJSON* vs = cJSON_GetObjectItem(json, "voxel_size");
+    if (vs) {
+        voxel_size = sinriv::kigstudio::vec3_from_json<Vec3f>(vs);
+    }
+
+    // 新格式：base64(zlib(二进制chunk记录))
+    const cJSON* b64 = cJSON_GetObjectItem(json, "chunks_b64");
+    const cJSON* raw_size_j = cJSON_GetObjectItem(json, "chunks_raw_size");
+    if (b64 && cJSON_IsString(b64) && raw_size_j &&
+        cJSON_IsNumber(raw_size_j)) {
+        const size_t raw_size =
+            static_cast<size_t>(cJSON_GetNumberValue(raw_size_j));
+        std::vector<uint8_t> comp, raw;
+        if (sinriv::kigstudio::base64Decode(b64->valuestring, comp) &&
+            (raw_size == 0 ||
+             sinriv::kigstudio::zlibDecompress(comp, raw, raw_size))) {
+            deserialize_chunk_records(raw.data(), raw.size(), *this);
+        }
+        return;
+    }
+
+    // 旧格式：JSON 数组（保留读取兼容）
+    const cJSON* arr = cJSON_GetObjectItem(json, "chunks");
+    const cJSON* item = nullptr;
+    cJSON_ArrayForEach(item, arr) {
+        const cJSON* coord = cJSON_GetObjectItem(item, "chunk");
+        if (!coord || cJSON_GetArraySize(coord) != 3) {
+            continue;
+        }
+        const int cx = cJSON_GetArrayItem(coord, 0)->valueint;
+        const int cy = cJSON_GetArrayItem(coord, 1)->valueint;
+        const int cz = cJSON_GetArrayItem(coord, 2)->valueint;
+        SDFChunk& chunk = chunks[voxel::packChunkKey(cx, cy, cz)];
+
+        const cJSON* value = cJSON_GetObjectItem(item, "value");
+        if (value && cJSON_IsNumber(value)) {
+            chunk.type = SDFChunk::Type::Uniform;
+            chunk.uniform_value =
+                static_cast<float>(cJSON_GetNumberValue(value));
+            continue;
+        }
+        const cJSON* data = cJSON_GetObjectItem(item, "data");
+        if (data && cJSON_IsArray(data) &&
+            cJSON_GetArraySize(data) == SDFChunk::VOXEL_COUNT) {
+            chunk.type = SDFChunk::Type::Dense;
+            chunk.dense = std::make_unique<float[]>(SDFChunk::VOXEL_COUNT);
+            int i = 0;
+            const cJSON* v = nullptr;
+            cJSON_ArrayForEach(v, data) {
+                chunk.dense[i++] =
+                    static_cast<float>(cJSON_GetNumberValue(v));
+            }
+        }
+    }
+}
+
 // ============ SDFChunkedGrid .sdfchk 文件序列化 ============
+// v1: chunk 记录直接写在头部之后（原始）
+// v2: chunk 记录整体 zlib 压缩（SDF 距离场平滑，实测可压到 ~10%）
 
 bool save_chunked_file(const std::filesystem::path& path,
                        const SDFChunkedGrid& grid,
                        std::string* error) {
+    // chunk 记录拼成 raw buffer 后整体压缩
+    std::vector<uint8_t> raw = serialize_chunk_records(grid);
+    std::vector<uint8_t> compressed;
+    if (!sinriv::kigstudio::zlibCompress(raw, compressed)) {
+        if (error)
+            *error = "zlib compress failed";
+        return false;
+    }
+
 #ifdef _WIN32
     FILE* fp = _wfopen(path.wstring().c_str(), L"wb");
 #else
@@ -616,27 +773,17 @@ bool save_chunked_file(const std::filesystem::path& path,
         return std::fwrite(data, 1, size, fp) == size;
     };
     const char magic[8] = {'S', 'D', 'F', 'C', 'H', 'K', '1', '\0'};
-    const uint32_t version = 1;
+    const uint32_t version = 2;
     bool ok = write(magic, 8) && write(&version, sizeof(version));
     ok = ok && write(&grid.global_position, sizeof(grid.global_position));
     ok = ok && write(&grid.voxel_size, sizeof(grid.voxel_size));
     const uint32_t chunk_count = static_cast<uint32_t>(grid.chunks.size());
     ok = ok && write(&chunk_count, sizeof(chunk_count));
-    for (const auto& [key, chunk] : grid.chunks) {
-        const uint8_t type =
-            chunk.type == SDFChunk::Type::Dense ? 1 : 0;
-        ok = ok && write(&key, sizeof(key)) && write(&type, sizeof(type));
-        if (!ok)
-            break;
-        if (type == 0) {
-            ok = ok && write(&chunk.uniform_value, sizeof(float));
-        } else {
-            ok = ok && write(chunk.dense.get(),
-                             sizeof(float) * SDFChunk::VOXEL_COUNT);
-        }
-        if (!ok)
-            break;
-    }
+    const uint32_t comp_size = static_cast<uint32_t>(compressed.size());
+    const uint32_t raw_size = static_cast<uint32_t>(raw.size());
+    ok = ok && write(&comp_size, sizeof(comp_size)) &&
+         write(&raw_size, sizeof(raw_size));
+    ok = ok && write(compressed.data(), comp_size);
     std::fclose(fp);
     if (!ok && error)
         *error = "write file failed";
@@ -656,7 +803,7 @@ bool load_chunked_file(const std::filesystem::path& path,
             *error = "open file failed";
         return false;
     }
-    auto read = [&](void* data, size_t size) -> bool {
+    auto read_file = [&](void* data, size_t size) -> bool {
         return std::fread(data, 1, size, fp) == size;
     };
     auto fail = [&](const char* msg) {
@@ -667,40 +814,44 @@ bool load_chunked_file(const std::filesystem::path& path,
     };
     char magic[8];
     uint32_t version;
-    if (!read(magic, 8) || !read(&version, sizeof(version)))
+    if (!read_file(magic, 8) || !read_file(&version, sizeof(version)))
         return fail("truncated header");
-    if (std::strncmp(magic, "SDFCHK1", 7) != 0 || version != 1)
+    if (std::strncmp(magic, "SDFCHK1", 7) != 0 ||
+        (version != 1 && version != 2))
         return fail("bad magic or unsupported version");
 
     // 读到临时对象，失败不破坏调用方的现有数据
     SDFChunkedGrid tmp;
-    if (!read(&tmp.global_position, sizeof(tmp.global_position)) ||
-        !read(&tmp.voxel_size, sizeof(tmp.voxel_size)))
+    if (!read_file(&tmp.global_position, sizeof(tmp.global_position)) ||
+        !read_file(&tmp.voxel_size, sizeof(tmp.voxel_size)))
         return fail("truncated header");
     uint32_t chunk_count;
-    if (!read(&chunk_count, sizeof(chunk_count)))
+    if (!read_file(&chunk_count, sizeof(chunk_count)))
         return fail("truncated header");
-    for (uint32_t i = 0; i < chunk_count; ++i) {
-        uint64_t key;
-        uint8_t type;
-        if (!read(&key, sizeof(key)) || !read(&type, sizeof(type)))
-            return fail("truncated chunk header");
-        SDFChunk chunk;
-        if (type == 0) {
-            chunk.type = SDFChunk::Type::Uniform;
-            if (!read(&chunk.uniform_value, sizeof(float)))
-                return fail("truncated chunk data");
-        } else if (type == 1) {
-            chunk.type = SDFChunk::Type::Dense;
-            chunk.dense = std::make_unique<float[]>(SDFChunk::VOXEL_COUNT);
-            if (!read(chunk.dense.get(),
-                      sizeof(float) * SDFChunk::VOXEL_COUNT))
-                return fail("truncated chunk data");
-        } else {
-            return fail("unknown chunk type");
-        }
-        tmp.chunks.emplace(key, chunk);
+
+    // v1 读取剩余文件内容；v2 先解压到 buffer
+    std::vector<uint8_t> buf;
+    if (version == 1) {
+        uint8_t block[65536];
+        size_t n;
+        while ((n = std::fread(block, 1, sizeof(block), fp)) > 0)
+            buf.insert(buf.end(), block, block + n);
+    } else {
+        uint32_t comp_size, raw_size;
+        if (!read_file(&comp_size, sizeof(comp_size)) ||
+            !read_file(&raw_size, sizeof(raw_size)))
+            return fail("truncated header");
+        std::vector<uint8_t> comp(comp_size);
+        if (comp_size > 0 && !read_file(comp.data(), comp_size))
+            return fail("truncated chunk data");
+        if (raw_size > 0 &&
+            !sinriv::kigstudio::zlibDecompress(comp, buf, raw_size))
+            return fail("zlib decompress failed");
     }
+    if (!deserialize_chunk_records(buf.data(), buf.size(), tmp))
+        return fail("truncated chunk data");
+    if (tmp.chunks.size() != chunk_count)
+        return fail("chunk count mismatch");
     std::fclose(fp);
     grid = std::move(tmp);
     return true;

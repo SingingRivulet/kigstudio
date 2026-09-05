@@ -175,6 +175,9 @@ int main() {
             sphere, Vec3i(-4, -4, -4), Vec3i(43, 43, 43));
 
         cJSON* json = grid.toJSON();
+        // 新格式：二进制 -> zlib -> base64 字符串
+        assert(cJSON_GetObjectItem(json, "chunks_b64") &&
+               "chunks should be stored as base64(zlib(binary))");
         char* text = cJSON_Print(json);
         cJSON_Delete(json);
         cJSON* parsed = cJSON_Parse(text);

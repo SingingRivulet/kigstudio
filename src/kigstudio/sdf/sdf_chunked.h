@@ -116,6 +116,13 @@ struct SDFChunk {
 // 缺失 chunk 视为 +kSDFChunkedFar（外部）。实现 SDFBase 接口，
 // mesher（generateSmoothMeshChunked / generateSmoothMeshForRegion）与
 // 渲染层（loadSDFChunked / updateSDFRegion）无需改动即可使用。
+class SDFChunkedGrid;
+
+// chunk 记录二进制编解码（.sdfchk 与 JSON base64 共用，实现在 sdf.cpp）
+std::vector<uint8_t> serialize_chunk_records(const SDFChunkedGrid& grid);
+bool deserialize_chunk_records(const uint8_t* data, size_t size,
+                               SDFChunkedGrid& grid);
+
 class SDFChunkedGrid : public SDFBase {
    public:
     std::unordered_map<uint64_t, SDFChunk> chunks;
@@ -1149,94 +1156,20 @@ class SDFChunkedGrid : public SDFBase {
 
     // ============ 序列化 ============
     // {"type":"chunked_grid", global_position, voxel_size,
-    //  "chunks":[{"chunk":[cx,cy,cz], "value":v} |
-    //            {"chunk":[cx,cy,cz], "data":[float...]}]}
-    cJSON* toJSON() const override {
-        cJSON* obj = cJSON_CreateObject();
-        cJSON_AddStringToObject(obj, "type", "chunked_grid");
-        cJSON_AddItemToObject(obj, "global_position",
-                              sinriv::kigstudio::to_json(global_position));
-        cJSON_AddItemToObject(obj, "voxel_size",
-                              sinriv::kigstudio::to_json(voxel_size));
-
-        cJSON* arr = cJSON_CreateArray();
-        for (const auto& [key, chunk] : chunks) {
-            int cx, cy, cz;
-            voxel::unpackChunkKey(key, cx, cy, cz);
-            cJSON* item = cJSON_CreateObject();
-            cJSON* coord = cJSON_CreateIntArray(
-                std::vector<int>{cx, cy, cz}.data(), 3);
-            cJSON_AddItemToObject(item, "chunk", coord);
-            if (chunk.type == SDFChunk::Type::Uniform) {
-                cJSON_AddNumberToObject(item, "value", chunk.uniform_value);
-            } else {
-                cJSON_AddItemToObject(
-                    item, "data",
-                    cJSON_CreateFloatArray(chunk.dense.get(),
-                                           SDFChunk::VOXEL_COUNT));
-            }
-            cJSON_AddItemToArray(arr, item);
-        }
-        cJSON_AddItemToObject(obj, "chunks", arr);
-        return obj;
-    }
-
-    void fromJSON(const cJSON* json) override {
-        if (!json) {
-            return;
-        }
-        chunks.clear();
-
-        const cJSON* gp = cJSON_GetObjectItem(json, "global_position");
-        if (gp) {
-            global_position = sinriv::kigstudio::vec3_from_json<Vec3f>(gp);
-        }
-        const cJSON* vs = cJSON_GetObjectItem(json, "voxel_size");
-        if (vs) {
-            voxel_size = sinriv::kigstudio::vec3_from_json<Vec3f>(vs);
-        }
-
-        const cJSON* arr = cJSON_GetObjectItem(json, "chunks");
-        const cJSON* item = nullptr;
-        cJSON_ArrayForEach(item, arr) {
-            const cJSON* coord = cJSON_GetObjectItem(item, "chunk");
-            if (!coord || cJSON_GetArraySize(coord) != 3) {
-                continue;
-            }
-            const int cx = cJSON_GetArrayItem(coord, 0)->valueint;
-            const int cy = cJSON_GetArrayItem(coord, 1)->valueint;
-            const int cz = cJSON_GetArrayItem(coord, 2)->valueint;
-            SDFChunk& chunk =
-                chunks[voxel::packChunkKey(cx, cy, cz)];
-
-            const cJSON* value = cJSON_GetObjectItem(item, "value");
-            if (value && cJSON_IsNumber(value)) {
-                chunk.type = SDFChunk::Type::Uniform;
-                chunk.uniform_value =
-                    static_cast<float>(cJSON_GetNumberValue(value));
-                continue;
-            }
-            const cJSON* data = cJSON_GetObjectItem(item, "data");
-            if (data && cJSON_IsArray(data) &&
-                cJSON_GetArraySize(data) == SDFChunk::VOXEL_COUNT) {
-                chunk.type = SDFChunk::Type::Dense;
-                chunk.dense = std::make_unique<float[]>(SDFChunk::VOXEL_COUNT);
-                int i = 0;
-                const cJSON* v = nullptr;
-                cJSON_ArrayForEach(v, data) {
-                    chunk.dense[i++] =
-                        static_cast<float>(cJSON_GetNumberValue(v));
-                }
-            }
-        }
-    }
+    //  "chunks_b64": base64(zlib(二进制chunk记录)), "chunks_raw_size": n}
+    // 旧格式（"chunks" JSON 数组）仍可读取。实现在 sdf.cpp，
+    // 避免本头文件传递包含 zlib/base64（include 顺序冲突）。
+    cJSON* toJSON() const override;
+    void fromJSON(const cJSON* json) override;
 };
 
 // ============ .sdfchk 二进制文件序列化 ============
-// 格式：magic "SDFCHK1\0"(8B) + version(u32=1) + global_position(3*f32) +
-//       voxel_size(3*f32) + chunk_count(u32) +
+// 格式：magic "SDFCHK1\0"(8B) + version(u32) + global_position(3*f32) +
+//       voxel_size(3*f32) + chunk_count(u32) + chunk 记录
 //       每个 chunk: key(u64) + type(u8, 0=Uniform 1=Dense) +
 //                   Uniform: uniform_value(f32) / Dense: 32768*f32
+// v1: chunk 记录原始存储；v2: chunk 记录整体 zlib 压缩
+//     （comp_size u32 + raw_size u32 + 压缩数据，实测约压到 10%）
 bool save_chunked_file(const std::filesystem::path& path,
                        const SDFChunkedGrid& grid,
                        std::string* error = nullptr);
