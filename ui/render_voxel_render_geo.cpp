@@ -2226,6 +2226,8 @@ void RenderVoxelList::load_sculpt_from_node(int target_item_id,
             }
             if (chunked_sdf) {
                 target.sdf_data = std::move(chunked_sdf);
+                target.sdf_gpu_stale = true;
+                target.sdf_gpu_failed = false;
             }
             target.stl_voxel_size = voxel_size;
             target.node_source_sdf_subdivisions = sdf_subdivisions;

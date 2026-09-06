@@ -130,6 +130,11 @@ namespace sinriv::ui::render {
                 ortho_lighting_program_ = BGFX_INVALID_HANDLE;
                 std::cout << "RenderMeshShader shader(ortho_lighting_program_) destroyed" << std::endl;
             }
+            if (bgfx::isValid(sdf_raymarch_program_)) {
+                bgfx::destroy(sdf_raymarch_program_);
+                sdf_raymarch_program_ = BGFX_INVALID_HANDLE;
+                std::cout << "RenderMeshShader shader(sdf_raymarch_program_) destroyed" << std::endl;
+            }
         }
 
         inline void destroyUniforms() {
@@ -166,6 +171,34 @@ namespace sinriv::ui::render {
                 bgfx::destroy(u_pick_id_);
                 u_pick_id_ = BGFX_INVALID_HANDLE;
             }
+            if (bgfx::isValid(u_sdf_origin_)) {
+                bgfx::destroy(u_sdf_origin_);
+                u_sdf_origin_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(u_sdf_cam_pos_)) {
+                bgfx::destroy(u_sdf_cam_pos_);
+                u_sdf_cam_pos_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(u_chunk_min_)) {
+                bgfx::destroy(u_chunk_min_);
+                u_chunk_min_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(u_chunk_dim_)) {
+                bgfx::destroy(u_chunk_dim_);
+                u_chunk_dim_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(u_pool_info_)) {
+                bgfx::destroy(u_pool_info_);
+                u_pool_info_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(s_chunk_map_)) {
+                bgfx::destroy(s_chunk_map_);
+                s_chunk_map_ = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(s_brick_pool_)) {
+                bgfx::destroy(s_brick_pool_);
+                s_brick_pool_ = BGFX_INVALID_HANDLE;
+            }
         }
 
         inline void ensureUniforms() {
@@ -192,6 +225,27 @@ namespace sinriv::ui::render {
             }
             if (!bgfx::isValid(u_pick_id_)) {
                 u_pick_id_ = bgfx::createUniform("u_pickId", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_sdf_origin_)) {
+                u_sdf_origin_ = bgfx::createUniform("u_sdfOrigin", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_sdf_cam_pos_)) {
+                u_sdf_cam_pos_ = bgfx::createUniform("u_sdfCamPos", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_chunk_min_)) {
+                u_chunk_min_ = bgfx::createUniform("u_chunkMin", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_chunk_dim_)) {
+                u_chunk_dim_ = bgfx::createUniform("u_chunkDim", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(u_pool_info_)) {
+                u_pool_info_ = bgfx::createUniform("u_poolInfo", bgfx::UniformType::Vec4);
+            }
+            if (!bgfx::isValid(s_chunk_map_)) {
+                s_chunk_map_ = bgfx::createUniform("s_chunkMap", bgfx::UniformType::Sampler);
+            }
+            if (!bgfx::isValid(s_brick_pool_)) {
+                s_brick_pool_ = bgfx::createUniform("s_brickPool", bgfx::UniformType::Sampler);
             }
         }
 
@@ -277,6 +331,34 @@ namespace sinriv::ui::render {
 
             gbuffer_drill_program_ = bgfx::createProgram(vs, fs, true);
             return bgfx::isValid(gbuffer_drill_program_);
+        }
+
+        // SDF 直接渲染程序：代理包围盒 + 片元球体追踪（不走 mesh 重建），
+        // 采样 s_chunkMap / s_brickPool 两个 3D 纹理。
+        inline bool ensureSdfRaymarchProgram() {
+            if (bgfx::isValid(sdf_raymarch_program_)) {
+                return true;
+            }
+            ensureUniforms();
+
+            bgfx::ShaderHandle vs =
+                sinriv::kigstudio::ui::loadShader(shader_dir_ + "vs_sdf_box.bin");
+            bgfx::ShaderHandle fs = sinriv::kigstudio::ui::loadShader(
+                shader_dir_ + "fs_sdf_raymarch.bin");
+            if (!bgfx::isValid(vs) || !bgfx::isValid(fs)) {
+                if (bgfx::isValid(vs)) {
+                    bgfx::destroy(vs);
+                }
+                if (bgfx::isValid(fs)) {
+                    bgfx::destroy(fs);
+                }
+                std::cerr << "RenderMesh sdf raymarch shader load failed from "
+                          << shader_dir_ << std::endl;
+                return false;
+            }
+
+            sdf_raymarch_program_ = bgfx::createProgram(vs, fs, true);
+            return bgfx::isValid(sdf_raymarch_program_);
         }
 
         // Ortho depth-colour program: reuses the GBuffer vertex shader but
@@ -372,6 +454,7 @@ namespace sinriv::ui::render {
         bgfx::ProgramHandle line_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle ortho_depth_program_ = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle ortho_lighting_program_ = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle sdf_raymarch_program_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_base_color_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_depth_bias_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_exclude_from_tint_ = BGFX_INVALID_HANDLE;
@@ -380,6 +463,13 @@ namespace sinriv::ui::render {
         bgfx::UniformHandle u_center_pos_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_depth_scale_ = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle u_pick_id_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_sdf_origin_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_sdf_cam_pos_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_chunk_min_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_chunk_dim_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle u_pool_info_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle s_chunk_map_ = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle s_brick_pool_ = BGFX_INVALID_HANDLE;
         float identity_mtx_[16]{};
     };
 

@@ -32,6 +32,7 @@
 #include "kigstudio/sdf/sdf_shape.h"
 #include "kigstudio/ui/render_collision.h"
 #include "kigstudio/ui/render_mesh.h"
+#include "kigstudio/ui/render_sdf_gpu.h"
 #include "kigstudio/ui/render_voxel.h"
 #include "kigstudio/utils/KDTree.h"
 #include "kigstudio/utils/locale.h"
@@ -1079,6 +1080,13 @@ class RenderVoxelList {
 
         std::shared_ptr<sinriv::kigstudio::sdf::SDFBase> sdf_data;
 
+        // SDF 直接渲染（实验，雕刻模式专用）：GPU 侧 brick pool/chunk map。
+        // sdf_gpu_stale：sdf_data 变更后需全量重传；
+        // sdf_gpu_failed：超容量/格式不支持时回退 mesh 渲染。
+        std::unique_ptr<RenderSdfGpu> sdf_gpu;
+        bool sdf_gpu_stale = true;
+        bool sdf_gpu_failed = false;
+
         std::vector<std::tuple<sinriv::kigstudio::voxel::Triangle,
                                sinriv::kigstudio::voxel::vec3f>>
             cached_mesh;
@@ -1420,12 +1428,31 @@ class RenderVoxelList {
     // 渲染
     int render_id = 0;
 
+    // SDF 直接渲染（实验）开关：工具菜单切换；开启时雕刻节点用
+    // raymarch 直接渲染 sdf_data，不做 mesh 重建。
+    bool sdf_gpu_render = false;
+    // 相机世界坐标（ui.hpp 每帧写入）与模型局部坐标（render_gbuffer 换算）
+    float sdf_cam_world[3] = {0.0f, 0.0f, 0.0f};
+    float sdf_cam_local[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
     inline void render_gbuffer(
         const float* transform,
         sinriv::ui::render::RenderMeshShader& mesh_shader) {
         std::lock_guard<std::mutex> lock(locker);
         auto it = items.find(render_id);
         if (it != items.end()) {
+            if (sdf_gpu_render) {
+                // 相机世界坐标 → 模型局部坐标（transform 为 model 矩阵，
+                // 列主序：world = M * local）
+                float inv[16];
+                bx::mtxInverse(inv, transform);
+                for (int i = 0; i < 3; ++i) {
+                    sdf_cam_local[i] = inv[i] * sdf_cam_world[0] +
+                                       inv[4 + i] * sdf_cam_world[1] +
+                                       inv[8 + i] * sdf_cam_world[2] +
+                                       inv[12 + i];
+                }
+            }
             it->second->render_gbuffer(transform, mesh_shader);
         }
     }

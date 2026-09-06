@@ -2369,6 +2369,8 @@ bool RenderVoxelList::load_project(const std::string& folder) {
                     if (sinriv::kigstudio::sdf::load_chunked_file(
                             sdf_path, *grid, &sdf_error)) {
                         item->sdf_data = std::move(grid);
+                        item->sdf_gpu_stale = true;
+                        item->sdf_gpu_failed = false;
                         sculpt_display_rebuilds.emplace_back(
                             id, item->node_source_sdf_subdivisions);
                     } else {

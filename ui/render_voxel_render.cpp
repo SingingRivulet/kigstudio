@@ -2620,7 +2620,37 @@ void RenderVoxelList::RenderVoxelItem::render_gbuffer(
     }
 
     if (showVoxel) {
-        voxel_renderer.renderGBuffer(transform, mesh_shader);
+        // SDF 直接渲染（实验）：雕刻节点跳过 mesh，直接 raymarch sdf_data
+        bool rendered_gpu = false;
+        if (manager && manager->sdf_gpu_render && source_type == 3 &&
+            sdf_data && !sdf_gpu_failed) {
+            auto* grid = dynamic_cast<sinriv::kigstudio::sdf::SDFChunkedGrid*>(
+                sdf_data.get());
+            if (grid) {
+                if (!sdf_gpu) {
+                    sdf_gpu = std::make_unique<RenderSdfGpu>();
+                    sdf_gpu_stale = true;
+                }
+                if (sdf_gpu_stale) {
+                    if (sdf_gpu->uploadAll(*grid)) {
+                        sdf_gpu_stale = false;
+                    } else {
+                        sdf_gpu_failed = true;
+                        sdf_gpu->release();
+                    }
+                }
+                if (!sdf_gpu_failed && sdf_gpu->valid()) {
+                    sdf_gpu->renderGBuffer(
+                        transform, mesh_shader, manager->sdf_cam_local,
+                        voxel_renderer.getMeshRenderer().getBaseColor(),
+                        {2.0f / 255.0f, 0.0f, 0.0f, 1.0f});
+                    rendered_gpu = true;
+                }
+            }
+        }
+        if (!rendered_gpu) {
+            voxel_renderer.renderGBuffer(transform, mesh_shader);
+        }
     }
 
     if (showVoxel && !marked_voxels.empty()) {

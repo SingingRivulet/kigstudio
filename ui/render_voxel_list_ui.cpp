@@ -144,6 +144,27 @@ void RenderVoxelList::render_ui() {
                 if (ImGui::MenuItem(get_locale_cstr("menu.flow_viewer"))) {
                     show_flow_viewer = true;
                 }
+                // SDF 直接渲染（实验）：雕刻节点用 raymarch 直接渲染，
+                // 不做 mesh 重建。关闭时 GPU 期间的 mesh 已过期，
+                // 需对所有雕刻节点做一次全量重建。
+                if (ImGui::MenuItem(get_locale_cstr("menu.sdf_gpu_render"),
+                                    nullptr, &sdf_gpu_render)) {
+                    if (!sdf_gpu_render) {
+                        std::lock_guard<std::mutex> lock(locker);
+                        for (auto& [id, item_ptr] : items) {
+                            auto& item = *item_ptr;
+                            if (item.source_type == 3 && item.sdf_data) {
+                                if (item.sdf_gpu) {
+                                    item.sdf_gpu->release();
+                                }
+                                item.sdf_gpu_stale = true;
+                                item.sdf_gpu_failed = false;
+                                queue_update_sdf_display(
+                                    id, item.node_source_sdf_subdivisions);
+                            }
+                        }
+                    }
+                }
                 if (ImGui::MenuItem(get_locale_cstr("menu.extract_mmd"))) {
                     pending_open_extract_mmd_dialog = true;
                 }

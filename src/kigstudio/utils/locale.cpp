@@ -112,6 +112,9 @@ void init_locale_strings() {
     add_locale_string("menu.debug_voxel_picking",
                       {{"en", "Voxel Picking"}, {"zh", "体素拾取"}});
     add_locale_string("menu.flow_viewer", {{"en", "Flow Viewer"}, {"zh", "工作流"}});
+    add_locale_string("menu.sdf_gpu_render",
+                      {{"en", "SDF Raymarch (Experimental)"},
+                       {"zh", "SDF 直接渲染（实验）"}});
     add_locale_string("menu.extract_mmd", {{"en", "Extract MMD"}, {"zh", "提取 MMD"}});
     add_locale_string(
         "menu.check_non_manifold",

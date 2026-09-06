@@ -1006,6 +1006,10 @@ int ui_main(int argc, const char* const* argv) {
         render_items.setModelMatrix(cpu_model_matrix);
 
         render_items.upload_collision(deferred_renderer);
+        // SDF 直接渲染用：相机世界坐标（render_gbuffer 内换算为模型局部）
+        render_items.sdf_cam_world[0] = eye.x;
+        render_items.sdf_cam_world[1] = eye.y;
+        render_items.sdf_cam_world[2] = eye.z;
         render_items.render_gbuffer(mtx_2, mesh_render_shader);
 
         // During nav map panning, freeze the 3D viewport cursor so the

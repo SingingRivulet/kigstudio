@@ -385,6 +385,56 @@ void RenderVoxelList::flush_sculpt_dirty_regions() {
             if (!item.sdf_region_dirty || item.sdf_display_updating) {
                 continue;
             }
+            // SDF 直接渲染：只把变化的 chunk 重传 GPU，不做 mesh 重建，
+            // 也不置 sdf_display_updating（dab 无需等待、不丢笔画）
+            if (sdf_gpu_render && !item.sdf_gpu_failed) {
+                auto* grid = sculpt_sdf(item);
+                if (grid) {
+                    if (!item.sdf_gpu) {
+                        item.sdf_gpu = std::make_unique<RenderSdfGpu>();
+                        item.sdf_gpu_stale = true;
+                    }
+                    bool ok = true;
+                    if (item.sdf_gpu_stale) {
+                        ok = item.sdf_gpu->uploadAll(*grid);
+                        item.sdf_gpu_stale = !ok;
+                    } else {
+                        // 体素脏区域（voxel_grid 坐标）→ SDF chunk key 集合
+                        const int subdiv =
+                            std::max(1, item.node_source_sdf_subdivisions);
+                        const Vec3i& vmin = item.sdf_dirty_min;
+                        const Vec3i& vmax = item.sdf_dirty_max;
+                        std::vector<uint64_t> keys;
+                        for (int cz = (vmin.z * subdiv) >> 5;
+                             cz <= ((vmax.z + 1) * subdiv - 1) >> 5; ++cz) {
+                            for (int cy = (vmin.y * subdiv) >> 5;
+                                 cy <= ((vmax.y + 1) * subdiv - 1) >> 5;
+                                 ++cy) {
+                                for (int cx = (vmin.x * subdiv) >> 5;
+                                     cx <= ((vmax.x + 1) * subdiv - 1) >> 5;
+                                     ++cx) {
+                                    keys.push_back(
+                                        voxel_ns::packChunkKey(cx, cy, cz));
+                                }
+                            }
+                        }
+                        ok = item.sdf_gpu->updateChunks(*grid, keys);
+                        // 区域超出 chunk map 覆盖范围时全量重建
+                        if (!ok) {
+                            ok = item.sdf_gpu->uploadAll(*grid);
+                        }
+                    }
+                    if (ok) {
+                        item.sdf_region_dirty = false;
+                        continue;
+                    }
+                    // GPU 路径不可用：回退 mesh 重建
+                    item.sdf_gpu_failed = true;
+                    if (item.sdf_gpu) {
+                        item.sdf_gpu->release();
+                    }
+                }
+            }
             item.sdf_display_updating = true;
             item.sdf_region_dirty = false;
             pending.emplace_back(
