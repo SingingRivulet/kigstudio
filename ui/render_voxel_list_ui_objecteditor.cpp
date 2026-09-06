@@ -244,7 +244,16 @@ void RenderVoxelList::render_object_editor_toolbar(RenderVoxelItem& item) {
         ImGui::TextUnformatted(get_locale_cstr("dialog.choose_export_method"));
 
         // Export mode selection
-        if (item.source_type == 2) {
+        if (item.source_type == 3) {
+            // 雕刻模式：只能以 SDF 导出（体素导出无意义）
+            export_stl_mode = 1;
+            ImGui::RadioButton(get_locale_cstr("label.export_mode_smooth"),
+                               &export_stl_mode, 1);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    get_locale_cstr("tooltip.export_mode_smooth"));
+            }
+        } else if (item.source_type == 2) {
             // 附加件节点：可直接导出 loft 网格，或走 SDF 平滑导出
             if (export_stl_mode == 0) export_stl_mode = 2;
             ImGui::RadioButton(get_locale_cstr("label.export_mode_mesh"),

@@ -573,7 +573,7 @@ void init_locale_strings() {
     add_locale_string("action.render_sdf",
                       {{"en", "Render SDF"}, {"zh", "渲染 SDF"}});
     add_locale_string("label.export_mode_standard",
-                      {{"en", "Standard"}, {"zh", "标准"}});
+                      {{"en", "Voxel"}, {"zh", "体素"}});
     add_locale_string("label.export_mode_smooth",
                       {{"en", "Smooth SDF"}, {"zh", "SDF 平滑"}});
     add_locale_string("label.export_mode_mesh",

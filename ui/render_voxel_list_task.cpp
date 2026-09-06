@@ -550,7 +550,12 @@ void RenderVoxelList::queue_thread() {
                                            sinriv::kigstudio::voxel::vec3f>>
                         mesh;
                     int numTriangles = 0;
-                    if (task.export_mode == 2 &&
+                    // 雕刻模式只允许 SDF 导出（体素导出无意义）
+                    const int export_mode =
+                        (item_ptr->source_type == 3 && task.export_mode == 0)
+                            ? 1
+                            : task.export_mode;
+                    if (export_mode == 2 &&
                         item_ptr->source_type == 2) {
                         // 附加件：直接导出 loft 网格（不经体素/SDF 重采样）
                         for (int si = 0;
@@ -567,7 +572,7 @@ void RenderVoxelList::queue_thread() {
                                 mesh.emplace_back(t, n);
                             }
                         }
-                    } else if (task.export_mode == 1) {
+                    } else if (export_mode == 1) {
                         for (auto triangles : sinriv::kigstudio::voxel::
                                  generateSmoothMeshFromSDF(
                                      item_ptr->voxel_grid_data, numTriangles,
@@ -792,7 +797,13 @@ void RenderVoxelList::queue_thread() {
                                            sinriv::kigstudio::voxel::vec3f>>
                                 mesh;
                             int numTriangles = 0;
-                            if (task.export_mode == 1) {
+                            // 雕刻模式只允许 SDF 导出（体素导出无意义）
+                            const int export_mode =
+                                (item_ptr->source_type == 3 &&
+                                 task.export_mode == 0)
+                                    ? 1
+                                    : task.export_mode;
+                            if (export_mode == 1) {
                                 for (auto triangles : sinriv::kigstudio::voxel::
                                          generateSmoothMeshFromSDF(
                                              item_ptr->voxel_grid_data,

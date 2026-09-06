@@ -125,25 +125,6 @@ void RenderVoxelList::render_ui() {
                         &showVoxelChunkBounds);
                     ImGui::EndMenu();
                 }
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu(get_locale_cstr("menu.tools"))) {
-                if (ImGui::MenuItem(
-                        get_locale_cstr("menu.check_non_manifold"))) {
-                    // 自动显示日志窗口
-                    show_log_window = true;
-                    // 对当前选中的 item 执行检测
-                    std::lock_guard<std::mutex> lock(locker);
-                    auto it = items.find(render_id);
-                    if (it != items.end() && it->second->write_count == 0) {
-                        queue_check_non_manifold(render_id);
-                    } else {
-                        append_queue_logf("log.queue.skip_check_busy");
-                    }
-                }
-                if (ImGui::MenuItem(get_locale_cstr("menu.flow_viewer"))) {
-                    show_flow_viewer = true;
-                }
                 // SDF 直接渲染（实验）：雕刻节点用 raymarch 直接渲染，
                 // 不做 mesh 重建。关闭时 GPU 期间的 mesh 已过期，
                 // 需对所有雕刻节点做一次全量重建。
@@ -164,6 +145,25 @@ void RenderVoxelList::render_ui() {
                             }
                         }
                     }
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu(get_locale_cstr("menu.tools"))) {
+                if (ImGui::MenuItem(
+                        get_locale_cstr("menu.check_non_manifold"))) {
+                    // 自动显示日志窗口
+                    show_log_window = true;
+                    // 对当前选中的 item 执行检测
+                    std::lock_guard<std::mutex> lock(locker);
+                    auto it = items.find(render_id);
+                    if (it != items.end() && it->second->write_count == 0) {
+                        queue_check_non_manifold(render_id);
+                    } else {
+                        append_queue_logf("log.queue.skip_check_busy");
+                    }
+                }
+                if (ImGui::MenuItem(get_locale_cstr("menu.flow_viewer"))) {
+                    show_flow_viewer = true;
                 }
                 if (ImGui::MenuItem(get_locale_cstr("menu.extract_mmd"))) {
                     pending_open_extract_mmd_dialog = true;
